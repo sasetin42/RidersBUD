@@ -1,62 +1,90 @@
-
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import { Reminder } from '../types';
 import { useAuth } from '../context/AuthContext';
 import Spinner from '../components/Spinner';
 
-const AddReminderModal: React.FC<{
+const ReminderFormModal: React.FC<{
+    reminderToEdit?: Reminder | null;
     onClose: () => void;
-    onSave: (reminder: Omit<Reminder, 'id'>) => void;
-}> = ({ onClose, onSave }) => {
+    onSave: (reminder: Omit<Reminder, 'id'>, id?: string) => void;
+}> = ({ reminderToEdit, onClose, onSave }) => {
     const { user } = useAuth();
-    const [serviceName, setServiceName] = useState('');
-    const [date, setDate] = useState('');
-    const [vehicle, setVehicle] = useState(user?.vehicles[0] ? `${user.vehicles[0].make} ${user.vehicles[0].model}` : '');
-    const [notes, setNotes] = useState('');
+    const [serviceName, setServiceName] = useState(reminderToEdit?.serviceName || '');
+    const [date, setDate] = useState(reminderToEdit?.date || '');
+    const [vehicle, setVehicle] = useState(reminderToEdit?.vehicle || (user?.vehicles[0] ? `${user.vehicles[0].make} ${user.vehicles[0].model}` : ''));
+    const [notes, setNotes] = useState(reminderToEdit?.notes || '');
+    const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-    const handleSave = () => {
-        if (!serviceName || !date || !vehicle) {
-            alert('Please fill in all required fields.');
-            return;
+    const validate = () => {
+        const newErrors: { [key: string]: string } = {};
+        if (!serviceName.trim()) newErrors.serviceName = "Service name is required.";
+        if (!date) {
+            newErrors.date = "A date must be selected.";
+        } else if (!reminderToEdit?.id && new Date(date) < new Date()) {
+            newErrors.date = "Reminder date cannot be in the past.";
         }
-        onSave({ serviceName, date, vehicle, notes });
+        if (!vehicle) newErrors.vehicle = "A vehicle must be selected.";
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
     };
 
+
+    const handleSave = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (validate()) {
+            onSave({ serviceName, date, vehicle, notes }, reminderToEdit?.id);
+        }
+    };
+
+    const isSaveDisabled = !serviceName || !date || !vehicle || Object.keys(errors).length > 0;
+
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="add-reminder-title">
-            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm">
-                <h2 id="add-reminder-title" className="text-xl font-bold mb-4">Add Service Reminder</h2>
-                <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="reminder-form-title">
+            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp">
+                <h2 id="reminder-form-title" className="text-xl font-bold mb-4">{reminderToEdit?.id ? 'Edit' : 'Add'} Service Reminder</h2>
+                <form onSubmit={handleSave} noValidate>
                     <div className="space-y-4">
-                        <input
-                            type="text"
-                            placeholder="Service Name (e.g., Oil Change)"
-                            value={serviceName}
-                            onChange={(e) => setServiceName(e.target.value)}
-                            className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary"
-                            required
-                            aria-label="Service Name"
-                        />
-                         <select
-                            value={vehicle}
-                            onChange={(e) => setVehicle(e.target.value)}
-                            className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                            required
-                            aria-label="Select Vehicle"
-                        >
-                            {user?.vehicles.map((v, i) => (
-                                <option key={i} value={`${v.make} ${v.model}`}>{v.make} {v.model}</option>
-                            ))}
-                        </select>
-                        <input
-                            type="date"
-                            value={date}
-                            onChange={(e) => setDate(e.target.value)}
-                            className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary"
-                            required
-                            aria-label="Reminder Date"
-                        />
+                        <div>
+                            <input
+                                type="text"
+                                placeholder="Service Name (e.g., Oil Change)"
+                                value={serviceName}
+                                onChange={(e) => setServiceName(e.target.value)}
+                                className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.serviceName ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`}
+                                required
+                                aria-label="Service Name"
+                            />
+                            {errors.serviceName && <p className="text-red-400 text-xs mt-1">{errors.serviceName}</p>}
+                        </div>
+                         <div>
+                            <select
+                                value={vehicle}
+                                onChange={(e) => setVehicle(e.target.value)}
+                                className={`w-full px-4 py-3 bg-field border rounded-lg text-white focus:outline-none focus:ring-2 ${errors.vehicle ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`}
+                                required
+                                aria-label="Select Vehicle"
+                            >
+                                <option value="" disabled>Select a vehicle</option>
+                                {user?.vehicles.map((v, i) => (
+                                    <option key={i} value={`${v.make} ${v.model}`}>{v.make} {v.model}</option>
+                                ))}
+                            </select>
+                            {errors.vehicle && <p className="text-red-400 text-xs mt-1">{errors.vehicle}</p>}
+                        </div>
+                        <div>
+                            <input
+                                type="date"
+                                value={date}
+                                onChange={(e) => setDate(e.target.value)}
+                                min={!reminderToEdit?.id ? new Date().toISOString().split("T")[0] : undefined}
+                                className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.date ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`}
+                                required
+                                aria-label="Reminder Date"
+                            />
+                            {errors.date && <p className="text-red-400 text-xs mt-1">{errors.date}</p>}
+                        </div>
                         <textarea
                             placeholder="Notes (optional)"
                             value={notes}
@@ -70,7 +98,7 @@ const AddReminderModal: React.FC<{
                         <button type="button" onClick={onClose} className="w-1/2 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">
                             Cancel
                         </button>
-                        <button type="submit" className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                        <button type="submit" disabled={isSaveDisabled} className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
                             Save
                         </button>
                     </div>
@@ -84,8 +112,11 @@ const AddReminderModal: React.FC<{
 const RemindersScreen: React.FC = () => {
     const [reminders, setReminders] = useState<Reminder[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
     const [loading, setLoading] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const location = useLocation();
+    const navigate = useNavigate();
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -102,19 +133,43 @@ const RemindersScreen: React.FC = () => {
         }, 500);
         return () => clearTimeout(timer);
     }, []);
+    
+    useEffect(() => {
+        // This effect handles pre-filling from navigation state
+        const reminderDataFromNav = location.state as { serviceName: string; date: string; vehicle: string; } | null;
+        if (reminderDataFromNav?.serviceName && reminderDataFromNav?.date) {
+            const newReminderToCreate: Reminder = {
+                id: '', // Empty id signifies a new reminder for the modal
+                serviceName: reminderDataFromNav.serviceName,
+                date: reminderDataFromNav.date,
+                vehicle: reminderDataFromNav.vehicle || '',
+                notes: 'Auto-created from booking.',
+            };
+            setEditingReminder(newReminderToCreate);
+            setIsModalOpen(true);
+            // Clear the state from location history to prevent the modal from re-opening on back navigation
+            navigate(location.pathname, { replace: true, state: null });
+        }
+    }, [location.state, navigate, location.pathname]);
+
 
     const saveReminders = (newReminders: Reminder[]) => {
         setReminders(newReminders);
         localStorage.setItem('serviceReminders', JSON.stringify(newReminders));
     };
 
-    const handleAddReminder = (newReminderData: Omit<Reminder, 'id'>) => {
-        const newReminder: Reminder = {
-            id: new Date().toISOString() + Math.random(), // simple unique id
-            ...newReminderData,
-        };
-        saveReminders([...reminders, newReminder]);
+    const handleSaveReminder = (reminderData: Omit<Reminder, 'id'>, id?: string) => {
+        if (id) { // Editing existing reminder
+            saveReminders(reminders.map(r => r.id === id ? { ...r, ...reminderData } : r));
+        } else { // Adding new reminder
+            const newReminder: Reminder = {
+                id: new Date().toISOString() + Math.random(),
+                ...reminderData,
+            };
+            saveReminders([...reminders, newReminder]);
+        }
         setIsModalOpen(false);
+        setEditingReminder(null);
     };
 
     const handleDeleteReminder = (id: string) => {
@@ -124,6 +179,11 @@ const RemindersScreen: React.FC = () => {
         }
     };
     
+    const handleEditReminder = (reminder: Reminder) => {
+        setEditingReminder(reminder);
+        setIsModalOpen(true);
+    };
+
     const handleExportReminders = () => {
         if (reminders.length === 0) {
             alert("There are no reminders to export.");
@@ -157,7 +217,6 @@ const RemindersScreen: React.FC = () => {
                 
                 const importedReminders = JSON.parse(content);
 
-                // Basic validation
                 if (!Array.isArray(importedReminders)) {
                     throw new Error("Invalid file format. Expected an array of reminders.");
                 }
@@ -173,11 +232,9 @@ const RemindersScreen: React.FC = () => {
         };
 
         reader.readAsText(file);
-        // Reset file input value to allow importing the same file again
         event.target.value = '';
     };
 
-    // Sort reminders by date, soonest first
     const sortedReminders = [...reminders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     return (
@@ -222,29 +279,23 @@ const RemindersScreen: React.FC = () => {
                 ) : (
                     <div className="space-y-4">
                         {sortedReminders.map(reminder => (
-                            <div key={reminder.id} className="bg-dark-gray p-4 rounded-lg relative" role="listitem">
-                                <button onClick={() => handleDeleteReminder(reminder.id)} className="absolute top-2 right-2 text-light-gray hover:text-red-500 transition-colors" aria-label={`Delete reminder for ${reminder.serviceName}`}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                                <h3 className="text-lg font-bold text-primary pr-6">{reminder.serviceName}</h3>
-                                <p className="text-sm text-white font-medium">{reminder.vehicle}</p>
+                            <div key={reminder.id} className="bg-dark-gray p-4 rounded-lg" role="listitem">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-primary pr-6">{reminder.serviceName}</h3>
+                                        <p className="text-sm text-white font-medium">{reminder.vehicle}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleEditReminder(reminder)} className="text-light-gray hover:text-blue-400 transition-colors" aria-label={`Edit reminder for ${reminder.serviceName}`}>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
+                                        </button>
+                                        <button onClick={() => handleDeleteReminder(reminder.id)} className="text-light-gray hover:text-red-500 transition-colors" aria-label={`Delete reminder for ${reminder.serviceName}`}>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
+                                        </button>
+                                    </div>
+                                </div>
                                 <p className="text-sm text-light-gray mt-1">
-                                    Due: {(() => {
-                                        // Parse 'YYYY-MM-DD' string as local date to prevent timezone issues.
-                                        const dateParts = reminder.date.split('-');
-                                        const localDate = new Date(
-                                            parseInt(dateParts[0]),
-                                            parseInt(dateParts[1]) - 1,
-                                            parseInt(dateParts[2])
-                                        );
-                                        return localDate.toLocaleDateString('en-US', {
-                                            year: 'numeric',
-                                            month: 'long',
-                                            day: 'numeric',
-                                        });
-                                    })()}
+                                    Due: {new Date(reminder.date.replace(/-/g, '/')).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                                 </p>
                                 {reminder.notes && <p className="text-sm text-light-gray mt-2 pt-2 border-t border-field">Notes: {reminder.notes}</p>}
                             </div>
@@ -254,7 +305,7 @@ const RemindersScreen: React.FC = () => {
             </main>
             
             <button
-                onClick={() => setIsModalOpen(true)}
+                onClick={() => { setEditingReminder(null); setIsModalOpen(true); }}
                 className="absolute bottom-20 right-6 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition"
                 aria-label="Add new reminder"
             >
@@ -263,7 +314,7 @@ const RemindersScreen: React.FC = () => {
                 </svg>
             </button>
 
-            {isModalOpen && <AddReminderModal onClose={() => setIsModalOpen(false)} onSave={handleAddReminder} />}
+            {isModalOpen && <ReminderFormModal reminderToEdit={editingReminder} onClose={() => { setIsModalOpen(false); setEditingReminder(null); }} onSave={handleSaveReminder} />}
         </div>
     );
 };

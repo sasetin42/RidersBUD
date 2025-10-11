@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { mockParts, addPart, updatePart, deletePart } from '../../data/mockData';
 import { Part } from '../../types';
 import Modal from '../../components/admin/Modal';
+import { useDatabase } from '../../context/DatabaseContext';
+import Spinner from '../../components/Spinner';
 
 const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: () => void; }> = ({ part, onSave, onCancel }) => {
     const [formData, setFormData] = useState({
@@ -83,9 +84,13 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
 
 
 const AdminPartsScreen: React.FC = () => {
+    const { db, addPart, updatePart, deletePart, loading } = useDatabase();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingPart, setEditingPart] = useState<Part | undefined>(undefined);
-    const [dataVersion, setDataVersion] = useState(0);
+    
+    if (loading || !db) {
+        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-secondary" /></div>
+    }
 
     const handleOpenModal = (part?: Part) => {
         setEditingPart(part);
@@ -103,42 +108,40 @@ const AdminPartsScreen: React.FC = () => {
         } else {
             addPart(part);
         }
-        setDataVersion(v => v + 1);
         handleCloseModal();
     };
 
     const handleDelete = (id: string) => {
         if (window.confirm('Are you sure you want to delete this part?')) {
             deletePart(id);
-            setDataVersion(v => v + 1);
         }
     };
     
     return (
-        <div className="text-gray-800">
-            <div className="flex justify-between items-center mb-6">
+        <div className="bg-secondary text-white flex flex-col h-full p-4 sm:p-6 lg:p-8 overflow-hidden">
+            <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <h1 className="text-3xl font-bold">Manage Parts & Tools</h1>
                 <button onClick={() => handleOpenModal()} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">Add Part</button>
             </div>
-            <div className="bg-white p-6 rounded-lg shadow overflow-x-auto">
+            <div className="bg-dark-gray rounded-lg shadow flex-1 overflow-auto">
                 <table className="w-full text-left">
                     <thead>
-                        <tr className="border-b border-gray-200">
-                            <th className="p-3 font-bold text-gray-600">Name</th>
-                            <th className="p-3 font-bold text-gray-600">SKU</th>
-                            <th className="p-3 font-bold text-gray-600">Price</th>
-                            <th className="p-3 font-bold text-gray-600">Actions</th>
+                        <tr className="border-b border-secondary">
+                            <th className="p-4 font-bold text-light-gray sticky top-0 bg-dark-gray">Name</th>
+                            <th className="p-4 font-bold text-light-gray sticky top-0 bg-dark-gray">SKU</th>
+                            <th className="p-4 font-bold text-light-gray sticky top-0 bg-dark-gray">Price</th>
+                            <th className="p-4 font-bold text-light-gray sticky top-0 bg-dark-gray">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {mockParts.map((part, index) => (
-                             <tr key={part.id} className={`border-b border-gray-200 last:border-b-0 transition-colors duration-200 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`}>
-                                <td className="p-3">{part.name}</td>
-                                <td className="p-3">{part.sku}</td>
-                                <td className="p-3">${part.price.toFixed(2)}</td>
-                                <td className="p-3">
-                                    <button onClick={() => handleOpenModal(part)} className="font-semibold text-blue-500 hover:text-blue-700 mr-4">Edit</button>
-                                    <button onClick={() => handleDelete(part.id)} className="font-semibold text-red-500 hover:text-red-700">Delete</button>
+                        {db.parts.map((part, index) => (
+                             <tr key={part.id} className={`border-b border-secondary last:border-b-0 transition-colors duration-200 ${index % 2 !== 0 ? 'bg-field' : 'bg-dark-gray'} hover:bg-secondary`}>
+                                <td className="p-4 text-gray-200">{part.name}</td>
+                                <td className="p-4 text-gray-200">{part.sku}</td>
+                                <td className="p-4 text-gray-200">${part.price.toFixed(2)}</td>
+                                <td className="p-4">
+                                    <button onClick={() => handleOpenModal(part)} className="font-semibold text-blue-400 hover:text-blue-300 mr-4">Edit</button>
+                                    <button onClick={() => handleDelete(part.id)} className="font-semibold text-red-400 hover:text-red-300">Delete</button>
                                 </td>
                             </tr>
                         ))}

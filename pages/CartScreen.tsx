@@ -1,12 +1,15 @@
-
 import React from 'react';
 import Header from '../components/Header';
 import { useCart } from '../context/CartContext';
+import { useNavigate } from 'react-router-dom';
 
 const CartScreen: React.FC = () => {
     const { cartItems, removeFromCart, addToCart, clearCart } = useCart();
-
-    const total = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+    const navigate = useNavigate();
+    
+    const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+    const shippingFee = subtotal > 0 ? 150.00 : 0;
+    const total = subtotal + shippingFee;
 
     return (
         <div className="flex flex-col h-full bg-secondary">
@@ -19,18 +22,20 @@ const CartScreen: React.FC = () => {
                     </div>
                 ) : (
                     <div className="space-y-4">
+                        <button onClick={() => navigate('/order-history')} className="w-full text-sm text-primary text-right font-semibold hover:underline">View Order History</button>
                         {cartItems.map(item => (
                             <div key={item.id} className="flex items-center bg-dark-gray p-3 rounded-lg">
-                                <img src={item.imageUrl} alt={item.name} className="w-16 h-16 rounded-lg object-cover mr-4" />
+                                <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
                                 <div className="flex-grow">
-                                    <h4 className="font-bold">{item.name}</h4>
-                                    <p className="text-primary font-semibold">${item.price.toFixed(2)}</p>
+                                    <h4 className="font-bold text-white">{item.name}</h4>
+                                    <p className="text-primary font-semibold text-sm">₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                    <div className="flex items-center space-x-3 mt-2">
+                                        <button onClick={() => removeFromCart(item.id)} className="w-7 h-7 bg-field rounded-full font-bold text-lg">-</button>
+                                        <span className="font-bold w-4 text-center">{item.quantity}</span>
+                                        <button onClick={() => addToCart(item)} className="w-7 h-7 bg-field rounded-full font-bold text-lg">+</button>
+                                    </div>
                                 </div>
-                                <div className="flex items-center space-x-3">
-                                    <button onClick={() => removeFromCart(item.id)} className="w-6 h-6 bg-field rounded-full">-</button>
-                                    <span>{item.quantity}</span>
-                                    <button onClick={() => addToCart(item)} className="w-6 h-6 bg-field rounded-full">+</button>
-                                </div>
+                                <p className="font-bold text-lg text-white">₱{(item.price * item.quantity).toFixed(2)}</p>
                             </div>
                         ))}
                     </div>
@@ -38,14 +43,21 @@ const CartScreen: React.FC = () => {
             </div>
             {cartItems.length > 0 && (
                  <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray space-y-4">
-                    <div className="flex justify-between text-lg">
-                        <span className="text-light-gray">Total:</span>
-                        <span className="font-bold text-primary">${total.toFixed(2)}</span>
+                    <div className="space-y-2 text-sm">
+                        <div className="flex justify-between text-light-gray"><span>Subtotal</span><span>₱{subtotal.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-light-gray"><span>Shipping Fee</span><span>₱{shippingFee.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-lg font-bold border-t border-dark-gray pt-2 mt-2">
+                            <span className="text-white">Grand Total:</span>
+                            <span className="text-primary">₱{total.toFixed(2)}</span>
+                        </div>
                     </div>
-                     <button onClick={() => alert('Proceeding to checkout!')} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                     <button 
+                        onClick={() => navigate('/payment', { state: { total } })} 
+                        className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition"
+                    >
                          Proceed to Checkout
                      </button>
-                     <button onClick={clearCart} className="w-full text-center text-sm text-light-gray">Clear Cart</button>
+                     <button onClick={clearCart} className="w-full text-center text-sm text-light-gray hover:text-red-400">Clear Cart</button>
                  </div>
             )}
         </div>

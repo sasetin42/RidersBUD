@@ -9,6 +9,14 @@ interface AdminAuthContextType {
 
 const AdminAuthContext = createContext<AdminAuthContextType | undefined>(undefined);
 
+export const useAdminAuth = () => {
+    const context = useContext(AdminAuthContext);
+    if (context === undefined) {
+        throw new Error('useAdminAuth must be used within an AdminAuthProvider');
+    }
+    return context;
+};
+
 export const AdminAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
 
@@ -25,12 +33,4 @@ export const AdminAuthProvider: React.FC<{ children: ReactNode }> = ({ children 
             {children}
         </AdminAuthContext.Provider>
     );
-};
-
-export const useAdminAuth = () => {
-    const context = useContext(AdminAuthContext);
-    if (context === undefined) {
-        throw new Error('useAdminAuth must be used within an AdminAuthProvider');
-    }
-    return context;
 };

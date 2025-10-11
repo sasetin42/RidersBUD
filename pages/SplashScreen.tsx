@@ -1,9 +1,13 @@
 import React from 'react';
-import { getSettings } from '../data/mockData';
+import { useDatabase } from '../context/DatabaseContext';
 
 const SplashScreen: React.FC = () => {
-    const settings = getSettings();
-    const logoUrl = settings.splashLogoUrl || "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
+    const { db } = useDatabase();
+    
+    // Use a default logo while the database is loading or if it's not set
+    const defaultLogo = "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
+    const logoUrl = db?.settings.appLogoUrl || defaultLogo;
+    const tagline = db?.settings.appTagline || "Trusted Car Care Wherever You Are";
 
     return (
         <div className="flex flex-col items-center justify-center h-screen w-screen bg-secondary">
@@ -13,7 +17,7 @@ const SplashScreen: React.FC = () => {
                 className="w-64 animate-pulse"
                 style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.6))' }}
             />
-            <p className="text-light-gray mt-4">Your trusted partner on the road.</p>
+            <p className="text-light-gray mt-4">{tagline}</p>
         </div>
     );
 };

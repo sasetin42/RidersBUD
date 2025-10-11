@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { Warranty } from '../types';
@@ -11,42 +10,60 @@ const AddWarrantyModal: React.FC<{
     const [itemName, setItemName] = useState('');
     const [purchaseDate, setPurchaseDate] = useState('');
     const [expiryDate, setExpiryDate] = useState('');
+    const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+    const validate = () => {
+        const newErrors: { [key: string]: string } = {};
+        if (!itemName.trim()) newErrors.itemName = "Item name is required.";
+        if (!purchaseDate) newErrors.purchaseDate = "Purchase date is required.";
+        if (!expiryDate) {
+            newErrors.expiryDate = "Expiry date is required.";
+        } else if (purchaseDate && expiryDate < purchaseDate) {
+            newErrors.expiryDate = "Expiry date cannot be before the purchase date.";
+        }
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
 
     const handleSave = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!itemName || !purchaseDate || !expiryDate) {
-            alert('Please fill in all fields.');
-            return;
+        if (validate()) {
+            onSave({ itemName, purchaseDate, expiryDate });
+            onClose();
         }
-        onSave({ itemName, purchaseDate, expiryDate });
-        onClose();
     };
+    
+    const isSaveDisabled = !itemName || !purchaseDate || !expiryDate || Object.keys(errors).length > 0;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="add-warranty-title">
-            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="add-warranty-title">
+            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp">
                 <h2 id="add-warranty-title" className="text-xl font-bold mb-4">Add New Warranty</h2>
-                <form onSubmit={handleSave}>
+                <form onSubmit={handleSave} noValidate>
                     <div className="space-y-4">
-                        <input
-                            type="text"
-                            placeholder="Part or Service Name"
-                            value={itemName}
-                            onChange={(e) => setItemName(e.target.value)}
-                            className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary"
-                            required
-                            aria-label="Item Name"
-                        />
+                        <div>
+                            <input
+                                type="text"
+                                placeholder="Part or Service Name"
+                                value={itemName}
+                                onChange={(e) => setItemName(e.target.value)}
+                                className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.itemName ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`}
+                                required
+                                aria-label="Item Name"
+                            />
+                            {errors.itemName && <p className="text-red-400 text-xs mt-1">{errors.itemName}</p>}
+                        </div>
                         <div>
                             <label className="text-sm text-light-gray mb-1 block">Purchase Date</label>
                             <input
                                 type="date"
                                 value={purchaseDate}
                                 onChange={(e) => setPurchaseDate(e.target.value)}
-                                className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                className={`w-full px-4 py-3 bg-field border rounded-lg text-white focus:outline-none focus:ring-2 ${errors.purchaseDate ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`}
                                 required
                                 aria-label="Purchase Date"
                             />
+                             {errors.purchaseDate && <p className="text-red-400 text-xs mt-1">{errors.purchaseDate}</p>}
                         </div>
                         <div>
                             <label className="text-sm text-light-gray mb-1 block">Expiry Date</label>
@@ -54,17 +71,18 @@ const AddWarrantyModal: React.FC<{
                                 type="date"
                                 value={expiryDate}
                                 onChange={(e) => setExpiryDate(e.target.value)}
-                                className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                                className={`w-full px-4 py-3 bg-field border rounded-lg text-white focus:outline-none focus:ring-2 ${errors.expiryDate ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`}
                                 required
                                 aria-label="Expiry Date"
                             />
+                             {errors.expiryDate && <p className="text-red-400 text-xs mt-1">{errors.expiryDate}</p>}
                         </div>
                     </div>
                     <div className="mt-6 flex gap-4">
                         <button type="button" onClick={onClose} className="w-1/2 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">
                             Cancel
                         </button>
-                        <button type="submit" className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                        <button type="submit" disabled={isSaveDisabled} className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
                             Save Warranty
                         </button>
                     </div>
@@ -148,9 +166,32 @@ const WarrantyScreen: React.FC = () => {
                 ) : (
                     <div className="space-y-4">
                         {sortedWarranties.map(warranty => {
-                            const isExpired = new Date(warranty.expiryDate) < new Date();
+                            const expiryDate = new Date(warranty.expiryDate.replace(/-/g, '/'));
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const thirtyDaysFromNow = new Date();
+                            thirtyDaysFromNow.setDate(today.getDate() + 30);
+
+                            let status: 'expired' | 'expiring' | 'active' = 'active';
+                            let statusColor = 'text-green-400';
+                            let statusText = '';
+                            let statusIcon = null;
+
+                            if (expiryDate < today) {
+                                status = 'expired';
+                                statusColor = 'text-red-400';
+                                statusText = '(Expired)';
+                                statusIcon = <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>;
+                            } else if (expiryDate <= thirtyDaysFromNow) {
+                                status = 'expiring';
+                                statusColor = 'text-yellow-400';
+                                const daysLeft = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                statusText = `(Expires in ${daysLeft} day${daysLeft > 1 ? 's' : ''})`;
+                                statusIcon = <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>;
+                            }
+
                             return (
-                                <div key={warranty.id} className="bg-dark-gray p-4 rounded-lg relative" role="listitem">
+                                <div key={warranty.id} className={`bg-dark-gray p-4 rounded-lg relative border-l-4 ${status === 'expired' ? 'border-red-500' : status === 'expiring' ? 'border-yellow-500' : 'border-green-500'}`} role="listitem">
                                     <button onClick={() => handleDeleteWarranty(warranty.id)} className="absolute top-2 right-2 text-light-gray hover:text-red-500 transition-colors" aria-label={`Delete warranty for ${warranty.itemName}`}>
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -158,8 +199,9 @@ const WarrantyScreen: React.FC = () => {
                                     </button>
                                     <h3 className="text-lg font-bold text-primary pr-6">{warranty.itemName}</h3>
                                     <p className="text-sm text-light-gray mt-1">Purchased: {formatDate(warranty.purchaseDate)}</p>
-                                    <p className={`text-sm font-medium mt-1 ${isExpired ? 'text-red-400' : 'text-green-400'}`}>
-                                        Expires: {formatDate(warranty.expiryDate)} {isExpired && "(Expired)"}
+                                    <p className={`text-sm font-medium mt-1 flex items-center ${statusColor}`}>
+                                        {statusIcon}
+                                        <span>Expires: {formatDate(warranty.expiryDate)} {statusText}</span>
                                     </p>
                                 </div>
                             );

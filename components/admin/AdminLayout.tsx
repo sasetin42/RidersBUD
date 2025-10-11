@@ -5,7 +5,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
     return (
-        <div className="relative flex h-screen bg-gray-100 font-sans">
+        <div className="relative flex h-screen bg-dark-gray font-sans overflow-hidden">
             <AdminSidebar isCollapsed={isSidebarCollapsed} />
 
             {/* Sidebar Toggle Button */}
@@ -17,14 +17,13 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
                 <svg className={`w-5 h-5 transition-transform duration-300 ${isSidebarCollapsed ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11l-4-4m0 8l4-4"></path>
                 </svg>
             </button>
             
-            <main className={`flex-1 overflow-y-auto transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
-                <div className="p-4 sm:p-6 lg:p-8">
-                    {children}
-                </div>
+            <main className={`flex-1 flex flex-col transition-all duration-300 ease-in-out overflow-hidden ${isSidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
+                {/* Page components are now direct children and will control their own layout and scrolling */}
+                {children}
             </main>
         </div>
     );

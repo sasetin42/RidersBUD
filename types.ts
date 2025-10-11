@@ -1,19 +1,15 @@
-// FIX: Removed an incorrect import that was causing a circular dependency error.
-// The types 'Mechanic' and 'Service' are defined and exported from this file.
 
 export interface Vehicle {
     make: string;
     model: string;
     year: number;
     plateNumber: string;
-}
-
-export interface User {
-    id: string;
-    name: string;
-    email: string;
-    phone: string;
-    vehicles: Vehicle[];
+    imageUrl?: string;
+    isPrimary?: boolean;
+    vin?: string;
+    mileage?: number;
+    insuranceProvider?: string;
+    insurancePolicyNumber?: string;
 }
 
 // Base interface for any sellable item
@@ -28,22 +24,68 @@ export interface Product {
 
 export interface Service extends Product {
     estimatedTime: string; // e.g., "45 mins"
+    icon: string; // SVG path data
 }
 
 export interface Part extends Product {
     sku: string; // Stock Keeping Unit
+    stock: number; // Number of items in stock
+}
+
+export interface Review {
+    id: string;
+    customerName: string;
+    rating: number; // 1-5 stars
+    comment: string;
+    date: string; // ISO string
+}
+
+export interface Availability {
+    isAvailable: boolean;
+    startTime: string; // e.g., "09:00"
+    endTime: string;   // e.g., "17:00"
+}
+
+export interface PayoutDetails {
+    method: 'Bank Transfer' | 'E-Wallet';
+    accountName: string;
+    accountNumber: string;
+    bankName?: string;
+    walletName?: string;
 }
 
 export interface Mechanic {
     id: string;
     name: string;
+    email: string;
+    password: string;
+    phone: string;
+    bio: string;
     rating: number;
     reviews: number;
-    certifications: string[];
+    specializations: string[];
+    basePrice?: number;
+    portfolioImages?: string[];
+    status: 'Pending' | 'Active' | 'Inactive';
     imageUrl: string;
     lat: number;
     lng: number;
     isAvailable?: boolean;
+    registrationDate?: string; // YYYY-MM-DD
+    birthday?: string; // YYYY-MM-DD
+    payoutDetails?: PayoutDetails;
+    reviewsList?: Review[];
+    availability?: {
+        monday: Availability;
+        tuesday: Availability;
+        wednesday: Availability;
+        thursday: Availability;
+        friday: Availability;
+        saturday: Availability;
+        sunday: Availability;
+    };
+    unavailableDates?: Array<{ startDate: string; endDate: string; reason?: string }>; // YYYY-MM-DD format
+    blockedSlots?: Array<{ date: string; time: string; }>;
 }
 
 export interface CartItem extends Product {
@@ -58,7 +100,7 @@ export interface Reminder {
   notes?: string;
 }
 
-export type BookingStatus = 'Upcoming' | 'Completed' | 'Cancelled';
+export type BookingStatus = 'Upcoming' | 'Completed' | 'Cancelled' | 'En Route' | 'In Progress';
 
 export interface Booking {
     id: string;
@@ -68,6 +110,11 @@ export interface Booking {
     date: string; // YYYY-MM-DD
     time: string; // e.g., "09:00 AM"
     status: BookingStatus;
+    statusHistory?: Array<{ status: string; timestamp: string }>;
+    vehicle: Vehicle;
+    cancellationReason?: string;
+    isReviewed?: boolean;
+    notes?: string;
 }
 
 export interface Warranty {
@@ -82,7 +129,32 @@ export interface Customer {
     id: string;
     name: string;
     email: string;
+    password: string;
     phone: string;
+    vehicles: Vehicle[];
+    picture?: string;
+    lat?: number;
+    lng?: number;
+}
+
+export interface Order {
+  id: string;
+  customerName: string;
+  items: CartItem[];
+  total: number;
+  paymentMethod: string;
+  date: string; // ISO string
+}
+
+export interface Banner {
+    id: string;
+    name: string;
+    description: string;
+    imageUrl: string;
+    link: string;
+    category: 'Services' | 'Booking' | 'Reminders' | 'Store';
+    startDate: string; // YYYY-MM-DD
+    endDate: string;   // YYYY-MM-DD
 }
 
 export interface Settings {
@@ -96,11 +168,23 @@ export interface Settings {
     maxBookingsPerSlot: number;
     emailOnNewBooking: boolean;
     emailOnCancellation: boolean;
-    splashLogoUrl?: string;
-    authLogoUrl?: string;
-    sidebarLogoUrl?: string;
-    loginTitle?: string;
-    loginSubtitle?: string;
-    signupTitle?: string;
-    signupSubtitle?: string;
+    appLogoUrl?: string;
+    appTagline?: string;
+    virtualMechanicName?: string;
+    virtualMechanicImageUrl?: string;
+    mechanicMarkerUrl?: string;
+    adminPanelTitle?: string;
+    adminSidebarLogoUrl?: string;
+    serviceCategories: string[];
+    partCategories: string[];
+}
+
+export interface FAQItem {
+    question: string;
+    answer: string;
+}
+
+export interface FAQCategory {
+    category: string;
+    items: FAQItem[];
 }
