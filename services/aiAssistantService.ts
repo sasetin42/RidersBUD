@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, Chat } from "@google/genai";
 import { Service, Part, Mechanic, Settings } from '../types';
 

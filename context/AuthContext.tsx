@@ -6,15 +6,17 @@ interface AuthContextType {
     isAuthenticated: boolean;
     user: Customer | null;
     loading: boolean;
-    loginWithCredentials: (email: string, pass: string) => Promise<void>;
+    loginWithCredentials: (email: string, pass:string) => Promise<void>;
     registerWithCredentials: (name: string, email: string, phone: string, password: string) => Promise<void>;
     loginWithGoogle: () => Promise<void>;
+    loginWithFacebook: () => Promise<void>;
     logout: () => void;
     addUserVehicle: (vehicle: Vehicle) => void;
     deleteUserVehicle: (plateNumber: string) => void;
     updateUserProfile: (updatedData: { name: string; email: string; phone: string }) => Promise<void>;
     updateUserVehicle: (vehicle: Vehicle) => void;
     setPrimaryVehicle: (plateNumber: string) => void;
+    updateUserLocation: (lat: number, lng: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -117,6 +119,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
         }
     };
+    
+    const loginWithFacebook = async () => {
+        if (!db) throw new Error("Database not ready");
+
+        // --- SIMULATED FACEBOOK AUTH RESPONSE ---
+        const facebookProfile = {
+            name: 'Drew Barrymore',
+            email: 'drew.barrymore@facebooksim.com',
+            picture: 'https://picsum.photos/seed/drew/200/200'
+        };
+        // --- END SIMULATION ---
+        
+        let customer = db.customers.find(c => c.email === facebookProfile.email);
+
+        if (customer) {
+            loginUser(customer);
+        } else {
+            const newCustomer = await addCustomer({
+                name: facebookProfile.name,
+                email: facebookProfile.email,
+                password: 'password', 
+                phone: '555-111-1111', 
+                vehicles: [],
+                picture: facebookProfile.picture,
+            });
+            if (newCustomer) {
+                loginUser(newCustomer);
+            } else {
+                throw new Error("Failed to create Facebook account.");
+            }
+        }
+    };
 
     const logout = () => {
         setIsAuthenticated(false);
@@ -197,6 +231,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(updatedUser);
     };
 
+    const updateUserLocation = async (lat: number, lng: number) => {
+        if (!user) return;
+        const updatedUser: Customer = {
+            ...user,
+            lat,
+            lng,
+        };
+        await updateCustomer(updatedUser);
+        setUser(updatedUser);
+    };
+
     const isLoadingAuth = loading || dbLoading;
 
     return (
@@ -207,12 +252,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             loginWithCredentials,
             registerWithCredentials,
             loginWithGoogle,
+            loginWithFacebook,
             logout, 
             addUserVehicle,
             deleteUserVehicle,
             updateUserProfile,
             updateUserVehicle,
             setPrimaryVehicle,
+            updateUserLocation,
         }}>
             {children}
         </AuthContext.Provider>

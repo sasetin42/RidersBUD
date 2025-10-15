@@ -15,19 +15,19 @@ const StatCard: React.FC<{ title: string; value: string | number; change?: strin
 const BarChart: React.FC<{ title: string; data: { label: string; value: number }[] }> = ({ title, data }) => {
     const maxValue = Math.max(...data.map(d => d.value), 1);
     return (
-        <div className="bg-secondary p-6 rounded-lg shadow">
+        <div className="bg-secondary p-6 rounded-lg shadow h-full">
             <h3 className="text-lg font-bold text-white mb-4">{title}</h3>
             <div className="space-y-4">
                 {data.map(({ label, value }) => (
-                    <div key={label} className="flex items-center">
-                        <div className="w-24 text-xs text-light-gray truncate">{label}</div>
-                        <div className="flex-1 bg-field rounded-full h-4 mr-2">
+                    <div key={label} className="grid grid-cols-[80px_1fr_40px] items-center gap-4">
+                        <div className="text-xs text-light-gray truncate text-right">{label}</div>
+                        <div className="flex-1 bg-field rounded-full h-4">
                             <div
-                                className="bg-primary h-4 rounded-full"
+                                className="bg-primary h-4 rounded-full transition-all duration-500 ease-out"
                                 style={{ width: `${(value / maxValue) * 100}%` }}
                             />
                         </div>
-                        <div className="w-8 text-sm font-semibold text-white text-right">{value}</div>
+                        <div className="text-sm font-semibold text-white text-right">{value}</div>
                     </div>
                 ))}
             </div>
@@ -40,11 +40,12 @@ const TopList: React.FC<{ title: string; items: { name: string; value: string | 
         <h3 className="text-lg font-bold text-white mb-4">{title}</h3>
         <ul className="space-y-3">
             {items.map((item, index) => (
-                <li key={index} className="flex justify-between items-center text-sm">
+                <li key={index} className="flex justify-between items-center text-sm border-b border-field pb-2 last:border-b-0">
                     <span className="text-light-gray">{index + 1}. {item.name}</span>
                     <span className="font-bold text-white">{item.value}</span>
                 </li>
             ))}
+             {items.length === 0 && <p className="text-xs text-center text-light-gray">Not enough data.</p>}
         </ul>
     </div>
 )
@@ -65,21 +66,18 @@ const AdminAnalyticsScreen: React.FC = () => {
         const totalRevenue = totalBookingRevenue + totalOrderRevenue;
 
         const bookingsByMonth = bookings.reduce((acc, booking) => {
-            const date = new Date(booking.date);
-            // Use YYYY-MM as a reliable key for grouping and sorting by month.
+            const date = new Date(booking.date.replace(/-/g, '/'));
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             acc[monthKey] = (acc[monthKey] || 0) + 1;
             return acc;
         }, {} as Record<string, number>);
         
         const chartData = (Object.entries(bookingsByMonth) as [string, number][])
-            // Parse the reliable monthKey and create a user-friendly label.
             .map(([monthKey, value]) => {
-                const date = new Date(`${monthKey}-02`); // Use day 2 to avoid timezone issues
+                const date = new Date(`${monthKey}-02`);
                 const label = date.toLocaleString('default', { month: 'short', year: 'numeric' });
                 return { label, value, date };
             })
-            // This sort will now work correctly without runtime errors or potential type errors.
             .sort((a,b) => a.date.getTime() - b.date.getTime())
             .map(({ label, value }) => ({ label, value }))
             .slice(-6);
@@ -146,13 +144,11 @@ const AdminAnalyticsScreen: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 flex-grow">
-                <div className="lg:col-span-1">
-                     <BarChart title="Bookings per Month (Last 6)" data={analyticsData.bookingsByMonth} />
+                <div className="lg:col-span-2">
+                    <BarChart title="Bookings per Month (Last 6)" data={analyticsData.bookingsByMonth} />
                 </div>
-                <div className="lg:col-span-1">
+                <div className="space-y-6">
                     <TopList title="Top Performing Mechanics" items={analyticsData.topMechanics} />
-                </div>
-                <div className="lg:col-span-1">
                     <TopList title="Most Popular Services" items={analyticsData.popularServices} />
                 </div>
             </div>

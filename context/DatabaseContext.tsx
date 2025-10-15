@@ -33,6 +33,7 @@ interface DatabaseContextType {
     updateBookingStatus: (bookingId: string, status: BookingStatus) => Promise<void>;
     cancelBooking: (bookingId: string, reason: string) => Promise<void>;
     acceptJobRequest: (bookingId: string, mechanic: Mechanic) => Promise<void>;
+    updateBookingNotes: (bookingId: string, notes: string) => Promise<void>;
     addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
     updateCustomer: (updatedCustomer: Customer) => Promise<void>;
     deleteCustomer: (customerId: string) => Promise<void>;
@@ -165,6 +166,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return { ...prevDb, bookings: newBookings };
         });
     };
+    const updateBookingNotes = async (bookingId: string, notes: string) => {
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            return {
+                ...prevDb,
+                bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, notes } : b)
+            };
+        });
+    };
 
     // --- Customer Operations ---
     const addCustomer = async (customer: Omit<Customer, 'id'>): Promise<Customer | null> => {
@@ -261,7 +271,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const value = {
         db, loading, addService, updateService, deleteService, addPart, updatePart, deletePart, addMechanic, updateMechanic, deleteMechanic,
-        updateMechanicStatus, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
+        updateMechanicStatus, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
         addOrder, updateSettings, addReviewToMechanic, addBanner, deleteBanner
     };
 

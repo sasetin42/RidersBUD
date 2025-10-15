@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
@@ -57,50 +55,54 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
 
     const isWishlisted = isInWishlist(part.id);
 
-    const handleAddToCart = () => {
+    const handleAddToCart = (e: React.MouseEvent) => {
+        e.stopPropagation();
         addToCart(part);
         setIsAdded(true);
         setTimeout(() => setIsAdded(false), 2000);
     };
 
-    const handleToggleWishlist = () => {
+    const handleToggleWishlist = (e: React.MouseEvent) => {
+        e.stopPropagation();
         if (isWishlisted) removeFromWishlist(part.id);
         else addToWishlist(part);
     };
 
     return (
-        <div className="bg-dark-gray rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-2xl hover:shadow-primary/20 hover:-translate-y-1">
+        <div className="bg-dark-gray rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1">
             <div className="relative">
-                <img src={part.imageUrl} alt={part.name} className="w-full h-40 object-cover" />
+                <img src={part.imageUrl} alt={part.name} className="w-full h-28 object-cover" />
                 {part.stock === 0 && (
                     <div className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">OUT OF STOCK</div>
                 )}
-                <div className="absolute top-2 right-2 flex flex-col gap-2">
-                    <button onClick={handleToggleWishlist} className="bg-black/40 backdrop-blur-sm rounded-full p-2 z-10 transition-transform duration-200 hover:scale-110" aria-label="Toggle Wishlist">
-                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
-                    </button>
-                    <button onClick={() => onToggleCompare(part)} className={`bg-black/40 backdrop-blur-sm rounded-full p-2 z-10 transition-all duration-200 hover:scale-110 ${isComparing ? 'bg-primary/80 text-white' : 'text-white'}`} aria-label="Compare">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
+                 <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <button onClick={(e) => { e.stopPropagation(); onToggleCompare(part); }} className={`bg-black/40 backdrop-blur-sm rounded-full p-2 z-10 transition-all duration-200 hover:scale-110 ${isComparing ? 'bg-primary/80 text-white' : 'text-white'}`} aria-label="Compare">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
                     </button>
                 </div>
             </div>
-            <div className="p-4 flex-grow flex flex-col">
-                <h3 className="text-base font-bold text-white">{part.name}</h3>
-                <p className="text-xs text-light-gray mt-1 flex-grow">{part.description.substring(0, 50)}...</p>
-                <div className="mt-4 flex flex-col gap-2">
-                    <span className="text-primary font-bold text-xl self-end">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    <button
-                        onClick={handleAddToCart}
-                        className={`w-full text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors duration-300 ${
-                            isAdded
-                                ? 'bg-green-600'
-                                : 'bg-primary hover:bg-orange-600 disabled:bg-gray-500 disabled:cursor-not-allowed'
-                        }`}
-                        aria-label={`Add ${part.name} to cart`}
-                        disabled={isAdded || part.stock === 0}
-                    >
-                        {isAdded ? 'Added ✓' : (part.stock > 0 ? 'Add to Cart' : 'Out of Stock')}
-                    </button>
+            <div className="p-3 flex-grow flex flex-col">
+                <h3 className="text-[12px] font-medium text-white leading-tight flex-grow">{part.name}</h3>
+                
+                <div className="mt-2 pt-2 border-t border-field">
+                    <p className="text-primary font-semibold text-base">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                        <button
+                            onClick={handleAddToCart}
+                            className={`w-full text-white font-medium py-1.5 px-3 rounded-md text-xs transition-colors duration-300 ${
+                                isAdded
+                                    ? 'bg-green-600'
+                                    : 'bg-primary hover:bg-orange-600 disabled:bg-gray-500 disabled:cursor-not-allowed'
+                            }`}
+                            aria-label={`Add ${part.name} to cart`}
+                            disabled={isAdded || part.stock === 0}
+                        >
+                            {isAdded ? 'Added ✓' : (part.stock > 0 ? 'Add to Cart' : 'Out of Stock')}
+                        </button>
+                        <button onClick={handleToggleWishlist} className="flex-shrink-0 bg-field rounded-md p-2 transition-transform duration-200 hover:scale-110" aria-label="Toggle Wishlist">
+                             <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -163,7 +165,11 @@ const PartsStoreScreen: React.FC = () => {
         
         const lowercasedQuery = searchQuery.toLowerCase();
         if (searchQuery) {
-            filteredParts = filteredParts.filter(p => p.name.toLowerCase().includes(lowercasedQuery) || p.description.toLowerCase().includes(lowercasedQuery) || p.sku.toLowerCase().includes(lowercasedQuery));
+            filteredParts = filteredParts.filter(p => 
+                p.name.toLowerCase().includes(lowercasedQuery) || 
+                p.sku.toLowerCase().includes(lowercasedQuery) ||
+                p.category.toLowerCase().includes(lowercasedQuery)
+            );
         }
         if (filterCategory !== 'all') {
             filteredParts = filteredParts.filter(p => p.category === filterCategory);
@@ -201,7 +207,7 @@ const PartsStoreScreen: React.FC = () => {
             <div className="p-4 border-b border-dark-gray space-y-4">
                  <div className="relative">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></span>
-                    <input type="text" placeholder="Search parts by name, SKU, etc..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <input type="text" placeholder="Search by name, SKU, or category..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary" />
                 </div>
                  <div className="grid grid-cols-2 gap-4">
                     <div><label htmlFor="category-filter" className="block text-sm font-medium text-light-gray mb-1">Category</label><select id="category-filter" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary h-[42px]">{partCategories.map(c => <option key={c} value={c} className="capitalize">{c === 'all' ? 'All Categories' : c}</option>)}</select></div>

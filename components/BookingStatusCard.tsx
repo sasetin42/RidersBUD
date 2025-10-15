@@ -1,9 +1,9 @@
-
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Booking, BookingStatus } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
+import { useAuth } from '../context/AuthContext';
+import CustomerMechanicChatModal from './customer/CustomerMechanicChatModal';
 
 const StatusStep: React.FC<{ icon: React.ReactNode; title: string; subtitle: string; isCompleted: boolean; isLast?: boolean; }> = ({ icon, title, subtitle, isCompleted, isLast = false }) => (
     <div className="flex items-start">
@@ -62,6 +62,8 @@ const CancellationModal: React.FC<{
 
 const statusColors: { [key in BookingStatus]: string } = {
     Upcoming: 'bg-blue-500/20 text-blue-300',
+    'Booking Confirmed': 'bg-cyan-500/20 text-cyan-300',
+    'Mechanic Assigned': 'bg-sky-500/20 text-sky-300',
     'En Route': 'bg-yellow-500/20 text-yellow-300',
     'In Progress': 'bg-purple-500/20 text-purple-300',
     Completed: 'bg-green-500/20 text-green-300',
@@ -71,7 +73,9 @@ const statusColors: { [key in BookingStatus]: string } = {
 
 const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean }> = ({ booking, showHeader = true }) => {
     const { cancelBooking } = useDatabase();
+    const { user: customer } = useAuth();
     const [isCancelling, setIsCancelling] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(false);
     const navigate = useNavigate();
 
     const formatTimestamp = (isoString: string) => {
@@ -82,7 +86,7 @@ const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean }> = 
 
     const confirmedStep = booking.statusHistory?.find(s => s.status === 'Booking Confirmed');
     const assignedStep = booking.statusHistory?.find(s => s.status === 'Mechanic Assigned');
-    const isEnRoute = booking.status === 'En Route';
+    const isEnRoute = booking.status === 'En Route' || booking.status === 'In Progress' || booking.status === 'Completed';
 
     const handleConfirmCancellation = (reason: string) => {
         cancelBooking(booking.id, reason);
@@ -150,7 +154,7 @@ const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean }> = 
                                 <p className="text-sm text-yellow-400">⭐ {booking.mechanic.rating} ({booking.mechanic.reviews} jobs)</p>
                             </div>
                         </div>
-                        <button className="w-full bg-secondary text-white font-bold py-2 mt-4 rounded-lg hover:bg-gray-600 transition text-sm">
+                        <button onClick={() => setIsChatOpen(true)} className="w-full bg-secondary text-white font-bold py-2 mt-4 rounded-lg hover:bg-gray-600 transition text-sm">
                             Chat with {booking.mechanic.name.split(' ')[0]}
                         </button>
                     </div>
@@ -195,6 +199,14 @@ const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean }> = 
                     booking={booking} 
                     onClose={() => setIsCancelling(false)} 
                     onConfirm={handleConfirmCancellation}
+                />
+            )}
+             {isChatOpen && booking.mechanic && customer && (
+                <CustomerMechanicChatModal
+                    booking={booking}
+                    customer={customer}
+                    mechanic={booking.mechanic}
+                    onClose={() => setIsChatOpen(false)}
                 />
             )}
         </div>

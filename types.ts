@@ -1,4 +1,5 @@
 
+
 export interface Vehicle {
     make: string;
     model: string;
@@ -86,6 +87,9 @@ export interface Mechanic {
     };
     unavailableDates?: Array<{ startDate: string; endDate: string; reason?: string }>; // YYYY-MM-DD format
     blockedSlots?: Array<{ date: string; time: string; }>;
+    businessLicenseUrl?: string; // Base64 or URL
+    certifications?: Array<{ name: string; fileUrl: string; }>; // fileUrl can be base64
+    insurances?: Array<{ type: string; provider: string; policyNumber: string; }>;
 }
 
 export interface CartItem extends Product {
@@ -100,7 +104,7 @@ export interface Reminder {
   notes?: string;
 }
 
-export type BookingStatus = 'Upcoming' | 'Completed' | 'Cancelled' | 'En Route' | 'In Progress';
+export type BookingStatus = 'Upcoming' | 'Completed' | 'Cancelled' | 'En Route' | 'In Progress' | 'Booking Confirmed' | 'Mechanic Assigned';
 
 export interface Booking {
     id: string;
@@ -110,7 +114,7 @@ export interface Booking {
     date: string; // YYYY-MM-DD
     time: string; // e.g., "09:00 AM"
     status: BookingStatus;
-    statusHistory?: Array<{ status: string; timestamp: string }>;
+    statusHistory?: Array<{ status: BookingStatus; timestamp: string }>;
     vehicle: Vehicle;
     cancellationReason?: string;
     isReviewed?: boolean;
@@ -187,4 +191,10 @@ export interface FAQItem {
 export interface FAQCategory {
     category: string;
     items: FAQItem[];
+}
+
+export interface MechanicNotificationSettings {
+    newJobAlerts: boolean;
+    jobStatusChanges: boolean;
+    paymentConfirmations: boolean;
 }

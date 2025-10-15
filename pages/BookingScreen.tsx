@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Spinner from '../components/Spinner';
@@ -10,13 +9,22 @@ import { getNotificationSettings, showNotification } from '../utils/notification
 const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, onSelect: () => void }> = ({ service, isSelected, onSelect }) => (
     <div
         onClick={onSelect}
-        className={`bg-dark-gray p-4 rounded-lg flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 border-2 ${isSelected ? 'border-primary' : 'border-transparent hover:border-primary/50'}`}
+        className={`bg-dark-gray p-4 rounded-lg flex items-center gap-4 cursor-pointer transition-all duration-200 border-2 ${isSelected ? 'border-primary' : 'border-transparent hover:border-primary/50'}`}
     >
-        <div className="text-primary" dangerouslySetInnerHTML={{ __html: service.icon }} />
-        <p className="font-semibold mt-2 text-sm text-white">{service.name}</p>
-        <p className="text-xs text-light-gray mt-1">
-            {service.price > 0 ? `from ₱${service.price.toLocaleString()}`: 'Request Quote'}
-        </p>
+        <div className="text-primary flex-shrink-0" dangerouslySetInnerHTML={{ __html: service.icon }} />
+        <div className="flex-grow text-left">
+            <p className="font-semibold text-white">{service.name}</p>
+            <p className="text-xs text-light-gray mt-1">
+                {service.price > 0 ? `from ₱${service.price.toLocaleString()}` : 'Request Quote'}
+            </p>
+        </div>
+        {isSelected && (
+            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-white flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+            </div>
+        )}
     </div>
 );
 
@@ -146,15 +154,36 @@ const getInitialState = (serviceIdFromUrl?: string) => {
     return null;
 };
 
+// Haversine distance formula to calculate distance between two lat/lng points
+const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Radius of the Earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+};
 
 const BookingScreen: React.FC = () => {
     const { serviceId: initialServiceId } = useParams<{ serviceId: string }>();
     const { db, addBooking } = useDatabase();
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, updateUserLocation } = useAuth();
     const location = useLocation();
 
     const rebookingState = location.state as { vehiclePlateNumber?: string; } | undefined;
+
+    // Location Permission State
+    const [locationState, setLocationState] = useState({
+        modalOpen: false,
+        status: 'prompting' as 'prompting' | 'requesting' | 'error',
+        errorMessage: '',
+    });
 
     // Use a lazy initializer to read from sessionStorage only on the first render
     const [step, setStep] = useState(() => getInitialState(initialServiceId)?.step || 1);
@@ -175,13 +204,24 @@ const BookingScreen: React.FC = () => {
     const [mechanicSearch, setMechanicSearch] = useState(() => getInitialState(initialServiceId)?.mechanicSearch || '');
     const [specializationFilter, setSpecializationFilter] = useState(() => getInitialState(initialServiceId)?.specializationFilter || 'all');
     const [ratingFilter, setRatingFilter] = useState(() => getInitialState(initialServiceId)?.ratingFilter || 0);
-    const [availableNowFilter, setAvailableNowFilter] = useState(false);
+    const [availableNowFilter, setAvailableNowFilter] = useState(() => getInitialState(initialServiceId)?.availableNowFilter || false);
+    const [isNearbyFilter, setIsNearbyFilter] = useState(() => getInitialState(initialServiceId)?.isNearbyFilter || false);
+    const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(() => getInitialState(initialServiceId)?.userLocation || null);
+    const [locationError, setLocationError] = useState<string | null>(null);
+    const [isFetchingLocation, setIsFetchingLocation] = useState(false);
     const [selectedTime, setSelectedTime] = useState('');
     const [selectedMechanic, setSelectedMechanic] = useState<Mechanic | null>(null);
 
     // Step 4 State
     const [notes, setNotes] = useState('');
     const [isBooking, setIsBooking] = useState(false);
+
+    // Effect to check for location on mount
+    useEffect(() => {
+        if (user && (!user.lat || !user.lng)) {
+            setLocationState({ modalOpen: true, status: 'prompting', errorMessage: '' });
+        }
+    }, [user]);
 
     // Effect to set initial vehicle if one isn't already selected from session/rebooking state
     useEffect(() => {
@@ -202,10 +242,47 @@ const BookingScreen: React.FC = () => {
             mechanicSearch,
             specializationFilter,
             ratingFilter,
+            availableNowFilter,
+            isNearbyFilter,
+            userLocation,
         };
         sessionStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-    }, [step, selectedServiceId, selectedVehiclePlate, selectedDate, mechanicSearch, specializationFilter, ratingFilter]);
+    }, [step, selectedServiceId, selectedVehiclePlate, selectedDate, mechanicSearch, specializationFilter, ratingFilter, availableNowFilter, isNearbyFilter, userLocation]);
 
+    const handleRequestLocation = () => {
+        if (!navigator.geolocation) {
+            setLocationState(prev => ({ ...prev, status: 'error', errorMessage: 'Geolocation is not supported by your browser.' }));
+            return;
+        }
+
+        setLocationState(prev => ({ ...prev, status: 'requesting' }));
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                updateUserLocation(latitude, longitude); // Update context
+                setLocationState({ modalOpen: false, status: 'prompting', errorMessage: '' }); // Success, close modal
+            },
+            (error) => {
+                let message = '';
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        message = 'Location access was denied. You must enable it in your browser settings to book a service.';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        message = 'Location information is unavailable. Please try again.';
+                        break;
+                    case error.TIMEOUT:
+                        message = 'The request to get your location timed out. Please try again.';
+                        break;
+                    default:
+                        message = 'An unknown error occurred while getting your location.';
+                        break;
+                }
+                setLocationState(prev => ({ ...prev, status: 'error', errorMessage: message }));
+            }
+        );
+    };
 
     const handleBack = () => {
         if (step > 1) {
@@ -245,20 +322,21 @@ const BookingScreen: React.FC = () => {
 
     const availableMechanics = useMemo(() => {
         const selectedDayOfWeek = selectedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
+        const selectedDateWithoutTime = new Date(selectedDate);
+        selectedDateWithoutTime.setHours(0, 0, 0, 0);
 
         return mechanics.filter(mechanic => {
             if (mechanic.status !== 'Active') return false;
 
             // Check specific unavailable dates first
             if (mechanic.unavailableDates) {
-                // selectedDate is already set to T00:00:00
                 for (const unavailable of mechanic.unavailableDates) {
                     const start = new Date(unavailable.startDate.replace(/-/g, '/'));
                     const end = new Date(unavailable.endDate.replace(/-/g, '/'));
-                    start.setHours(0,0,0,0);
-                    end.setHours(0,0,0,0);
+                    start.setHours(0, 0, 0, 0);
+                    end.setHours(0, 0, 0, 0);
 
-                    if (selectedDate >= start && selectedDate <= end) {
+                    if (selectedDateWithoutTime >= start && selectedDateWithoutTime <= end) {
                         return false; // Mechanic is unavailable
                     }
                 }
@@ -271,6 +349,39 @@ const BookingScreen: React.FC = () => {
             return true;
         });
     }, [mechanics, selectedDate]);
+
+    const handleNearbyToggle = () => {
+        if (isNearbyFilter) {
+            setIsNearbyFilter(false);
+            setUserLocation(null);
+            setLocationError(null);
+            return;
+        }
+    
+        if (!navigator.geolocation) {
+            setLocationError("Geolocation is not supported by your browser.");
+            return;
+        }
+    
+        setIsFetchingLocation(true);
+        setLocationError(null);
+    
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setUserLocation({
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                });
+                setIsNearbyFilter(true);
+                setIsFetchingLocation(false);
+            },
+            () => {
+                setLocationError("Unable to retrieve your location. Please enable location permissions in your browser settings.");
+                setIsNearbyFilter(false);
+                setIsFetchingLocation(false);
+            }
+        );
+    };
 
     const handleStep1Continue = () => {
         if (!selectedServiceId) setError('Please select a service.');
@@ -332,6 +443,39 @@ const BookingScreen: React.FC = () => {
         }
     };
 
+    const LocationPermissionModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm text-center">
+                {locationState.status === 'prompting' && (
+                    <>
+                        <h2 className="text-xl font-bold mb-4 text-white">Location Required</h2>
+                        <p className="text-light-gray mb-6">To find nearby mechanics and ensure accurate service, we need to access your device's location.</p>
+                        <button onClick={handleRequestLocation} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                            Enable Location
+                        </button>
+                    </>
+                )}
+                {locationState.status === 'requesting' && (
+                    <>
+                        <Spinner size="lg" />
+                        <p className="text-light-gray mt-4">Getting your location...</p>
+                    </>
+                )}
+                {locationState.status === 'error' && (
+                     <>
+                        <h2 className="text-xl font-bold mb-4 text-red-400">Location Access Required</h2>
+                        <p className="text-light-gray mb-6">{locationState.errorMessage}</p>
+                        <button onClick={handleRequestLocation} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                            Try Again
+                        </button>
+                        <button onClick={() => navigate('/')} className="w-full text-sm text-light-gray mt-4 hover:underline">
+                            Back to Home
+                        </button>
+                    </>
+                )}
+            </div>
+        </div>
+    );
 
     const renderStep1 = () => (
         <>
@@ -360,7 +504,7 @@ const BookingScreen: React.FC = () => {
                         </div>
                     )}
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-3">
                     {services.map(service => (
                         <ServiceSelectionCard key={service.id} service={service} isSelected={selectedServiceId === service.id} onSelect={() => setSelectedServiceId(service.id)} />
                     ))}
@@ -443,6 +587,7 @@ const BookingScreen: React.FC = () => {
             const nameMatch = lowercasedQuery ? mechanic.name.toLowerCase().includes(lowercasedQuery) : true;
             const specMatch = specializationFilter === 'all' || mechanic.specializations.includes(specializationFilter);
             const ratingMatch = mechanic.rating >= ratingFilter;
+            const nearbyMatch = !isNearbyFilter || (userLocation && getDistanceInKm(userLocation.lat, userLocation.lng, mechanic.lat, mechanic.lng) <= 10);
 
             let availableNowMatch = true;
             if (availableNowFilter && isToday) {
@@ -454,30 +599,60 @@ const BookingScreen: React.FC = () => {
                     const now = new Date();
                     const startTime = new Date(`${selectedDate.toISOString().split('T')[0]}T${schedule.startTime}`);
                     const endTime = new Date(`${selectedDate.toISOString().split('T')[0]}T${schedule.endTime}`);
+                    
                     if (now < startTime || now > endTime) {
                         availableNowMatch = false;
+                    } else {
+                        const hasActiveJobNow = db.bookings.some(
+                            b => b.mechanic?.id === mechanic.id &&
+                                 (b.status === 'En Route' || b.status === 'In Progress')
+                        );
+                        if (hasActiveJobNow) {
+                            availableNowMatch = false;
+                        }
                     }
                 }
             }
 
-            return nameMatch && specMatch && ratingMatch && availableNowMatch;
+            return nameMatch && specMatch && ratingMatch && availableNowMatch && nearbyMatch;
         });
 
         return (
              <div className="p-4 space-y-4 flex-grow flex flex-col overflow-hidden">
                 <div className="space-y-2 flex-shrink-0">
-                    {isToday && (
+                    <div className="grid grid-cols-2 gap-2">
+                         {isToday && (
+                            <div className="flex items-center gap-2 bg-field p-2 rounded-lg">
+                                <input
+                                    type="checkbox"
+                                    id="available-now"
+                                    checked={availableNowFilter}
+                                    onChange={(e) => setAvailableNowFilter(e.target.checked)}
+                                    className="w-5 h-5 text-primary bg-secondary rounded border-gray-500 focus:ring-primary"
+                                />
+                                <label htmlFor="available-now" className="text-white font-semibold">Available Now</label>
+                            </div>
+                        )}
                         <div className="flex items-center gap-2 bg-field p-2 rounded-lg">
                             <input
                                 type="checkbox"
-                                id="available-now"
-                                checked={availableNowFilter}
-                                onChange={(e) => setAvailableNowFilter(e.target.checked)}
-                                className="w-5 h-5 text-primary bg-secondary rounded border-gray-500 focus:ring-primary"
+                                id="nearby-me"
+                                checked={isNearbyFilter}
+                                onChange={handleNearbyToggle}
+                                disabled={isFetchingLocation}
+                                className="w-5 h-5 text-primary bg-secondary rounded border-gray-500 focus:ring-primary disabled:opacity-50"
                             />
-                            <label htmlFor="available-now" className="text-white font-semibold">Available Now</label>
+                            <label htmlFor="nearby-me" className="text-white font-semibold flex items-center gap-2">
+                                Nearby Me
+                                {isFetchingLocation ? <Spinner size="sm" /> : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                                    </svg>
+                                )}
+                            </label>
                         </div>
-                    )}
+                    </div>
+                    {locationError && <p className="text-red-400 text-xs text-center pt-2">{locationError}</p>}
                     <div className="grid grid-cols-2 gap-2">
                         <select
                             value={specializationFilter}
@@ -587,6 +762,7 @@ const BookingScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
+             {locationState.modalOpen && <LocationPermissionModal />}
             <div className="relative flex items-center justify-center p-4 bg-[#1D1D1D] border-b border-dark-gray flex-shrink-0">
                 <button onClick={handleBack} className="absolute left-4 text-primary">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

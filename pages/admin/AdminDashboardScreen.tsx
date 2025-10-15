@@ -1,5 +1,3 @@
-
-
 import React, { useMemo, useState } from 'react';
 import { Booking, Mechanic } from '../../types';
 import LiveMap from '../../components/admin/LiveMap';
@@ -27,6 +25,33 @@ const UnassignedBookingRow: React.FC<{ booking: Booking }> = ({ booking }) => (
     </div>
 );
 
+const RecentActivityFeed: React.FC = () => {
+    // Dummy data for demonstration
+    const activities = [
+        { id: 1, text: "Juan Dela Cruz booked an Oil Change.", time: "2m ago" },
+        { id: 2, text: "Mechanic Ricardo Reyes marked job #B1A2C3 as 'Completed'.", time: "15m ago" },
+        { id: 3, text: "New mechanic 'Sofia Garcia' application received.", time: "45m ago" },
+        { id: 4, text: "Alex Rider purchased Ceramic Brake Pads.", time: "1h ago" },
+        { id: 5, text: "Booking #C4D5E6 was cancelled by the customer.", time: "2h ago" },
+    ];
+    return (
+        <div className="bg-secondary p-6 rounded-lg shadow">
+            <h3 className="text-lg font-bold text-white mb-4">Recent Activity</h3>
+            <div className="space-y-4">
+                {activities.map(activity => (
+                    <div key={activity.id} className="flex items-start">
+                        <div className="w-2 h-2 bg-primary rounded-full mt-1.5 mr-3 flex-shrink-0"></div>
+                        <div>
+                            <p className="text-sm text-white">{activity.text}</p>
+                            <p className="text-xs text-light-gray">{activity.time}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 
 const AdminDashboardScreen: React.FC = () => {
     const { db, loading } = useDatabase();
@@ -40,7 +65,6 @@ const AdminDashboardScreen: React.FC = () => {
         const todayStr = today.toISOString().split('T')[0];
         const todayDayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
 
-        // Find IDs of mechanics who are busy today
         const busyMechanicIds = new Set(
             bookings
                 .filter(booking => 
@@ -51,13 +75,11 @@ const AdminDashboardScreen: React.FC = () => {
                 .map(booking => booking.mechanic!.id)
         );
 
-        // Map over all mechanics to pass them to the map, but set availability correctly
         return mechanics.map(mechanic => {
             const worksToday = mechanic.availability?.[todayDayOfWeek]?.isAvailable ?? false;
             
             return {
                 ...mechanic,
-                // A mechanic is only truly available if they are Active, scheduled to work today, AND not busy
                 isAvailable: mechanic.status === 'Active' && worksToday && !busyMechanicIds.has(mechanic.id),
             };
         });
@@ -92,13 +114,11 @@ const AdminDashboardScreen: React.FC = () => {
     
     return (
         <div className="text-white h-full flex flex-col overflow-y-auto p-6 lg:p-8 bg-dark-gray">
-            {/* Page Header */}
             <div className="flex-shrink-0">
                 <h1 className="text-4xl font-bold">Admin Dashboard</h1>
                 <p className="text-light-gray mt-1">Welcome back, here’s a live summary of your platform.</p>
             </div>
 
-            {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 my-6 flex-shrink-0">
                 <StatCard title="Total Bookings" value={totalBookings.toLocaleString()} />
                 <StatCard title="Unassigned Bookings" value={unassignedBookings} />
@@ -106,10 +126,7 @@ const AdminDashboardScreen: React.FC = () => {
                 <StatCard title="Pending Approvals" value={pendingApprovals} />
             </div>
 
-            {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-grow">
-                
-                {/* Live Mechanic Locations */}
                 <div className="lg:col-span-2 bg-secondary p-6 rounded-lg shadow flex flex-col">
                     <h3 className="text-lg font-bold text-white mb-4 flex-shrink-0">Live Mechanic Locations</h3>
                     <div className="flex-grow min-h-[400px]">
@@ -117,16 +134,18 @@ const AdminDashboardScreen: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Unassigned Bookings */}
-                <div className="bg-secondary p-6 rounded-lg shadow">
-                    <h3 className="text-lg font-bold text-white mb-4">Unassigned Bookings</h3>
-                    <div>
-                        {unassignedBookingsList.length > 0 ? (
-                            unassignedBookingsList.map(booking => <UnassignedBookingRow key={booking.id} booking={booking} />)
-                        ) : (
-                            <p className="text-center text-light-gray py-8">No unassigned bookings.</p>
-                        )}
+                <div className="space-y-6">
+                    <div className="bg-secondary p-6 rounded-lg shadow">
+                        <h3 className="text-lg font-bold text-white mb-4">Unassigned Bookings</h3>
+                        <div>
+                            {unassignedBookingsList.length > 0 ? (
+                                unassignedBookingsList.map(booking => <UnassignedBookingRow key={booking.id} booking={booking} />)
+                            ) : (
+                                <p className="text-center text-light-gray py-8">No unassigned bookings.</p>
+                            )}
+                        </div>
                     </div>
+                    <RecentActivityFeed />
                 </div>
             </div>
             

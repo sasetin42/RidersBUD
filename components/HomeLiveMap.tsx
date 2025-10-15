@@ -99,26 +99,27 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
             });
 
             const popupContent = `
-                <div style="font-family: 'Poppins', sans-serif; color: #333; width: 160px; text-align: left;">
-                    <img src="${mechanic.imageUrl}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;" alt="${mechanic.name}" />
-                    <h3 style="font-weight: 700; font-size: 1rem; margin: 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${mechanic.name}</h3>
-                    <p style="font-size: 0.75rem; color: #666; margin: 0 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${mechanic.specializations.slice(0, 2).join(', ')}</p>
-                    <p style="font-size: 0.75rem; color: #f59e0b; font-weight: 600; margin: 0;">⭐ ${mechanic.rating.toFixed(1)} (${mechanic.reviews} jobs)</p>
-                    <button class="view-profile-btn" data-mechanic-id="${mechanic.id}" style="margin-top: 8px; font-size: 0.75rem; background-color: #FE7803; color: white; font-weight: 700; padding: 4px 8px; border-radius: 4px; width: 100%; border: none; cursor: pointer;">
+                <div class="ridersbud-popup-inner">
+                    <img src="${mechanic.imageUrl}" class="ridersbud-popup-img" alt="${mechanic.name}" />
+                    <h3 class="ridersbud-popup-name">${mechanic.name}</h3>
+                    <p class="ridersbud-popup-spec">${mechanic.specializations.slice(0, 2).join(', ')}</p>
+                    <p class="ridersbud-popup-rating">⭐ ${mechanic.rating.toFixed(1)} (${mechanic.reviews} jobs)</p>
+                    <button class="view-profile-btn ridersbud-popup-btn" data-mechanic-id="${mechanic.id}">
                         View Profile
                     </button>
                 </div>
             `;
             
+            const popupOptions = { className: 'ridersbud-popup' };
             const marker = markersRef.current[mechanic.id];
             
             if (marker) {
                 marker.setLatLng([mechanic.lat, mechanic.lng]);
                 marker.setIcon(icon);
-                marker.getPopup().setContent(popupContent);
+                marker.unbindPopup().bindPopup(popupContent, popupOptions);
             } else {
                 const newMarker = L.marker([mechanic.lat, mechanic.lng], { icon: icon });
-                newMarker.bindPopup(popupContent);
+                newMarker.bindPopup(popupContent, popupOptions);
                 markersLayerRef.current.addLayer(newMarker);
                 markersRef.current[mechanic.id] = newMarker;
             }

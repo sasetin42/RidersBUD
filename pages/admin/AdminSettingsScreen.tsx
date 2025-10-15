@@ -193,157 +193,151 @@ const AdminSettingsScreen: React.FC = () => {
                 </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto px-6 lg:px-8">
-                <div className="space-y-6 max-w-4xl mx-auto py-6">
-                    {/* General Settings Card */}
-                    <div className="bg-secondary p-6 rounded-lg shadow">
-                        <h2 className="text-xl font-bold mb-4">General Settings</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Application Name</label>
-                                <input type="text" name="appName" value={settings.appName} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.appName ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
-                                {errors.appName && <p className="text-red-400 text-xs mt-1">{errors.appName}</p>}
-                            </div>
-                             <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Contact Email</label>
-                                <input type="email" name="contactEmail" value={settings.contactEmail} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.contactEmail ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
-                                {errors.contactEmail && <p className="text-red-400 text-xs mt-1">{errors.contactEmail}</p>}
-                            </div>
-                             <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Contact Phone</label>
-                                <input type="tel" name="contactPhone" value={settings.contactPhone} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                            </div>
-                             <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Business Address</label>
-                                <input type="text" name="address" value={settings.address} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Branding & Appearance Card */}
-                    <div className="bg-secondary p-6 rounded-lg shadow">
-                        <h2 className="text-xl font-bold mb-4">Branding & Appearance</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
-                             <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-light-gray mb-1">Application Logo</label>
-                                <p className="text-xs text-gray-400 mb-2">The primary logo for the customer-facing application. Used on the splash screen, login/signup pages, and admin login.</p>
-                                <div className="flex items-center gap-4">
-                                    <input 
-                                        type="file" 
-                                        name="appLogoUrl" 
-                                        onChange={handleLogoChange} 
-                                        accept="image/*" 
-                                        className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" 
-                                    />
-                                    {settings.appLogoUrl && <img src={settings.appLogoUrl} alt="App Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    {/* --- LEFT COLUMN (2/3) --- */}
+                    <div className="xl:col-span-2 space-y-6">
+                        {/* General Settings Card */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">General Settings</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Name</label>
+                                    <input type="text" name="appName" value={settings.appName} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.appName ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    {errors.appName && <p className="text-red-400 text-xs mt-1">{errors.appName}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Contact Email</label>
+                                    <input type="email" name="contactEmail" value={settings.contactEmail} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.contactEmail ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    {errors.contactEmail && <p className="text-red-400 text-xs mt-1">{errors.contactEmail}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Contact Phone</label>
+                                    <input type="tel" name="contactPhone" value={settings.contactPhone} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Business Address</label>
+                                    <input type="text" name="address" value={settings.address} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
                                 </div>
                             </div>
-                             <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-light-gray mb-1">Admin Sidebar Logo</label>
-                                <p className="text-xs text-gray-400 mb-2">A distinct logo for the admin panel sidebar. Falls back to the Application Logo if not set.</p>
-                                <div className="flex items-center gap-4">
-                                    <input 
-                                        type="file" 
-                                        name="adminSidebarLogoUrl" 
-                                        onChange={handleLogoChange} 
-                                        accept="image/*" 
-                                        className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" 
-                                    />
-                                    {settings.adminSidebarLogoUrl && <img src={settings.adminSidebarLogoUrl} alt="Admin Sidebar Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                        </div>
+
+                        {/* Branding & Appearance Card */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">Branding & Appearance</h2>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Logo</label>
+                                    <p className="text-xs text-gray-400 mb-2">The primary logo for the customer-facing application. Used on the splash screen, login/signup pages, and admin login.</p>
+                                    <div className="flex items-center gap-4">
+                                        <input type="file" name="appLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        {settings.appLogoUrl && <img src={settings.appLogoUrl} alt="App Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Admin Sidebar Logo</label>
+                                    <p className="text-xs text-gray-400 mb-2">A distinct logo for the admin panel sidebar. Falls back to the Application Logo if not set.</p>
+                                    <div className="flex items-center gap-4">
+                                        <input type="file" name="adminSidebarLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        {settings.adminSidebarLogoUrl && <img src={settings.adminSidebarLogoUrl} alt="Admin Sidebar Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Tagline</label>
+                                    <input type="text" name="appTagline" value={settings.appTagline || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                    <p className="text-xs text-gray-400 mt-1">This tagline appears below the logo on the splash, login, and signup screens.</p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Admin Panel Title</label>
+                                    <input type="text" name="adminPanelTitle" value={settings.adminPanelTitle || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
                                 </div>
                             </div>
-                            <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-light-gray mb-1">Application Tagline</label>
-                                <input type="text" name="appTagline" value={settings.appTagline || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                                <p className="text-xs text-gray-400 mt-1">This tagline appears below the logo on the splash, login, and signup screens.</p>
-                            </div>
-                             <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Admin Panel Title</label>
-                                <input type="text" name="adminPanelTitle" value={settings.adminPanelTitle || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                        </div>
+
+                         {/* Booking Settings Card */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">Booking Settings</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Operating Hours Start</label>
+                                    <input type="time" name="bookingStartTime" value={settings.bookingStartTime} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Operating Hours End</label>
+                                    <input type="time" name="bookingEndTime" value={settings.bookingEndTime} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.bookingEndTime ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    {errors.bookingEndTime && <p className="text-red-400 text-xs mt-1">{errors.bookingEndTime}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Slot Duration (mins)</label>
+                                    <input type="number" name="bookingSlotDuration" value={settings.bookingSlotDuration} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.bookingSlotDuration ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    {errors.bookingSlotDuration && <p className="text-red-400 text-xs mt-1">{errors.bookingSlotDuration}</p>}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Max Bookings per Slot</label>
+                                    <input type="number" name="maxBookingsPerSlot" value={settings.maxBookingsPerSlot} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.maxBookingsPerSlot ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    {errors.maxBookingsPerSlot && <p className="text-red-400 text-xs mt-1">{errors.maxBookingsPerSlot}</p>}
+                                </div>
                             </div>
                         </div>
                     </div>
-
-                     {/* Catalog Settings */}
-                    <div className="bg-secondary p-6 rounded-lg shadow">
-                        <h2 className="text-xl font-bold mb-4">Catalog Settings</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <CategoryManager
-                                title="Service Categories"
-                                categories={settings.serviceCategories}
-                                onAdd={(cat) => handleLocalSettingsChange({ serviceCategories: [...settings.serviceCategories, cat] })}
-                                onDelete={(cat) => handleLocalSettingsChange({ serviceCategories: settings.serviceCategories.filter(c => c !== cat) })}
-                            />
-                            <CategoryManager
-                                title="Part Categories"
-                                categories={settings.partCategories}
-                                onAdd={(cat) => handleLocalSettingsChange({ partCategories: [...settings.partCategories, cat] })}
-                                onDelete={(cat) => handleLocalSettingsChange({ partCategories: settings.partCategories.filter(c => c !== cat) })}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Virtual Mechanic Settings */}
-                    <div className="bg-secondary p-6 rounded-lg shadow">
-                         <h2 className="text-xl font-bold mb-4">Virtual Mechanic Settings</h2>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Virtual Mechanic Name</label>
-                                <input type="text" name="virtualMechanicName" value={settings.virtualMechanicName || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Virtual Mechanic Avatar</label>
-                                <input type="file" name="virtualMechanicImageUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                {settings.virtualMechanicImageUrl && <img src={settings.virtualMechanicImageUrl} alt="Virtual Mechanic Preview" className="mt-2 h-16 w-16 object-cover rounded-full bg-field p-1" />}
-                            </div>
-                         </div>
-                    </div>
-
-                    {/* Map Settings */}
-                    <div className="bg-secondary p-6 rounded-lg shadow">
-                        <h2 className="text-xl font-bold mb-4">Map Settings</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Mechanic Map Marker Logo</label>
-                                <input type="file" name="mechanicMarkerUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                {settings.mechanicMarkerUrl && <img src={settings.mechanicMarkerUrl} alt="Mechanic Marker Preview" className="mt-2 h-10 w-10 object-contain bg-field p-1 rounded-full border-2 border-primary" />}
+                    {/* --- RIGHT COLUMN (1/3) --- */}
+                    <div className="space-y-6">
+                        {/* Catalog Settings */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">Catalog Settings</h2>
+                            <div className="grid grid-cols-1 gap-6">
+                                <CategoryManager
+                                    title="Service Categories"
+                                    categories={settings.serviceCategories}
+                                    onAdd={(cat) => handleLocalSettingsChange({ serviceCategories: [...settings.serviceCategories, cat] })}
+                                    onDelete={(cat) => handleLocalSettingsChange({ serviceCategories: settings.serviceCategories.filter(c => c !== cat) })}
+                                />
+                                <CategoryManager
+                                    title="Part Categories"
+                                    categories={settings.partCategories}
+                                    onAdd={(cat) => handleLocalSettingsChange({ partCategories: [...settings.partCategories, cat] })}
+                                    onDelete={(cat) => handleLocalSettingsChange({ partCategories: settings.partCategories.filter(c => c !== cat) })}
+                                />
                             </div>
                         </div>
-                    </div>
 
-                    {/* Booking Settings Card */}
-                    <div className="bg-secondary p-6 rounded-lg shadow">
-                        <h2 className="text-xl font-bold mb-4">Booking Settings</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                             <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Operating Hours Start</label>
-                                <input type="time" name="bookingStartTime" value={settings.bookingStartTime} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                            </div>
-                              <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Operating Hours End</label>
-                                <input type="time" name="bookingEndTime" value={settings.bookingEndTime} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.bookingEndTime ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
-                                {errors.bookingEndTime && <p className="text-red-400 text-xs mt-1">{errors.bookingEndTime}</p>}
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Slot Duration (mins)</label>
-                                <input type="number" name="bookingSlotDuration" value={settings.bookingSlotDuration} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.bookingSlotDuration ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
-                                {errors.bookingSlotDuration && <p className="text-red-400 text-xs mt-1">{errors.bookingSlotDuration}</p>}
-                            </div>
-                             <div>
-                                <label className="block text-sm font-medium text-light-gray mb-1">Max Bookings per Slot</label>
-                                <input type="number" name="maxBookingsPerSlot" value={settings.maxBookingsPerSlot} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.maxBookingsPerSlot ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
-                                {errors.maxBookingsPerSlot && <p className="text-red-400 text-xs mt-1">{errors.maxBookingsPerSlot}</p>}
+                         {/* AI & Map Settings */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">AI & Map Settings</h2>
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className="text-lg font-bold mb-3">Virtual Mechanic</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-light-gray mb-1">Virtual Mechanic Name</label>
+                                            <input type="text" name="virtualMechanicName" value={settings.virtualMechanicName || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-light-gray mb-1">Virtual Mechanic Avatar</label>
+                                            <input type="file" name="virtualMechanicImageUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                            {settings.virtualMechanicImageUrl && <img src={settings.virtualMechanicImageUrl} alt="Virtual Mechanic Preview" className="mt-2 h-16 w-16 object-cover rounded-full bg-field p-1" />}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="border-t border-field pt-6">
+                                    <h3 className="text-lg font-bold mb-3">Map Settings</h3>
+                                     <div>
+                                        <label className="block text-sm font-medium text-light-gray mb-1">Mechanic Map Marker Logo</label>
+                                        <input type="file" name="mechanicMarkerUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        {settings.mechanicMarkerUrl && <img src={settings.mechanicMarkerUrl} alt="Mechanic Marker Preview" className="mt-2 h-10 w-10 object-contain bg-field p-1 rounded-full border-2 border-primary" />}
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    
-                    {/* Notification Settings Card */}
-                    <div className="bg-secondary p-6 rounded-lg shadow">
-                         <h2 className="text-xl font-bold mb-4">Notification Settings</h2>
-                         <div className="space-y-4 max-w-md">
-                             <ToggleSwitch label="Email on New Booking" enabled={settings.emailOnNewBooking} onChange={(val) => handleLocalSettingsChange({ emailOnNewBooking: val })} />
-                             <ToggleSwitch label="Email on Cancellation" enabled={settings.emailOnCancellation} onChange={(val) => handleLocalSettingsChange({ emailOnCancellation: val })} />
-                         </div>
+
+                        {/* Notification Settings Card */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">Notification Settings</h2>
+                            <div className="space-y-4">
+                                <ToggleSwitch label="Email on New Booking" enabled={settings.emailOnNewBooking} onChange={(val) => handleLocalSettingsChange({ emailOnNewBooking: val })} />
+                                <ToggleSwitch label="Email on Cancellation" enabled={settings.emailOnCancellation} onChange={(val) => handleLocalSettingsChange({ emailOnCancellation: val })} />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

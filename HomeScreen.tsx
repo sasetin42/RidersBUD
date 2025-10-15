@@ -521,7 +521,7 @@ const HomeScreen: React.FC = () => {
                         <div className="flex items-center gap-3 cursor-pointer group" onClick={() => upcomingAppointment?.mechanic && navigate(`/mechanic-profile/${upcomingAppointment.mechanic.id}`)} role="button" tabIndex={0}>
                             <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0 group-hover:bg-orange-600 transition-colors">{upcomingAppointment.mechanic?.name.split(' ').map(n => n[0]).join('')}</div>
                             <div>
-                                <p className="font-bold text-white group-hover:text-primary group-hover:underline transition-colors">{upcomingAppointment.mechanic?.name}</p>
+                                <p className="font-bold text-white group-hover:text-primary transition-colors">{upcomingAppointment.mechanic?.name}</p>
                                 <p className="text-sm text-light-gray">{upcomingAppointment.service.name} for</p>
                                 <p className="text-sm font-semibold text-white">{`${upcomingAppointment.vehicle.make} ${upcomingAppointment.vehicle.model}`}</p>
                             </div>

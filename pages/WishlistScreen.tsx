@@ -1,11 +1,8 @@
-
-
 import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
 import { useWishlist } from '../context/WishlistContext';
 import { useCart } from '../context/CartContext';
-import { Product, Service, Part } from '../types';
-import Spinner from '../components/Spinner';
+import { Service, Part } from '../types';
 import { useNavigate } from 'react-router-dom';
 
 const PartWishlistItem: React.FC<{ item: Part }> = ({ item }) => {
@@ -15,14 +12,13 @@ const PartWishlistItem: React.FC<{ item: Part }> = ({ item }) => {
     const handleAddToCart = () => {
         addToCart(item);
         removeFromWishlist(item.id);
-        alert(`${item.name} moved to cart!`);
     };
 
     return (
         <div className="flex items-center bg-dark-gray p-3 rounded-lg">
             <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
             <div className="flex-grow">
-                <h4 className="font-bold">{item.name}</h4>
+                <h4 className="font-bold text-white">{item.name}</h4>
                 <p className="text-primary font-semibold">₱{item.price.toFixed(2)}</p>
                 <div className="mt-2 flex gap-2">
                     <button onClick={handleAddToCart} className="bg-primary text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-orange-600 transition">
@@ -49,7 +45,7 @@ const ServiceWishlistItem: React.FC<{ item: Service }> = ({ item }) => {
         <div className="flex items-center bg-dark-gray p-3 rounded-lg">
             <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
             <div className="flex-grow">
-                <h4 className="font-bold">{item.name}</h4>
+                <h4 className="font-bold text-white">{item.name}</h4>
                 <p className="text-primary font-semibold">{item.price > 0 ? `₱${item.price.toLocaleString()}` : 'Request Quote'}</p>
                 <div className="mt-2 flex gap-2">
                     <button onClick={handleBookNow} className="bg-primary text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-orange-600 transition">
@@ -63,6 +59,16 @@ const ServiceWishlistItem: React.FC<{ item: Service }> = ({ item }) => {
         </div>
     );
 };
+
+const EmptyState: React.FC<{ title: string, subtitle: string }> = ({ title, subtitle }) => (
+    <div className="flex flex-col items-center justify-center h-full text-center text-light-gray px-6">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mb-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+        </svg>
+        <p className="text-xl font-semibold mb-2 text-white">{title}</p>
+        <p>{subtitle}</p>
+    </div>
+);
 
 
 const WishlistScreen: React.FC = () => {
@@ -78,15 +84,7 @@ const WishlistScreen: React.FC = () => {
     const renderContent = () => {
         if (activeTab === 'parts') {
             if (parts.length === 0) {
-                 return (
-                    <div className="flex flex-col items-center justify-center h-full text-center text-light-gray px-6">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
-                        </svg>
-                        <p className="text-xl font-semibold mb-2">Your Parts Wishlist is Empty</p>
-                        <p>Tap the heart icon on any part in the store to save it for later.</p>
-                    </div>
-                )
+                 return <EmptyState title="Your Parts Wishlist is Empty" subtitle="Tap the heart icon on any part in the store to save it for later." />;
             }
             return (
                 <div className="space-y-4 p-4">
@@ -97,15 +95,7 @@ const WishlistScreen: React.FC = () => {
 
         if (activeTab === 'services') {
             if (services.length === 0) {
-                 return (
-                    <div className="flex flex-col items-center justify-center h-full text-center text-light-gray px-6">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
-                        </svg>
-                        <p className="text-xl font-semibold mb-2">Your Services Wishlist is Empty</p>
-                        <p>Tap the heart icon on any service to save it for later.</p>
-                    </div>
-                )
+                 return <EmptyState title="Your Services Wishlist is Empty" subtitle="Tap the heart icon on any service to save it for later." />;
             }
             return (
                 <div className="space-y-4 p-4">

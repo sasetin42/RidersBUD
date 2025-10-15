@@ -50,6 +50,23 @@ const ProfileDetailsModal: React.FC<{
         }
     };
     
+    const handlePortfolioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const files = Array.from(e.target.files);
+            const base64Promises = files.map((file: File) => fileToBase64(file));
+            try {
+                const base64Images = await Promise.all(base64Promises);
+                setFormData(prev => ({ ...prev, portfolioImages: [...(prev.portfolioImages || []), ...base64Images] }));
+            } catch (err) {
+                console.error("Portfolio upload failed:", err);
+            }
+        }
+    };
+
+    const handleRemovePortfolioImage = (index: number) => {
+        setFormData(prev => ({ ...prev, portfolioImages: prev.portfolioImages?.filter((_, i) => i !== index) }));
+    };
+
     const handleSpecializationsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { value } = e.target;
         setFormData(prev => ({ ...prev, specializations: value.split(',').map(s => s.trim()) }));
@@ -63,16 +80,6 @@ const ProfileDetailsModal: React.FC<{
                     <div className="w-full">
                         <label className="block text-xs text-light-gray mb-1">Upload New Image</label>
                         <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                        <p className="text-xs text-center text-light-gray my-2">OR</p>
-                        <label className="block text-xs text-light-gray mb-1">Paste Image URL</label>
-                        <input
-                            type="text"
-                            name="imageUrl"
-                            placeholder="https://example.com/image.png"
-                            value={formData.imageUrl}
-                            onChange={handleInputChange}
-                            className="w-full p-2 bg-field border border-secondary rounded-md"
-                        />
                     </div>
                 </div>
                 <div>
@@ -84,16 +91,24 @@ const ProfileDetailsModal: React.FC<{
                     <input type="tel" name="phone" value={formData.phone} onChange={handleInputChange} className="w-full p-2 bg-field border border-secondary rounded-md" />
                 </div>
                 <div>
-                    <label className="text-xs text-light-gray">Birthday</label>
-                    <input type="date" name="birthday" value={formData.birthday || ''} onChange={handleInputChange} className="w-full p-2 bg-field border border-secondary rounded-md" />
-                </div>
-                <div>
                     <label className="text-xs text-light-gray">My Bio</label>
                     <textarea name="bio" value={formData.bio} onChange={handleInputChange} rows={4} className="w-full p-2 bg-field border border-secondary rounded-md" />
                 </div>
                 <div>
                     <label className="text-xs text-light-gray">Specializations (comma-separated)</label>
                     <input type="text" value={formData.specializations.join(', ')} onChange={handleSpecializationsChange} className="w-full p-2 bg-field border border-secondary rounded-md" />
+                </div>
+                <div>
+                    <label className="text-xs text-light-gray">Portfolio Images</label>
+                     <input type="file" multiple accept="image/*" onChange={handlePortfolioUpload} className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                     <div className="mt-2 flex flex-wrap gap-2">
+                        {formData.portfolioImages?.map((img, i) => (
+                            <div key={i} className="relative">
+                                <img src={img} className="h-16 w-16 rounded-md object-cover" alt="Portfolio item" />
+                                <button onClick={() => handleRemovePortfolioImage(i)} className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full p-0.5 w-5 h-5 flex items-center justify-center text-xs">&times;</button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
              <div className="mt-6 flex justify-end gap-4">
@@ -429,11 +444,58 @@ const HelpSupportModal: React.FC<{
     );
 };
 
+const LegalDocsModal: React.FC<{
+    mechanic: Mechanic;
+    onClose: () => void;
+    onSave: (mechanic: Mechanic) => void;
+}> = ({ mechanic, onClose, onSave }) => {
+    const [formData, setFormData] = useState(mechanic);
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: 'businessLicenseUrl' | 'certification') => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const base64 = await fileToBase64(file);
+            if (fieldName === 'businessLicenseUrl') {
+                setFormData(prev => ({ ...prev, businessLicenseUrl: base64 }));
+            }
+        } catch (error) {
+            alert('File upload failed. Please try again.');
+        }
+    };
+    
+    return (
+        <Modal title="Legal & Insurance" isOpen={true} onClose={onClose}>
+            <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+                <div>
+                    <h3 className="text-lg font-bold mb-2">Business License</h3>
+                    <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange(e, 'businessLicenseUrl')} className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                    {formData.businessLicenseUrl && <a href={formData.businessLicenseUrl} target="_blank" rel="noreferrer" className="text-blue-400 text-sm hover:underline mt-2 inline-block">View Current License</a>}
+                </div>
+                <div>
+                    <h3 className="text-lg font-bold mb-2">Certifications</h3>
+                    <p className="text-xs text-light-gray mb-3">Feature coming soon.</p>
+                </div>
+                 <div>
+                    <h3 className="text-lg font-bold mb-2">Insurance</h3>
+                    <p className="text-xs text-light-gray mb-3">Feature coming soon.</p>
+                </div>
+            </div>
+             <div className="mt-6 flex justify-end gap-4">
+                <button onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition">Cancel</button>
+                <button onClick={() => onSave(formData)} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">Save Documents</button>
+            </div>
+        </Modal>
+    );
+};
+
 // --- Main Screen Component ---
 const MechanicProfileManagementScreen: React.FC = () => {
     const { mechanic, logout, loading, updateMechanicProfile } = useMechanicAuth();
     const { db } = useDatabase();
     const [activeModal, setActiveModal] = useState<string | null>(null);
+    const navigate = useNavigate();
 
     const kpiData = useMemo(() => {
         if (!mechanic || !db) return { totalJobs: 0, lifetimeEarnings: 0 };
@@ -490,7 +552,6 @@ const MechanicProfileManagementScreen: React.FC = () => {
                         <h2 className="text-xl font-bold">{mechanic.name}</h2>
                         <p className="text-sm text-light-gray">{mechanic.email}</p>
                         {mechanic.registrationDate && <p className="text-xs text-gray-400 mt-1">Member since {new Date(mechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString()}</p>}
-                        {mechanic.birthday && <p className="text-xs text-gray-400">Born on {new Date(mechanic.birthday.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</p>}
                     </div>
                 </div>
 
@@ -510,7 +571,9 @@ const MechanicProfileManagementScreen: React.FC = () => {
                     <MenuItem label="My Reviews" onClick={() => setActiveModal('reviews')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="My Weekly Availability" onClick={() => setActiveModal('availability')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="Set Time Off / Unavailability" onClick={() => setActiveModal('timeOff')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>} />
+                    <MenuItem label="Legal & Insurance" onClick={() => setActiveModal('legal')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h2a2 2 0 002-2V4a2 2 0 00-2-2H9z" /><path d="M4 12a2 2 0 012-2h10a2 2 0 012 2v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5z" /></svg>} />
                     <MenuItem label="Payout Details" onClick={() => setActiveModal('payouts')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg>} />
+                    <MenuItem label="Notification Settings" onClick={() => navigate('/mechanic/notification-settings')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" /></svg>} />
                     <MenuItem label="Help & Support" onClick={() => setActiveModal('support')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="Change Password" onClick={() => setActiveModal('password')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clipRule="evenodd" /></svg>} />
                 </div>
@@ -525,6 +588,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
             {activeModal === 'reviews' && <ReviewsModal reviews={mechanic.reviewsList || []} onClose={() => setActiveModal(null)} />}
             {activeModal === 'payouts' && <PayoutDetailsModal payoutDetails={mechanic.payoutDetails} onClose={() => setActiveModal(null)} onSave={handlePayoutDetailsSave} />}
             {activeModal === 'support' && <HelpSupportModal contactEmail={db.settings.contactEmail} contactPhone={db.settings.contactPhone} onClose={() => setActiveModal(null)} />}
+            {activeModal === 'legal' && <LegalDocsModal mechanic={mechanic} onClose={() => setActiveModal(null)} onSave={handleProfileSave} />}
         </div>
     );
 };

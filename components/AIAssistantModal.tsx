@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Chat } from '@google/genai';
 import Spinner from './Spinner';
@@ -39,7 +37,6 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
                 const initialResponseStream = await newChat.sendMessageStream({ message: "Hello, introduce yourself." });
                 
                 let fullText = "";
-                // Add a placeholder for the initial AI response
                 setMessages([{ sender: 'ai', text: "" }]);
 
                 for await (const chunk of initialResponseStream) {
@@ -134,22 +131,14 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
                            <img src={assistantAvatar} alt={assistantName} className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-primary" />
                        )}
                         <div className={`max-w-xs md:max-w-md p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-primary text-white rounded-br-none' : 'bg-dark-gray text-white rounded-bl-none'}`}>
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                            {isLoading && index === messages.length - 1 && msg.sender === 'ai' && msg.text === '' ? (
+                                <p className="text-sm text-light-gray italic animate-pulse">typing...</p>
+                            ) : (
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                            )}
                         </div>
                     </div>
                 ))}
-                {isLoading && (
-                    <div className="flex items-end gap-2 justify-start">
-                        <img src={assistantAvatar} alt={assistantName} className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-primary" />
-                         <div className="max-w-xs md:max-w-md p-3 rounded-2xl bg-dark-gray text-white rounded-bl-none">
-                            <div className="flex items-center gap-1.5">
-                               <div className="w-2 h-2 bg-light-gray rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-                               <div className="w-2 h-2 bg-light-gray rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-                               <div className="w-2 h-2 bg-light-gray rounded-full animate-pulse"></div>
-                            </div>
-                        </div>
-                    </div>
-                )}
                 {error && (
                     <div className="p-3 bg-red-500/10 text-red-400 text-sm rounded-lg text-center">
                         {error}

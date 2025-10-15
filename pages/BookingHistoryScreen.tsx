@@ -167,10 +167,10 @@ const BookingHistoryScreen: React.FC = () => {
         let bookingsToFilter = db.bookings.filter(b => b.customerName === user.name);
 
         const upcoming = bookingsToFilter
-            .filter(b => b.status === 'Upcoming' || b.status === 'En Route')
+            .filter(b => b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Mechanic Assigned' || b.status === 'Booking Confirmed' )
             .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             
-        let past = bookingsToFilter.filter(b => b.status !== 'Upcoming' && b.status !== 'En Route');
+        let past = bookingsToFilter.filter(b => b.status === 'Completed' || b.status === 'Cancelled');
 
         // Apply filters to past bookings
         if (statusFilter !== 'all') {
@@ -183,9 +183,7 @@ const BookingHistoryScreen: React.FC = () => {
             past = past.filter(b => b.vehicle.plateNumber === vehicleFilter);
         }
         if (dateFilter.start && dateFilter.end) {
-            // Using .replace() avoids timezone issues by parsing dates in the local timezone.
             const startDate = new Date(dateFilter.start.replace(/-/g, '/')).getTime();
-            // Set end date to the start of the next day to include the full selected end day.
             const endDateObj = new Date(dateFilter.end.replace(/-/g, '/'));
             endDateObj.setDate(endDateObj.getDate() + 1);
             const endDate = endDateObj.getTime();

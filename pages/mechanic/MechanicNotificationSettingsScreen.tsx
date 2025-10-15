@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import Header from '../components/Header';
-import { getNotificationSettings, saveNotificationSettings, NotificationSettings, requestNotificationPermission } from '../utils/notificationManager';
+import Header from '../../components/Header';
+import { getMechanicNotificationSettings, saveMechanicNotificationSettings, MechanicNotificationSettings, requestNotificationPermission } from '../../utils/notificationManager';
 
 const ToggleSwitch: React.FC<{ label: string; description: string; enabled: boolean; onChange: (enabled: boolean) => void; }> = ({ label, description, enabled, onChange }) => {
   return (
@@ -23,21 +23,20 @@ const ToggleSwitch: React.FC<{ label: string; description: string; enabled: bool
   );
 };
 
-const NotificationSettingsScreen: React.FC = () => {
-    const [settings, setSettings] = useState<NotificationSettings>(getNotificationSettings());
+const MechanicNotificationSettingsScreen: React.FC = () => {
+    const [settings, setSettings] = useState<MechanicNotificationSettings>(getMechanicNotificationSettings());
     const [permissionStatus, setPermissionStatus] = useState(Notification.permission);
 
     useEffect(() => {
-        saveNotificationSettings(settings);
+        saveMechanicNotificationSettings(settings);
     }, [settings]);
 
-    const handleSettingChange = (key: keyof NotificationSettings, value: boolean) => {
+    const handleSettingChange = (key: keyof MechanicNotificationSettings, value: boolean) => {
         setSettings(prev => ({ ...prev, [key]: value }));
     };
 
     const handleRequestPermission = async () => {
         await requestNotificationPermission();
-        // After the request, update the status to reflect the user's choice.
         setPermissionStatus(Notification.permission);
     };
 
@@ -46,22 +45,22 @@ const NotificationSettingsScreen: React.FC = () => {
             <Header title="Notification Settings" showBackButton />
             <div className="flex-grow p-6 space-y-4">
                 <ToggleSwitch
-                    label="Booking Updates"
-                    description="Get notified about confirmations and when your mechanic is en route."
-                    enabled={settings.bookingUpdates}
-                    onChange={(value) => handleSettingChange('bookingUpdates', value)}
+                    label="New Job Alerts"
+                    description="Get notified when a new, unassigned job is posted."
+                    enabled={settings.newJobAlerts}
+                    onChange={(value) => handleSettingChange('newJobAlerts', value)}
                 />
                 <ToggleSwitch
-                    label="Service Reminders"
-                    description="Receive alerts for upcoming maintenance due dates you've set."
-                    enabled={settings.serviceReminders}
-                    onChange={(value) => handleSettingChange('serviceReminders', value)}
+                    label="Job Status Changes"
+                    description="Receive alerts when a customer cancels a job you've accepted."
+                    enabled={settings.jobStatusChanges}
+                    onChange={(value) => handleSettingChange('jobStatusChanges', value)}
                 />
                 <ToggleSwitch
-                    label="Promotions & Offers"
-                    description="Stay informed about our latest deals and special offers."
-                    enabled={settings.promotions}
-                    onChange={(value) => handleSettingChange('promotions', value)}
+                    label="Payment Confirmations"
+                    description="Get notified when a payment for a completed job has been processed."
+                    enabled={settings.paymentConfirmations}
+                    onChange={(value) => handleSettingChange('paymentConfirmations', value)}
                 />
 
                 <div className="bg-dark-gray p-4 rounded-lg mt-6">
@@ -76,7 +75,7 @@ const NotificationSettingsScreen: React.FC = () => {
                         <div>
                             <p className="text-sm text-light-gray mb-3">To receive notifications, you need to grant permission.</p>
                             <button onClick={handleRequestPermission} className="w-full bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition">
-                                Request Notification Permission
+                                Enable Notifications
                             </button>
                         </div>
                     )}
@@ -84,11 +83,11 @@ const NotificationSettingsScreen: React.FC = () => {
             </div>
              <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
                 <p className="text-xs text-light-gray text-center">
-                    Note: You may need to grant notification permissions in your browser or device settings for these preferences to take effect.
+                    Note: These settings control what notifications are sent from our system. You may also need to manage permissions in your browser.
                 </p>
             </div>
         </div>
     );
 };
 
-export default NotificationSettingsScreen;
+export default MechanicNotificationSettingsScreen;

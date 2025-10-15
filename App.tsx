@@ -1,7 +1,3 @@
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import SplashScreen from './pages/SplashScreen';
@@ -46,12 +42,13 @@ import MechanicJobsScreen from './pages/mechanic/MechanicJobsScreen';
 import MechanicEarningsScreen from './pages/mechanic/MechanicEarningsScreen';
 import AdminAnalyticsScreen from './pages/admin/AdminAnalyticsScreen';
 import FAQScreen from './pages/FAQScreen';
-import { requestNotificationPermission, getNotificationSettings, showNotification } from './utils/notificationManager';
+import { requestNotificationPermission, getNotificationSettings, showNotification, getMechanicNotificationSettings } from './utils/notificationManager';
 import { Booking, Reminder } from './types';
 import MyGarageScreen from './pages/MyGarageScreen';
 import AdminMarketingScreen from './pages/admin/AdminMarketingScreen';
 import AIAssistantModal from './components/AIAssistantModal';
 import NotificationSettingsScreen from './pages/NotificationSettingsScreen';
+import MechanicNotificationSettingsScreen from './pages/mechanic/MechanicNotificationSettingsScreen';
 
 const App: React.FC = () => {
     return (
@@ -92,7 +89,7 @@ const AppInitializer: React.FC = () => {
 const AppContent: React.FC = () => {
     const { isAuthenticated, user } = useAuth();
     const { isAdminAuthenticated } = useAdminAuth();
-    const { isMechanicAuthenticated } = useMechanicAuth();
+    const { isMechanicAuthenticated, mechanic } = useMechanicAuth();
     const { db } = useDatabase();
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     
@@ -101,29 +98,43 @@ const AppContent: React.FC = () => {
             // 1. Request permission on login
             requestNotificationPermission();
 
-            // 2. Check for notifications based on preferences
             const settings = getNotificationSettings();
 
-            // Check for booking status updates
+            // 2. Check for customer booking status updates
             if (settings.bookingUpdates) {
                 const lastSeenBookingsJSON = sessionStorage.getItem(`lastSeenBookings_${user.id}`);
                 const lastSeenBookings: Booking[] = lastSeenBookingsJSON ? JSON.parse(lastSeenBookingsJSON) : [];
-                
                 const currentUserBookings = db.bookings.filter(b => b.customerName === user.name);
 
                 currentUserBookings.forEach(currentBooking => {
                     const oldBooking = lastSeenBookings.find(b => b.id === currentBooking.id);
-                    if (oldBooking && oldBooking.status !== currentBooking.status && currentBooking.status === 'En Route') {
-                        showNotification('Mechanic En Route!', {
-                            body: `${currentBooking.mechanic?.name} is on the way for your ${currentBooking.service.name} service.`
-                        });
+                    if (oldBooking && oldBooking.status !== currentBooking.status) {
+                         let title = '';
+                         let body = '';
+                         switch (currentBooking.status) {
+                             case 'En Route':
+                                 title = 'Mechanic En Route!';
+                                 body = `${currentBooking.mechanic?.name} is on the way for your ${currentBooking.service.name} service.`;
+                                 break;
+                             case 'In Progress':
+                                 title = 'Mechanic Has Arrived';
+                                 body = `${currentBooking.mechanic?.name} has arrived to begin your ${currentBooking.service.name} service.`;
+                                 break;
+                             case 'Completed':
+                                 title = 'Service Complete!';
+                                 body = `Your ${currentBooking.service.name} for your ${currentBooking.vehicle.make} ${currentBooking.vehicle.model} is now complete.`;
+                                 break;
+                         }
+                         if (title && body) {
+                             showNotification(title, { body });
+                         }
                     }
                 });
 
                 sessionStorage.setItem(`lastSeenBookings_${user.id}`, JSON.stringify(currentUserBookings));
             }
 
-            // Check for service reminders
+            // 3. Check for customer service reminders
             if (settings.serviceReminders) {
                 const storedRemindersJSON = localStorage.getItem('serviceReminders');
                 const reminders: Reminder[] = storedRemindersJSON ? JSON.parse(storedRemindersJSON) : [];
@@ -141,7 +152,6 @@ const AppContent: React.FC = () => {
                     );
                     
                     if (reminderDate >= today && reminderDate <= oneWeekFromNow) {
-                        // To avoid spamming, only show once per session.
                         const notifiedThisSession = sessionStorage.getItem(`notified_reminder_${reminder.id}`);
                         if (!notifiedThisSession) {
                              const daysUntilDue = Math.round((reminderDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -159,6 +169,47 @@ const AppContent: React.FC = () => {
             }
         }
     }, [isAuthenticated, user, db]);
+
+    // Effect for Mechanic-specific notifications
+    useEffect(() => {
+        if (isMechanicAuthenticated && mechanic && db) {
+            requestNotificationPermission();
+            const settings = getMechanicNotificationSettings();
+
+            // 1. Check for new available jobs
+            if (settings.newJobAlerts) {
+                const lastSeenUnassignedJSON = sessionStorage.getItem('lastSeenUnassignedBookings');
+                const lastSeenUnassigned: Booking[] = lastSeenUnassignedJSON ? JSON.parse(lastSeenUnassignedJSON) : [];
+                const currentUnassigned = db.bookings.filter(b => b.status === 'Upcoming' && !b.mechanic);
+
+                currentUnassigned.forEach(job => {
+                    if (!lastSeenUnassigned.find(b => b.id === job.id)) {
+                        showNotification('New Job Available!', {
+                            body: `A new ${job.service.name} job for a ${job.vehicle.make} ${job.vehicle.model} is available.`
+                        });
+                    }
+                });
+                sessionStorage.setItem('lastSeenUnassignedBookings', JSON.stringify(currentUnassigned));
+            }
+
+            // 2. Check for updates to assigned jobs (e.g., cancellation)
+            if (settings.jobStatusChanges) {
+                const lastSeenMechanicJobsJSON = sessionStorage.getItem(`lastSeenMechanicBookings_${mechanic.id}`);
+                const lastSeenMechanicJobs: Booking[] = lastSeenMechanicJobsJSON ? JSON.parse(lastSeenMechanicJobsJSON) : [];
+                const currentMechanicJobs = db.bookings.filter(b => b.mechanic?.id === mechanic.id);
+
+                currentMechanicJobs.forEach(currentJob => {
+                    const oldJob = lastSeenMechanicJobs.find(b => b.id === currentJob.id);
+                    if (oldJob && oldJob.status !== currentJob.status && currentJob.status === 'Cancelled') {
+                        showNotification('Booking Cancelled', {
+                            body: `The booking for ${currentJob.customerName} (${currentJob.service.name}) has been cancelled.`
+                        });
+                    }
+                });
+                sessionStorage.setItem(`lastSeenMechanicBookings_${mechanic.id}`, JSON.stringify(currentMechanicJobs));
+            }
+        }
+    }, [isMechanicAuthenticated, mechanic, db]);
 
 
     return (
@@ -202,6 +253,7 @@ const AppContent: React.FC = () => {
                                         <Route path="earnings" element={<MechanicEarningsScreen />} />
                                         <Route path="job/:bookingId" element={<MechanicJobDetailScreen />} />
                                         <Route path="profile" element={<MechanicProfileManagementScreen />} />
+                                        <Route path="notification-settings" element={<MechanicNotificationSettingsScreen />} />
                                         <Route path="*" element={<Navigate to="/mechanic/dashboard" />} />
                                     </Routes>
                                 </div>

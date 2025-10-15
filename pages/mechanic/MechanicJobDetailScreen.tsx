@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Header from '../../components/Header';
@@ -20,14 +19,18 @@ const DetailRow: React.FC<{ label: string, value: string, icon?: React.ReactNode
 
 const MechanicJobDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
-    const { db, updateBookingStatus, loading } = useDatabase();
+    const { db, updateBookingStatus, updateBookingNotes, loading } = useDatabase();
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isDirectionsOpen, setIsDirectionsOpen] = useState(false);
-
+    
     const booking = db?.bookings.find(b => b.id === bookingId);
     const customer = db?.customers.find(c => c.name === booking?.customerName);
     const vehicle = booking?.vehicle;
-
+    
+    const [notes, setNotes] = useState(booking?.notes || '');
+    const [isSavingNotes, setIsSavingNotes] = useState(false);
+    const [notesSuccess, setNotesSuccess] = useState(false);
+    
     if (loading || !db) {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" /></div>;
     }
@@ -42,6 +45,14 @@ const MechanicJobDetailScreen: React.FC = () => {
             </div>
         );
     }
+    
+    const handleSaveNotes = async () => {
+        setIsSavingNotes(true);
+        await updateBookingNotes(booking.id, notes);
+        setIsSavingNotes(false);
+        setNotesSuccess(true);
+        setTimeout(() => setNotesSuccess(false), 2000);
+    };
     
     const handleGetDirections = () => {
         if (customer?.lat && customer?.lng) {
@@ -72,6 +83,47 @@ const MechanicJobDetailScreen: React.FC = () => {
                     <DetailRow label="Phone" value={customer.phone} />
                     <DetailRow label="Vehicle" value={`${vehicle.year} ${vehicle.make} ${vehicle.model}`} />
                     <DetailRow label="Plate No." value={vehicle.plateNumber} />
+                </div>
+
+                {/* Status History */}
+                {booking.statusHistory && booking.statusHistory.length > 0 && (
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="text-lg font-semibold text-white mb-3">Status History</h3>
+                        <div className="space-y-3">
+                            {booking.statusHistory.map((s, i) => (
+                                <div key={i} className="flex items-center text-sm">
+                                    <div className="w-2.5 h-2.5 bg-primary rounded-full mr-3"></div>
+                                    <div className="flex-grow flex justify-between">
+                                        <span className="text-light-gray">{s.status}</span>
+                                        <span className="text-xs text-gray-500">{new Date(s.timestamp).toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Job Notes */}
+                <div className="bg-dark-gray p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold text-white mb-2">Job Notes</h3>
+                    <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Add details about work performed, parts used, or customer requests..."
+                        rows={5}
+                        className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
+                    />
+                    <button
+                        onClick={handleSaveNotes}
+                        disabled={isSavingNotes}
+                        className={`w-full font-bold py-2 px-4 rounded-lg transition mt-3 text-sm flex items-center justify-center ${
+                            notesSuccess
+                            ? 'bg-green-600 text-white'
+                            : 'bg-primary text-white hover:bg-orange-600 disabled:opacity-50'
+                        }`}
+                    >
+                        {isSavingNotes ? <Spinner size="sm" /> : notesSuccess ? '✓ Saved' : 'Save Notes'}
+                    </button>
                 </div>
 
                 {/* Actions */}
@@ -109,6 +161,7 @@ const MechanicJobDetailScreen: React.FC = () => {
             </div>
             {isChatOpen && booking.mechanic && (
                 <MechanicCustomerChatModal
+                    booking={booking}
                     customer={customer}
                     mechanic={booking.mechanic}
                     onClose={() => setIsChatOpen(false)}

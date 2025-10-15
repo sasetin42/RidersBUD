@@ -10,6 +10,19 @@ const DEFAULT_SETTINGS: NotificationSettings = {
     promotions: true,
 };
 
+export interface MechanicNotificationSettings {
+    newJobAlerts: boolean;
+    jobStatusChanges: boolean;
+    paymentConfirmations: boolean;
+}
+
+const DEFAULT_MECHANIC_SETTINGS: MechanicNotificationSettings = {
+    newJobAlerts: true,
+    jobStatusChanges: true,
+    paymentConfirmations: true,
+};
+
+
 export const getNotificationSettings = (): NotificationSettings => {
     try {
         const stored = localStorage.getItem('notificationSettings');
@@ -28,6 +41,26 @@ export const saveNotificationSettings = (settings: NotificationSettings) => {
         localStorage.setItem('notificationSettings', JSON.stringify(settings));
     } catch (e) {
         console.error("Failed to save notification settings", e);
+    }
+};
+
+export const getMechanicNotificationSettings = (): MechanicNotificationSettings => {
+    try {
+        const stored = localStorage.getItem('mechanicNotificationSettings');
+        if (stored) {
+            return { ...DEFAULT_MECHANIC_SETTINGS, ...JSON.parse(stored) };
+        }
+    } catch (e) {
+        console.error("Failed to parse mechanic notification settings", e);
+    }
+    return DEFAULT_MECHANIC_SETTINGS;
+};
+
+export const saveMechanicNotificationSettings = (settings: MechanicNotificationSettings) => {
+    try {
+        localStorage.setItem('mechanicNotificationSettings', JSON.stringify(settings));
+    } catch (e) {
+        console.error("Failed to save mechanic notification settings", e);
     }
 };
 

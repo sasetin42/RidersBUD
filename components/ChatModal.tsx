@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Service } from '../types';
 import { GoogleGenAI, Chat } from '@google/genai';
@@ -89,8 +87,6 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
         setIsLoading(true);
 
         setMessages(prev => [...prev, { sender: 'user', text: userInput }]);
-        
-        // Add a placeholder for the AI response
         setMessages(prev => [...prev, { sender: 'ai', text: "" }]);
 
         try {
@@ -149,26 +145,14 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
                             />
                        )}
                         <div className={`max-w-xs md:max-w-md p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-primary text-white rounded-br-none' : 'bg-dark-gray text-white rounded-bl-none'}`}>
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                            {isLoading && index === messages.length - 1 && msg.sender === 'ai' && msg.text === '' ? (
+                                <p className="text-sm text-light-gray italic animate-pulse">typing...</p>
+                            ) : (
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                            )}
                         </div>
                     </div>
                 ))}
-                 {isLoading && messages.length > 0 && (
-                    <div className="flex items-end gap-2 justify-start">
-                        <img 
-                            src={db.settings.virtualMechanicImageUrl} 
-                            alt={db.settings.virtualMechanicName} 
-                            className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-primary"
-                        />
-                         <div className="max-w-xs md:max-w-md p-3 rounded-2xl bg-dark-gray text-white rounded-bl-none">
-                            <div className="flex items-center gap-1.5">
-                               <div className="w-2 h-2 bg-light-gray rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-                               <div className="w-2 h-2 bg-light-gray rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-                               <div className="w-2 h-2 bg-light-gray rounded-full animate-pulse"></div>
-                            </div>
-                        </div>
-                    </div>
-                )}
                 <div ref={messagesEndRef} />
             </main>
 

@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Service } from '../types';
@@ -55,32 +53,31 @@ const ServiceCard: React.FC<{ service: Service; }> = ({ service }) => {
     return (
         <div 
             onClick={() => navigate(`/service/${service.id}`)} 
-            className="relative rounded-xl overflow-hidden cursor-pointer group h-48 shadow-lg"
+            className="bg-dark-gray rounded-xl overflow-hidden cursor-pointer group flex flex-col shadow-lg transition-transform duration-300 hover:-translate-y-1"
         >
-            <img src={service.imageUrl} alt={service.name} className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+            <div className="relative">
+                <img src={service.imageUrl} alt={service.name} className="w-full h-28 object-cover" />
+            </div>
             
-            <div className="relative h-full flex flex-col justify-end p-3 text-white">
-                 <div>
-                    <h3 className="text-lg font-bold">{service.name}</h3>
-                    <p className="text-sm text-primary font-semibold">
-                        {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Request Quote'}
-                    </p>
-                </div>
-                <div className="mt-2 flex gap-2 items-center opacity-0 group-hover:opacity-100 transform group-hover:translate-y-0 translate-y-2 transition-all duration-300">
+            <div className="p-3 flex flex-col flex-grow">
+                 <h3 className="text-[12px] font-medium text-white leading-tight flex-grow">{service.name}</h3>
+                 <p className="text-sm text-primary font-semibold mt-1">
+                    {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Request Quote'}
+                </p>
+                <div className="mt-3 pt-3 border-t border-field flex gap-2 items-center">
                     <button 
                         onClick={handleBookNow} 
-                        className="flex-grow bg-primary/80 backdrop-blur-sm text-white font-bold py-2 px-4 rounded-full hover:bg-primary transition-colors duration-200"
+                        className="flex-grow bg-primary text-white font-medium py-1.5 px-3 rounded-md hover:bg-orange-600 transition-colors duration-200 text-xs"
                         aria-label={`Book ${service.name} now`}
                     >
                         Book Now
                     </button>
                     <button 
                         onClick={handleToggleWishlist} 
-                        className="flex-shrink-0 bg-black/40 backdrop-blur-sm rounded-full p-3 transition-transform duration-200 hover:scale-110" 
+                        className="flex-shrink-0 bg-field rounded-md p-2 transition-transform duration-200 hover:scale-110" 
                         aria-label="Toggle Wishlist"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-colors ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-colors ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
                         </svg>
                     </button>

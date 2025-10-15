@@ -172,6 +172,33 @@ const MechanicProfileScreen: React.FC = () => {
                     </div>
                 </div>
 
+                {/* Credentials & Documents */}
+                {(mechanic.businessLicenseUrl || mechanic.certifications?.length || mechanic.insurances?.length) && (
+                    <div>
+                        <h2 className="text-xl font-semibold mb-3 text-white">Credentials & Documents</h2>
+                        <div className="bg-dark-gray p-4 rounded-lg space-y-3">
+                            {mechanic.businessLicenseUrl && (
+                                <a href={mechanic.businessLicenseUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-sm text-blue-400 hover:text-blue-300 transition-colors">
+                                    <span>View Business License</span>
+                                    <span>&#x2197;</span>
+                                </a>
+                            )}
+                            {mechanic.certifications?.map((cert, i) => (
+                                <a key={i} href={cert.fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-sm text-blue-400 hover:text-blue-300 transition-colors">
+                                    <span>{cert.name}</span>
+                                    <span>&#x2197;</span>
+                                </a>
+                            ))}
+                             {mechanic.insurances?.map((ins, i) => (
+                                <div key={i} className="text-sm text-light-gray">
+                                    <span className="font-semibold text-white">{ins.type} Insurance:</span> {ins.provider} (Policy #{ins.policyNumber})
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+
                 {/* Location */}
                 {mechanic.lat && mechanic.lng && (
                     <div>

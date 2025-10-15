@@ -31,11 +31,10 @@ const MechanicDetailsModal: React.FC<{
 
     const handleSave = async () => {
         setIsSaving(true);
-        // Simulate API delay for better UX
         await new Promise(resolve => setTimeout(resolve, 750));
         await onUpdate(formData);
         setIsSaving(false);
-        onClose(); // Close modal on save
+        onClose();
     };
 
 
@@ -125,14 +124,17 @@ const AdminMechanicsScreen: React.FC = () => {
     const { db, updateMechanicStatus, deleteMechanic, updateMechanic, loading } = useDatabase();
     const [viewingMechanic, setViewingMechanic] = useState<Mechanic | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive' | 'Pending'>('all');
 
     const filteredMechanics = useMemo(() => {
         if (!db) return [];
-        return db.mechanics.filter(mechanic =>
-            mechanic.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            mechanic.email.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-    }, [db, searchQuery]);
+        return db.mechanics.filter(mechanic => {
+            const searchMatch = mechanic.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                mechanic.email.toLowerCase().includes(searchQuery.toLowerCase());
+            const statusMatch = statusFilter === 'all' || mechanic.status === statusFilter;
+            return searchMatch && statusMatch;
+        });
+    }, [db, searchQuery, statusFilter]);
 
     if (loading || !db) {
         return <div className="flex items-center justify-center h-full bg-dark-gray"><Spinner size="lg" color="text-white" /></div>
@@ -147,20 +149,18 @@ const AdminMechanicsScreen: React.FC = () => {
     return (
         <div className="text-white flex flex-col h-full overflow-hidden bg-dark-gray">
             <div className="flex-shrink-0 px-6 lg:px-8 py-6">
-                <div className="flex justify-between items-center mb-4">
-                    <h1 className="text-3xl font-bold">Manage Mechanics</h1>
-                </div>
-                <div className="relative">
-                     <input
-                        type="text"
-                        placeholder="Search by name or email..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-field border border-secondary rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                     <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                    </span>
+                <h1 className="text-3xl font-bold mb-4">Manage Mechanics</h1>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div className="relative">
+                         <input type="text" placeholder="Search by name or email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-field border border-secondary rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary" />
+                         <span className="absolute inset-y-0 left-0 flex items-center pl-3"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></span>
+                    </div>
+                     <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="w-full p-2 bg-field border border-secondary text-gray-200 rounded-lg focus:ring-primary focus:border-primary">
+                        <option value="all">All Statuses</option>
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Pending">Pending</option>
+                    </select>
                 </div>
             </div>
             <div className="flex-1 overflow-auto px-6 lg:px-8">
@@ -168,7 +168,10 @@ const AdminMechanicsScreen: React.FC = () => {
                     <thead className="sticky top-0 bg-dark-gray z-10">
                         <tr>
                             <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Name</th>
-                            <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Email</th>
+                            <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Contact</th>
+                            <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Specializations</th>
+                            <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Rating</th>
+                            <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Joined</th>
                             <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Status</th>
                             <th className="py-4 font-bold text-light-gray uppercase tracking-wider text-sm border-b border-secondary">Actions</th>
                         </tr>
@@ -177,35 +180,20 @@ const AdminMechanicsScreen: React.FC = () => {
                         {filteredMechanics.map((mechanic) => (
                              <tr key={mechanic.id} className="hover:bg-secondary">
                                 <td className="py-4 px-2 text-gray-200 border-b border-secondary">
-                                    <div className="flex items-center gap-3">
-                                        <img src={mechanic.imageUrl} alt={mechanic.name} className="w-10 h-10 rounded-full object-cover" />
-                                        <span>{mechanic.name}</span>
-                                    </div>
+                                    <div className="flex items-center gap-3"><img src={mechanic.imageUrl} alt={mechanic.name} className="w-10 h-10 rounded-full object-cover" /><span>{mechanic.name}</span></div>
                                 </td>
-                                <td className="py-4 px-2 text-gray-200 border-b border-secondary">{mechanic.email}</td>
-                                <td className="py-4 px-2 border-b border-secondary">
-                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[mechanic.status]}`}>
-                                        {mechanic.status}
-                                    </span>
-                                </td>
-                                <td className="py-4 px-2 text-sm border-b border-secondary whitespace-nowrap">
-                                    <button onClick={() => setViewingMechanic(mechanic)} className="font-semibold text-blue-400 hover:text-blue-300 mr-4">View/Edit</button>
-                                </td>
+                                <td className="py-4 px-2 text-gray-200 border-b border-secondary text-xs"><div>{mechanic.email}</div><div className="text-light-gray">{mechanic.phone}</div></td>
+                                <td className="py-4 px-2 text-gray-200 border-b border-secondary text-xs"><span title={mechanic.specializations.join(', ')}>{mechanic.specializations.slice(0, 2).join(', ')}{mechanic.specializations.length > 2 ? '...' : ''}</span></td>
+                                <td className="py-4 px-2 text-gray-200 border-b border-secondary">⭐ {mechanic.rating.toFixed(1)}</td>
+                                <td className="py-4 px-2 text-gray-200 border-b border-secondary text-xs">{mechanic.registrationDate ? new Date(mechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString() : 'N/A'}</td>
+                                <td className="py-4 px-2 border-b border-secondary"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[mechanic.status]}`}>{mechanic.status}</span></td>
+                                <td className="py-4 px-2 text-sm border-b border-secondary whitespace-nowrap"><button onClick={() => setViewingMechanic(mechanic)} className="font-semibold text-blue-400 hover:text-blue-300 mr-4">View/Edit</button></td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-            
-            {viewingMechanic && (
-                <MechanicDetailsModal 
-                    mechanic={viewingMechanic}
-                    onClose={() => setViewingMechanic(null)}
-                    onStatusChange={updateMechanicStatus}
-                    onUpdate={updateMechanic}
-                    onDelete={deleteMechanic}
-                />
-            )}
+            {viewingMechanic && <MechanicDetailsModal mechanic={viewingMechanic} onClose={() => setViewingMechanic(null)} onStatusChange={updateMechanicStatus} onUpdate={updateMechanic} onDelete={deleteMechanic} />}
         </div>
     );
 };

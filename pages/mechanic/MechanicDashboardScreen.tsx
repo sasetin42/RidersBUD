@@ -4,6 +4,7 @@ import { useMechanicAuth } from '../../context/MechanicAuthContext';
 import { useDatabase } from '../../context/DatabaseContext';
 import { Booking } from '../../types';
 import { useNavigate } from 'react-router-dom';
+import MechanicCalendar from '../../components/mechanic/MechanicCalendar';
 
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; }> = ({ title, value, icon }) => (
     <div className="bg-dark-gray p-4 rounded-lg flex items-center gap-4">
@@ -31,6 +32,11 @@ const MechanicDashboardScreen: React.FC = () => {
         if (!mechanic || !db) return null;
         return db.bookings.find(b => b.mechanic?.id === mechanic.id && (b.status === 'En Route' || b.status === 'In Progress'));
     }, [mechanic, db]);
+
+    const myBookings = useMemo(() => {
+        if (!mechanic || !db) return [];
+        return db.bookings.filter(b => b.mechanic?.id === mechanic.id && b.status !== 'Cancelled');
+    }, [db, mechanic]);
     
     const analyticsData = useMemo(() => {
         if (!mechanic || !db) return null;
@@ -187,6 +193,13 @@ const MechanicDashboardScreen: React.FC = () => {
                 
                 {analyticsData && (
                     <div className="space-y-6">
+                         <div>
+                            <h2 className="text-lg font-semibold text-white mb-3">My Calendar</h2>
+                             <MechanicCalendar 
+                                bookings={myBookings}
+                                unavailableDates={mechanic.unavailableDates || []}
+                            />
+                        </div>
                         <div>
                             <h2 className="text-lg font-semibold text-white mb-3">Today's Summary</h2>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
