@@ -8,8 +8,11 @@ declare const L: any;
 const greenPinSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="%2328a745"><path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67a24 24 0 0 1-35.464 0zM192 256c35.346 0 64-28.654 64-64s-28.654-64-64-64-64 28.654-64-64 28.654 64 64 64z"/></svg>`;
 const redPinSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="%23dc3545"><path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67a24 24 0 0 1-35.464 0zM192 256c35.346 0 64-28.654 64-64s-28.654-64-64-64-64 28.654-64-64 28.654 64 64 64z"/></svg>`;
 
+// Fix: Define a local type that includes the dynamically added 'isAvailable' property.
+type MappedMechanic = Mechanic & { isAvailable?: boolean };
+
 interface LiveMapProps {
-    mechanics: Mechanic[];
+    mechanics: MappedMechanic[];
     settings: Settings;
     onViewProfile: (mechanicId: string) => void;
 }

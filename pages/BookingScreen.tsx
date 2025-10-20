@@ -154,36 +154,15 @@ const getInitialState = (serviceIdFromUrl?: string) => {
     return null;
 };
 
-// Haversine distance formula to calculate distance between two lat/lng points
-const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371; // Radius of the Earth in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) *
-        Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-};
 
 const BookingScreen: React.FC = () => {
     const { serviceId: initialServiceId } = useParams<{ serviceId: string }>();
     const { db, addBooking } = useDatabase();
     const navigate = useNavigate();
-    const { user, updateUserLocation } = useAuth();
+    const { user } = useAuth();
     const location = useLocation();
 
     const rebookingState = location.state as { vehiclePlateNumber?: string; } | undefined;
-
-    // Location Permission State
-    const [locationState, setLocationState] = useState({
-        modalOpen: false,
-        status: 'prompting' as 'prompting' | 'requesting' | 'error',
-        errorMessage: '',
-    });
 
     // Use a lazy initializer to read from sessionStorage only on the first render
     const [step, setStep] = useState(() => getInitialState(initialServiceId)?.step || 1);
@@ -203,25 +182,14 @@ const BookingScreen: React.FC = () => {
     // Step 3 State
     const [mechanicSearch, setMechanicSearch] = useState(() => getInitialState(initialServiceId)?.mechanicSearch || '');
     const [specializationFilter, setSpecializationFilter] = useState(() => getInitialState(initialServiceId)?.specializationFilter || 'all');
-    const [ratingFilter, setRatingFilter] = useState(() => getInitialState(initialServiceId)?.ratingFilter || 0);
+    const [sortOption, setSortOption] = useState<'rating' | 'jobs' | 'name'>(() => getInitialState(initialServiceId)?.sortOption || 'rating');
     const [availableNowFilter, setAvailableNowFilter] = useState(() => getInitialState(initialServiceId)?.availableNowFilter || false);
-    const [isNearbyFilter, setIsNearbyFilter] = useState(() => getInitialState(initialServiceId)?.isNearbyFilter || false);
-    const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(() => getInitialState(initialServiceId)?.userLocation || null);
-    const [locationError, setLocationError] = useState<string | null>(null);
-    const [isFetchingLocation, setIsFetchingLocation] = useState(false);
     const [selectedTime, setSelectedTime] = useState('');
     const [selectedMechanic, setSelectedMechanic] = useState<Mechanic | null>(null);
 
     // Step 4 State
     const [notes, setNotes] = useState('');
     const [isBooking, setIsBooking] = useState(false);
-
-    // Effect to check for location on mount
-    useEffect(() => {
-        if (user && (!user.lat || !user.lng)) {
-            setLocationState({ modalOpen: true, status: 'prompting', errorMessage: '' });
-        }
-    }, [user]);
 
     // Effect to set initial vehicle if one isn't already selected from session/rebooking state
     useEffect(() => {
@@ -241,48 +209,12 @@ const BookingScreen: React.FC = () => {
             selectedDate: selectedDate.toISOString(),
             mechanicSearch,
             specializationFilter,
-            ratingFilter,
+            sortOption,
             availableNowFilter,
-            isNearbyFilter,
-            userLocation,
         };
         sessionStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-    }, [step, selectedServiceId, selectedVehiclePlate, selectedDate, mechanicSearch, specializationFilter, ratingFilter, availableNowFilter, isNearbyFilter, userLocation]);
+    }, [step, selectedServiceId, selectedVehiclePlate, selectedDate, mechanicSearch, specializationFilter, sortOption, availableNowFilter]);
 
-    const handleRequestLocation = () => {
-        if (!navigator.geolocation) {
-            setLocationState(prev => ({ ...prev, status: 'error', errorMessage: 'Geolocation is not supported by your browser.' }));
-            return;
-        }
-
-        setLocationState(prev => ({ ...prev, status: 'requesting' }));
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude } = position.coords;
-                updateUserLocation(latitude, longitude); // Update context
-                setLocationState({ modalOpen: false, status: 'prompting', errorMessage: '' }); // Success, close modal
-            },
-            (error) => {
-                let message = '';
-                switch (error.code) {
-                    case error.PERMISSION_DENIED:
-                        message = 'Location access was denied. You must enable it in your browser settings to book a service.';
-                        break;
-                    case error.POSITION_UNAVAILABLE:
-                        message = 'Location information is unavailable. Please try again.';
-                        break;
-                    case error.TIMEOUT:
-                        message = 'The request to get your location timed out. Please try again.';
-                        break;
-                    default:
-                        message = 'An unknown error occurred while getting your location.';
-                        break;
-                }
-                setLocationState(prev => ({ ...prev, status: 'error', errorMessage: message }));
-            }
-        );
-    };
 
     const handleBack = () => {
         if (step > 1) {
@@ -319,69 +251,85 @@ const BookingScreen: React.FC = () => {
         });
         return ['all', ...Array.from(specSet).sort()];
     }, [mechanics]);
-
-    const availableMechanics = useMemo(() => {
+    
+    const filteredAndSortedMechanics = useMemo(() => {
         const selectedDayOfWeek = selectedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
         const selectedDateWithoutTime = new Date(selectedDate);
         selectedDateWithoutTime.setHours(0, 0, 0, 0);
+        const isToday = selectedDate.toDateString() === new Date().toDateString();
 
-        return mechanics.filter(mechanic => {
+        const selectedService = services.find(s => s.id === selectedServiceId);
+
+        let availableMechanics = mechanics.filter(mechanic => {
             if (mechanic.status !== 'Active') return false;
 
             // Check specific unavailable dates first
-            if (mechanic.unavailableDates) {
-                for (const unavailable of mechanic.unavailableDates) {
-                    const start = new Date(unavailable.startDate.replace(/-/g, '/'));
-                    const end = new Date(unavailable.endDate.replace(/-/g, '/'));
-                    start.setHours(0, 0, 0, 0);
-                    end.setHours(0, 0, 0, 0);
-
-                    if (selectedDateWithoutTime >= start && selectedDateWithoutTime <= end) {
-                        return false; // Mechanic is unavailable
-                    }
-                }
+            if (mechanic.unavailableDates?.some(d => {
+                const start = new Date(d.startDate.replace(/-/g, '/'));
+                const end = new Date(d.endDate.replace(/-/g, '/'));
+                start.setHours(0, 0, 0, 0);
+                end.setHours(0, 0, 0, 0);
+                return selectedDateWithoutTime >= start && selectedDateWithoutTime <= end;
+            })) {
+                return false;
             }
 
             // Check weekly availability
-            const daySchedule = mechanic.availability?.[selectedDayOfWeek];
-            if (!daySchedule?.isAvailable) return false;
+            if (!mechanic.availability?.[selectedDayOfWeek]?.isAvailable) return false;
             
+            // Implicitly filter by service specialization
+            if (selectedService) {
+                const serviceNameLower = selectedService.name.toLowerCase();
+                const serviceCategoryLower = selectedService.category.toLowerCase();
+                
+                const hasSpecializationMatch = mechanic.specializations.some(specRaw => {
+                    const spec = specRaw.toLowerCase();
+                    const serviceWords = serviceNameLower.split(' ');
+                    return serviceWords.some(word => word.length > 2 && spec.includes(word));
+                });
+                
+                const hasCategoryMatch = mechanic.specializations.some(specRaw => {
+                    const spec = specRaw.toLowerCase();
+                    return spec.includes(serviceCategoryLower);
+                });
+
+                if (!hasSpecializationMatch && !hasCategoryMatch) return false;
+            }
+
+            // Apply manual specialization filter from dropdown
+            if (specializationFilter !== 'all' && !mechanic.specializations.includes(specializationFilter)) return false;
+
+            // Apply "Available Now" filter
+            if (availableNowFilter && isToday) {
+                const schedule = mechanic.availability?.[selectedDayOfWeek];
+                if (!schedule?.isAvailable) return false;
+                const now = new Date();
+                const startTime = new Date(`${selectedDate.toISOString().split('T')[0]}T${schedule.startTime}`);
+                const endTime = new Date(`${selectedDate.toISOString().split('T')[0]}T${schedule.endTime}`);
+                if (now < startTime || now > endTime || db.bookings.some(b => b.mechanic?.id === mechanic.id && (b.status === 'En Route' || b.status === 'In Progress'))) {
+                    return false;
+                }
+            }
+            
+            // Apply search filter
+            if (mechanicSearch && !mechanic.name.toLowerCase().includes(mechanicSearch.toLowerCase())) return false;
+
             return true;
         });
-    }, [mechanics, selectedDate]);
 
-    const handleNearbyToggle = () => {
-        if (isNearbyFilter) {
-            setIsNearbyFilter(false);
-            setUserLocation(null);
-            setLocationError(null);
-            return;
-        }
-    
-        if (!navigator.geolocation) {
-            setLocationError("Geolocation is not supported by your browser.");
-            return;
-        }
-    
-        setIsFetchingLocation(true);
-        setLocationError(null);
-    
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                setUserLocation({
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude,
-                });
-                setIsNearbyFilter(true);
-                setIsFetchingLocation(false);
-            },
-            () => {
-                setLocationError("Unable to retrieve your location. Please enable location permissions in your browser settings.");
-                setIsNearbyFilter(false);
-                setIsFetchingLocation(false);
+        // Apply sorting
+        availableMechanics.sort((a, b) => {
+            switch (sortOption) {
+                case 'rating': return b.rating - a.rating;
+                case 'jobs': return b.reviews - a.reviews;
+                case 'name': return a.name.localeCompare(b.name);
+                default: return 0;
             }
-        );
-    };
+        });
+
+        return availableMechanics;
+    }, [mechanics, services, selectedServiceId, selectedDate, specializationFilter, availableNowFilter, mechanicSearch, sortOption, db.bookings]);
+
 
     const handleStep1Continue = () => {
         if (!selectedServiceId) setError('Please select a service.');
@@ -443,39 +391,6 @@ const BookingScreen: React.FC = () => {
         }
     };
 
-    const LocationPermissionModal = () => (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4 animate-fadeIn">
-            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm text-center">
-                {locationState.status === 'prompting' && (
-                    <>
-                        <h2 className="text-xl font-bold mb-4 text-white">Location Required</h2>
-                        <p className="text-light-gray mb-6">To find nearby mechanics and ensure accurate service, we need to access your device's location.</p>
-                        <button onClick={handleRequestLocation} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
-                            Enable Location
-                        </button>
-                    </>
-                )}
-                {locationState.status === 'requesting' && (
-                    <>
-                        <Spinner size="lg" />
-                        <p className="text-light-gray mt-4">Getting your location...</p>
-                    </>
-                )}
-                {locationState.status === 'error' && (
-                     <>
-                        <h2 className="text-xl font-bold mb-4 text-red-400">Location Access Required</h2>
-                        <p className="text-light-gray mb-6">{locationState.errorMessage}</p>
-                        <button onClick={handleRequestLocation} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
-                            Try Again
-                        </button>
-                        <button onClick={() => navigate('/')} className="w-full text-sm text-light-gray mt-4 hover:underline">
-                            Back to Home
-                        </button>
-                    </>
-                )}
-            </div>
-        </div>
-    );
 
     const renderStep1 = () => (
         <>
@@ -581,48 +496,21 @@ const BookingScreen: React.FC = () => {
 
     const renderStep3 = () => {
         const isToday = selectedDate.toDateString() === new Date().toDateString();
-
-        const filteredMechanics = availableMechanics.filter(mechanic => {
-            const lowercasedQuery = mechanicSearch.toLowerCase();
-            const nameMatch = lowercasedQuery ? mechanic.name.toLowerCase().includes(lowercasedQuery) : true;
-            const specMatch = specializationFilter === 'all' || mechanic.specializations.includes(specializationFilter);
-            const ratingMatch = mechanic.rating >= ratingFilter;
-            const nearbyMatch = !isNearbyFilter || (userLocation && getDistanceInKm(userLocation.lat, userLocation.lng, mechanic.lat, mechanic.lng) <= 10);
-
-            let availableNowMatch = true;
-            if (availableNowFilter && isToday) {
-                const dayOfWeek = selectedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
-                const schedule = mechanic.availability?.[dayOfWeek];
-                if (!schedule || !schedule.isAvailable) {
-                    availableNowMatch = false;
-                } else {
-                    const now = new Date();
-                    const startTime = new Date(`${selectedDate.toISOString().split('T')[0]}T${schedule.startTime}`);
-                    const endTime = new Date(`${selectedDate.toISOString().split('T')[0]}T${schedule.endTime}`);
-                    
-                    if (now < startTime || now > endTime) {
-                        availableNowMatch = false;
-                    } else {
-                        const hasActiveJobNow = db.bookings.some(
-                            b => b.mechanic?.id === mechanic.id &&
-                                 (b.status === 'En Route' || b.status === 'In Progress')
-                        );
-                        if (hasActiveJobNow) {
-                            availableNowMatch = false;
-                        }
-                    }
-                }
-            }
-
-            return nameMatch && specMatch && ratingMatch && availableNowMatch && nearbyMatch;
-        });
+        const selectedService = services.find(s => s.id === selectedServiceId);
 
         return (
              <div className="p-4 space-y-4 flex-grow flex flex-col overflow-hidden">
-                <div className="space-y-2 flex-shrink-0">
-                    <div className="grid grid-cols-2 gap-2">
-                         {isToday && (
-                            <div className="flex items-center gap-2 bg-field p-2 rounded-lg">
+                {selectedService && (
+                    <div className="text-center text-sm text-light-gray -mt-2 mb-2 flex-shrink-0 bg-field p-2 rounded-md border border-dark-gray">
+                        <p>Showing mechanics specializing in <strong>{selectedService.name}</strong>.</p>
+                    </div>
+                )}
+                
+                <div className="bg-field p-3 rounded-lg border border-dark-gray flex-shrink-0">
+                    <h4 className="text-sm font-semibold text-light-gray mb-3">Refine Your Search</h4>
+                    <div className="space-y-3">
+                        {isToday && (
+                            <div className="flex items-center gap-2 bg-dark-gray p-2 rounded-lg">
                                 <input
                                     type="checkbox"
                                     id="available-now"
@@ -633,70 +521,48 @@ const BookingScreen: React.FC = () => {
                                 <label htmlFor="available-now" className="text-white font-semibold">Available Now</label>
                             </div>
                         )}
-                        <div className="flex items-center gap-2 bg-field p-2 rounded-lg">
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                            </span>
                             <input
-                                type="checkbox"
-                                id="nearby-me"
-                                checked={isNearbyFilter}
-                                onChange={handleNearbyToggle}
-                                disabled={isFetchingLocation}
-                                className="w-5 h-5 text-primary bg-secondary rounded border-gray-500 focus:ring-primary disabled:opacity-50"
+                                type="text"
+                                placeholder="Search by name..."
+                                value={mechanicSearch}
+                                onChange={(e) => setMechanicSearch(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 bg-dark-gray border border-secondary rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
                             />
-                            <label htmlFor="nearby-me" className="text-white font-semibold flex items-center gap-2">
-                                Nearby Me
-                                {isFetchingLocation ? <Spinner size="sm" /> : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                                    </svg>
-                                )}
-                            </label>
                         </div>
-                    </div>
-                    {locationError && <p className="text-red-400 text-xs text-center pt-2">{locationError}</p>}
-                    <div className="grid grid-cols-2 gap-2">
-                        <select
-                            value={specializationFilter}
-                            onChange={e => setSpecializationFilter(e.target.value)}
-                            className="w-full px-3 py-2 bg-field border border-secondary rounded-lg text-white text-sm"
-                        >
-                            {allSpecializations.map(spec => (
-                                <option key={spec} value={spec} className="capitalize">
-                                    {spec === 'all' ? 'Any Specialization' : spec}
-                                </option>
-                            ))}
-                        </select>
-                        <select
-                            value={ratingFilter}
-                            onChange={e => setRatingFilter(Number(e.target.value))}
-                            className="w-full px-3 py-2 bg-field border border-secondary rounded-lg text-white text-sm"
-                        >
-                            <option value={0}>Any Rating</option>
-                            <option value={4}>4 ★ & Up</option>
-                            <option value={3}>3 ★ & Up</option>
-                            <option value={2}>2 ★ & Up</option>
-                        </select>
-                    </div>
-                    <div className="relative">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                        </span>
-                        <input
-                            type="text"
-                            placeholder="Search by name..."
-                            value={mechanicSearch}
-                            onChange={(e) => setMechanicSearch(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 bg-field border border-secondary rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                            <select
+                                value={specializationFilter}
+                                onChange={e => setSpecializationFilter(e.target.value)}
+                                className="w-full px-3 py-2 bg-dark-gray border border-secondary rounded-lg text-white text-sm"
+                            >
+                                {allSpecializations.map(spec => (
+                                    <option key={spec} value={spec} className="capitalize">
+                                        {spec === 'all' ? 'Any Specialization' : spec}
+                                    </option>
+                                ))}
+                            </select>
+                             <select
+                                value={sortOption}
+                                onChange={e => setSortOption(e.target.value as any)}
+                                className="w-full px-3 py-2 bg-dark-gray border border-secondary rounded-lg text-white text-sm"
+                            >
+                                <option value="rating">Sort by: Rating (High to Low)</option>
+                                <option value="jobs">Sort by: Jobs Completed</option>
+                                <option value="name">Sort by: Name (A-Z)</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
                 <div className="flex-grow overflow-y-auto space-y-4 pt-2">
-                    {availableMechanics.length === 0 ? (
-                        <p className="text-center text-light-gray pt-8">No mechanics available for this day. Please try another date.</p>
-                    ) : filteredMechanics.length === 0 ? (
-                        <p className="text-center text-light-gray pt-8">No mechanics found matching your filters for this day.</p>
+                    {filteredAndSortedMechanics.length === 0 ? (
+                        <p className="text-center text-light-gray pt-8">No mechanics found matching your criteria for this day.</p>
                     ) : (
-                        filteredMechanics.map(mechanic => (
+                        filteredAndSortedMechanics.map(mechanic => (
                             <MechanicAvailabilityCard
                                 key={mechanic.id}
                                 mechanic={mechanic}
@@ -762,7 +628,6 @@ const BookingScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-             {locationState.modalOpen && <LocationPermissionModal />}
             <div className="relative flex items-center justify-center p-4 bg-[#1D1D1D] border-b border-dark-gray flex-shrink-0">
                 <button onClick={handleBack} className="absolute left-4 text-primary">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

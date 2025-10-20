@@ -1,12 +1,15 @@
 
 
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { CartItem, Product } from '../types';
+// Fix: Changed Product to Part to ensure only valid cart items are added.
+import { CartItem, Part } from '../types';
 
 interface CartContextType {
     cartItems: CartItem[];
-    addToCart: (product: Product) => void;
+    // Fix: Changed product type from Product to Part.
+    addToCart: (product: Part) => void;
     removeFromCart: (productId: string) => void;
+    removeAllFromCart: (productId: string) => void;
     clearCart: () => void;
     itemCount: number;
 }
@@ -42,7 +45,8 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, [cartItems]);
 
-    const addToCart = (product: Product) => {
+    // Fix: Changed product type from Product to Part.
+    const addToCart = (product: Part) => {
         setCartItems(prevItems => {
             const exist = prevItems.find(item => item.id === product.id);
             if (exist) {
@@ -67,6 +71,10 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
         });
     };
+
+    const removeAllFromCart = (productId: string) => {
+        setCartItems(prevItems => prevItems.filter(item => item.id !== productId));
+    };
     
     const clearCart = () => {
         setCartItems([]);
@@ -75,7 +83,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const itemCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
     return (
-        <CartContext.Provider value={{ cartItems, addToCart, removeFromCart, clearCart, itemCount }}>
+        <CartContext.Provider value={{ cartItems, addToCart, removeFromCart, removeAllFromCart, clearCart, itemCount }}>
             {children}
         </CartContext.Provider>
     );

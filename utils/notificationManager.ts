@@ -1,13 +1,26 @@
+
 export interface NotificationSettings {
     bookingUpdates: boolean;
     serviceReminders: boolean;
     promotions: boolean;
+    reminderLeadTime: '1-hour' | '1-day' | '2-days';
+    notificationChannels: {
+        inApp: boolean;
+        email: boolean;
+        sms: boolean;
+    };
 }
 
 const DEFAULT_SETTINGS: NotificationSettings = {
     bookingUpdates: true,
     serviceReminders: true,
     promotions: true,
+    reminderLeadTime: '1-day',
+    notificationChannels: {
+        inApp: true,
+        email: true,
+        sms: false,
+    },
 };
 
 export interface MechanicNotificationSettings {

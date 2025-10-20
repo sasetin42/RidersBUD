@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { getNotificationSettings, saveNotificationSettings, NotificationSettings, requestNotificationPermission } from '../utils/notificationManager';
@@ -31,8 +33,18 @@ const NotificationSettingsScreen: React.FC = () => {
         saveNotificationSettings(settings);
     }, [settings]);
 
-    const handleSettingChange = (key: keyof NotificationSettings, value: boolean) => {
+    const handleSettingChange = (key: keyof NotificationSettings, value: any) => {
         setSettings(prev => ({ ...prev, [key]: value }));
+    };
+
+    const handleChannelChange = (channel: keyof NotificationSettings['notificationChannels'], value: boolean) => {
+        setSettings(prev => ({
+            ...prev,
+            notificationChannels: {
+                ...prev.notificationChannels,
+                [channel]: value
+            }
+        }));
     };
 
     const handleRequestPermission = async () => {
@@ -44,27 +56,59 @@ const NotificationSettingsScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary">
             <Header title="Notification Settings" showBackButton />
-            <div className="flex-grow p-6 space-y-4">
-                <ToggleSwitch
-                    label="Booking Updates"
-                    description="Get notified about confirmations and when your mechanic is en route."
-                    enabled={settings.bookingUpdates}
-                    onChange={(value) => handleSettingChange('bookingUpdates', value)}
-                />
-                <ToggleSwitch
-                    label="Service Reminders"
-                    description="Receive alerts for upcoming maintenance due dates you've set."
-                    enabled={settings.serviceReminders}
-                    onChange={(value) => handleSettingChange('serviceReminders', value)}
-                />
-                <ToggleSwitch
-                    label="Promotions & Offers"
-                    description="Stay informed about our latest deals and special offers."
-                    enabled={settings.promotions}
-                    onChange={(value) => handleSettingChange('promotions', value)}
-                />
+            <div className="flex-grow p-6 space-y-6">
+                <div>
+                    <h3 className="text-lg font-semibold mb-3 text-primary">General Notifications</h3>
+                    <div className="space-y-4">
+                        <ToggleSwitch
+                            label="Booking Updates"
+                            description="Confirmations and when your mechanic is en route."
+                            enabled={settings.bookingUpdates}
+                            onChange={(value) => handleSettingChange('bookingUpdates', value)}
+                        />
+                        <ToggleSwitch
+                            label="Service Reminders"
+                            description="Alerts for upcoming maintenance you've set."
+                            enabled={settings.serviceReminders}
+                            onChange={(value) => handleSettingChange('serviceReminders', value)}
+                        />
+                        <ToggleSwitch
+                            label="Promotions & Offers"
+                            description="Stay informed about our latest deals."
+                            enabled={settings.promotions}
+                            onChange={(value) => handleSettingChange('promotions', value)}
+                        />
+                    </div>
+                </div>
 
-                <div className="bg-dark-gray p-4 rounded-lg mt-6">
+                <div>
+                    <h3 className="text-lg font-semibold mb-3 text-primary">Reminder Preferences</h3>
+                    <div className="bg-dark-gray p-4 rounded-lg space-y-4">
+                        <div>
+                            <label htmlFor="reminder-time" className="block text-sm font-medium text-light-gray mb-1">Remind Me Before</label>
+                            <select
+                                id="reminder-time"
+                                value={settings.reminderLeadTime}
+                                onChange={(e) => handleSettingChange('reminderLeadTime', e.target.value as NotificationSettings['reminderLeadTime'])}
+                                className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
+                            >
+                                <option value="1-hour">1 Hour Before</option>
+                                <option value="1-day">1 Day Before</option>
+                                <option value="2-days">2 Days Before</option>
+                            </select>
+                        </div>
+                        <div>
+                             <label className="block text-sm font-medium text-light-gray mb-2">Notification Channels</label>
+                             <div className="space-y-2">
+                                <label className="flex items-center gap-3"><input type="checkbox" checked={settings.notificationChannels.inApp} onChange={e => handleChannelChange('inApp', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" /> In-App Notification</label>
+                                <label className="flex items-center gap-3"><input type="checkbox" checked={settings.notificationChannels.email} onChange={e => handleChannelChange('email', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" /> Email</label>
+                                <label className="flex items-center gap-3"><input type="checkbox" checked={settings.notificationChannels.sms} onChange={e => handleChannelChange('sms', e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" /> SMS</label>
+                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-dark-gray p-4 rounded-lg">
                     <h4 className="font-semibold text-white mb-2">Browser Permissions</h4>
                     {permissionStatus === 'granted' && (
                         <p className="text-sm text-green-400">✓ Notifications are enabled for this site.</p>

@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Header from '../components/Header';
-import { Booking, BookingStatus } from '../types';
+import { Booking, BookingStatus, Customer } from '../types';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import BookingStatusCard from '../components/BookingStatusCard';
+
+declare const L: any;
 
 const StarRatingInput: React.FC<{ rating: number; setRating: (rating: number) => void; }> = ({ rating, setRating }) => {
     const [hoverRating, setHoverRating] = useState(0);
@@ -72,8 +74,130 @@ const ReviewModal: React.FC<{
     );
 };
 
+const JobProgressModal: React.FC<{
+    booking: Booking;
+    onClose: () => void;
+    customerLocation: { lat: number, lng: number } | null;
+}> = ({ booking, onClose, customerLocation }) => {
+    const mapRef = useRef<HTMLDivElement>(null);
+    const mapInstanceRef = useRef<any>(null);
+    const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
-const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking) => void }> = ({ booking, onReview }) => {
+    const timelineSteps = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'];
+    const currentStatusIndex = useMemo(() => {
+        const historyStatuses = booking.statusHistory?.map(h => h.status) || [];
+        const allStatuses = [...historyStatuses, booking.status];
+        
+        let highestIndex = -1;
+        allStatuses.forEach(status => {
+            const indexInTimeline = timelineSteps.indexOf(status);
+            if (indexInTimeline > highestIndex) {
+                highestIndex = indexInTimeline;
+            }
+        });
+        return highestIndex;
+    }, [booking.status, booking.statusHistory]);
+
+    useEffect(() => {
+        if (!mapRef.current || !customerLocation || mapInstanceRef.current || typeof L === 'undefined') return;
+
+        mapInstanceRef.current = L.map(mapRef.current).setView([customerLocation.lat, customerLocation.lng], 15);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
+        const workIcon = L.divIcon({
+            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
+            className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 16]
+        });
+        L.marker([customerLocation.lat, customerLocation.lng], { icon: workIcon }).addTo(mapInstanceRef.current).bindPopup("Service Location");
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 100);
+        return () => { mapInstanceRef.current?.remove(); mapInstanceRef.current = null; };
+    }, [customerLocation]);
+
+    const ImagePlaceholder = () => (
+        <div className="w-full h-28 bg-field border-2 border-dashed border-dark-gray rounded-md flex flex-col items-center justify-center text-center p-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            <p className="text-xs text-gray-500 mt-1">No Photo Uploaded</p>
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 bg-secondary/90 backdrop-blur-sm flex flex-col z-50 p-0 sm:p-4 animate-slideInUp" role="dialog" aria-modal="true">
+            {fullScreenImage && (
+                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fadeIn" onClick={() => setFullScreenImage(null)}>
+                    <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg" />
+                </div>
+            )}
+            <div className="relative bg-secondary rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full">
+                <header className="flex-shrink-0 p-4 border-b border-dark-gray flex items-center justify-center">
+                    <h2 className="text-xl font-bold text-white">Job Progress</h2>
+                    <button onClick={onClose} className="absolute right-4 text-white text-3xl">&times;</button>
+                </header>
+                <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                    <div className="bg-dark-gray p-4 rounded-lg flex items-center gap-4">
+                        <img src={booking.mechanic?.imageUrl} alt={booking.mechanic?.name} className="w-16 h-16 rounded-full object-cover border-2 border-primary" />
+                        <div>
+                            <p className="font-bold text-lg text-white">{booking.mechanic?.name}</p>
+                            <p className="font-semibold text-primary">{booking.service.name}</p>
+                            <p className="text-sm text-light-gray">{booking.vehicle.make} {booking.vehicle.model}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-4">Timeline</h3>
+                        <div className="relative pl-5">
+                            {timelineSteps.map((step, index) => {
+                                const isCompleted = index <= currentStatusIndex;
+                                const historyEntry = booking.statusHistory?.find(h => h.status === step);
+                                return (
+                                    <div key={step} className={`relative pb-6 ${index === timelineSteps.length - 1 ? 'pb-0' : ''}`}>
+                                        {index < timelineSteps.length - 1 && <div className={`absolute top-2.5 left-[3px] w-0.5 h-full ${isCompleted && index < currentStatusIndex ? 'bg-primary' : 'bg-field'}`}></div>}
+                                        <div className="flex items-start">
+                                            <div className={`-left-2 absolute w-2 h-2 rounded-full mt-[7px] ${isCompleted ? 'bg-primary ring-4 ring-primary/20' : 'bg-field'}`}></div>
+                                            <div className="ml-4">
+                                                <p className={`font-semibold text-sm ${isCompleted ? 'text-white' : 'text-gray-500'}`}>{step}</p>
+                                                <p className="text-xs text-gray-400">{historyEntry ? new Date(historyEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-3">Job Documentation</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <h4 className="text-sm font-medium text-light-gray mb-2">Before Service</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {(booking.beforeImages && booking.beforeImages.length > 0) ? booking.beforeImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`Before ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-light-gray mb-2">After Service</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                     {(booking.afterImages && booking.afterImages.length > 0) ? booking.afterImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`After ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-2">Mechanic's Notes</h3>
+                        <p className="text-sm text-light-gray bg-field p-3 rounded-md min-h-[50px]">{booking.notes || 'No notes were added by the mechanic.'}</p>
+                    </div>
+
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-2">Service Location</h3>
+                        <div ref={mapRef} className="h-40 w-full rounded-lg" />
+                    </div>
+                </main>
+            </div>
+        </div>
+    );
+};
+
+
+const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking) => void, onViewProgress: (booking: Booking) => void }> = ({ booking, onReview, onViewProgress }) => {
     const navigate = useNavigate();
 
     const statusClasses: { [key: string]: string } = {
@@ -125,6 +249,9 @@ const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking)
             {/* Conditional Content */}
             {booking.status === 'Completed' && (
                 <div className="border-t border-field pt-3 flex gap-2">
+                     <button onClick={() => onViewProgress(booking)} className="flex-1 bg-secondary text-white font-bold py-2 rounded-lg hover:bg-gray-700 transition text-sm">
+                        View Progress
+                    </button>
                     <button onClick={handleBookAgain} className="flex-1 bg-field text-white font-bold py-2 rounded-lg hover:bg-gray-600 transition text-sm">
                         Book Again
                     </button>
@@ -154,10 +281,13 @@ const BookingHistoryScreen: React.FC = () => {
     
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [reviewingBooking, setReviewingBooking] = useState<Booking | null>(null);
+    const [progressBooking, setProgressBooking] = useState<Booking | null>(null);
     const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
     const [mechanicFilter, setMechanicFilter] = useState<string>('all');
     const [vehicleFilter, setVehicleFilter] = useState<string>(plateNumber || 'all');
     const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
+    
+    const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
 
     const { upcomingBookings, pastBookings } = useMemo(() => {
         if (!user || !db) {
@@ -299,7 +429,7 @@ const BookingHistoryScreen: React.FC = () => {
                     <h2 className="text-xl font-semibold mb-3 text-white px-2">Past</h2>
                      {pastBookings.length > 0 ? (
                         <div className="space-y-4">
-                            {pastBookings.map(booking => <PastBookingCard key={booking.id} booking={booking} onReview={handleOpenReviewModal} />)}
+                            {pastBookings.map(booking => <PastBookingCard key={booking.id} booking={booking} onReview={handleOpenReviewModal} onViewProgress={setProgressBooking} />)}
                         </div>
                     ) : (
                          <div className="text-center py-8 px-4 bg-dark-gray rounded-lg">
@@ -315,6 +445,7 @@ const BookingHistoryScreen: React.FC = () => {
                     onSubmit={handleSubmitReview}
                 />
             )}
+            {progressBooking && <JobProgressModal booking={progressBooking} customerLocation={customerLocation} onClose={() => setProgressBooking(null)} />}
         </div>
     );
 };

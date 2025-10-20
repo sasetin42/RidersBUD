@@ -451,7 +451,7 @@ const LegalDocsModal: React.FC<{
 }> = ({ mechanic, onClose, onSave }) => {
     const [formData, setFormData] = useState(mechanic);
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: 'businessLicenseUrl' | 'certification') => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: 'businessLicenseUrl' | 'certification', index?: number) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -459,10 +459,42 @@ const LegalDocsModal: React.FC<{
             const base64 = await fileToBase64(file);
             if (fieldName === 'businessLicenseUrl') {
                 setFormData(prev => ({ ...prev, businessLicenseUrl: base64 }));
+            } else if (fieldName === 'certification' && index !== undefined) {
+                handleCertChange(index, 'fileUrl', base64);
             }
         } catch (error) {
             alert('File upload failed. Please try again.');
         }
+    };
+
+    // Certifications handlers
+    const handleCertChange = (index: number, field: 'name' | 'fileUrl', value: string) => {
+        const newCerts = [...(formData.certifications || [])];
+        newCerts[index] = { ...newCerts[index], [field]: value };
+        setFormData(prev => ({ ...prev, certifications: newCerts }));
+    };
+
+    const handleAddCert = () => {
+        setFormData(prev => ({ ...prev, certifications: [...(prev.certifications || []), { name: '', fileUrl: '' }] }));
+    };
+
+    const handleRemoveCert = (index: number) => {
+        setFormData(prev => ({ ...prev, certifications: formData.certifications?.filter((_, i) => i !== index) }));
+    };
+
+    // Insurance handlers
+    const handleInsuranceChange = (index: number, field: keyof NonNullable<Mechanic['insurances']>[0], value: string) => {
+        const newInsurances = [...(formData.insurances || [])];
+        newInsurances[index] = { ...newInsurances[index], [field]: value };
+        setFormData(prev => ({ ...prev, insurances: newInsurances }));
+    };
+
+    const handleAddInsurance = () => {
+        setFormData(prev => ({ ...prev, insurances: [...(prev.insurances || []), { type: '', provider: '', policyNumber: '' }] }));
+    };
+
+    const handleRemoveInsurance = (index: number) => {
+        setFormData(prev => ({ ...prev, insurances: formData.insurances?.filter((_, i) => i !== index) }));
     };
     
     return (
@@ -473,16 +505,38 @@ const LegalDocsModal: React.FC<{
                     <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange(e, 'businessLicenseUrl')} className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
                     {formData.businessLicenseUrl && <a href={formData.businessLicenseUrl} target="_blank" rel="noreferrer" className="text-blue-400 text-sm hover:underline mt-2 inline-block">View Current License</a>}
                 </div>
-                <div>
+                
+                <div className="border-t border-field pt-4">
                     <h3 className="text-lg font-bold mb-2">Certifications</h3>
-                    <p className="text-xs text-light-gray mb-3">Feature coming soon.</p>
+                    <div className="space-y-3">
+                        {formData.certifications?.map((cert, index) => (
+                            <div key={index} className="bg-field p-3 rounded-md space-y-2 relative">
+                                <button onClick={() => handleRemoveCert(index)} className="absolute top-2 right-2 text-red-400 hover:text-red-300 text-xl">&times;</button>
+                                <input type="text" value={cert.name} onChange={(e) => handleCertChange(index, 'name', e.target.value)} placeholder="Certification Name" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm" />
+                                <input type="file" onChange={(e) => handleFileChange(e, 'certification', index)} className="w-full text-xs text-light-gray file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary" />
+                                {cert.fileUrl && <a href={cert.fileUrl} target="_blank" rel="noreferrer" className="text-blue-400 text-xs hover:underline">View File</a>}
+                            </div>
+                        ))}
+                        <button onClick={handleAddCert} className="text-sm text-primary font-semibold">+ Add Certification</button>
+                    </div>
                 </div>
-                 <div>
-                    <h3 className="text-lg font-bold mb-2">Insurance</h3>
-                    <p className="text-xs text-light-gray mb-3">Feature coming soon.</p>
+
+                 <div className="border-t border-field pt-4">
+                    <h3 className="text-lg font-bold mb-2">Insurance Policies</h3>
+                    <div className="space-y-3">
+                        {formData.insurances?.map((ins, index) => (
+                            <div key={index} className="bg-field p-3 rounded-md space-y-2 relative">
+                                 <button onClick={() => handleRemoveInsurance(index)} className="absolute top-2 right-2 text-red-400 hover:text-red-300 text-xl">&times;</button>
+                                <input type="text" value={ins.type} onChange={(e) => handleInsuranceChange(index, 'type', e.target.value)} placeholder="Insurance Type (e.g., General Liability)" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm" />
+                                <input type="text" value={ins.provider} onChange={(e) => handleInsuranceChange(index, 'provider', e.target.value)} placeholder="Provider (e.g., AXA)" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm" />
+                                <input type="text" value={ins.policyNumber} onChange={(e) => handleInsuranceChange(index, 'policyNumber', e.target.value)} placeholder="Policy Number" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm" />
+                            </div>
+                        ))}
+                         <button onClick={handleAddInsurance} className="text-sm text-primary font-semibold">+ Add Insurance</button>
+                    </div>
                 </div>
             </div>
-             <div className="mt-6 flex justify-end gap-4">
+             <div className="mt-6 flex justify-end gap-4 border-t border-field pt-4">
                 <button onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition">Cancel</button>
                 <button onClick={() => onSave(formData)} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">Save Documents</button>
             </div>
@@ -570,7 +624,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
                     <MenuItem label="Edit Profile Details" onClick={() => setActiveModal('profile')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="My Reviews" onClick={() => setActiveModal('reviews')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="My Weekly Availability" onClick={() => setActiveModal('availability')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>} />
-                    <MenuItem label="Set Time Off / Unavailability" onClick={() => setActiveModal('timeOff')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>} />
+                    <MenuItem label="Set Time Off" onClick={() => setActiveModal('timeOff')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="Legal & Insurance" onClick={() => setActiveModal('legal')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h2a2 2 0 002-2V4a2 2 0 00-2-2H9z" /><path d="M4 12a2 2 0 012-2h10a2 2 0 012 2v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5z" /></svg>} />
                     <MenuItem label="Payout Details" onClick={() => setActiveModal('payouts')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="Notification Settings" onClick={() => navigate('/mechanic/notification-settings')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" /></svg>} />

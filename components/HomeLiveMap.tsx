@@ -85,8 +85,9 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
         mechanics.forEach(mechanic => {
             const isAvailable = mechanic.isAvailable;
             
+             const animationClass = isAvailable ? 'pulse-green' : '';
             const iconHtml = `
-                <div class="custom-marker-container">
+                <div class="custom-marker-container ${animationClass}">
                     <img src="${mechanic.imageUrl}" class="custom-marker-image ${!isAvailable ? 'unavailable' : ''}" alt="${mechanic.name}" />
                 </div>`;
                 

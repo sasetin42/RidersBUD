@@ -9,7 +9,7 @@ const PartWishlistItem: React.FC<{ item: Part }> = ({ item }) => {
     const { removeFromWishlist } = useWishlist();
     const { addToCart } = useCart();
 
-    const handleAddToCart = () => {
+    const handleMoveToCart = () => {
         addToCart(item);
         removeFromWishlist(item.id);
     };
@@ -21,7 +21,7 @@ const PartWishlistItem: React.FC<{ item: Part }> = ({ item }) => {
                 <h4 className="font-bold text-white">{item.name}</h4>
                 <p className="text-primary font-semibold">₱{item.price.toFixed(2)}</p>
                 <div className="mt-2 flex gap-2">
-                    <button onClick={handleAddToCart} className="bg-primary text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-orange-600 transition">
+                    <button onClick={handleMoveToCart} className="bg-primary text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-orange-600 transition">
                         Move to Cart
                     </button>
                      <button onClick={() => removeFromWishlist(item.id)} className="bg-field text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-gray-600 transition">

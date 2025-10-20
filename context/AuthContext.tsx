@@ -6,7 +6,7 @@ interface AuthContextType {
     isAuthenticated: boolean;
     user: Customer | null;
     loading: boolean;
-    loginWithCredentials: (email: string, pass:string) => Promise<void>;
+    loginWithCredentials: (email: string, pass: string) => Promise<void>;
     registerWithCredentials: (name: string, email: string, phone: string, password: string) => Promise<void>;
     loginWithGoogle: () => Promise<void>;
     loginWithFacebook: () => Promise<void>;
@@ -16,7 +16,8 @@ interface AuthContextType {
     updateUserProfile: (updatedData: { name: string; email: string; phone: string }) => Promise<void>;
     updateUserVehicle: (vehicle: Vehicle) => void;
     setPrimaryVehicle: (plateNumber: string) => void;
-    updateUserLocation: (lat: number, lng: number) => Promise<void>;
+    addFavoriteMechanic: (mechanicId: string) => void;
+    removeFavoriteMechanic: (mechanicId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -230,17 +231,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateCustomer(updatedUser);
         setUser(updatedUser);
     };
-
-    const updateUserLocation = async (lat: number, lng: number) => {
+    
+    const addFavoriteMechanic = (mechanicId: string) => {
         if (!user) return;
         const updatedUser: Customer = {
             ...user,
-            lat,
-            lng,
+            favoriteMechanicIds: [...new Set([...(user.favoriteMechanicIds || []), mechanicId])],
         };
-        await updateCustomer(updatedUser);
+        updateCustomer(updatedUser);
         setUser(updatedUser);
     };
+
+    const removeFavoriteMechanic = (mechanicId: string) => {
+        if (!user) return;
+        const updatedUser: Customer = {
+            ...user,
+            favoriteMechanicIds: (user.favoriteMechanicIds || []).filter(id => id !== mechanicId),
+        };
+        updateCustomer(updatedUser);
+        setUser(updatedUser);
+    };
+
 
     const isLoadingAuth = loading || dbLoading;
 
@@ -259,7 +270,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             updateUserProfile,
             updateUserVehicle,
             setPrimaryVehicle,
-            updateUserLocation,
+            addFavoriteMechanic,
+            removeFavoriteMechanic,
         }}>
             {children}
         </AuthContext.Provider>

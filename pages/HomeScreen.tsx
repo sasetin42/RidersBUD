@@ -33,6 +33,61 @@ const newMockNotification: Notification = {
     id: '4', title: 'New Booking!', message: 'You have a new booking for Aircon service tomorrow.', timestamp: '1m ago', read: false, link: '/booking-history' 
 };
 
+const InProgressNotificationModal: React.FC<{ booking: Booking; onClose: () => void; }> = ({ booking, onClose }) => (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={onClose}>
+        <div className="bg-dark-gray rounded-xl p-6 shadow-2xl animate-scaleUp border border-primary/30 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-primary mx-auto mb-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+            </svg>
+            <h2 className="text-xl font-bold text-white">Work has begun!</h2>
+            <p className="text-light-gray mt-2 mb-4">
+                {booking.mechanic?.name} has started working on your {booking.vehicle.make} {booking.vehicle.model}.
+            </p>
+            <button onClick={onClose} className="w-full bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition">
+                Okay
+            </button>
+        </div>
+    </div>
+);
+
+const CompletedInvoiceModal: React.FC<{ booking: Booking; onClose: () => void; db: any; }> = ({ booking, onClose, db }) => {
+    const navigate = useNavigate();
+    return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={onClose}>
+            <div className="bg-dark-gray rounded-xl p-6 shadow-2xl animate-scaleUp border border-green-500/30 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+                <div className="text-center mb-4">
+                    <img src={db.settings.appLogoUrl} alt="Logo" className="w-24 mx-auto mb-2" />
+                    <h2 className="text-2xl font-bold text-white">Service Complete!</h2>
+                    <p className="text-sm text-green-400">Please review your invoice.</p>
+                </div>
+                <div className="space-y-3 bg-field p-4 rounded-lg">
+                    <div className="flex justify-between items-center text-sm border-b border-dark-gray pb-2">
+                        <span className="text-light-gray">Service:</span>
+                        <span className="font-semibold text-white">{booking.service.name}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm">
+                        <span className="text-light-gray">Mechanic:</span>
+                        <span className="font-semibold text-white">{booking.mechanic?.name}</span>
+                    </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-dark-gray text-right">
+                    <p className="text-light-gray">Total Amount Due:</p>
+                    <p className="text-4xl font-bold text-primary">₱{booking.service.price.toLocaleString()}</p>
+                </div>
+                <div className="mt-6 flex flex-col gap-3">
+                     <button onClick={() => { onClose(); navigate('/booking-history'); }} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                        Proceed to Pay
+                    </button>
+                    <button onClick={onClose} className="w-full text-sm text-light-gray hover:text-white transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 // Haversine distance formula to calculate distance between two lat/lng points
 const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371; // Radius of the Earth in km
@@ -261,6 +316,117 @@ const ArrivalNotification: React.FC<{
     );
 };
 
+const JobProgressModal: React.FC<{
+    booking: Booking;
+    onClose: () => void;
+    customerLocation: { lat: number, lng: number } | null;
+}> = ({ booking, onClose, customerLocation }) => {
+    const mapRef = useRef<HTMLDivElement>(null);
+    const mapInstanceRef = useRef<any>(null);
+    const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+
+    const timelineSteps = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress'];
+    const currentStatusIndex = useMemo(() => {
+        return Math.max(0, ...timelineSteps.map(step => booking.statusHistory?.findIndex(h => h.status === step) ?? -1), timelineSteps.findIndex(s => s === booking.status));
+    }, [booking.status, booking.statusHistory]);
+
+    useEffect(() => {
+        if (!mapRef.current || !customerLocation || mapInstanceRef.current || typeof L === 'undefined') return;
+
+        mapInstanceRef.current = L.map(mapRef.current).setView([customerLocation.lat, customerLocation.lng], 15);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
+        const workIcon = L.divIcon({
+            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
+            className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 16]
+        });
+        L.marker([customerLocation.lat, customerLocation.lng], { icon: workIcon }).addTo(mapInstanceRef.current).bindPopup("Service Location");
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 100);
+        return () => { mapInstanceRef.current?.remove(); mapInstanceRef.current = null; };
+    }, [customerLocation]);
+
+    const ImagePlaceholder = () => (
+        <div className="w-full h-28 bg-field border-2 border-dashed border-dark-gray rounded-md flex flex-col items-center justify-center text-center p-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            <p className="text-xs text-gray-500 mt-1">Awaiting Photo</p>
+        </div>
+    );
+
+    return (
+        <div className="fixed inset-0 bg-secondary/90 backdrop-blur-sm flex flex-col z-50 p-0 sm:p-4 animate-slideInUp" role="dialog" aria-modal="true">
+            {fullScreenImage && (
+                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fadeIn" onClick={() => setFullScreenImage(null)}>
+                    <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg" />
+                </div>
+            )}
+            <div className="relative bg-secondary rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full">
+                <header className="flex-shrink-0 p-4 border-b border-dark-gray flex items-center justify-center">
+                    <h2 className="text-xl font-bold text-white">Job Progress</h2>
+                    <button onClick={onClose} className="absolute right-4 text-white text-3xl">&times;</button>
+                </header>
+                <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                    <div className="bg-dark-gray p-4 rounded-lg flex items-center gap-4">
+                        <img src={booking.mechanic?.imageUrl} alt={booking.mechanic?.name} className="w-16 h-16 rounded-full object-cover border-2 border-primary" />
+                        <div>
+                            <p className="font-bold text-lg text-white">{booking.mechanic?.name}</p>
+                            <p className="font-semibold text-primary">{booking.service.name}</p>
+                            <p className="text-sm text-light-gray">{booking.vehicle.make} {booking.vehicle.model}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-4">Timeline</h3>
+                        <div className="relative pl-5">
+                            {timelineSteps.map((step, index) => {
+                                const isCompleted = index <= currentStatusIndex;
+                                const historyEntry = booking.statusHistory?.find(h => h.status === step);
+                                return (
+                                    <div key={step} className={`relative pb-6 ${index === timelineSteps.length - 1 ? 'pb-0' : ''}`}>
+                                        {index < timelineSteps.length - 1 && <div className={`absolute top-2.5 left-[3px] w-0.5 h-full ${isCompleted && index < currentStatusIndex ? 'bg-primary' : 'bg-field'}`}></div>}
+                                        <div className="flex items-start">
+                                            <div className={`-left-2 absolute w-2 h-2 rounded-full mt-[7px] ${isCompleted ? 'bg-primary ring-4 ring-primary/20' : 'bg-field'}`}></div>
+                                            <div className="ml-4">
+                                                <p className={`font-semibold text-sm ${isCompleted ? 'text-white' : 'text-gray-500'}`}>{step}</p>
+                                                <p className="text-xs text-gray-400">{historyEntry ? new Date(historyEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-3">Job Documentation</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <h4 className="text-sm font-medium text-light-gray mb-2">Before Service</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {(booking.beforeImages && booking.beforeImages.length > 0) ? booking.beforeImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`Before ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-medium text-light-gray mb-2">After Service</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                     {(booking.afterImages && booking.afterImages.length > 0) ? booking.afterImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`After ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-2">Mechanic's Notes</h3>
+                        <p className="text-sm text-light-gray bg-field p-3 rounded-md min-h-[50px]">{booking.notes || 'No notes added by mechanic yet.'}</p>
+                    </div>
+
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-semibold text-white mb-2">Service Location</h3>
+                        <div ref={mapRef} className="h-40 w-full rounded-lg" />
+                    </div>
+                </main>
+            </div>
+        </div>
+    );
+};
 
 const HomeScreen: React.FC = () => {
     const { user } = useAuth();
@@ -271,6 +437,7 @@ const HomeScreen: React.FC = () => {
     const [isLoadingAI, setIsLoadingAI] = useState(false);
     const [aiError, setAiError] = useState<string | null>(null);
     const [trackingBooking, setTrackingBooking] = useState<Booking | null>(null);
+    const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
     const [currentBanner, setCurrentBanner] = useState(0);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
@@ -278,7 +445,16 @@ const HomeScreen: React.FC = () => {
     const bannerIntervalRef = useRef<any>(null);
     const [showArrivalNotif, setShowArrivalNotif] = useState(false);
     const [arrivalNotifDismissed, setArrivalNotifDismissed] = useState(false);
-    const [mechanicSpecFilter, setMechanicSpecFilter] = useState('all');
+    
+    // New filter states
+    const [specFilterOpen, setSpecFilterOpen] = useState(false);
+    const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
+    const [ratingFilter, setRatingFilter] = useState(0);
+    
+    // State for notification modals
+    const [inProgressBooking, setInProgressBooking] = useState<Booking | null>(null);
+    const [completedBooking, setCompletedBooking] = useState<Booking | null>(null);
+    const shownNotifications = useRef(new Set<string>());
     
     const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
 
@@ -296,8 +472,14 @@ const HomeScreen: React.FC = () => {
                 mechanic.specializations.forEach(spec => specSet.add(spec));
             }
         });
-        return ['all', ...Array.from(specSet).sort()];
+        return Array.from(specSet).sort();
     }, [db]);
+
+    const handleSpecToggle = (spec: string) => {
+        setSelectedSpecs(prev => 
+            prev.includes(spec) ? prev.filter(s => s !== spec) : [...prev, spec]
+        );
+    };
 
     const mechanicsWithAvailability = useMemo(() => {
         if (!db) return [];
@@ -313,10 +495,41 @@ const HomeScreen: React.FC = () => {
         );
 
         return mechanics
-            .filter(mechanic => mechanic.status === 'Active')
-            .filter(mechanic => mechanicSpecFilter === 'all' || mechanic.specializations.includes(mechanicSpecFilter))
+            .filter(mechanic => {
+                const isActive = mechanic.status === 'Active';
+                const hasSelectedSpec = selectedSpecs.length === 0 || selectedSpecs.some(spec => mechanic.specializations.includes(spec));
+                const meetsRating = mechanic.rating >= ratingFilter;
+                return isActive && hasSelectedSpec && meetsRating;
+            })
             .map(mechanic => ({ ...mechanic, isAvailable: (mechanic.availability?.[todayDayOfWeek]?.isAvailable ?? false) && !busyMechanicIds.has(mechanic.id) }));
-    }, [db, mechanicSpecFilter]);
+    }, [db, selectedSpecs, ratingFilter]);
+
+    useEffect(() => {
+        if (!db || !user) return;
+    
+        const myBookings = db.bookings.filter(b => b.customerName === user.name);
+    
+        const inProgressNotif = myBookings.find(b => 
+            b.status === 'In Progress' && 
+            !shownNotifications.current.has(`${b.id}-in-progress`)
+        );
+    
+        if (inProgressNotif) {
+            setInProgressBooking(inProgressNotif);
+            shownNotifications.current.add(`${inProgressNotif.id}-in-progress`);
+        }
+        
+        const completedNotif = myBookings.find(b => 
+            b.status === 'Completed' && 
+            !shownNotifications.current.has(`${b.id}-completed`)
+        );
+        
+        if (completedNotif) {
+            setCompletedBooking(completedNotif);
+            shownNotifications.current.add(`${completedNotif.id}-completed`);
+        }
+    
+    }, [db, user]);
 
     useEffect(() => {
         if (!db || db.banners.length === 0 || isBannerPaused) {
@@ -336,6 +549,7 @@ const HomeScreen: React.FC = () => {
     useEffect(() => {
         const timer = setTimeout(() => {
             setNotifications(prev => {
+                // Fix: Cannot find name 'newMockNotification'
                 if (prev.find(n => n.id === newMockNotification.id)) return prev;
                 return [newMockNotification, ...prev];
             });
@@ -399,44 +613,56 @@ const HomeScreen: React.FC = () => {
     
     const handleShare = async () => {
         if (!upcomingAppointment) return;
-        const isTrackingView = !!trackingBooking;
         const shareData = {
             title: 'RidersBUD Booking Update',
-            text: isTrackingView
-                ? `Track my RidersBUD mechanic, ${upcomingAppointment.mechanic?.name}, in real-time for my ${upcomingAppointment.service.name} appointment!`
-                : `Here are the details for my upcoming RidersBUD appointment: ${upcomingAppointment.service.name} on ${new Date(upcomingAppointment.date.replace(/-/g, '/')).toLocaleDateString()}.`,
-            url: window.location.href, // This could be a specific tracking URL in a real app
+            text: `Here are the details for my upcoming RidersBUD appointment: ${upcomingAppointment.service.name} with ${upcomingAppointment.mechanic?.name} on ${new Date(upcomingAppointment.date.replace(/-/g, '/')).toLocaleDateString()}.`,
+            url: 'https://ridersbud.app', // Use a valid placeholder URL
         };
         try {
             if (navigator.share) {
                 await navigator.share(shareData);
             } else {
-                // Fallback for browsers that don't support Web Share API
                 await navigator.clipboard.writeText(`${shareData.text} View status here: ${shareData.url}`);
                 alert('Booking details copied to clipboard!');
             }
         } catch (err) {
             console.error('Error sharing:', err);
-            alert('Could not share booking details.');
+            // Don't alert if the user cancels the share dialog
+            if (err instanceof Error && err.name !== 'AbortError') {
+                alert('Could not share booking details.');
+            }
         }
     };
 
     const handleAppointmentAction = () => {
         if (!upcomingAppointment) return;
-        if (upcomingAppointment.status === 'En Route' || upcomingAppointment.status === 'In Progress') {
+        if (upcomingAppointment.status === 'En Route') {
             setTrackingBooking(upcomingAppointment);
+        } else if (upcomingAppointment.status === 'In Progress') {
+            setIsProgressModalOpen(true);
         } else {
             navigate('/booking-history');
         }
     };
     
-    const handleBookSuggestion = (serviceName: string) => {
+    const handleLearnMore = (serviceName: string) => {
+        const service = db?.services.find(s => s.name.trim().toLowerCase() === serviceName.trim().toLowerCase());
+        if (service) {
+            setAiSuggestions([]);
+            navigate(`/service/${service.id}`);
+        } else {
+            alert(`Could not find the service "${serviceName}". Please browse our services list.`);
+            navigate('/services');
+        }
+    };
+    
+    const handleBookNow = (serviceName: string) => {
         const service = db?.services.find(s => s.name.trim().toLowerCase() === serviceName.trim().toLowerCase());
         if (service) {
             setAiSuggestions([]);
             navigate(`/booking/${service.id}`);
         } else {
-            alert(`Could not directly find the service "${serviceName}". Please browse our services list.`);
+            alert(`Could not find the service "${serviceName}". Please browse our services list.`);
             navigate('/services');
         }
     };
@@ -464,6 +690,15 @@ const HomeScreen: React.FC = () => {
             case 'En Route': return '75%';
             case 'In Progress': return '90%';
             default: return '25%';
+        }
+    };
+
+    const getAppointmentActionText = () => {
+        if (!upcomingAppointment) return '';
+        switch(upcomingAppointment.status) {
+            case 'En Route': return 'Track Mechanic';
+            case 'In Progress': return 'View Progress';
+            default: return 'View Booking';
         }
     };
 
@@ -535,7 +770,7 @@ const HomeScreen: React.FC = () => {
                         </div>
                         <div className="mt-4 flex gap-2">
                             <button onClick={handleAppointmentAction} className="flex-1 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition duration-300">
-                                {upcomingAppointment.status === 'En Route' || upcomingAppointment.status === 'In Progress' ? 'Track Mechanic' : 'View Booking'}
+                                {getAppointmentActionText()}
                             </button>
                              <button onClick={handleShare} className="w-14 flex-shrink-0 bg-dark-gray text-white p-3 rounded-lg hover:bg-gray-600 transition" aria-label="Share booking details">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -588,7 +823,10 @@ const HomeScreen: React.FC = () => {
                                 <div key={index} className="bg-field p-4 rounded-lg flex flex-col items-start shadow-md">
                                     <h4 className="font-bold text-primary">{suggestion.serviceName}</h4>
                                     <p className="text-sm text-light-gray mt-1 mb-3 flex-grow">{suggestion.reason}</p>
-                                    <button onClick={() => handleBookSuggestion(suggestion.serviceName)} className="bg-primary/80 text-white font-bold py-2 px-5 rounded-lg hover:bg-primary transition text-sm self-end">Book Now</button>
+                                    <div className="flex gap-2 self-end">
+                                        <button onClick={() => handleLearnMore(suggestion.serviceName)} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition text-sm">Learn More</button>
+                                        <button onClick={() => handleBookNow(suggestion.serviceName)} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition text-sm">Book Now</button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -603,19 +841,31 @@ const HomeScreen: React.FC = () => {
 
             <div className="px-6">
                 <h2 className="text-xl font-semibold mb-3 text-white">Nearby Mechanics</h2>
-                <div className="mb-3">
-                    <label htmlFor="spec-filter" className="sr-only">Filter by specialization</label>
+                <div className="mb-3 grid grid-cols-2 gap-3">
+                    <div className="relative">
+                        <button onClick={() => setSpecFilterOpen(!specFilterOpen)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white text-left flex justify-between items-center">
+                            <span className="truncate">{selectedSpecs.length > 0 ? `${selectedSpecs.length} spec${selectedSpecs.length > 1 ? 's' : ''} selected` : 'All Specializations'}</span>
+                            <svg className={`w-4 h-4 transition-transform ${specFilterOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                        {specFilterOpen && (
+                            <div className="absolute top-full left-0 w-full mt-1 bg-field border border-dark-gray rounded-lg z-10 max-h-48 overflow-y-auto">
+                                {allSpecializations.map(spec => (
+                                    <label key={spec} className="flex items-center gap-2 p-2 hover:bg-dark-gray cursor-pointer">
+                                        <input type="checkbox" checked={selectedSpecs.includes(spec)} onChange={() => handleSpecToggle(spec)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                                        <span>{spec}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                     <select
-                        id="spec-filter"
-                        value={mechanicSpecFilter}
-                        onChange={(e) => setMechanicSpecFilter(e.target.value)}
-                        className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
+                        value={ratingFilter}
+                        onChange={(e) => setRatingFilter(Number(e.target.value))}
+                        className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-primary"
                     >
-                        {allSpecializations.map(spec => (
-                            <option key={spec} value={spec}>
-                                {spec === 'all' ? 'All Specializations' : spec}
-                            </option>
-                        ))}
+                        <option value={0}>All Ratings</option>
+                        <option value={4}>4 ★ & Up</option>
+                        <option value={3}>3 ★ & Up</option>
                     </select>
                 </div>
                 <div className="h-96 w-full rounded-xl shadow-lg overflow-hidden">
@@ -631,7 +881,10 @@ const HomeScreen: React.FC = () => {
                 />
             )}
             {trackingBooking && <TrackMechanicModal booking={trackingBooking} customerLocation={customerLocation} onClose={() => setTrackingBooking(null)} onShare={handleShare} />}
+            {isProgressModalOpen && upcomingAppointment && <JobProgressModal booking={upcomingAppointment} customerLocation={customerLocation} onClose={() => setIsProgressModalOpen(false)} />}
             {isNotificationsOpen && <NotificationPanel notifications={notifications} onClose={() => setIsNotificationsOpen(false)} onNotificationClick={handleNotificationClick} />}
+            {inProgressBooking && <InProgressNotificationModal booking={inProgressBooking} onClose={() => setInProgressBooking(null)} />}
+            {completedBooking && <CompletedInvoiceModal booking={completedBooking} onClose={() => setCompletedBooking(null)} db={db} />}
         </div>
     );
 };

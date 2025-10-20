@@ -4,6 +4,7 @@ import Header from '../components/Header';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { Review, Mechanic } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 declare const L: any;
 
@@ -28,6 +29,7 @@ const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
 const MechanicProfileScreen: React.FC = () => {
     const { mechanicId } = useParams<{ mechanicId: string }>();
     const { db } = useDatabase();
+    const { user, addFavoriteMechanic, removeFavoriteMechanic } = useAuth();
     const navigate = useNavigate();
     const [reviewFilter, setReviewFilter] = useState<number>(0); // 0 for All stars
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
@@ -36,6 +38,31 @@ const MechanicProfileScreen: React.FC = () => {
     const mapInstance = useRef<any>(null);
 
     const mechanic = db?.mechanics.find(m => m.id === mechanicId);
+    
+    const isFavorited = useMemo(() => user?.favoriteMechanicIds?.includes(mechanicId!), [user, mechanicId]);
+
+    const handleToggleFavorite = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!mechanicId) return;
+        if (isFavorited) {
+            removeFavoriteMechanic(mechanicId);
+        } else {
+            addFavoriteMechanic(mechanicId);
+        }
+    };
+
+
+    const daysOfWeek: (keyof Required<Mechanic>['availability'])[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const todayKey = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
+
+    const formatTime = (timeString: string) => {
+        if (!timeString) return '';
+        const [hours, minutes] = timeString.split(':');
+        const hoursNum = parseInt(hours, 10);
+        const ampm = hoursNum >= 12 ? 'PM' : 'AM';
+        const formattedHours = hoursNum % 12 || 12;
+        return `${formattedHours}:${minutes} ${ampm}`;
+    };
 
     useEffect(() => {
         if (!mapRef.current || mapInstance.current || typeof L === 'undefined' || !mechanic?.lat || !mechanic?.lng) return;
@@ -100,18 +127,6 @@ const MechanicProfileScreen: React.FC = () => {
         return reviews;
     }, [mechanic?.reviewsList, reviewFilter, sortOrder]);
 
-    const daysOfWeek: (keyof Required<Mechanic>['availability'])[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    const todayKey = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
-
-    const formatTime = (timeString: string) => {
-        if (!timeString) return '';
-        const [hours, minutes] = timeString.split(':');
-        const hoursNum = parseInt(hours, 10);
-        const ampm = hoursNum >= 12 ? 'PM' : 'AM';
-        const formattedHours = hoursNum % 12 || 12;
-        return `${formattedHours}:${minutes} ${ampm}`;
-    };
-
     if (!db) {
         return <div className="flex items-center justify-center h-full bg-secondary"><Spinner size="lg" /></div>;
     }
@@ -146,7 +161,14 @@ const MechanicProfileScreen: React.FC = () => {
                 {/* Profile Header */}
                 <div className="flex flex-col items-center text-center">
                     <img src={mechanic.imageUrl} alt={mechanic.name} className="w-28 h-28 rounded-full object-cover mb-4 border-4 border-primary" />
-                    <h1 className="text-3xl font-bold text-white">{mechanic.name}</h1>
+                    <div className="flex items-center gap-3">
+                         <h1 className="text-3xl font-bold text-white">{mechanic.name}</h1>
+                         <button onClick={handleToggleFavorite} className="text-yellow-400" aria-label="Toggle Favorite">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 transition-transform transform hover:scale-125" viewBox="0 0 20 20" fill={isFavorited ? "currentColor" : "none"} stroke="currentColor" strokeWidth={isFavorited ? 0 : 1.5}>
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                        </button>
+                    </div>
                     <div className="flex items-center text-yellow-400 mt-1">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
                         <span className="font-bold">{mechanic.rating.toFixed(1)}</span>
@@ -173,9 +195,9 @@ const MechanicProfileScreen: React.FC = () => {
                 </div>
 
                 {/* Credentials & Documents */}
-                {(mechanic.businessLicenseUrl || mechanic.certifications?.length || mechanic.insurances?.length) && (
+                {(mechanic.businessLicenseUrl || (mechanic.certifications && mechanic.certifications.length > 0) || (mechanic.insurances && mechanic.insurances.length > 0)) && (
                     <div>
-                        <h2 className="text-xl font-semibold mb-3 text-white">Credentials & Documents</h2>
+                        <h2 className="text-xl font-semibold mb-3 text-white">Credentials &amp; Documents</h2>
                         <div className="bg-dark-gray p-4 rounded-lg space-y-3">
                             {mechanic.businessLicenseUrl && (
                                 <a href={mechanic.businessLicenseUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-sm text-blue-400 hover:text-blue-300 transition-colors">
@@ -197,7 +219,6 @@ const MechanicProfileScreen: React.FC = () => {
                         </div>
                     </div>
                 )}
-
 
                 {/* Location */}
                 {mechanic.lat && mechanic.lng && (

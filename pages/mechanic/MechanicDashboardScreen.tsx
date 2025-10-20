@@ -5,6 +5,7 @@ import { useDatabase } from '../../context/DatabaseContext';
 import { Booking } from '../../types';
 import { useNavigate } from 'react-router-dom';
 import MechanicCalendar from '../../components/mechanic/MechanicCalendar';
+import AssignedJobNotificationModal from '../../components/mechanic/AssignedJobNotificationModal';
 
 const StatCard: React.FC<{ title: string; value: string | number; icon: React.ReactNode; }> = ({ title, value, icon }) => (
     <div className="bg-dark-gray p-4 rounded-lg flex items-center gap-4">
@@ -18,6 +19,47 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
     </div>
 );
 
+const NewJobRequestModal: React.FC<{
+    booking: Booking;
+    onAccept: () => void;
+    onDecline: () => void;
+}> = ({ booking, onAccept, onDecline }) => {
+    return (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-gradient-to-br from-orange-200 to-yellow-100 rounded-xl p-6 shadow-2xl w-full max-w-sm text-gray-800 animate-scaleUp">
+                <h2 className="font-bold text-2xl flex items-center gap-2 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-primary" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+                    </svg>
+                    New Job Request!
+                </h2>
+                <div className="space-y-2 text-gray-700">
+                    <div className="flex justify-between items-center text-base">
+                        <span className="font-semibold">Service:</span>
+                        <span className="font-bold text-primary">{booking.service.name}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="font-semibold">Vehicle:</span>
+                        <span>{booking.vehicle.make} {booking.vehicle.model}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <span className="font-semibold">Location:</span>
+                        <span>Mandaluyong</span>
+                    </div>
+                     <div className="flex justify-between items-center text-base border-t border-yellow-300 pt-2 mt-3">
+                        <span className="font-semibold">Est. Payout:</span>
+                        <span className="font-bold text-xl text-green-700">₱{booking.service.price.toLocaleString()}</span>
+                    </div>
+                </div>
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                    <button onClick={onDecline} className="bg-gray-600/20 text-gray-700 font-bold py-3 rounded-lg hover:bg-gray-600/40 transition">Decline</button>
+                    <button onClick={onAccept} className="bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition shadow-lg shadow-primary/40">Accept</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 const MechanicDashboardScreen: React.FC = () => {
     const { mechanic } = useMechanicAuth();
@@ -26,6 +68,7 @@ const MechanicDashboardScreen: React.FC = () => {
 
     const [isOnline, setIsOnline] = useState(true);
     const [newJobRequest, setNewJobRequest] = useState<Booking | null>(null);
+    const [newAssignedJob, setNewAssignedJob] = useState<Booking | null>(null);
 
     // Find the currently active job for the mechanic
     const ongoingJob = useMemo(() => {
@@ -85,19 +128,55 @@ const MechanicDashboardScreen: React.FC = () => {
         return { averageJobValue };
     }, [db, mechanic]);
     
-    // Simulate finding a new job request
+    // Real-time check for new UNASSIGNED job requests
     useEffect(() => {
-        if (!db || newJobRequest || ongoingJob || !isOnline) return;
+        if (!db || !isOnline || ongoingJob) {
+            setNewJobRequest(null);
+            return;
+        };
+    
+        const declinedJobsJSON = sessionStorage.getItem(`declinedJobs_${mechanic?.id}`);
+        const declinedJobIds: string[] = declinedJobsJSON ? JSON.parse(declinedJobsJSON) : [];
+    
+        // Find the latest unassigned job that hasn't been declined in this session
+        const latestUnassignedJob = db.bookings
+            .filter(b => b.status === 'Upcoming' && !b.mechanic && !declinedJobIds.includes(b.id))
+            .sort((a, b) => b.id.localeCompare(a.id))[0]; // Get the newest one
+        
+        if (latestUnassignedJob && latestUnassignedJob.id !== newJobRequest?.id) {
+            setNewJobRequest(latestUnassignedJob);
+        } else if (!latestUnassignedJob && newJobRequest) {
+            // If no job is found, but we are displaying one, it might have been taken. Clear it.
+            setNewJobRequest(null);
+        }
+    
+    }, [db, isOnline, ongoingJob, mechanic, newJobRequest]);
 
-        const timer = setTimeout(() => {
-            const unassignedJob = db.bookings.find(b => b.status === 'Upcoming' && !b.mechanic);
-            if (unassignedJob) {
-                setNewJobRequest(unassignedJob);
+    // Real-time check for new ASSIGNED job requests
+    useEffect(() => {
+        if (!mechanic || !db) return;
+
+        const sessionNotifiedKey = `notifiedBookings_${mechanic.id}`;
+        const notifiedBookingIds: Set<string> = new Set(
+            JSON.parse(sessionStorage.getItem(sessionNotifiedKey) || '[]')
+        );
+
+        const myUnseenBookings = db.bookings.filter(b => 
+            b.mechanic?.id === mechanic.id && !notifiedBookingIds.has(b.id)
+        );
+
+        if (myUnseenBookings.length > 0) {
+            // Show the newest unseen booking.
+            const newestUnseenBooking = myUnseenBookings.sort((a, b) => b.id.localeCompare(a.id))[0];
+            if (newestUnseenBooking.id !== newAssignedJob?.id) {
+                setNewAssignedJob(newestUnseenBooking);
             }
-        }, 3000);
-
-        return () => clearTimeout(timer);
-    }, [db, newJobRequest, ongoingJob, isOnline]);
+            
+            // Update the session storage to mark all found unseen bookings as seen.
+            myUnseenBookings.forEach(b => notifiedBookingIds.add(b.id));
+            sessionStorage.setItem(sessionNotifiedKey, JSON.stringify(Array.from(notifiedBookingIds)));
+        }
+    }, [db, mechanic, newAssignedJob]);
 
     const handleAcceptJob = () => {
         if (newJobRequest && mechanic) {
@@ -107,6 +186,17 @@ const MechanicDashboardScreen: React.FC = () => {
     };
 
     const handleDeclineJob = () => {
+        if (!newJobRequest || !mechanic) return;
+
+        const declinedJobsJSON = sessionStorage.getItem(`declinedJobs_${mechanic.id}`);
+        const declinedJobIds: string[] = declinedJobsJSON ? JSON.parse(declinedJobsJSON) : [];
+
+        if (!declinedJobIds.includes(newJobRequest.id)) {
+            declinedJobIds.push(newJobRequest.id);
+            sessionStorage.setItem(`declinedJobs_${mechanic.id}`, JSON.stringify(declinedJobIds));
+        }
+        
+        // Clear the current request. The useEffect will then find the next available one.
         setNewJobRequest(null);
     };
 
@@ -125,6 +215,20 @@ const MechanicDashboardScreen: React.FC = () => {
     
     return (
         <div className="flex flex-col h-full bg-secondary">
+            {isOnline && newJobRequest && !ongoingJob && (
+                <NewJobRequestModal 
+                    booking={newJobRequest}
+                    onAccept={handleAcceptJob}
+                    onDecline={handleDeclineJob}
+                />
+            )}
+            {newAssignedJob && (
+                <AssignedJobNotificationModal
+                    booking={newAssignedJob}
+                    onClose={() => setNewAssignedJob(null)}
+                />
+            )}
+
             {/* Custom Header */}
             <div className="p-4 bg-[#1D1D1D] border-b border-dark-gray flex justify-between items-center">
                 <div>
@@ -147,27 +251,6 @@ const MechanicDashboardScreen: React.FC = () => {
             </div>
             
             <div className="flex-grow p-4 space-y-6 overflow-y-auto">
-                {/* New Job Request */}
-                {isOnline && newJobRequest && !ongoingJob && (
-                    <div className="bg-orange-100 border-2 border-primary rounded-lg p-4 text-secondary shadow-lg animate-fadeIn">
-                        <h2 className="font-bold text-lg flex items-center gap-2 mb-2 text-gray-800">
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
-                              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-                            </svg>
-                            New Job Request!
-                        </h2>
-                        <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm text-gray-700">
-                            <span className="font-semibold">Service:</span><span>{newJobRequest.service.name}</span>
-                            <span className="font-semibold">Location:</span><span>Mandaluyong</span>
-                            <span className="font-semibold">Payout:</span><span>~₱{newJobRequest.service.price.toLocaleString()}</span>
-                        </div>
-                        <div className="mt-4 grid grid-cols-2 gap-3">
-                            <button onClick={handleDeclineJob} className="bg-gray-300 text-gray-800 font-bold py-2 rounded-lg hover:bg-gray-400 transition">Decline</button>
-                            <button onClick={handleAcceptJob} className="bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition">Accept</button>
-                        </div>
-                    </div>
-                )}
-
                 {/* Ongoing Job */}
                 {ongoingJob && (
                     <div className="bg-dark-gray p-4 rounded-lg">

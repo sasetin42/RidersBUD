@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import { Booking } from '../types';
-import BookingStatusCard from '../components/BookingStatusCard';
+import { useAuth } from '../context/AuthContext';
+import CustomerMechanicChatModal from '../components/customer/CustomerMechanicChatModal';
 
 const BookingConfirmationScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    const { user: customer } = useAuth();
     const { booking } = (location.state as { booking: Booking }) || {};
+    const [isChatOpen, setIsChatOpen] = useState(false);
 
     React.useEffect(() => {
         if (!booking) {
@@ -15,9 +18,11 @@ const BookingConfirmationScreen: React.FC = () => {
         }
     }, [booking, navigate]);
 
-    if (!booking) {
+    if (!booking || !customer) {
         return null;
     }
+
+    const { mechanic, vehicle } = booking;
     
     const handleSetReminder = () => {
         navigate('/reminders', {
@@ -32,7 +37,7 @@ const BookingConfirmationScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary">
             <Header title={`Booking #${booking.id.toUpperCase().slice(-6)}`} />
-            <div className="flex-grow flex flex-col items-center justify-start p-4 space-y-6 overflow-y-auto">
+            <div className="flex-grow flex flex-col items-center justify-start p-4 space-y-4 overflow-y-auto">
                  <div className="w-full max-w-md">
                      <div className="text-center my-4">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-green-400 mx-auto" viewBox="0 0 20 20" fill="currentColor">
@@ -40,11 +45,63 @@ const BookingConfirmationScreen: React.FC = () => {
                         </svg>
                         <h2 className="text-3xl font-bold text-white mt-4">Appointment Set!</h2>
                         <p className="text-base text-light-gray leading-relaxed max-w-sm mx-auto mt-2">
-                           Your booking has been successfully confirmed. You can track its status in your booking history.
+                           Your booking summary is below. You can track its status in your booking history.
                         </p>
                      </div>
+                    
+                    <div className="bg-dark-gray rounded-xl w-full">
+                        {/* Appointment Details */}
+                        <div className="p-5">
+                            <p className="text-sm font-bold text-primary tracking-wider uppercase">Appointment Details</p>
+                            <p className="text-2xl font-bold text-white mt-2">{booking.service.name}</p>
+                            <div className="flex justify-between items-start mt-4 text-left">
+                                <div>
+                                    <p className="text-sm text-light-gray mb-1">Date</p>
+                                    <p className="font-semibold text-white">{new Date(booking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm text-light-gray mb-1">Time</p>
+                                    <p className="font-semibold text-white">{booking.time}</p>
+                                </div>
+                            </div>
+                        </div>
 
-                    <BookingStatusCard booking={booking} showHeader={false} />
+                        {/* Mechanic Details */}
+                        {mechanic && (
+                            <>
+                                <hr className="border-field mx-5" />
+                                <div className="p-5">
+                                    <p className="text-sm font-bold text-primary tracking-wider uppercase mb-3">Your Mechanic</p>
+                                    <div className="flex items-center gap-4">
+                                        <img src={mechanic.imageUrl} alt={mechanic.name} className="w-16 h-16 rounded-full object-cover" />
+                                        <div className="flex-grow">
+                                            <p className="font-bold text-white text-lg">{mechanic.name}</p>
+                                            <p className="text-sm text-yellow-400 font-semibold">⭐ {mechanic.rating.toFixed(1)} ({mechanic.reviews} jobs)</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 flex gap-3">
+                                        <button onClick={() => navigate(`/mechanic-profile/${mechanic.id}`)} className="flex-1 bg-field text-white font-bold py-2 rounded-lg hover:bg-gray-700 transition text-sm">View Profile</button>
+                                        <button onClick={() => setIsChatOpen(true)} className="flex-1 bg-field text-white font-bold py-2 rounded-lg hover:bg-gray-700 transition text-sm">Chat</button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Vehicle Details */}
+                        <>
+                            <hr className="border-field mx-5" />
+                            <div className="p-5">
+                                <p className="text-sm font-bold text-primary tracking-wider uppercase mb-3">Vehicle</p>
+                                <div className="flex items-center gap-4">
+                                    <img src={vehicle.imageUrl} alt={`${vehicle.make} ${vehicle.model}`} className="w-24 h-16 object-cover rounded-md flex-shrink-0 bg-secondary" />
+                                    <div>
+                                        <p className="font-bold text-white">{vehicle.make} {vehicle.model} ({vehicle.year})</p>
+                                        <p className="text-sm bg-field inline-block px-2 py-0.5 mt-1 rounded font-mono tracking-wider text-white">{vehicle.plateNumber}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    </div>
                 </div>
             </div>
              <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex flex-col gap-4">
@@ -69,6 +126,15 @@ const BookingConfirmationScreen: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {isChatOpen && mechanic && (
+                <CustomerMechanicChatModal
+                    booking={booking}
+                    customer={customer}
+                    mechanic={mechanic}
+                    onClose={() => setIsChatOpen(false)}
+                />
+            )}
         </div>
     );
 };

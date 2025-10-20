@@ -1,4 +1,8 @@
-import React, { useState, useEffect } from 'react';
+
+
+
+
+import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import SplashScreen from './pages/SplashScreen';
 import LoginScreen from './pages/LoginScreen';
@@ -15,6 +19,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import BookingHistoryScreen from './pages/BookingHistoryScreen';
 import PartsStoreScreen from './pages/PartsStoreScreen';
+import PartDetailScreen from './pages/PartDetailScreen';
 import WarrantyScreen from './pages/WarrantyScreen';
 import { WishlistProvider } from './context/WishlistContext';
 import WishlistScreen from './pages/WishlistScreen';
@@ -42,19 +47,38 @@ import MechanicJobsScreen from './pages/mechanic/MechanicJobsScreen';
 import MechanicEarningsScreen from './pages/mechanic/MechanicEarningsScreen';
 import AdminAnalyticsScreen from './pages/admin/AdminAnalyticsScreen';
 import FAQScreen from './pages/FAQScreen';
-import { requestNotificationPermission, getNotificationSettings, showNotification, getMechanicNotificationSettings } from './utils/notificationManager';
-import { Booking, Reminder } from './types';
+import { requestNotificationPermission } from './utils/notificationManager';
+import { Reminder, Database } from './types';
 import MyGarageScreen from './pages/MyGarageScreen';
 import AdminMarketingScreen from './pages/admin/AdminMarketingScreen';
 import AIAssistantModal from './components/AIAssistantModal';
 import NotificationSettingsScreen from './pages/NotificationSettingsScreen';
 import MechanicNotificationSettingsScreen from './pages/mechanic/MechanicNotificationSettingsScreen';
+import AdminUsersScreen from './pages/admin/AdminUsersScreen';
+import { ChatNotificationProvider, useChatNotification } from './context/ChatNotificationContext';
+import { ChatMessage } from './utils/chatManager';
+import FavoriteMechanicsScreen from './pages/FavoriteMechanicsScreen';
+import AdminOrdersScreen from './pages/admin/AdminOrdersScreen';
+import MechanicTasksScreen from './pages/mechanic/MechanicTasksScreen';
+import { NotificationProvider, useNotification } from './context/NotificationContext';
+import NotificationToasts from './components/NotificationToasts';
+
+const usePrevious = <T,>(value: T) => {
+    const ref = useRef<T>();
+    useEffect(() => {
+        ref.current = value;
+    }, [value]);
+    return ref.current;
+};
+
 
 const App: React.FC = () => {
     return (
-        <DatabaseProvider>
-            <AppInitializer />
-        </DatabaseProvider>
+        <NotificationProvider>
+            <DatabaseProvider>
+                <AppInitializer />
+            </DatabaseProvider>
+        </NotificationProvider>
     );
 };
 
@@ -77,7 +101,9 @@ const AppInitializer: React.FC = () => {
                 <MechanicAuthProvider>
                     <CartProvider>
                         <WishlistProvider>
-                            <AppContent />
+                            <ChatNotificationProvider>
+                                <AppContent />
+                            </ChatNotificationProvider>
                         </WishlistProvider>
                     </CartProvider>
                 </MechanicAuthProvider>
@@ -91,129 +117,150 @@ const AppContent: React.FC = () => {
     const { isAdminAuthenticated } = useAdminAuth();
     const { isMechanicAuthenticated, mechanic } = useMechanicAuth();
     const { db } = useDatabase();
+    const { addNotification } = useNotification();
+    const { openChatIds } = useChatNotification();
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     
-     useEffect(() => {
-        if (isAuthenticated && user && db) {
-            // 1. Request permission on login
-            requestNotificationPermission();
-
-            const settings = getNotificationSettings();
-
-            // 2. Check for customer booking status updates
-            if (settings.bookingUpdates) {
-                const lastSeenBookingsJSON = sessionStorage.getItem(`lastSeenBookings_${user.id}`);
-                const lastSeenBookings: Booking[] = lastSeenBookingsJSON ? JSON.parse(lastSeenBookingsJSON) : [];
-                const currentUserBookings = db.bookings.filter(b => b.customerName === user.name);
-
-                currentUserBookings.forEach(currentBooking => {
-                    const oldBooking = lastSeenBookings.find(b => b.id === currentBooking.id);
-                    if (oldBooking && oldBooking.status !== currentBooking.status) {
-                         let title = '';
-                         let body = '';
-                         switch (currentBooking.status) {
-                             case 'En Route':
-                                 title = 'Mechanic En Route!';
-                                 body = `${currentBooking.mechanic?.name} is on the way for your ${currentBooking.service.name} service.`;
-                                 break;
-                             case 'In Progress':
-                                 title = 'Mechanic Has Arrived';
-                                 body = `${currentBooking.mechanic?.name} has arrived to begin your ${currentBooking.service.name} service.`;
-                                 break;
-                             case 'Completed':
-                                 title = 'Service Complete!';
-                                 body = `Your ${currentBooking.service.name} for your ${currentBooking.vehicle.make} ${currentBooking.vehicle.model} is now complete.`;
-                                 break;
-                         }
-                         if (title && body) {
-                             showNotification(title, { body });
-                         }
-                    }
-                });
-
-                sessionStorage.setItem(`lastSeenBookings_${user.id}`, JSON.stringify(currentUserBookings));
-            }
-
-            // 3. Check for customer service reminders
-            if (settings.serviceReminders) {
-                const storedRemindersJSON = localStorage.getItem('serviceReminders');
-                const reminders: Reminder[] = storedRemindersJSON ? JSON.parse(storedRemindersJSON) : [];
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                const oneWeekFromNow = new Date(today);
-                oneWeekFromNow.setDate(today.getDate() + 7);
-                
-                reminders.forEach(reminder => {
-                    const dateParts = reminder.date.split('-');
-                    const reminderDate = new Date(
-                        parseInt(dateParts[0]),
-                        parseInt(dateParts[1]) - 1,
-                        parseInt(dateParts[2])
-                    );
-                    
-                    if (reminderDate >= today && reminderDate <= oneWeekFromNow) {
-                        const notifiedThisSession = sessionStorage.getItem(`notified_reminder_${reminder.id}`);
-                        if (!notifiedThisSession) {
-                             const daysUntilDue = Math.round((reminderDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                             let body;
-                             if (daysUntilDue === 0) {
-                                 body = `Don't forget, your ${reminder.serviceName} for ${reminder.vehicle} is due today!`;
-                             } else {
-                                 body = `Your ${reminder.serviceName} for ${reminder.vehicle} is due in ${daysUntilDue} day${daysUntilDue > 1 ? 's' : ''}.`;
-                             }
-                            showNotification('Service Reminder', { body });
-                            sessionStorage.setItem(`notified_reminder_${reminder.id}`, 'true');
-                        }
-                    }
-                });
-            }
-        }
-    }, [isAuthenticated, user, db]);
-
-    // Effect for Mechanic-specific notifications
+    // FIX: Changed to allow type inference, which can resolve obscure compiler errors when dealing with complex types.
+    const prevDb = usePrevious(db);
+    
+    // Effect to generate notifications based on database changes
     useEffect(() => {
-        if (isMechanicAuthenticated && mechanic && db) {
-            requestNotificationPermission();
-            const settings = getMechanicNotificationSettings();
+        if (!prevDb || !db) return;
 
-            // 1. Check for new available jobs
-            if (settings.newJobAlerts) {
-                const lastSeenUnassignedJSON = sessionStorage.getItem('lastSeenUnassignedBookings');
-                const lastSeenUnassigned: Booking[] = lastSeenUnassignedJSON ? JSON.parse(lastSeenUnassignedJSON) : [];
-                const currentUnassigned = db.bookings.filter(b => b.status === 'Upcoming' && !b.mechanic);
-
-                currentUnassigned.forEach(job => {
-                    if (!lastSeenUnassigned.find(b => b.id === job.id)) {
-                        showNotification('New Job Available!', {
-                            body: `A new ${job.service.name} job for a ${job.vehicle.make} ${job.vehicle.model} is available.`
-                        });
-                    }
-                });
-                sessionStorage.setItem('lastSeenUnassignedBookings', JSON.stringify(currentUnassigned));
-            }
-
-            // 2. Check for updates to assigned jobs (e.g., cancellation)
-            if (settings.jobStatusChanges) {
-                const lastSeenMechanicJobsJSON = sessionStorage.getItem(`lastSeenMechanicBookings_${mechanic.id}`);
-                const lastSeenMechanicJobs: Booking[] = lastSeenMechanicJobsJSON ? JSON.parse(lastSeenMechanicJobsJSON) : [];
-                const currentMechanicJobs = db.bookings.filter(b => b.mechanic?.id === mechanic.id);
-
-                currentMechanicJobs.forEach(currentJob => {
-                    const oldJob = lastSeenMechanicJobs.find(b => b.id === currentJob.id);
-                    if (oldJob && oldJob.status !== currentJob.status && currentJob.status === 'Cancelled') {
-                        showNotification('Booking Cancelled', {
-                            body: `The booking for ${currentJob.customerName} (${currentJob.service.name}) has been cancelled.`
-                        });
-                    }
-                });
-                sessionStorage.setItem(`lastSeenMechanicBookings_${mechanic.id}`, JSON.stringify(currentMechanicJobs));
-            }
+        // --- CUSTOMER NOTIFICATIONS ---
+        if (isAuthenticated && user) {
+            // 1. Check for booking status updates
+            db.bookings.forEach(currentBooking => {
+                if (currentBooking.customerName !== user.name) return;
+                const oldBooking = prevDb.bookings.find(b => b.id === currentBooking.id);
+                if (oldBooking && oldBooking.status !== currentBooking.status) {
+                     let title = ''; let message = '';
+                     switch (currentBooking.status) {
+                         case 'En Route': title = 'Mechanic En Route!'; message = `${currentBooking.mechanic?.name} is on the way.`; break;
+                         case 'In Progress': title = 'Work has Begun!'; message = `${currentBooking.mechanic?.name} has started the ${currentBooking.service.name} service.`; break;
+                         case 'Completed': title = 'Service Complete!'; message = `Your ${currentBooking.service.name} is now complete.`; break;
+                     }
+                     if (title) {
+                         addNotification({ type: 'booking', title, message, link: '/booking-history', recipientId: `customer-${user.id}` });
+                     }
+                }
+            });
         }
-    }, [isMechanicAuthenticated, mechanic, db]);
+
+        // --- MECHANIC NOTIFICATIONS ---
+        if (isMechanicAuthenticated && mechanic) {
+            // 1. New Unassigned Job Alerts
+            const newUnassignedJobs = db.bookings.filter(b => b.status === 'Upcoming' && !b.mechanic && !prevDb.bookings.find(pb => pb.id === b.id));
+            newUnassignedJobs.forEach(job => {
+                addNotification({
+                    type: 'job',
+                    title: 'New Job Available!',
+                    message: `A ${job.service.name} for a ${job.vehicle.make} is available.`,
+                    link: '/mechanic/dashboard',
+                    recipientId: 'all' // This should be targeted if mechanics had specializations that matched
+                });
+            });
+
+            // 2. New Assigned Job
+            const newlyAssignedToMe = db.bookings.filter(b => {
+                const oldBooking = prevDb.bookings.find(pb => pb.id === b.id);
+                return b.mechanic?.id === mechanic.id && (!oldBooking?.mechanic || oldBooking.mechanic.id !== mechanic.id);
+            });
+            newlyAssignedToMe.forEach(job => {
+                addNotification({
+                    type: 'job',
+                    title: 'You Have a New Job!',
+                    message: `You've been assigned a ${job.service.name} for ${job.customerName}.`,
+                    link: `/mechanic/job/${job.id}`,
+                    recipientId: `mechanic-${mechanic.id}`
+                });
+            });
+        }
+
+    }, [db, prevDb, isAuthenticated, user, isMechanicAuthenticated, mechanic, addNotification]);
+
+     // Effect for Time-based and Chat Notifications
+    useEffect(() => {
+        // 1. Request general notification permission on login
+        if (isAuthenticated || isMechanicAuthenticated) {
+            requestNotificationPermission();
+        }
+
+        // 2. Customer Service Reminders (runs periodically)
+        if (isAuthenticated && user) {
+            const storedRemindersJSON = localStorage.getItem('serviceReminders');
+            const reminders: Reminder[] = storedRemindersJSON ? JSON.parse(storedRemindersJSON) : [];
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const oneWeekFromNow = new Date(today);
+            oneWeekFromNow.setDate(today.getDate() + 7);
+            
+            reminders.forEach(reminder => {
+                const dateParts = reminder.date.split('-');
+                const reminderDate = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+                
+                if (reminderDate >= today && reminderDate <= oneWeekFromNow) {
+                    const notifiedThisSession = sessionStorage.getItem(`notified_reminder_${reminder.id}`);
+                    if (!notifiedThisSession) {
+                         const daysUntilDue = Math.round((reminderDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                         let message;
+                         if (daysUntilDue === 0) { message = `Your ${reminder.serviceName} for ${reminder.vehicle} is due today!`;} 
+                         else { message = `Your ${reminder.serviceName} for ${reminder.vehicle} is due in ${daysUntilDue} day${daysUntilDue > 1 ? 's' : ''}.`;}
+                        addNotification({ type: 'reminder', title: 'Service Reminder', message, link: '/reminders', recipientId: `customer-${user.id}` });
+                        sessionStorage.setItem(`notified_reminder_${reminder.id}`, 'true');
+                    }
+                }
+            });
+        }
+
+        // 3. Chat Message Listener
+        const handleChatMessage = (event: StorageEvent) => {
+            if (!event.key?.startsWith('chat_') || !event.newValue || !db) return;
+
+            const bookingId = event.key.replace('chat_', '');
+            if (openChatIds.has(bookingId)) return;
+
+            try {
+                const messages: ChatMessage[] = JSON.parse(event.newValue);
+                const lastMessage = messages[messages.length - 1];
+                if (!lastMessage) return;
+
+                if (isAuthenticated && user && lastMessage.sender === 'mechanic') {
+                    const booking = db.bookings.find(b => b.id === bookingId && b.customerName === user.name);
+                    if (booking?.mechanic) {
+                         addNotification({
+                            type: 'chat',
+                            title: `New Message from ${booking.mechanic.name}`,
+                            message: lastMessage.text,
+                            link: booking.status === 'Completed' ? '/booking-history' : '/', // Link depends on context
+                            recipientId: `customer-${user.id}`
+                         });
+                    }
+                } else if (isMechanicAuthenticated && mechanic && lastMessage.sender === 'customer') {
+                    const booking = db.bookings.find(b => b.id === bookingId && b.mechanic?.id === mechanic.id);
+                    if (booking) {
+                         addNotification({
+                            type: 'chat',
+                            title: `New Message from ${booking.customerName}`,
+                            message: lastMessage.text,
+                            link: `/mechanic/job/${booking.id}`,
+                            recipientId: `mechanic-${mechanic.id}`
+                         });
+                    }
+                }
+            } catch (error) { console.error("Error handling chat notification:", error); }
+        };
+
+        window.addEventListener('storage', handleChatMessage);
+        return () => window.removeEventListener('storage', handleChatMessage);
+
+    }, [isAuthenticated, isMechanicAuthenticated, user, mechanic, db, addNotification, openChatIds]);
 
 
     return (
         <HashRouter>
+            <NotificationToasts />
             <Routes>
                 {/* Admin Routes */}
                 <Route path="/admin/login" element={<AdminLoginScreen />} />
@@ -227,9 +274,11 @@ const AppContent: React.FC = () => {
                                     <Route path="catalog" element={<AdminCatalogScreen />} />
                                     <Route path="mechanics" element={<AdminMechanicsScreen />} />
                                     <Route path="bookings" element={<AdminBookingsScreen />} />
+                                    <Route path="orders" element={<AdminOrdersScreen />} />
                                     <Route path="customers" element={<AdminCustomersScreen />} />
                                     <Route path="analytics" element={<AdminAnalyticsScreen />} />
                                     <Route path="marketing" element={<AdminMarketingScreen />} />
+                                    <Route path="users" element={<AdminUsersScreen />} />
                                     <Route path="settings" element={<AdminSettingsScreen />} />
                                     <Route path="*" element={<Navigate to="/admin/dashboard" />} />
                                 </Routes>
@@ -245,11 +294,12 @@ const AppContent: React.FC = () => {
                     path="/mechanic/*"
                     element={
                         isMechanicAuthenticated ? (
-                            <div className="max-w-md mx-auto h-screen bg-secondary text-white font-sans flex flex-col">
+                            <div className="max-w-md mx-auto h-screen bg-secondary text-white font-sans flex flex-col overflow-hidden">
                                 <div className="flex-grow overflow-y-auto">
                                     <Routes>
                                         <Route path="dashboard" element={<MechanicDashboardScreen />} />
                                         <Route path="jobs" element={<MechanicJobsScreen />} />
+                                        <Route path="tasks" element={<MechanicTasksScreen />} />
                                         <Route path="earnings" element={<MechanicEarningsScreen />} />
                                         <Route path="job/:bookingId" element={<MechanicJobDetailScreen />} />
                                         <Route path="profile" element={<MechanicProfileManagementScreen />} />
@@ -269,7 +319,7 @@ const AppContent: React.FC = () => {
                 <Route
                     path="/*"
                     element={
-                        <div className="max-w-md mx-auto h-screen bg-secondary text-white font-sans flex flex-col">
+                        <div className="max-w-md mx-auto h-screen bg-secondary text-white font-sans flex flex-col overflow-hidden">
                             <div className="flex-grow overflow-y-auto">
                                 <Routes>
                                     {isAuthenticated ? (
@@ -278,6 +328,7 @@ const AppContent: React.FC = () => {
                                             <Route path="/services" element={<ServicesScreen />} />
                                             <Route path="/service/:id" element={<ServiceDetailScreen />} />
                                             <Route path="/parts-store" element={<PartsStoreScreen />} />
+                                            <Route path="/part/:id" element={<PartDetailScreen />} />
                                             <Route path="/booking/:serviceId" element={<BookingScreen />} />
                                             <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
                                             <Route path="/cart" element={<CartScreen />} />
@@ -287,6 +338,7 @@ const AppContent: React.FC = () => {
                                             <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
                                             <Route path="/my-garage" element={<MyGarageScreen />} />
                                             <Route path="/mechanic-profile/:mechanicId" element={<MechanicProfileScreen />} />
+                                            <Route path="/favorite-mechanics" element={<FavoriteMechanicsScreen />} />
                                             <Route path="/reminders" element={<RemindersScreen />} />
                                             <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
                                             <Route path="/order-history" element={<OrderHistoryScreen />} />

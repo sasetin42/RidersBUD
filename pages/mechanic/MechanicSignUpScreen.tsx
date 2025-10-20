@@ -45,6 +45,7 @@ const MechanicSignUpScreen: React.FC = () => {
         
         setIsLoading(true);
         try {
+            // Fix: Add missing 'registrationDate' and 'birthday' properties to satisfy the Mechanic type.
             await register({
                 ...formData,
                 basePrice: formData.basePrice ? Number(formData.basePrice) : undefined,
@@ -54,6 +55,8 @@ const MechanicSignUpScreen: React.FC = () => {
                 imageUrl: 'https://picsum.photos/seed/newmech/200/200',
                 lat: 14.55 + (Math.random() - 0.5) * 0.1,
                 lng: 121.02 + (Math.random() - 0.5) * 0.1,
+                registrationDate: new Date().toISOString().split('T')[0],
+                birthday: '',
             });
             setIsSuccess(true);
         } catch (err) {
@@ -71,7 +74,7 @@ const MechanicSignUpScreen: React.FC = () => {
                 </svg>
                 <h1 className="text-3xl font-bold text-white mb-4">Application Submitted!</h1>
                 <p className="text-light-gray mb-8">Thank you for registering. Your profile is now under review by our admin team. You will be notified via email once your account is approved.</p>
-                <button onClick={() => navigate('/mechanic/login')} className="w-full max-w-sm bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                <button onClick={() => navigate('/login', { state: { from: 'mechanic' } })} className="w-full max-w-sm bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
                     Back to Login
                 </button>
             </div>
@@ -114,7 +117,7 @@ const MechanicSignUpScreen: React.FC = () => {
                 <div className="mt-6 text-center">
                     <p className="text-light-gray">
                         Already have an account?{' '}
-                        <button onClick={() => navigate('/mechanic/login')} className="text-primary font-semibold hover:underline">
+                        <button onClick={() => navigate('/login', { state: { from: 'mechanic' } })} className="text-primary font-semibold hover:underline">
                             Sign In
                         </button>
                     </p>

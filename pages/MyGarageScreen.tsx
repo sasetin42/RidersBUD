@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Vehicle } from '../types';
 import Spinner from '../components/Spinner';
 import { fileToBase64 } from '../utils/fileUtils';
+import { useDatabase } from '../context/DatabaseContext';
 
 const VehicleFormModal: React.FC<{
     vehicle?: Vehicle;
@@ -20,7 +21,7 @@ const VehicleFormModal: React.FC<{
         mileage: vehicle?.mileage?.toString() || '',
         insuranceProvider: vehicle?.insuranceProvider || '',
         insurancePolicyNumber: vehicle?.insurancePolicyNumber || '',
-        imageUrl: vehicle?.imageUrl || `https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png`
+        imageUrl: vehicle?.imageUrl || ''
     });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
@@ -74,7 +75,15 @@ const VehicleFormModal: React.FC<{
                 <form onSubmit={handleSave} noValidate className="space-y-4">
                     <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1">Vehicle Image</h3>
                     <div>
-                        {formData.imageUrl && <img src={formData.imageUrl} alt="Vehicle preview" className="w-full h-40 object-cover rounded-lg bg-field mb-2 border border-field" />}
+                        {formData.imageUrl ? (
+                            <img src={formData.imageUrl} alt="Vehicle preview" className="w-full h-40 object-cover rounded-lg bg-field mb-2 border border-field" />
+                        ) : (
+                            <div className="w-full h-40 bg-field rounded-lg mb-2 border border-dashed border-dark-gray flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+                                </svg>
+                            </div>
+                        )}
                         <label className="block text-xs text-light-gray mb-1">Upload Image</label>
                         <input
                             type="file"
@@ -83,15 +92,6 @@ const VehicleFormModal: React.FC<{
                             className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                         />
                          {errors.imageUrl && <p className="text-red-400 text-xs mt-1">{errors.imageUrl}</p>}
-                        <p className="text-xs text-center text-light-gray my-2">OR</p>
-                        <label className="block text-xs text-light-gray mb-1">Paste Image URL</label>
-                        <input
-                            type="text"
-                            placeholder="https://example.com/car.png"
-                            value={formData.imageUrl}
-                            onChange={e => setFormData({ ...formData, imageUrl: e.target.value })}
-                            className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
                     </div>
                     
                     <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1 pt-2">Core Information</h3>
@@ -122,6 +122,42 @@ const VehicleDetailRow: React.FC<{ label: string, value?: string | number }> = (
         <span className="font-semibold text-white">{value || 'N/A'}</span>
     </div>
 );
+
+const MaintenanceHistory: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
+    const { db } = useDatabase();
+    const history = useMemo(() => {
+        if (!db) return [];
+        return db.bookings
+            .filter(b => b.vehicle.plateNumber === vehicle.plateNumber && b.status === 'Completed')
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [db, vehicle.plateNumber]);
+
+    return (
+        <div className="mt-4 pt-4 border-t border-field animate-fadeIn space-y-3">
+            <h4 className="font-semibold text-primary mb-2">Maintenance History</h4>
+            {history.length > 0 ? (
+                history.map(item => (
+                    <div key={item.id} className="bg-field p-3 rounded-md">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <p className="font-bold text-white text-sm">{item.service.name}</p>
+                                <p className="text-xs text-light-gray">
+                                    {new Date(item.date.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                                </p>
+                            </div>
+                            <p className="font-semibold text-green-400 text-sm">₱{item.service.price.toLocaleString()}</p>
+                        </div>
+                        <p className="text-xs text-light-gray mt-1">Serviced by: {item.mechanic?.name || 'N/A'}</p>
+                        {item.notes && <p className="text-xs mt-2 pt-2 border-t border-dark-gray text-gray-400">Notes: {item.notes}</p>}
+                    </div>
+                ))
+            ) : (
+                <p className="text-sm text-light-gray text-center py-4">No completed service history for this vehicle.</p>
+            )}
+        </div>
+    );
+};
+
 
 const MyGarageScreen: React.FC = () => {
     const { user, addUserVehicle, updateUserVehicle, deleteUserVehicle, setPrimaryVehicle, loading } = useAuth();
@@ -192,14 +228,14 @@ const MyGarageScreen: React.FC = () => {
                                          <VehicleDetailRow label="Mileage" value={v.mileage ? `${v.mileage.toLocaleString()} km` : undefined} />
                                          <VehicleDetailRow label="Insurance" value={v.insuranceProvider} />
                                          <VehicleDetailRow label="Policy #" value={v.insurancePolicyNumber} />
+                                         <MaintenanceHistory vehicle={v} />
                                      </div>
                                 )}
                                 
                                 <div className="flex flex-wrap justify-end items-center mt-4 gap-x-4 gap-y-2 text-sm">
                                     <button onClick={() => setExpandedPlate(p => p === v.plateNumber ? null : v.plateNumber)} className="text-primary font-semibold hover:underline">
-                                        {expandedPlate === v.plateNumber ? 'Hide Details' : 'View Details'}
+                                        {expandedPlate === v.plateNumber ? 'Hide Details & History' : 'View Details & History'}
                                     </button>
-                                    <button onClick={() => navigate(`/booking-history/${v.plateNumber}`)} className="text-blue-400 font-semibold hover:underline">History</button>
                                     <button onClick={() => handleOpenModal(v)} className="text-green-400 font-semibold hover:underline">Edit</button>
                                     {!v.isPrimary && (
                                         <button onClick={() => handleSetPrimary(v.plateNumber)} className="text-yellow-400 font-semibold hover:underline">Set Primary</button>

@@ -1,8 +1,102 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Settings } from '../../types';
+import { Settings, Role, AdminModule, PermissionLevel } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { fileToBase64 } from '../../utils/fileUtils';
+import Modal from '../../components/admin/Modal';
+
+const modules: AdminModule[] = ['dashboard', 'analytics', 'bookings', 'catalog', 'mechanics', 'customers', 'marketing', 'users', 'settings'];
+
+const RoleFormModal: React.FC<{
+    role?: Role;
+    onClose: () => void;
+    onSave: (role: Role | Omit<Role, 'isEditable'>) => void;
+    existingRoleNames: string[];
+}> = ({ role, onClose, onSave, existingRoleNames }) => {
+    const [formData, setFormData] = useState({
+        name: role?.name || '',
+        description: role?.description || '',
+        defaultPermissions: role?.defaultPermissions || {},
+    });
+    const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+    const validate = () => {
+        const newErrors: { [key: string]: string } = {};
+        if (!formData.name.trim()) {
+            newErrors.name = 'Role name cannot be empty.';
+        } else if (!role && existingRoleNames.map(n => n.toLowerCase()).includes(formData.name.trim().toLowerCase())) {
+            newErrors.name = 'A role with this name already exists.';
+        }
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+    
+    const handlePermissionChange = (module: AdminModule, level: PermissionLevel) => {
+        setFormData(prev => ({ ...prev, defaultPermissions: { ...prev.defaultPermissions, [module]: level } }));
+    };
+
+    const handleSave = () => {
+        if (validate()) {
+            if (role) {
+                onSave({ ...role, ...formData });
+            } else {
+                onSave(formData);
+            }
+        }
+    };
+
+    return (
+        <Modal title={role ? `Edit Role: ${role.name}` : "Add New Role"} isOpen={true} onClose={onClose}>
+            <div className="space-y-4">
+                <div>
+                    <label className="text-sm text-light-gray">Role Name</label>
+                    <input
+                        type="text"
+                        value={formData.name}
+                        readOnly={!!role}
+                        onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                        className={`w-full p-2 bg-field border rounded ${errors.name ? 'border-red-500' : 'border-gray-600'} ${!!role ? 'bg-gray-700 cursor-not-allowed' : ''}`}
+                    />
+                    {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+                </div>
+                 <div>
+                    <label className="text-sm text-light-gray">Description</label>
+                    <input
+                        type="text"
+                        value={formData.description}
+                        onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        className="w-full p-2 bg-field border rounded border-gray-600"
+                    />
+                </div>
+
+                <div className="border-t border-field pt-4">
+                    <h3 className="text-lg font-bold mb-2">Default Permissions</h3>
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                        {modules.map(module => (
+                            <div key={module} className="grid grid-cols-2 items-center">
+                                <label className="text-sm capitalize">{module}</label>
+                                <select
+                                    value={formData.defaultPermissions[module] || 'none'}
+                                    onChange={e => handlePermissionChange(module, e.target.value as PermissionLevel)}
+                                    className="w-full p-1 bg-field border rounded border-gray-600 text-sm"
+                                >
+                                    <option value="none">No Access</option>
+                                    <option value="view">View Only</option>
+                                    <option value="edit">View & Edit</option>
+                                </select>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+             <div className="mt-6 flex justify-end gap-4 border-t border-field pt-4">
+                <button onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600">Cancel</button>
+                <button onClick={handleSave} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600">Save Role</button>
+            </div>
+        </Modal>
+    );
+};
+
 
 const ToggleSwitch: React.FC<{ label: string; enabled: boolean; onChange: (enabled: boolean) => void; }> = ({ label, enabled, onChange }) => {
   return (
@@ -43,7 +137,7 @@ const CategoryManager: React.FC<{
     return (
         <div>
             <h3 className="text-lg font-bold mb-3">{title}</h3>
-            <div className="space-y-2 mb-3">
+            <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
                 {categories.map(cat => (
                     <div key={cat} className="flex items-center justify-between bg-field p-2 rounded">
                         <span className="text-sm">{cat}</span>
@@ -70,12 +164,16 @@ const CategoryManager: React.FC<{
 };
 
 const AdminSettingsScreen: React.FC = () => {
-    const { db, updateSettings: updateGlobalSettings, loading } = useDatabase();
+    const { db, updateSettings: updateGlobalSettings, addRole, updateRole, deleteRole, loading } = useDatabase();
     
     const [settings, setSettings] = useState<Settings | null>(null);
     const [initialSettings, setInitialSettings] = useState<Settings | null>(null);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+    // State for role management
+    const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+    const [editingRole, setEditingRole] = useState<Role | undefined>(undefined);
 
     useEffect(() => {
         if (db) {
@@ -160,7 +258,31 @@ const AdminSettingsScreen: React.FC = () => {
         setErrors({});
     };
 
-    if (loading || !settings) {
+    const handleSaveRole = async (roleData: Role | Omit<Role, 'isEditable'>) => {
+        try {
+            if ('isEditable' in roleData) {
+                await updateRole(roleData as Role);
+            } else {
+                await addRole(roleData);
+            }
+            setIsRoleModalOpen(false);
+            setEditingRole(undefined);
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'An unknown error occurred.');
+        }
+    };
+
+    const handleDeleteRole = async (roleName: string) => {
+        if (window.confirm(`Are you sure you want to delete the "${roleName}" role? This action cannot be undone.`)) {
+            try {
+                await deleteRole(roleName);
+            } catch (error) {
+                alert(error instanceof Error ? error.message : 'An unknown error occurred.');
+            }
+        }
+    };
+
+    if (loading || !settings || !db) {
         return <div className="flex items-center justify-center h-full bg-dark-gray"><Spinner size="lg" color="text-white" /></div>;
     }
 
@@ -222,35 +344,50 @@ const AdminSettingsScreen: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Branding & Appearance Card */}
+                        {/* Role Management Card */}
                         <div className="bg-secondary p-6 rounded-lg shadow">
-                            <h2 className="text-xl font-bold mb-4">Branding & Appearance</h2>
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Logo</label>
-                                    <p className="text-xs text-gray-400 mb-2">The primary logo for the customer-facing application. Used on the splash screen, login/signup pages, and admin login.</p>
-                                    <div className="flex items-center gap-4">
-                                        <input type="file" name="appLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                        {settings.appLogoUrl && <img src={settings.appLogoUrl} alt="App Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                             <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold">Role Management</h2>
+                                <button onClick={() => { setEditingRole(undefined); setIsRoleModalOpen(true); }} className="text-sm font-semibold text-primary hover:text-orange-600">+ Add Role</button>
+                            </div>
+                            <p className="text-sm text-light-gray mb-4">Define roles and their default permissions.</p>
+                            <div className="space-y-3">
+                                {db.roles.map(role => (
+                                    <div key={role.name} className="bg-field p-3 rounded-lg flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-semibold text-white">{role.name}</h4>
+                                            <p className="text-xs text-light-gray">{role.description}</p>
+                                        </div>
+                                        {role.isEditable ? (
+                                            <div className="flex gap-3">
+                                                <button onClick={() => { setEditingRole(role); setIsRoleModalOpen(true); }} className="text-sm font-semibold text-blue-400 hover:text-blue-300">Edit</button>
+                                                <button onClick={() => handleDeleteRole(role.name)} className="text-sm font-semibold text-red-400 hover:text-red-300">Delete</button>
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-gray-500 italic">Default Role</span>
+                                        )}
                                     </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Admin Sidebar Logo</label>
-                                    <p className="text-xs text-gray-400 mb-2">A distinct logo for the admin panel sidebar. Falls back to the Application Logo if not set.</p>
-                                    <div className="flex items-center gap-4">
-                                        <input type="file" name="adminSidebarLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                        {settings.adminSidebarLogoUrl && <img src={settings.adminSidebarLogoUrl} alt="Admin Sidebar Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Tagline</label>
-                                    <input type="text" name="appTagline" value={settings.appTagline || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                                    <p className="text-xs text-gray-400 mt-1">This tagline appears below the logo on the splash, login, and signup screens.</p>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Admin Panel Title</label>
-                                    <input type="text" name="adminPanelTitle" value={settings.adminPanelTitle || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                                </div>
+                                ))}
+                            </div>
+                        </div>
+
+
+                        {/* Catalog Settings */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">Catalog Settings</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <CategoryManager
+                                    title="Service Categories"
+                                    categories={settings.serviceCategories}
+                                    onAdd={(cat) => handleLocalSettingsChange({ serviceCategories: [...settings.serviceCategories, cat] })}
+                                    onDelete={(cat) => handleLocalSettingsChange({ serviceCategories: settings.serviceCategories.filter(c => c !== cat) })}
+                                />
+                                <CategoryManager
+                                    title="Part Categories"
+                                    categories={settings.partCategories}
+                                    onAdd={(cat) => handleLocalSettingsChange({ partCategories: [...settings.partCategories, cat] })}
+                                    onDelete={(cat) => handleLocalSettingsChange({ partCategories: settings.partCategories.filter(c => c !== cat) })}
+                                />
                             </div>
                         </div>
 
@@ -282,55 +419,65 @@ const AdminSettingsScreen: React.FC = () => {
                     </div>
                     {/* --- RIGHT COLUMN (1/3) --- */}
                     <div className="space-y-6">
-                        {/* Catalog Settings */}
+                         {/* AI Assistant Card */}
                         <div className="bg-secondary p-6 rounded-lg shadow">
-                            <h2 className="text-xl font-bold mb-4">Catalog Settings</h2>
-                            <div className="grid grid-cols-1 gap-6">
-                                <CategoryManager
-                                    title="Service Categories"
-                                    categories={settings.serviceCategories}
-                                    onAdd={(cat) => handleLocalSettingsChange({ serviceCategories: [...settings.serviceCategories, cat] })}
-                                    onDelete={(cat) => handleLocalSettingsChange({ serviceCategories: settings.serviceCategories.filter(c => c !== cat) })}
-                                />
-                                <CategoryManager
-                                    title="Part Categories"
-                                    categories={settings.partCategories}
-                                    onAdd={(cat) => handleLocalSettingsChange({ partCategories: [...settings.partCategories, cat] })}
-                                    onDelete={(cat) => handleLocalSettingsChange({ partCategories: settings.partCategories.filter(c => c !== cat) })}
-                                />
-                            </div>
-                        </div>
-
-                         {/* AI & Map Settings */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
-                            <h2 className="text-xl font-bold mb-4">AI & Map Settings</h2>
+                            <h2 className="text-xl font-bold mb-4">AI Assistant Settings</h2>
                             <div className="space-y-6">
                                 <div>
-                                    <h3 className="text-lg font-bold mb-3">Virtual Mechanic</h3>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-light-gray mb-1">Virtual Mechanic Name</label>
-                                            <input type="text" name="virtualMechanicName" value={settings.virtualMechanicName || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-light-gray mb-1">Virtual Mechanic Avatar</label>
-                                            <input type="file" name="virtualMechanicImageUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                            {settings.virtualMechanicImageUrl && <img src={settings.virtualMechanicImageUrl} alt="Virtual Mechanic Preview" className="mt-2 h-16 w-16 object-cover rounded-full bg-field p-1" />}
-                                        </div>
-                                    </div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Assistant Name</label>
+                                    <input type="text" name="virtualMechanicName" value={settings.virtualMechanicName || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
                                 </div>
-                                <div className="border-t border-field pt-6">
-                                    <h3 className="text-lg font-bold mb-3">Map Settings</h3>
-                                     <div>
-                                        <label className="block text-sm font-medium text-light-gray mb-1">Mechanic Map Marker Logo</label>
-                                        <input type="file" name="mechanicMarkerUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                        {settings.mechanicMarkerUrl && <img src={settings.mechanicMarkerUrl} alt="Mechanic Marker Preview" className="mt-2 h-10 w-10 object-contain bg-field p-1 rounded-full border-2 border-primary" />}
+                                 <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Assistant Avatar</label>
+                                    <div className="flex items-center gap-4">
+                                        <input type="file" name="virtualMechanicImageUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        {settings.virtualMechanicImageUrl && <img src={settings.virtualMechanicImageUrl} alt="AI Avatar Preview" className="h-16 w-16 object-cover rounded-full bg-field p-1" />}
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Notification Settings Card */}
+                        {/* Branding & Appearance Card */}
+                        <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">Branding & Appearance</h2>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Primary Application Logo</label>
+                                    <p className="text-xs text-gray-400 mb-2">Used on Splash, Login screens (Customer, Mechanic, Admin), and Invoices.</p>
+                                    <div className="flex items-center gap-4">
+                                        <input type="file" name="appLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        {settings.appLogoUrl && <img src={settings.appLogoUrl} alt="App Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Admin Sidebar Logo</label>
+                                    <div className="flex items-center gap-4">
+                                        <input type="file" name="adminSidebarLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        {settings.adminSidebarLogoUrl && <img src={settings.adminSidebarLogoUrl} alt="Admin Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Tagline</label>
+                                    <input type="text" name="appTagline" value={settings.appTagline || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                </div>
+                            </div>
+                        </div>
+
+                         {/* Map Settings Card */}
+                         <div className="bg-secondary p-6 rounded-lg shadow">
+                            <h2 className="text-xl font-bold mb-4">Map Settings</h2>
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-light-gray mb-1">Default Mechanic Map Pin</label>
+                                    <div className="flex items-center gap-4">
+                                        <input type="file" name="mechanicMarkerUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        {settings.mechanicMarkerUrl && <img src={settings.mechanicMarkerUrl} alt="Map Pin Preview" className="h-10 w-auto object-contain" />}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                         {/* Notification Settings Card */}
                         <div className="bg-secondary p-6 rounded-lg shadow">
                             <h2 className="text-xl font-bold mb-4">Notification Settings</h2>
                             <div className="space-y-4">
@@ -341,6 +488,14 @@ const AdminSettingsScreen: React.FC = () => {
                     </div>
                 </div>
             </div>
+            {isRoleModalOpen && (
+                <RoleFormModal 
+                    role={editingRole}
+                    onClose={() => setIsRoleModalOpen(false)}
+                    onSave={handleSaveRole}
+                    existingRoleNames={db.roles.map(r => r.name)}
+                />
+            )}
         </div>
     );
 };

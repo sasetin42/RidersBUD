@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Booking, Customer, Mechanic } from '../../types';
 import { useChat, ChatMessage } from '../../utils/chatManager';
+import { useChatNotification } from '../../context/ChatNotificationContext';
 
 interface CustomerMechanicChatModalProps {
     booking: Booking;
@@ -13,6 +14,16 @@ const CustomerMechanicChatModal: React.FC<CustomerMechanicChatModalProps> = ({ b
     const { messages, sendMessage } = useChat(booking.id);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
+    const { addOpenChat, removeOpenChat } = useChatNotification();
+
+    useEffect(() => {
+        addOpenChat(booking.id);
+        // Cleanup function to remove the chat id when the modal is closed
+        return () => {
+            removeOpenChat(booking.id);
+        };
+    }, [addOpenChat, removeOpenChat, booking.id]);
+
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

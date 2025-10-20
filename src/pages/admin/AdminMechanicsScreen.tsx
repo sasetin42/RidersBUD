@@ -43,7 +43,7 @@ const MechanicFormModal: React.FC<{
                 password: formData.password || mechanic.password // Keep old password if new one is not provided
             });
         } else {
-             // Fix: Added missing registrationDate and birthday properties to satisfy the type constraints of the onSave function parameter.
+            // Fix: Added missing registrationDate and birthday properties to satisfy the type constraints of the onSave function parameter.
              onSave({
                 ...formData,
                 password: formData.password || 'password123', // Default password for new mechanics

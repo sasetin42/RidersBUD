@@ -1,17 +1,6 @@
 
-// FIX: Removed self-import which was causing a circular dependency and declaration conflicts.
-// This file contains all the type definitions for the application.
 
-export interface Notification {
-    id: string;
-    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job';
-    title: string;
-    message: string;
-    timestamp: number;
-    read: boolean;
-    link?: string;
-    recipientId: 'all' | `customer-${string}` | `mechanic-${string}`;
-}
+// This file contains all the type definitions for the application.
 
 export interface Service {
     id: string;

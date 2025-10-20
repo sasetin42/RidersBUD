@@ -52,6 +52,7 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
     const { addToCart } = useCart();
     const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
     const [isAdded, setIsAdded] = useState(false);
+    const navigate = useNavigate();
 
     const isWishlisted = isInWishlist(part.id);
 
@@ -69,7 +70,10 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
     };
 
     return (
-        <div className="bg-dark-gray rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1">
+        <div 
+            onClick={() => navigate(`/part/${part.id}`)}
+            className="bg-dark-gray rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 cursor-pointer"
+        >
             <div className="relative">
                 <img src={part.imageUrl} alt={part.name} className="w-full h-28 object-cover" />
                 {part.stock === 0 && (
@@ -185,6 +189,7 @@ const PartsStoreScreen: React.FC = () => {
                         if (part.name.toLowerCase().startsWith(lowercasedQuery)) score += 5;
                         else if (part.name.toLowerCase().includes(lowercasedQuery)) score += 3;
                         if (part.sku.toLowerCase().includes(lowercasedQuery)) score += 2;
+                        if (part.category.toLowerCase().includes(lowercasedQuery)) score += 1;
                         if (part.description.toLowerCase().includes(lowercasedQuery)) score += 1;
                         return score;
                     };

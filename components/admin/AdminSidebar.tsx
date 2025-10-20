@@ -6,20 +6,20 @@ import Spinner from '../Spinner';
 
 const NavItem: React.FC<{ to: string; icon: React.ReactNode; label: string; isCollapsed: boolean; }> = ({ to, icon, label, isCollapsed }) => {
     const navLinkClasses = ({ isActive }: { isActive: boolean }) =>
-        `flex items-center px-4 py-3 text-sm font-medium transition-colors duration-200 rounded-lg ${
-            isActive ? 'bg-primary text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+        `flex items-center p-3 my-1 text-sm font-medium transition-colors duration-200 rounded-lg ${
+            isActive
+                ? 'bg-admin-accent/10 text-admin-accent'
+                : 'text-admin-text-secondary hover:bg-admin-card hover:text-admin-text-primary'
         } ${isCollapsed ? 'justify-center' : ''}`;
 
     return (
         <div className="relative group">
             <NavLink to={to} className={navLinkClasses}>
-                {icon}
-                <span className={`ml-3 whitespace-nowrap transition-opacity duration-200 ${isCollapsed ? 'opacity-0 sr-only' : 'opacity-100'}`}>
-                    {label}
-                </span>
+                <div className="w-6 h-6 flex-shrink-0">{icon}</div>
+                {!isCollapsed && <span className="ml-4 whitespace-nowrap">{label}</span>}
             </NavLink>
             {isCollapsed && (
-                <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-max px-2 py-1 bg-secondary text-white text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50">
+                <div className="absolute left-full ml-4 top-1/2 -translate-y-1/2 w-max px-3 py-2 bg-admin-card text-white text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50 border border-admin-border">
                     {label}
                 </div>
             )}
@@ -29,53 +29,58 @@ const NavItem: React.FC<{ to: string; icon: React.ReactNode; label: string; isCo
 
 interface AdminSidebarProps {
     isCollapsed: boolean;
+    onToggle: () => void;
 }
 
-const AdminSidebar: React.FC<AdminSidebarProps> = ({ isCollapsed }) => {
+const AdminSidebar: React.FC<AdminSidebarProps> = ({ isCollapsed, onToggle }) => {
     const { logout } = useAdminAuth();
     const { db } = useDatabase();
 
     if (!db) {
-        return <aside className={`bg-secondary text-white flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'} items-center justify-center`}><Spinner /></aside>;
+        return (
+            <aside className={`bg-admin-sidebar flex-shrink-0 transition-all duration-300 ease-in-out ${ isCollapsed ? 'w-20' : 'w-64' } flex items-center justify-center`}>
+                <Spinner />
+            </aside>
+        );
     }
 
     const { settings } = db;
-    const logoUrl = settings.adminSidebarLogoUrl || settings.appLogoUrl || "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
+    const logoUrl = settings.adminSidebarLogoUrl || "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_icon.png";
 
     return (
-        <aside className={`bg-secondary text-white flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'}`}>
-            <div className={`flex flex-col items-center border-b border-dark-gray transition-all duration-300 ${isCollapsed ? 'p-4' : 'p-6'}`}>
-                <img
-                    src={logoUrl}
-                    alt="RidersBUD Admin Logo"
-                    className={`transition-all duration-300 ${isCollapsed ? 'w-10' : 'w-16'} mb-2`}
-                />
-                <div className={`text-center transition-all duration-200 overflow-hidden ${isCollapsed ? 'opacity-0 h-0' : 'opacity-100 h-auto'}`}>
-                    <h1 className="text-xl font-bold text-white whitespace-nowrap">{settings.appName || 'RidersBud'}</h1>
-                    <p className="text-xs text-light-gray whitespace-nowrap">{settings.adminPanelTitle || 'Admin Panel'}</p>
-                </div>
+        <aside className={`bg-admin-sidebar flex-shrink-0 flex flex-col transition-all duration-300 ease-in-out ${ isCollapsed ? 'w-20' : 'w-64' } border-r border-admin-border`}>
+            {/* Logo Section */}
+            <div className="flex items-center justify-center h-20 border-b border-admin-border flex-shrink-0">
+                <img src={logoUrl} alt="Logo" className={`transition-all duration-300 ${ isCollapsed ? 'w-8 h-8' : 'w-10 h-10'}`} />
+                {!isCollapsed && <span className="text-xl font-bold ml-3">{settings.appName}</span>}
             </div>
-            <nav className="flex-1 p-4 space-y-2">
-                <NavItem to="/admin/dashboard" isCollapsed={isCollapsed} label="Dashboard" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>} />
-                <NavItem to="/admin/analytics" isCollapsed={isCollapsed} label="Analytics" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" /></svg>} />
-                <NavItem to="/admin/bookings" isCollapsed={isCollapsed} label="Bookings" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>} />
-                <NavItem to="/admin/catalog" isCollapsed={isCollapsed} label="Catalog" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>} />
-                <NavItem to="/admin/mechanics" isCollapsed={isCollapsed} label="Mechanics" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" /></svg>} />
-                <NavItem to="/admin/customers" isCollapsed={isCollapsed} label="Customers" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>} />
-                <NavItem to="/admin/marketing" isCollapsed={isCollapsed} label="Marketing" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" /></svg>} />
-                <NavItem to="/admin/settings" isCollapsed={isCollapsed} label="Settings" icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M11.01 3.05C10.511 2 9.49 2 9 3.05a1.5 1.5 0 01-2.43 1.202c-1.159-.578-2.525.43-2.235 1.737A1.5 1.5 0 012.8 7.84c-1.01.628-1.01 2.21 0 2.838a1.5 1.5 0 011.535 1.765c.29 1.308-1.076 2.315-2.235 1.737A1.5 1.5 0 019 16.95c.49 1.05 1.51 1.05 2 0a1.5 1.5 0 012.43-1.202c1.159.578 2.525-.43 2.235-1.737a1.5 1.5 0 011.535-1.765c1.01-.628 1.01-2.21 0-2.838a1.5 1.5 0 01-1.535-1.765c-.29-1.308 1.076-2.315 2.235-1.737A1.5 1.5 0 0111.01 3.05zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd"/></svg>} />
+
+            {/* Navigation */}
+            <nav className="flex-1 px-3 py-4 overflow-y-auto">
+                <NavItem to="/admin/dashboard" isCollapsed={isCollapsed} label="Dashboard" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>} />
+                <NavItem to="/admin/analytics" isCollapsed={isCollapsed} label="Analytics" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>} />
+                <NavItem to="/admin/bookings" isCollapsed={isCollapsed} label="Bookings" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>} />
+                <NavItem to="/admin/orders" isCollapsed={isCollapsed} label="Orders" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>} />
+                <NavItem to="/admin/catalog" isCollapsed={isCollapsed} label="Catalog" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>} />
+                <NavItem to="/admin/mechanics" isCollapsed={isCollapsed} label="Mechanics" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21V9a4 4 0 00-4-4H9" /></svg>} />
+                <NavItem to="/admin/customers" isCollapsed={isCollapsed} label="Customers" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>} />
+                <NavItem to="/admin/marketing" isCollapsed={isCollapsed} label="Marketing" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-2.236 9.168-5.5" /></svg>} />
+                <NavItem to="/admin/users" isCollapsed={isCollapsed} label="Users & Roles" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>} />
+                <NavItem to="/admin/settings" isCollapsed={isCollapsed} label="Settings" icon={<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>} />
             </nav>
-            <div className="mt-auto">
-                <div className={`p-4 border-t border-dark-gray transition-all duration-300 ${isCollapsed ? 'h-24' : 'h-auto'}`}>
-                    <div className={`flex items-center ${isCollapsed ? 'justify-center' : ''}`}>
-                        <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center font-bold text-white text-lg flex-shrink-0">
-                            A
-                        </div>
-                        <div className={`ml-3 transition-opacity duration-200 overflow-hidden ${isCollapsed ? 'opacity-0 sr-only' : 'opacity-100'}`}>
-                            <p className="text-sm font-semibold text-white whitespace-nowrap">Admin User</p>
-                            <button onClick={logout} className="text-xs text-light-gray hover:text-primary transition-colors whitespace-nowrap">Logout</button>
-                        </div>
+
+            {/* User Profile Section */}
+            <div className="mt-auto border-t border-admin-border p-3">
+                <div className="flex items-center">
+                    <div className="w-10 h-10 bg-admin-accent rounded-full flex items-center justify-center font-bold text-white text-lg flex-shrink-0">
+                        A
                     </div>
+                    {!isCollapsed && (
+                        <div className="ml-3">
+                            <p className="text-sm font-semibold text-admin-text-primary">Admin User</p>
+                            <button onClick={logout} className="text-xs text-admin-text-secondary hover:text-red-400">Logout</button>
+                        </div>
+                    )}
                 </div>
             </div>
         </aside>

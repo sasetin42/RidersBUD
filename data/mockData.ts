@@ -1,7 +1,56 @@
-import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory } from '../types';
+import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory, AdminUser, Role, Task } from '../types';
 
 // This file now acts as a "seeder" for the database on the first run.
 // It provides the initial state if no data is found in localStorage.
+
+export const seedRoles: Role[] = [
+    {
+        name: 'Super Admin',
+        isEditable: false,
+        description: 'Has unrestricted access to all admin features and settings.',
+        defaultPermissions: {
+            dashboard: 'view', analytics: 'view', bookings: 'edit', catalog: 'edit', mechanics: 'edit', customers: 'edit', marketing: 'edit', users: 'edit', settings: 'edit', orders: 'edit',
+        }
+    },
+    {
+        name: 'Content Manager',
+        isEditable: true,
+        description: 'Can manage content like the catalog and marketing, but cannot change core settings or users.',
+        defaultPermissions: {
+            dashboard: 'view', analytics: 'view', bookings: 'view', catalog: 'edit', mechanics: 'view', customers: 'view', marketing: 'edit', users: 'none', settings: 'none', orders: 'view',
+        }
+    },
+    {
+        name: 'Viewer',
+        isEditable: true,
+        description: 'Has read-only access to most parts of the admin panel. Cannot make changes.',
+        defaultPermissions: {
+            dashboard: 'view', analytics: 'view', bookings: 'view', catalog: 'view', mechanics: 'view', customers: 'view', marketing: 'view', users: 'none', settings: 'none', orders: 'view',
+        }
+    }
+];
+
+
+export const seedAdminUsers: AdminUser[] = [
+    {
+        id: 'admin1',
+        email: 'admin@ridersbud.com',
+        password: 'password',
+        role: 'Super Admin',
+        permissions: {
+            dashboard: 'view',
+            analytics: 'view',
+            bookings: 'edit',
+            catalog: 'edit',
+            mechanics: 'edit',
+            customers: 'edit',
+            marketing: 'edit',
+            users: 'edit',
+            settings: 'edit',
+            orders: 'edit',
+        }
+    }
+];
 
 export const seedServices: Service[] = [
     {
@@ -82,6 +131,7 @@ export const seedParts: Part[] = [
         name: 'Ceramic Brake Pads',
         description: 'Front set of premium ceramic brake pads for superior stopping power, low dust, and quiet operation.',
         price: 2999.00,
+        salesPrice: 2499.00,
         imageUrl: 'https://picsum.photos/seed/brakepads/400/300',
         category: 'Brakes',
         sku: 'CER-PAD-F78',
@@ -383,7 +433,9 @@ export const seedBookings: Booking[] = [
         statusHistory: [
             { status: 'Booking Confirmed', timestamp: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString() },
             { status: 'Mechanic Assigned', timestamp: new Date().toISOString() },
-        ]
+        ],
+        beforeImages: [],
+        afterImages: [],
     },
     {
         id: 'b2',
@@ -397,6 +449,8 @@ export const seedBookings: Booking[] = [
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
+        beforeImages: [],
+        afterImages: [],
     },
     {
         id: 'b3',
@@ -410,6 +464,8 @@ export const seedBookings: Booking[] = [
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
+        beforeImages: [],
+        afterImages: [],
     },
     {
         id: 'b4',
@@ -423,6 +479,8 @@ export const seedBookings: Booking[] = [
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
+        beforeImages: [],
+        afterImages: [],
     },
     // --- Unassigned Bookings for Dashboard ---
     {
@@ -436,6 +494,8 @@ export const seedBookings: Booking[] = [
             make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png', isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         },
+        beforeImages: [],
+        afterImages: [],
     },
     {
         id: 'b6',
@@ -448,6 +508,8 @@ export const seedBookings: Booking[] = [
             make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'DEF 456', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png', isPrimary: false,
             vin: 'TY1AZ01Z000445566', mileage: 35000, insuranceProvider: 'Geico', insurancePolicyNumber: 'POL-GC-778899'
         },
+        beforeImages: [],
+        afterImages: [],
     },
     {
         id: 'b7',
@@ -460,6 +522,8 @@ export const seedBookings: Booking[] = [
             make: 'Ford', model: 'Everest', year: 2023, plateNumber: 'GHI 123', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_blue.png', isPrimary: true,
             vin: 'FD1AZ01Z000778899', mileage: 5000, insuranceProvider: 'Allstate', insurancePolicyNumber: 'POL-AS-112233'
         },
+        beforeImages: [],
+        afterImages: [],
     },
     {
         id: 'b8',
@@ -472,6 +536,8 @@ export const seedBookings: Booking[] = [
             make: 'Hyundai', model: 'Tucson', year: 2020, plateNumber: 'JKL 789', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_gray.png', isPrimary: true,
             vin: 'HY1AZ01Z000998877', mileage: 60000, insuranceProvider: 'Progressive', insurancePolicyNumber: 'POL-PG-665544'
         },
+        beforeImages: [],
+        afterImages: [],
     }
 ];
 
@@ -508,7 +574,107 @@ export const seedCustomers: Customer[] = [
     { id: 'c3', name: 'Maria Santos', email: 'maria.s@example.com', password: 'password', phone: '555-333-4444', vehicles: [], picture: 'https://picsum.photos/seed/maria/200/200', lat: 14.6521, lng: 121.0333, },
 ];
 
-export const seedOrders: Order[] = [];
+export const seedOrders: Order[] = [
+    {
+        id: 'o1',
+        customerName: 'Juan Dela Cruz',
+        items: [
+            { ...seedParts[1], quantity: 1 }, // Ceramic Brake Pads
+            { ...seedParts[3], quantity: 2 }, // Wiper Blades
+        ],
+        total: (2999.00 * 1) + (1250.00 * 2) + 150, // subtotal + shipping
+        paymentMethod: 'Credit Card',
+        date: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString(),
+        status: 'Shipped',
+        statusHistory: [
+            { status: 'Processing', timestamp: new Date(new Date().setDate(new Date().getDate() - 3)).toISOString() },
+            { status: 'Shipped', timestamp: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString() },
+        ]
+    },
+    {
+        id: 'o2',
+        customerName: 'Alex Rider',
+        items: [
+            { ...seedParts[0], quantity: 1 }, // Synthetic Engine Oil
+        ],
+        total: (1750.00 * 1) + 150,
+        paymentMethod: 'GCash',
+        date: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString(),
+        status: 'Delivered',
+        statusHistory: [
+            { status: 'Processing', timestamp: new Date(new Date().setDate(new Date().getDate() - 12)).toISOString() },
+            { status: 'Shipped', timestamp: new Date(new Date().setDate(new Date().getDate() - 11)).toISOString() },
+            { status: 'Delivered', timestamp: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString() },
+        ]
+    },
+    {
+        id: 'o3',
+        customerName: 'Maria Santos',
+        items: [
+            { ...seedParts[1], quantity: 2 },
+        ],
+        total: (2999.00 * 2) + 150,
+        paymentMethod: 'Cash on Delivery',
+        date: new Date(new Date().setDate(new Date().getDate() - 15)).toISOString(),
+        status: 'Cancelled',
+         statusHistory: [
+            { status: 'Processing', timestamp: new Date(new Date().setDate(new Date().getDate() - 16)).toISOString() },
+            { status: 'Cancelled', timestamp: new Date(new Date().setDate(new Date().getDate() - 15)).toISOString() },
+        ]
+    },
+    {
+        id: 'o4',
+        customerName: 'Juan Dela Cruz',
+        items: [
+            { ...seedParts[3], quantity: 4 },
+        ],
+        total: (1250.00 * 4) + 150,
+        paymentMethod: 'Paymaya',
+        date: new Date().toISOString(),
+        status: 'Processing',
+        statusHistory: [
+            { status: 'Processing', timestamp: new Date().toISOString() },
+        ]
+    }
+];
+
+export const seedTasks: Task[] = [
+    {
+        id: 't1',
+        mechanicId: 'm1',
+        title: 'Call customer for booking b1',
+        description: 'Confirm the address and time for the Montero oil change.',
+        dueDate: new Date().toISOString().split('T')[0],
+        isComplete: false,
+        priority: 'High'
+    },
+    {
+        id: 't2',
+        mechanicId: 'm1',
+        title: 'Pick up special oil filter',
+        description: 'Get the OEM Mitsubishi filter from the parts supplier.',
+        dueDate: new Date().toISOString().split('T')[0],
+        isComplete: true,
+        priority: 'High'
+    },
+    {
+        id: 't3',
+        mechanicId: 'm1',
+        title: 'Organize toolbox',
+        dueDate: new Date(new Date().setDate(new Date().getDate() + 2)).toISOString().split('T')[0],
+        isComplete: false,
+        priority: 'Low'
+    },
+    {
+        id: 't4',
+        mechanicId: 'm2',
+        title: 'Follow up on brake pad supplier',
+        description: 'Check stock for BMW M-series ceramic pads.',
+        dueDate: new Date(new Date().setDate(new Date().getDate() + 1)).toISOString().split('T')[0],
+        isComplete: false,
+        priority: 'Medium'
+    }
+];
 
 export const seedBanners: Banner[] = [
     {
@@ -631,5 +797,8 @@ export const getSeedData = () => ({
     orders: seedOrders,
     banners: seedBanners,
     settings: seedSettings,
-    faqs: seedFaqs
+    faqs: seedFaqs,
+    adminUsers: seedAdminUsers,
+    roles: seedRoles,
+    tasks: seedTasks,
 });

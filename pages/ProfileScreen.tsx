@@ -175,6 +175,10 @@ const ProfileScreen: React.FC = () => {
                             <span>My Garage</span>
                             <ChevronRightIcon />
                         </button>
+                        <button onClick={() => navigate('/favorite-mechanics')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
+                            <span>Favorite Mechanics</span>
+                            <ChevronRightIcon />
+                        </button>
                         <button onClick={() => navigate('/booking-history')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
                             <span>Booking History</span>
                             <ChevronRightIcon />

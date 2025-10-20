@@ -1,19 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory } from '../types';
+import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus } from '../types';
 import { getSeedData } from '../data/mockData';
-
-// This interface defines the shape of our database
-interface Database {
-    services: Service[];
-    parts: Part[];
-    mechanics: Mechanic[];
-    bookings: Booking[];
-    customers: Customer[];
-    orders: Order[];
-    settings: Settings;
-    banners: Banner[];
-    faqs: FAQCategory[];
-}
 
 // This interface defines the functions that the context will provide
 interface DatabaseContextType {
@@ -34,15 +21,29 @@ interface DatabaseContextType {
     cancelBooking: (bookingId: string, reason: string) => Promise<void>;
     acceptJobRequest: (bookingId: string, mechanic: Mechanic) => Promise<void>;
     updateBookingNotes: (bookingId: string, notes: string) => Promise<void>;
+    updateBookingImages: (bookingId: string, beforeImages: string[], afterImages: string[]) => Promise<void>;
     addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
     updateCustomer: (updatedCustomer: Customer) => Promise<void>;
     deleteCustomer: (customerId: string) => Promise<void>;
     deleteVehicleFromCustomer: (customerId: string, plateNumber: string) => Promise<void>;
     addOrder: (customerName: string, items: CartItem[], total: number, paymentMethod: string) => Promise<Order | null>;
+    updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
     updateSettings: (newSettings: Partial<Settings>) => Promise<void>;
     addReviewToMechanic: (mechanicId: string, bookingId: string, reviewData: { rating: number, comment: string }, customerName: string) => Promise<void>;
     addBanner: (banner: Omit<Banner, 'id'>) => Promise<void>;
+    updateBanner: (updatedBanner: Banner) => Promise<void>;
     deleteBanner: (bannerId: string) => Promise<void>;
+    addAdminUser: (user: Omit<AdminUser, 'id'>) => Promise<void>;
+    updateAdminUser: (updatedUser: AdminUser) => Promise<void>;
+    deleteAdminUser: (userId: string) => Promise<void>;
+    addRole: (role: Omit<Role, 'isEditable'>) => Promise<void>;
+    updateRole: (updatedRole: Role) => Promise<void>;
+    deleteRole: (roleName: string) => Promise<void>;
+    addTask: (task: Omit<Task, 'id'>) => Promise<void>;
+    updateTask: (updatedTask: Task) => Promise<void>;
+    deleteTask: (taskId: string) => Promise<void>;
+    deleteMultipleTasks: (taskIds: string[]) => Promise<void>;
+    updateMultipleTasksStatus: (taskIds: string[], isComplete: boolean) => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
@@ -98,6 +99,27 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
     }, [db, loading]); // Runs whenever 'db' or 'loading' state changes
 
+    // Effect for real-time updates across tabs
+    useEffect(() => {
+        const handleStorageChange = (event: StorageEvent) => {
+            if (event.key === DB_STORAGE_KEY && event.newValue) {
+                try {
+                    console.log("Real-time update received from another tab. Syncing state.");
+                    const updatedDb = JSON.parse(event.newValue);
+                    setDb(updatedDb);
+                } catch (error) {
+                    console.error("Failed to sync database from storage event:", error);
+                }
+            }
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+        };
+    }, []);
+
     // --- Service Operations ---
     const addService = async (service: Omit<Service, 'id'>) => {
         const newService = { ...service, id: `s-${Date.now()}` };
@@ -148,7 +170,14 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             if (!prevDb) return null;
             return {
                 ...prevDb,
-                bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, status } : b)
+                bookings: prevDb.bookings.map(b => {
+                    if (b.id === bookingId && b.status !== status) {
+                        const newHistoryEntry = { status, timestamp: new Date().toISOString() };
+                        const updatedHistory = [...(b.statusHistory || [{ status: b.status, timestamp: b.date }]), newHistoryEntry];
+                        return { ...b, status, statusHistory: updatedHistory };
+                    }
+                    return b;
+                })
             };
         });
     };
@@ -172,6 +201,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return {
                 ...prevDb,
                 bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, notes } : b)
+            };
+        });
+    };
+
+    const updateBookingImages = async (bookingId: string, beforeImages: string[], afterImages: string[]) => {
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            return {
+                ...prevDb,
+                bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, beforeImages, afterImages } : b)
             };
         });
     };
@@ -211,10 +250,33 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             items,
             total,
             paymentMethod,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            status: 'Processing',
         };
         setDb(prevDb => prevDb ? { ...prevDb, orders: [...prevDb.orders, newOrder] } : null);
         return newOrder;
+    };
+
+    const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            return {
+                ...prevDb,
+                orders: prevDb.orders.map(o => {
+                    if (o.id === orderId) {
+                        const newHistoryEntry = { status, timestamp: new Date().toISOString() };
+                        // Add new entry, ensuring history exists
+                        const updatedHistory = [...(o.statusHistory || [{ status: o.status, timestamp: o.date }]), newHistoryEntry];
+                        return { 
+                            ...o, 
+                            status,
+                            statusHistory: updatedHistory,
+                        };
+                    }
+                    return o;
+                })
+            };
+        });
     };
     
     // --- Settings Operations ---
@@ -265,14 +327,81 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         const newBanner = { ...banner, id: `banner-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, banners: [...prevDb.banners, newBanner] } : null);
     };
+    const updateBanner = async (updatedBanner: Banner) => {
+        setDb(prevDb => prevDb ? { ...prevDb, banners: prevDb.banners.map(b => b.id === updatedBanner.id ? updatedBanner : b) } : null);
+    };
     const deleteBanner = async (bannerId: string) => {
         setDb(prevDb => prevDb ? { ...prevDb, banners: prevDb.banners.filter(b => b.id !== bannerId) } : null);
     };
 
+    // --- Admin User & Role Operations ---
+    const addRole = async (role: Omit<Role, 'isEditable'>) => {
+        const newRole: Role = { ...role, isEditable: true };
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            if (prevDb.roles.some(r => r.name.toLowerCase() === newRole.name.toLowerCase())) {
+                throw new Error("A role with this name already exists.");
+            }
+            return { ...prevDb, roles: [...prevDb.roles, newRole] };
+        });
+    };
+    const updateRole = async (updatedRole: Role) => {
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            return { ...prevDb, roles: prevDb.roles.map(r => r.name === updatedRole.name ? updatedRole : r) };
+        });
+    };
+    const deleteRole = async (roleName: string) => {
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const roleInUse = prevDb.adminUsers.some(u => u.role === roleName);
+            if (roleInUse) {
+                throw new Error("Cannot delete role. It is currently assigned to one or more users.");
+            }
+            return { ...prevDb, roles: prevDb.roles.filter(r => r.name !== roleName) };
+        });
+    };
+    const addAdminUser = async (user: Omit<AdminUser, 'id'>) => {
+        const newUser = { ...user, id: `au-${Date.now()}` };
+        setDb(prevDb => prevDb ? { ...prevDb, adminUsers: [...prevDb.adminUsers, newUser] } : null);
+    };
+    const updateAdminUser = async (updatedUser: AdminUser) => {
+        setDb(prevDb => prevDb ? { ...prevDb, adminUsers: prevDb.adminUsers.map(u => u.id === updatedUser.id ? updatedUser : u) } : null);
+    };
+    const deleteAdminUser = async (userId: string) => {
+        setDb(prevDb => prevDb ? { ...prevDb, adminUsers: prevDb.adminUsers.filter(u => u.id !== userId) } : null);
+    };
+
+    // --- Task Operations ---
+    const addTask = async (task: Omit<Task, 'id'>) => {
+        const newTask = { ...task, id: `task-${Date.now()}` };
+        setDb(prevDb => prevDb ? { ...prevDb, tasks: [...(prevDb.tasks || []), newTask] } : null);
+    };
+    const updateTask = async (updatedTask: Task) => {
+        setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).map(t => t.id === updatedTask.id ? updatedTask : t) } : null);
+    };
+    const deleteTask = async (taskId: string) => {
+        setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).filter(t => t.id !== taskId) } : null);
+    };
+    const deleteMultipleTasks = async (taskIds: string[]) => {
+        const idSet = new Set(taskIds);
+        setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).filter(t => !idSet.has(t.id)) } : null);
+    };
+    const updateMultipleTasksStatus = async (taskIds: string[], isComplete: boolean) => {
+        const idSet = new Set(taskIds);
+        setDb(prevDb => prevDb ? {
+            ...prevDb,
+            tasks: (prevDb.tasks || []).map(t => idSet.has(t.id) ? { ...t, isComplete } : t)
+        } : null);
+    };
+
+
     const value = {
         db, loading, addService, updateService, deleteService, addPart, updatePart, deletePart, addMechanic, updateMechanic, deleteMechanic,
-        updateMechanicStatus, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
-        addOrder, updateSettings, addReviewToMechanic, addBanner, deleteBanner
+        updateMechanicStatus, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, updateBookingImages, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
+        addOrder, updateOrderStatus, updateSettings, addReviewToMechanic, addBanner, updateBanner, deleteBanner,
+        addAdminUser, updateAdminUser, deleteAdminUser, addRole, updateRole, deleteRole,
+        addTask, updateTask, deleteTask, deleteMultipleTasks, updateMultipleTasksStatus
     };
 
     return (
