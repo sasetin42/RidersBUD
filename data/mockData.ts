@@ -101,7 +101,7 @@ export const seedServices: Service[] = [
         estimatedTime: 'Quote Required',
         imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_body_repair.png',
         category: 'Repair',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h8a2 2 0 002-2v-1a2 2 0 012-2h1.945C21.055 11 21 11.555 21 12c0 5.523-4.477 10-10 10S1 17.523 1 12c0-.445.055-.886.146-1.305z" /><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8C9.79 8 8 9.79 8 12s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0-4c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8-3.582-8-8-8z" /></svg>'
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v2a2 2 0 01-2 2H5zM14 21V5a2 2 0 00-2-2h-1m3 9v7m0-7h7v4a2 2 0 01-2 2h-5" /></svg>'
     },
     {
         id: '5',
@@ -111,7 +111,7 @@ export const seedServices: Service[] = [
         estimatedTime: '1.5 hours',
         imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_aircon.png',
         category: 'Maintenance',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7" /></svg>'
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m8.364-8.364h-1M2.636 12h1m14.092-5.636l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707m0 11.314l.707-.707m12.021-.707l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" /></svg>'
     }
 ];
 
@@ -265,7 +265,7 @@ export const seedMechanics: Mechanic[] = [
         bio: 'Certified EV technician and BMW specialist. Passionate about modern vehicle technology.',
         rating: 4.9,
         reviews: 152,
-        specializations: ['BMW Specialist', 'EV Certified', 'Aircon Repair'],
+        specializations: ['BMW Specialist', 'EV Certified', 'Aircon Repair', 'Maintenance'],
         status: 'Active',
         imageUrl: 'https://picsum.photos/seed/mech3/200/200',
         lat: 14.5825,
@@ -735,6 +735,11 @@ export const seedSettings: Settings = {
     appTagline: 'Trusted Car Care Wherever You Are',
     virtualMechanicName: 'RiderAI',
     virtualMechanicImageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/virtual_mechanic_avatar.png',
+    virtualMechanicSystemInstruction: `You are an expert and friendly AI mechanic assistant for the RidersBUD application. Your goal is to provide helpful and accurate information to users based ONLY on the data provided about our services, parts, and mechanics. Do not invent information.
+
+If a user asks about something not in your knowledge base (e.g., "Can you fix my boat?"), politely inform them that you don't have information on that topic and suggest they ask about car maintenance or browse the app's services and parts store.
+
+Your responses should be friendly, conversational, and easy to understand. Keep answers concise. When the conversation starts, greet the user and ask how you can help them today.`,
     mechanicMarkerUrl: '',
     adminPanelTitle: 'RidersBUD Admin',
     adminSidebarLogoUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_icon.png',

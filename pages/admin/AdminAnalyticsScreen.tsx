@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
@@ -103,35 +104,38 @@ const CustomerActivityReport: React.FC = () => {
     };
 
     return (
-        <div className="bg-admin-card p-6 rounded-xl shadow border border-admin-border mt-6">
-            <div className="flex justify-between items-center mb-4">
+        <div className="bg-admin-card p-4 sm:p-6 rounded-xl shadow border border-admin-border mt-6">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                 <h3 className="text-lg font-bold text-admin-text-primary">Customer Activity Report</h3>
-                <div className="flex p-1 bg-admin-bg rounded-full text-xs">
+                <div className="flex p-1 bg-admin-bg rounded-full text-xs self-start sm:self-center">
                     {(['today', 'week', 'month', 'year'] as Period[]).map(p => (
                         <button key={p} onClick={() => setPeriod(p)} className={`px-3 py-1 rounded-full capitalize ${period === p ? 'bg-admin-accent' : ''}`}>{p}</button>
                     ))}
                 </div>
             </div>
              <div className="overflow-x-auto">
-                <table className="w-full text-left">
+                <table className="w-full text-left min-w-[500px]">
                     <thead>
                         <tr>
-                            <th className="p-3 cursor-pointer" onClick={() => requestSort('name')}>Name</th>
-                            <th className="p-3 cursor-pointer text-right" onClick={() => requestSort('bookings')}>Bookings</th>
-                            <th className="p-3 cursor-pointer text-right" onClick={() => requestSort('spend')}>Total Spend</th>
+                            <th className="p-3 cursor-pointer text-xs uppercase font-semibold text-admin-text-secondary" onClick={() => requestSort('name')}>Name</th>
+                            <th className="p-3 cursor-pointer text-right text-xs uppercase font-semibold text-admin-text-secondary" onClick={() => requestSort('bookings')}>Bookings</th>
+                            <th className="p-3 cursor-pointer text-right text-xs uppercase font-semibold text-admin-text-secondary" onClick={() => requestSort('spend')}>Total Spend</th>
                         </tr>
                     </thead>
                     <tbody>
                         {customerReportData.filter(c => c.bookings > 0).map(customer => (
                             <tr key={customer.id} className="border-t border-admin-border hover:bg-admin-bg">
                                 <td className="p-3">
-                                    <p className="font-semibold">{customer.name}</p>
+                                    <p className="font-semibold text-sm">{customer.name}</p>
                                     <p className="text-xs text-admin-text-secondary">{customer.email}</p>
                                 </td>
-                                <td className="p-3 text-right font-mono">{customer.bookings}</td>
-                                <td className="p-3 text-right font-mono text-green-400">₱{customer.spend.toLocaleString()}</td>
+                                <td className="p-3 text-right font-mono text-sm">{customer.bookings}</td>
+                                <td className="p-3 text-right font-mono text-sm text-green-400">₱{customer.spend.toLocaleString()}</td>
                             </tr>
                         ))}
+                         {customerReportData.filter(c => c.bookings > 0).length === 0 && (
+                            <tr><td colSpan={3} className="text-center py-8 text-sm text-admin-text-secondary">No customer activity in this period.</td></tr>
+                        )}
                     </tbody>
                 </table>
              </div>

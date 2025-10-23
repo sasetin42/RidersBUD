@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
@@ -126,8 +127,8 @@ const AdminMarketingScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-shrink-0 px-6 lg:px-8 pt-6">
-                <div className="flex justify-between items-center">
+            <div className="flex-shrink-0">
+                <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
                     <h1 className="text-3xl font-bold">Marketing Banners</h1>
                     <button onClick={() => handleOpenModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">+ Add Banner</button>
                 </div>
@@ -136,7 +137,7 @@ const AdminMarketingScreen: React.FC = () => {
                     <StatCard title="Currently Active" value={stats.active} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" /></svg>} />
                 </div>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 lg:px-8">
+            <div className="flex-1 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {db.banners.map(banner => (
                         <div key={banner.id} className="bg-admin-card rounded-lg overflow-hidden group relative flex flex-col border border-admin-border">

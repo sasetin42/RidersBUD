@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Settings, Role, AdminModule, PermissionLevel } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -13,6 +14,7 @@ const RoleFormModal: React.FC<{
     onSave: (role: Role | Omit<Role, 'isEditable'>) => void;
     existingRoleNames: string[];
 }> = ({ role, onClose, onSave, existingRoleNames }) => {
+    const { db } = useDatabase();
     const [formData, setFormData] = useState({
         name: role?.name || '',
         description: role?.description || '',
@@ -49,27 +51,27 @@ const RoleFormModal: React.FC<{
         <Modal title={role ? `Edit Role: ${role.name}` : "Add New Role"} isOpen={true} onClose={onClose}>
             <div className="space-y-4">
                 <div>
-                    <label className="text-sm text-light-gray">Role Name</label>
+                    <label className="text-sm text-admin-text-secondary">Role Name</label>
                     <input
                         type="text"
                         value={formData.name}
-                        readOnly={!!role}
+                        readOnly={!!role?.isEditable === false}
                         onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                        className={`w-full p-2 bg-field border rounded ${errors.name ? 'border-red-500' : 'border-gray-600'} ${!!role ? 'bg-gray-700 cursor-not-allowed' : ''}`}
+                        className={`w-full p-2 bg-admin-bg border rounded ${errors.name ? 'border-red-500' : 'border-admin-border'} ${!!role?.isEditable === false ? 'bg-admin-bg cursor-not-allowed' : ''}`}
                     />
                     {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
                 </div>
                  <div>
-                    <label className="text-sm text-light-gray">Description</label>
+                    <label className="text-sm text-admin-text-secondary">Description</label>
                     <input
                         type="text"
                         value={formData.description}
                         onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                        className="w-full p-2 bg-field border rounded border-gray-600"
+                        className="w-full p-2 bg-admin-bg border rounded border-admin-border"
                     />
                 </div>
 
-                <div className="border-t border-field pt-4">
+                <div className="border-t border-admin-border pt-4">
                     <h3 className="text-lg font-bold mb-2">Default Permissions</h3>
                     <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                         {modules.map(module => (
@@ -78,7 +80,7 @@ const RoleFormModal: React.FC<{
                                 <select
                                     value={formData.defaultPermissions[module] || 'none'}
                                     onChange={e => handlePermissionChange(module, e.target.value as PermissionLevel)}
-                                    className="w-full p-1 bg-field border rounded border-gray-600 text-sm"
+                                    className="w-full p-1 bg-admin-bg border rounded border-admin-border text-sm"
                                 >
                                     <option value="none">No Access</option>
                                     <option value="view">View Only</option>
@@ -89,9 +91,9 @@ const RoleFormModal: React.FC<{
                     </div>
                 </div>
             </div>
-             <div className="mt-6 flex justify-end gap-4 border-t border-field pt-4">
-                <button onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600">Cancel</button>
-                <button onClick={handleSave} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600">Save Role</button>
+             <div className="mt-6 flex justify-end gap-4 border-t border-admin-border pt-4">
+                <button onClick={onClose} className="bg-admin-border text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600">Cancel</button>
+                <button onClick={handleSave} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600">Save Role</button>
             </div>
         </Modal>
     );
@@ -101,12 +103,12 @@ const RoleFormModal: React.FC<{
 const ToggleSwitch: React.FC<{ label: string; enabled: boolean; onChange: (enabled: boolean) => void; }> = ({ label, enabled, onChange }) => {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-light-gray">{label}</span>
+      <span className="text-admin-text-secondary">{label}</span>
       <button
         type="button"
         className={`${
-          enabled ? 'bg-primary' : 'bg-gray-500'
-        } relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-dark-gray`}
+          enabled ? 'bg-admin-accent' : 'bg-admin-border'
+        } relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-admin-accent focus:ring-offset-2 focus:ring-offset-admin-card`}
         onClick={() => onChange(!enabled)}
       >
         <span
@@ -128,7 +130,7 @@ const CategoryManager: React.FC<{
     const [newCategory, setNewCategory] = useState('');
 
     const handleAdd = () => {
-        if (newCategory.trim() && !categories.includes(newCategory.trim())) {
+        if (newCategory.trim() && !categories.map(c => c.toLowerCase()).includes(newCategory.trim().toLowerCase())) {
             onAdd(newCategory.trim());
             setNewCategory('');
         }
@@ -136,11 +138,11 @@ const CategoryManager: React.FC<{
 
     return (
         <div>
-            <h3 className="text-lg font-bold mb-3">{title}</h3>
-            <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
+            <h3 className="text-lg font-bold text-admin-text-primary mb-3">{title}</h3>
+            <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg p-2 rounded-md">
                 {categories.map(cat => (
-                    <div key={cat} className="flex items-center justify-between bg-field p-2 rounded">
-                        <span className="text-sm">{cat}</span>
+                    <div key={cat} className="flex items-center justify-between bg-admin-card p-2 rounded">
+                        <span className="text-sm text-admin-text-primary">{cat}</span>
                         <button onClick={() => onDelete(cat)} className="text-red-400 hover:text-red-300">
                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -154,10 +156,11 @@ const CategoryManager: React.FC<{
                     type="text"
                     value={newCategory}
                     onChange={e => setNewCategory(e.target.value)}
-                    placeholder="Add new category"
-                    className="flex-grow p-2 bg-field border border-gray-600 rounded placeholder-light-gray"
+                    onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                    placeholder="Add new category..."
+                    className="flex-grow p-2 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary"
                 />
-                <button onClick={handleAdd} className="bg-primary text-white font-bold py-2 px-4 rounded hover:bg-orange-600">Add</button>
+                <button onClick={handleAdd} className="bg-admin-accent text-white font-bold py-2 px-4 rounded hover:bg-orange-600">Add</button>
             </div>
         </div>
     );
@@ -200,7 +203,7 @@ const AdminSettingsScreen: React.FC = () => {
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
         
         setSettings(prev => {
@@ -283,12 +286,12 @@ const AdminSettingsScreen: React.FC = () => {
     };
 
     if (loading || !settings || !db) {
-        return <div className="flex items-center justify-center h-full bg-dark-gray"><Spinner size="lg" color="text-white" /></div>;
+        return <div className="flex items-center justify-center h-full bg-admin-bg"><Spinner size="lg" color="text-white" /></div>;
     }
 
     return (
-        <div className="text-white flex flex-col h-full overflow-hidden bg-dark-gray">
-            <div className="p-6 lg:p-8 flex-shrink-0 flex justify-between items-center border-b border-secondary">
+        <div className="text-admin-text-primary flex flex-col h-full overflow-hidden bg-admin-bg">
+            <div className="p-4 sm:p-6 flex-shrink-0 flex flex-col sm:flex-row gap-4 justify-between sm:items-center border-b border-admin-border">
                 <h1 className="text-3xl font-bold">Application Settings</h1>
                  <div className="flex items-center gap-4">
                     {saveStatus === 'success' && (
@@ -299,14 +302,14 @@ const AdminSettingsScreen: React.FC = () => {
                             <button
                                 onClick={handleReset}
                                 disabled={saveStatus === 'saving'}
-                                className="bg-field text-white font-bold py-2 px-6 rounded-lg hover:bg-gray-600 transition-colors"
+                                className="bg-admin-border text-white font-bold py-2 px-6 rounded-lg hover:bg-gray-600 transition-colors"
                             >
                                 Discard
                             </button>
                             <button
                                 onClick={handleSave}
                                 disabled={!canSave || saveStatus === 'saving'}
-                                className="bg-primary text-white font-bold py-2 px-6 rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[120px]"
+                                className="bg-admin-accent text-white font-bold py-2 px-6 rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[120px]"
                             >
                                 {saveStatus === 'saving' ? <Spinner size="sm" color="text-white" /> : 'Save Changes'}
                             </button>
@@ -315,65 +318,37 @@ const AdminSettingsScreen: React.FC = () => {
                 </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     {/* --- LEFT COLUMN (2/3) --- */}
                     <div className="xl:col-span-2 space-y-6">
                         {/* General Settings Card */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
+                        <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">General Settings</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Name</label>
-                                    <input type="text" name="appName" value={settings.appName} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.appName ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Application Name</label>
+                                    <input type="text" name="appName" value={settings.appName} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.appName ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
                                     {errors.appName && <p className="text-red-400 text-xs mt-1">{errors.appName}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Contact Email</label>
-                                    <input type="email" name="contactEmail" value={settings.contactEmail} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.contactEmail ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Contact Email</label>
+                                    <input type="email" name="contactEmail" value={settings.contactEmail} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.contactEmail ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
                                     {errors.contactEmail && <p className="text-red-400 text-xs mt-1">{errors.contactEmail}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Contact Phone</label>
-                                    <input type="tel" name="contactPhone" value={settings.contactPhone} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Contact Phone</label>
+                                    <input type="tel" name="contactPhone" value={settings.contactPhone} onChange={handleChange} className="w-full p-3 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Business Address</label>
-                                    <input type="text" name="address" value={settings.address} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Business Address</label>
+                                    <input type="text" name="address" value={settings.address} onChange={handleChange} className="w-full p-3 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent" />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Role Management Card */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
-                             <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xl font-bold">Role Management</h2>
-                                <button onClick={() => { setEditingRole(undefined); setIsRoleModalOpen(true); }} className="text-sm font-semibold text-primary hover:text-orange-600">+ Add Role</button>
-                            </div>
-                            <p className="text-sm text-light-gray mb-4">Define roles and their default permissions.</p>
-                            <div className="space-y-3">
-                                {db.roles.map(role => (
-                                    <div key={role.name} className="bg-field p-3 rounded-lg flex items-center justify-between">
-                                        <div>
-                                            <h4 className="font-semibold text-white">{role.name}</h4>
-                                            <p className="text-xs text-light-gray">{role.description}</p>
-                                        </div>
-                                        {role.isEditable ? (
-                                            <div className="flex gap-3">
-                                                <button onClick={() => { setEditingRole(role); setIsRoleModalOpen(true); }} className="text-sm font-semibold text-blue-400 hover:text-blue-300">Edit</button>
-                                                <button onClick={() => handleDeleteRole(role.name)} className="text-sm font-semibold text-red-400 hover:text-red-300">Delete</button>
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs text-gray-500 italic">Default Role</span>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-
                         {/* Catalog Settings */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
+                        <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">Catalog Settings</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <CategoryManager
@@ -392,85 +367,115 @@ const AdminSettingsScreen: React.FC = () => {
                         </div>
 
                          {/* Booking Settings Card */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
+                        <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">Booking Settings</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Operating Hours Start</label>
-                                    <input type="time" name="bookingStartTime" value={settings.bookingStartTime} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Operating Hours Start</label>
+                                    <input type="time" name="bookingStartTime" value={settings.bookingStartTime} onChange={handleChange} className="w-full p-3 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Operating Hours End</label>
-                                    <input type="time" name="bookingEndTime" value={settings.bookingEndTime} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.bookingEndTime ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Operating Hours End</label>
+                                    <input type="time" name="bookingEndTime" value={settings.bookingEndTime} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.bookingEndTime ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
                                     {errors.bookingEndTime && <p className="text-red-400 text-xs mt-1">{errors.bookingEndTime}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Slot Duration (mins)</label>
-                                    <input type="number" name="bookingSlotDuration" value={settings.bookingSlotDuration} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.bookingSlotDuration ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Slot Duration (mins)</label>
+                                    <input type="number" name="bookingSlotDuration" value={settings.bookingSlotDuration} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.bookingSlotDuration ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
                                     {errors.bookingSlotDuration && <p className="text-red-400 text-xs mt-1">{errors.bookingSlotDuration}</p>}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Max Bookings per Slot</label>
-                                    <input type="number" name="maxBookingsPerSlot" value={settings.maxBookingsPerSlot} onChange={handleChange} className={`w-full p-3 bg-field border rounded placeholder-light-gray ${errors.maxBookingsPerSlot ? 'border-red-500' : 'border-gray-600 focus:ring-primary focus:border-primary'}`} />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Max Bookings per Slot</label>
+                                    <input type="number" name="maxBookingsPerSlot" value={settings.maxBookingsPerSlot} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.maxBookingsPerSlot ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
                                     {errors.maxBookingsPerSlot && <p className="text-red-400 text-xs mt-1">{errors.maxBookingsPerSlot}</p>}
                                 </div>
+                            </div>
+                        </div>
+
+                         {/* Role Management Card */}
+                         <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
+                             <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-bold">Role Management</h2>
+                                <button onClick={() => { setEditingRole(undefined); setIsRoleModalOpen(true); }} className="text-sm font-semibold text-admin-accent hover:text-orange-600">+ Add Role</button>
+                            </div>
+                            <p className="text-sm text-admin-text-secondary mb-4">Define roles and their default permissions.</p>
+                            <div className="space-y-3">
+                                {db.roles.map(role => (
+                                    <div key={role.name} className="bg-admin-bg p-3 rounded-lg flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-semibold text-white">{role.name}</h4>
+                                            <p className="text-xs text-admin-text-secondary">{role.description}</p>
+                                        </div>
+                                        {role.isEditable ? (
+                                            <div className="flex gap-3">
+                                                <button onClick={() => { setEditingRole(role); setIsRoleModalOpen(true); }} className="text-sm font-semibold text-blue-400 hover:text-blue-300">Edit</button>
+                                                <button onClick={() => handleDeleteRole(role.name)} className="text-sm font-semibold text-red-400 hover:text-red-300">Delete</button>
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-gray-500 italic">Default Role</span>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
                     {/* --- RIGHT COLUMN (1/3) --- */}
                     <div className="space-y-6">
-                         {/* AI Assistant Card */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
+                        <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">AI Assistant Settings</h2>
                             <div className="space-y-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Assistant Name</label>
-                                    <input type="text" name="virtualMechanicName" value={settings.virtualMechanicName || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Assistant Name</label>
+                                    <input type="text" name="virtualMechanicName" value={settings.virtualMechanicName || ''} onChange={handleChange} className="w-full p-3 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent" />
                                 </div>
-                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Assistant Avatar</label>
+                                <div>
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Assistant Avatar</label>
                                     <div className="flex items-center gap-4">
-                                        <input type="file" name="virtualMechanicImageUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                        {settings.virtualMechanicImageUrl && <img src={settings.virtualMechanicImageUrl} alt="AI Avatar Preview" className="h-16 w-16 object-cover rounded-full bg-field p-1" />}
+                                        <input type="file" name="virtualMechanicImageUrl" onChange={handleLogoChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
+                                        {settings.virtualMechanicImageUrl && <img src={settings.virtualMechanicImageUrl} alt="AI Avatar Preview" className="h-16 w-16 object-cover rounded-full bg-admin-bg p-1" />}
                                     </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">System Instruction</label>
+                                    <p className="text-xs text-gray-400 mb-2">Define the AI's personality and knowledge base.</p>
+                                    <textarea name="virtualMechanicSystemInstruction" value={settings.virtualMechanicSystemInstruction || ''} onChange={handleChange} rows={8} className="w-full p-3 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent font-mono text-xs" />
                                 </div>
                             </div>
                         </div>
-
                         {/* Branding & Appearance Card */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
+                        <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">Branding & Appearance</h2>
                             <div className="space-y-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Primary Application Logo</label>
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Primary Application Logo</label>
                                     <p className="text-xs text-gray-400 mb-2">Used on Splash, Login screens (Customer, Mechanic, Admin), and Invoices.</p>
                                     <div className="flex items-center gap-4">
-                                        <input type="file" name="appLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                        {settings.appLogoUrl && <img src={settings.appLogoUrl} alt="App Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                                        <input type="file" name="appLogoUrl" onChange={handleLogoChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
+                                        {settings.appLogoUrl && <img src={settings.appLogoUrl} alt="App Logo Preview" className="h-16 w-auto object-contain bg-admin-bg p-2 rounded" />}
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Admin Sidebar Logo</label>
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Admin Sidebar Logo</label>
                                     <div className="flex items-center gap-4">
-                                        <input type="file" name="adminSidebarLogoUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                                        {settings.adminSidebarLogoUrl && <img src={settings.adminSidebarLogoUrl} alt="Admin Logo Preview" className="h-16 w-auto object-contain bg-field p-2 rounded" />}
+                                        <input type="file" name="adminSidebarLogoUrl" onChange={handleLogoChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
+                                        {settings.adminSidebarLogoUrl && <img src={settings.adminSidebarLogoUrl} alt="Admin Logo Preview" className="h-16 w-auto object-contain bg-admin-bg p-2 rounded" />}
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Application Tagline</label>
-                                    <input type="text" name="appTagline" value={settings.appTagline || ''} onChange={handleChange} className="w-full p-3 bg-field border border-gray-600 rounded placeholder-light-gray focus:ring-primary focus:border-primary" />
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Application Tagline</label>
+                                    <input type="text" name="appTagline" value={settings.appTagline || ''} onChange={handleChange} className="w-full p-3 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent" />
                                 </div>
                             </div>
                         </div>
 
                          {/* Map Settings Card */}
-                         <div className="bg-secondary p-6 rounded-lg shadow">
+                         <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">Map Settings</h2>
                             <div className="space-y-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-light-gray mb-1">Default Mechanic Map Pin</label>
+                                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Default Mechanic Map Pin</label>
                                     <div className="flex items-center gap-4">
-                                        <input type="file" name="mechanicMarkerUrl" onChange={handleLogoChange} accept="image/*" className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                                        <input type="file" name="mechanicMarkerUrl" onChange={handleLogoChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
                                         {settings.mechanicMarkerUrl && <img src={settings.mechanicMarkerUrl} alt="Map Pin Preview" className="h-10 w-auto object-contain" />}
                                     </div>
                                 </div>
@@ -478,7 +483,7 @@ const AdminSettingsScreen: React.FC = () => {
                         </div>
 
                          {/* Notification Settings Card */}
-                        <div className="bg-secondary p-6 rounded-lg shadow">
+                        <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">Notification Settings</h2>
                             <div className="space-y-4">
                                 <ToggleSwitch label="Email on New Booking" enabled={settings.emailOnNewBooking} onChange={(val) => handleLocalSettingsChange({ emailOnNewBooking: val })} />

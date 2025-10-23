@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Customer, Vehicle } from '../types';
 import { useDatabase } from './DatabaseContext';
@@ -89,6 +90,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     };
 
+    // Implements the simulated Google social login flow.
     const loginWithGoogle = async () => {
         if (!db) throw new Error("Database not ready");
 
@@ -100,11 +102,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         // --- END SIMULATION ---
         
+        // Check if a user with the Google email already exists.
         let customer = db.customers.find(c => c.email === googleProfile.email);
 
         if (customer) {
+            // If user exists, log them in.
             loginUser(customer);
         } else {
+            // If user does not exist, create a new account with their Google profile information.
             const newCustomer = await addCustomer({
                 name: googleProfile.name,
                 email: googleProfile.email,
@@ -121,6 +126,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     };
     
+    // Implements the simulated Facebook social login flow.
     const loginWithFacebook = async () => {
         if (!db) throw new Error("Database not ready");
 
@@ -132,11 +138,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         // --- END SIMULATION ---
         
+        // Check if a user with the Facebook email already exists.
         let customer = db.customers.find(c => c.email === facebookProfile.email);
 
         if (customer) {
+            // If user exists, log them in.
             loginUser(customer);
         } else {
+            // If user does not exist, create a new account with their Facebook profile information.
             const newCustomer = await addCustomer({
                 name: facebookProfile.name,
                 email: facebookProfile.email,

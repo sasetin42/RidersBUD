@@ -182,6 +182,7 @@ export interface Settings {
     appTagline: string;
     virtualMechanicName: string;
     virtualMechanicImageUrl: string;
+    virtualMechanicSystemInstruction?: string;
     mechanicMarkerUrl: string;
     adminPanelTitle: string;
     adminSidebarLogoUrl: string;

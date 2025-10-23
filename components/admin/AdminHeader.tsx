@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface AdminHeaderProps {
@@ -7,11 +8,11 @@ interface AdminHeaderProps {
 const AdminHeader: React.FC<AdminHeaderProps> = ({ onToggleSidebar }) => {
     return (
         <header className="flex-shrink-0 bg-admin-card border-b border-admin-border px-6 h-20 flex items-center justify-between z-10">
-            {/* Left side: Toggle button and Search */}
+            {/* Left side: Toggle button for mobile/tablet and Search */}
             <div className="flex items-center gap-4">
                 <button
                     onClick={onToggleSidebar}
-                    className="text-admin-text-secondary hover:text-admin-text-primary"
+                    className="text-admin-text-secondary hover:text-admin-text-primary lg:hidden"
                     aria-label="Toggle sidebar"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -134,6 +134,12 @@
             background-color: #d96802;
         }
 
+        /* Move leaflet attribution to bottom left to avoid overlapping with AI chat button */
+        .leaflet-control-container .leaflet-bottom.leaflet-right {
+            right: auto;
+            left: 10px;
+        }
+
     </style>
     <script>
         tailwind.config = {

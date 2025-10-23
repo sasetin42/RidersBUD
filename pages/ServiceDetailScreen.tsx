@@ -1,10 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import { useDatabase } from '../context/DatabaseContext';
 import Spinner from '../components/Spinner';
 import ChatModal from '../components/ChatModal';
 import { useWishlist } from '../context/WishlistContext';
+import { Review } from '../types';
+
+const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
+    <div className="bg-field p-4 rounded-lg">
+        <div className="flex justify-between items-center mb-2">
+            <p className="font-semibold text-white text-sm">{review.customerName}</p>
+            <div className="flex items-center text-yellow-400">
+                {[...Array(5)].map((_, i) => (
+                    <svg key={i} xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${i < review.rating ? 'fill-current' : 'text-gray-600'}`} viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                ))}
+            </div>
+        </div>
+        <p className="text-xs text-light-gray">{review.comment}</p>
+        <p className="text-[10px] text-gray-500 mt-2">{new Date(review.date).toLocaleDateString()}</p>
+    </div>
+);
 
 const ServiceDetailScreen: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -14,6 +32,34 @@ const ServiceDetailScreen: React.FC = () => {
     const [isChatOpen, setIsChatOpen] = useState(false);
 
     const service = db?.services.find(s => s.id === id);
+
+    const serviceReviews = useMemo(() => {
+        if (!service || !db) return { reviews: [], averageRating: 0, totalReviews: 0 };
+        
+        const serviceNameLower = service.name.toLowerCase();
+        const serviceCategoryLower = service.category.toLowerCase();
+
+        const relevantMechanics = db.mechanics.filter(mechanic => 
+            mechanic.specializations.some(spec => {
+                const specLower = spec.toLowerCase();
+                return specLower.includes(serviceNameLower) || specLower.includes(serviceCategoryLower);
+            })
+        );
+
+        const allReviews = relevantMechanics.flatMap(mechanic => mechanic.reviewsList || []);
+        
+        if (allReviews.length === 0) {
+            return { reviews: [], averageRating: 0, totalReviews: 0 };
+        }
+
+        const totalReviews = allReviews.length;
+        const totalRating = allReviews.reduce((sum, review) => sum + review.rating, 0);
+        const averageRating = totalRating / totalReviews;
+
+        const sortedReviews = allReviews.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
+
+        return { reviews: sortedReviews, averageRating, totalReviews };
+    }, [service, db]);
 
     if (!db) {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" /></div>;
@@ -41,6 +87,14 @@ const ServiceDetailScreen: React.FC = () => {
         }
     };
 
+    const buttonText = service.price > 0 ? 'Book Now' : 'Request a Quote';
+    const handlePrimaryAction = () => {
+        if (service.price > 0) {
+            navigate(`/booking/${service.id}`);
+        } else {
+            setIsChatOpen(true);
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-secondary">
@@ -70,6 +124,35 @@ const ServiceDetailScreen: React.FC = () => {
 
                     <p className="text-light-gray">{service.description}</p>
                 </div>
+                
+                <div className="px-6 pb-6">
+                    <h2 className="text-xl font-bold text-white mt-6 mb-4">Customer Reviews</h2>
+                    {serviceReviews.totalReviews > 0 ? (
+                        <div className="bg-dark-gray p-4 rounded-lg">
+                            <div className="flex items-center gap-3 mb-4 border-b border-field pb-3">
+                                <span className="text-4xl font-bold text-yellow-400">{serviceReviews.averageRating.toFixed(1)}</span>
+                                <div>
+                                    <div className="flex items-center">
+                                         {[...Array(5)].map((_, i) => (
+                                            <svg key={i} xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${i < Math.round(serviceReviews.averageRating) ? 'text-yellow-400' : 'text-gray-600'}`} viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                            </svg>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-light-gray">Based on {serviceReviews.totalReviews} total reviews</p>
+                                </div>
+                            </div>
+                            <div className="space-y-3">
+                                {serviceReviews.reviews.map(review => <ReviewCard key={review.id} review={review} />)}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-dark-gray p-6 rounded-lg text-center">
+                            <p className="text-sm text-light-gray">No reviews yet for services like this.</p>
+                        </div>
+                    )}
+                </div>
+
             </div>
             <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex gap-4">
                  <button 
@@ -81,8 +164,11 @@ const ServiceDetailScreen: React.FC = () => {
                     </svg>
                     Chat
                 </button>
-                <button onClick={() => navigate(`/booking/${service.id}`)} className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition-all duration-300 ease-in-out transform hover:scale-[1.03] hover:shadow-lg hover:shadow-primary/40 active:scale-100">
-                    Book Now
+                <button 
+                    onClick={handlePrimaryAction} 
+                    className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition-all duration-300 ease-in-out transform hover:scale-[1.03] hover:shadow-lg hover:shadow-primary/40 active:scale-100"
+                >
+                    {buttonText}
                 </button>
             </div>
              {isChatOpen && <ChatModal service={service} onClose={() => setIsChatOpen(false)} />}

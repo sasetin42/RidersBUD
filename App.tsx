@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import SplashScreen from './pages/SplashScreen';
@@ -64,7 +61,9 @@ import { NotificationProvider, useNotification } from './context/NotificationCon
 import NotificationToasts from './components/NotificationToasts';
 
 const usePrevious = <T,>(value: T) => {
-    const ref = useRef<T>();
+    // FIX: The `useRef` hook requires an initial value. Initialize with `undefined`
+    // and update the type to `T | undefined` to correctly track the previous value.
+    const ref = useRef<T | undefined>(undefined);
     useEffect(() => {
         ref.current = value;
     }, [value]);
@@ -121,7 +120,7 @@ const AppContent: React.FC = () => {
     const { openChatIds } = useChatNotification();
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     
-    // FIX: Changed to allow type inference, which can resolve obscure compiler errors when dealing with complex types.
+    // FIX: Pass 'db' to the 'usePrevious' hook to correctly track its previous value.
     const prevDb = usePrevious(db);
     
     // Effect to generate notifications based on database changes

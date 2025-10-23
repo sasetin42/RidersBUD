@@ -1,4 +1,5 @@
 
+
 // FIX: Removed self-import which was causing a circular dependency and declaration conflicts.
 // This file contains all the type definitions for the application.
 
@@ -193,6 +194,7 @@ export interface Settings {
     appTagline: string;
     virtualMechanicName: string;
     virtualMechanicImageUrl: string;
+    virtualMechanicSystemInstruction?: string;
     mechanicMarkerUrl: string;
     adminPanelTitle: string;
     adminSidebarLogoUrl: string;

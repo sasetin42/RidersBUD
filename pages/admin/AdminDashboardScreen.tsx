@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { Booking, Mechanic } from '../../types';
 import LiveMap from '../../components/admin/LiveMap';
@@ -189,7 +190,7 @@ const AdminDashboardScreen: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                <div className="xl:col-span-2 bg-admin-card p-6 rounded-xl shadow-lg flex flex-col border border-admin-border">
+                <div className="xl:col-span-2 bg-admin-card p-4 sm:p-6 rounded-xl shadow-lg flex flex-col border border-admin-border">
                     <h3 className="text-lg font-bold text-admin-text-primary mb-4 flex-shrink-0">Live Mechanic Locations</h3>
                     <div className="flex-grow rounded-lg overflow-hidden min-h-[450px]">
                         <LiveMap mechanics={mechanicsWithAvailability} settings={settings} onViewProfile={handleViewProfile} />
@@ -197,7 +198,7 @@ const AdminDashboardScreen: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col gap-6">
-                    <div className="bg-admin-card p-6 rounded-xl shadow-lg flex flex-col border border-admin-border">
+                    <div className="bg-admin-card p-4 sm:p-6 rounded-xl shadow-lg flex flex-col border border-admin-border">
                         <h3 className="text-lg font-bold text-admin-text-primary mb-2 flex-shrink-0">Unassigned Bookings</h3>
                         <div className="overflow-y-auto -mr-3 pr-3 divide-y divide-admin-border">
                             {unassignedBookings.length > 0 ? (

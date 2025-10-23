@@ -1,19 +1,11 @@
+
+
 import { GoogleGenAI, Chat } from "@google/genai";
-import { Service, Part, Mechanic, Settings } from '../types';
+import { Service, Part, Mechanic, Settings, Customer, Database } from '../types';
 
-// This interface is a workaround to access the full db object shape
-interface FullDatabase {
-    services: Service[];
-    parts: Part[];
-    mechanics: Mechanic[];
-    settings: Settings;
-    // Add other db properties if needed by the prompt
-}
-
-export const startAssistantChat = (db: FullDatabase): Chat => {
+export const startAssistantChat = (db: Database, customer: Customer | null): Chat => {
     const { services, parts, mechanics, settings } = db;
 
-    // Create detailed, structured lists for the AI's knowledge base
     const servicesInfo = services.map(s => 
         `- ${s.name}: ${s.description} It costs ₱${s.price.toLocaleString()} and takes about ${s.estimatedTime}. Category: ${s.category}.`
     ).join('\n');
@@ -26,7 +18,7 @@ export const startAssistantChat = (db: FullDatabase): Chat => {
         `- ${m.name}: A specialist in ${m.specializations.join(', ')} with a rating of ${m.rating.toFixed(1)} from ${m.reviews} reviews. Bio: ${m.bio}. Status: ${m.status}.`
     ).join('\n');
 
-    const systemInstruction = `
+    const defaultSystemInstruction = `
 You are ${settings.virtualMechanicName || 'RiderAI'}, an expert and friendly AI mechanic assistant for the RidersBUD application. Your goal is to provide helpful and accurate information to users based ONLY on the data provided below. Do not invent services, parts, mechanics, or prices.
 
 If a user asks about something not in your knowledge base (e.g., "Can you fix my boat?" or "Do you sell tires?"), politely inform them that you don't have information on that topic and suggest they ask about car maintenance, or browse the app's services and parts store.
@@ -45,14 +37,35 @@ ${partsInfo}
 ${mechanicsInfo}
 
 ---
-When the conversation starts, greet the user by name (e.g., "Hi! I'm RiderAI...") and ask how you can help them with services, parts, or mechanics today.
+When the conversation starts, greet the user and ask how you can help them with services, parts, or mechanics today.
     `;
+
+    const systemInstruction = settings.virtualMechanicSystemInstruction || defaultSystemInstruction;
+
+    // As requested, prepare the tool configuration to pass the user's location for Google Maps grounding.
+    let toolConfig;
+    if (customer?.lat && customer?.lng) {
+        toolConfig = {
+            retrievalConfig: {
+                latLng: {
+                    latitude: customer.lat,
+                    longitude: customer.lng
+                }
+            }
+        };
+    }
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     const chat = ai.chats.create({
+        // Per the request, using gemini-2.5-flash for a balance of speed and features for general chatbot and grounding tasks.
+        // While gemini-2.5-flash-lite could be used for lower latency, gemini-2.5-flash is better suited for grounding capabilities.
         model: 'gemini-2.5-flash',
         config: {
             systemInstruction: systemInstruction,
+            // Per the request, enabling both Google Search and Google Maps grounding tools.
+            // This allows the AI to fetch up-to-date, real-world information and answer location-based queries.
+            tools: [{ googleSearch: {} }, { googleMaps: {} }],
+            toolConfig: toolConfig,
         }
     });
 

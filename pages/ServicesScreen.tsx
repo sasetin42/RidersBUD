@@ -23,33 +23,48 @@ const ServiceCard: React.FC<{ service: Service; }> = ({ service }) => {
     return (
         <div 
             onClick={() => navigate(`/service/${service.id}`)} 
-            className="relative rounded-xl overflow-hidden cursor-pointer group shadow-lg transition-transform duration-300 hover:-translate-y-1 aspect-[3/4]"
+            className="bg-dark-gray rounded-2xl overflow-hidden flex flex-col cursor-pointer group shadow-lg transition-transform duration-300 hover:-translate-y-1 border border-transparent hover:border-primary/50"
             role="button"
             aria-label={`View details for ${service.name}`}
         >
-            <img src={service.imageUrl} alt={service.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+            {/* Image Section */}
+            <div className="relative">
+                <img src={service.imageUrl} alt={service.name} className="w-full h-32 object-cover transition-transform duration-300 group-hover:scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+                
+                {/* Wishlist Button */}
+                <button 
+                    onClick={handleToggleWishlist} 
+                    className="absolute top-2 right-2 bg-black/40 backdrop-blur-sm rounded-full p-2 transition-all duration-200 hover:scale-110 hover:bg-black/60 active:scale-95 z-10" 
+                    aria-label="Toggle Wishlist"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-colors ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+                    </svg>
+                </button>
 
-            <button 
-                onClick={handleToggleWishlist} 
-                className="absolute top-3 right-3 bg-black/30 backdrop-blur-sm rounded-full p-2 transition-transform duration-200 hover:scale-110 active:scale-95 z-10" 
-                aria-label="Toggle Wishlist"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transition-colors ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
-                </svg>
-            </button>
+                {/* Category Tag */}
+                <span className="absolute top-2 left-2 bg-black/40 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm">
+                    {service.category}
+                </span>
+            </div>
 
-            <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
-                <h3 className="font-bold text-base leading-tight group-hover:text-primary transition-colors">{service.name}</h3>
-                <div className="flex justify-between items-center mt-2 text-xs">
-                    <p className="font-semibold text-primary/90">
-                        {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Quote'}
-                    </p>
-                    <div className="flex items-center gap-1 text-light-gray/90">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            {/* Content Section */}
+            <div className="p-3 flex flex-col flex-grow">
+                <h3 className="font-bold text-base leading-tight text-white group-hover:text-primary transition-colors">{service.name}</h3>
+                
+                <p className="font-semibold text-primary mt-1 text-lg">
+                    {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Quote Required'}
+                </p>
+
+                <div className="flex justify-between items-center mt-auto pt-2 border-t border-field">
+                    <div className="flex items-center gap-1 text-xs text-light-gray/90">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         <span>{service.estimatedTime}</span>
                     </div>
+                    <span className="text-xs font-semibold text-primary group-hover:underline flex items-center gap-1">
+                        Details <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                    </span>
                 </div>
             </div>
         </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Service, Part } from '../../types';
 import Modal from '../../components/admin/Modal';
@@ -179,33 +180,33 @@ const AdminCatalogScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-shrink-0 px-6 lg:px-8 pt-6">
+            <div className="flex-shrink-0">
                 <h1 className="text-3xl font-bold">Catalog Management</h1>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-6">
                     <StatCard title="Total Services" value={db.services.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>} />
                     <StatCard title="Total Parts & Tools" value={db.parts.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>} />
                 </div>
-                <div className="flex justify-between items-center mb-4">
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
-                        <input type="text" placeholder={activeTab === 'services' ? "Search name or category..." : "Search name or SKU..."} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="md:col-span-2 w-full p-2 bg-admin-card border border-admin-border rounded-lg" />
-                        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="w-full p-2 bg-admin-card border border-admin-border rounded-lg">{(activeTab === 'services' ? serviceCategories : partCategories).map(cat => <option key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</option>)}</select>
+                <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
+                     <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                        <input type="text" placeholder={activeTab === 'services' ? "Search name or category..." : "Search name or SKU..."} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full sm:w-64 p-2 bg-admin-card border border-admin-border rounded-lg" />
+                        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="w-full sm:w-auto p-2 bg-admin-card border border-admin-border rounded-lg">{(activeTab === 'services' ? serviceCategories : partCategories).map(cat => <option key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</option>)}</select>
                     </div>
-                    <button onClick={activeTab === 'services' ? () => handleOpenServiceModal() : () => handleOpenPartModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition ml-4 whitespace-nowrap">+ Add {activeTab === 'services' ? 'Service' : 'Part'}</button>
+                    <button onClick={activeTab === 'services' ? () => handleOpenServiceModal() : () => handleOpenPartModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition w-full md:w-auto whitespace-nowrap">+ Add {activeTab === 'services' ? 'Service' : 'Part'}</button>
                 </div>
             </div>
-            <div className="border-b border-admin-border flex-shrink-0 px-6 lg:px-8 flex justify-between items-center">
+            <div className="border-b border-admin-border flex-shrink-0">
                 <nav className="-mb-px flex space-x-8">
                     <button onClick={() => handleTabChange('services')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'services' ? 'border-admin-accent text-admin-accent' : 'border-transparent text-admin-text-secondary hover:text-white hover:border-gray-500'}`}>Services</button>
                     <button onClick={() => handleTabChange('parts')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'parts' ? 'border-admin-accent text-admin-accent' : 'border-transparent text-admin-text-secondary hover:text-white hover:border-gray-500'}`}>Parts & Tools</button>
                 </nav>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+            <div className="flex-1 overflow-y-auto pt-6">
                 {activeTab === 'services' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {filteredServices.map(service => <ItemCard key={service.id} item={service} onEdit={() => handleOpenServiceModal(service)} onDelete={() => handleDeleteService(service.id)} />)}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {filteredParts.map(part => <ItemCard key={part.id} item={part} onEdit={() => handleOpenPartModal(part)} onDelete={() => handleDeletePart(part.id)} />)}
                     </div>
                 )}

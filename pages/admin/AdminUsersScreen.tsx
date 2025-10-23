@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { AdminUser, AdminModule, PermissionLevel, RoleName } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -124,8 +125,8 @@ const AdminUsersScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-shrink-0 px-6 lg:px-8 pt-6">
-                <div className="flex justify-between items-center">
+            <div className="flex-shrink-0">
+                <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
                     <h1 className="text-3xl font-bold">Users & Roles</h1>
                     <button onClick={() => handleOpenModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">+ Add User</button>
                 </div>
@@ -134,32 +135,34 @@ const AdminUsersScreen: React.FC = () => {
                     <StatCard title="Configured Roles" value={db.roles.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4z" /></svg>} />
                 </div>
             </div>
-             <div className="flex-1 overflow-auto px-6 lg:px-8">
-                <table className="w-full text-left border-collapse">
-                    <thead className="sticky top-0 bg-admin-bg z-10">
-                        <tr>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Email</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Role</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-admin-border">
-                        {db.adminUsers.map(user => (
-                             <tr key={user.id} className="hover:bg-admin-card">
-                                <td className="py-4 px-2 text-sm">{user.email}</td>
-                                <td className="py-4 px-2">
-                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${roleColors[user.role]}`}>{user.role}</span>
-                                </td>
-                                <td className="py-4 px-2 text-sm whitespace-nowrap">
-                                    <button onClick={() => handleOpenModal(user)} className="font-semibold text-blue-400 hover:text-blue-300 mr-4">Edit</button>
-                                    {db.adminUsers.length > 1 && (
-                                         <button onClick={() => handleDelete(user.id)} className="font-semibold text-red-400 hover:text-red-300">Delete</button>
-                                    )}
-                                </td>
+             <div className="flex-1 overflow-auto">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[600px]">
+                        <thead className="sticky top-0 bg-admin-bg z-10">
+                            <tr>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Email</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Role</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-admin-border">
+                            {db.adminUsers.map(user => (
+                                <tr key={user.id} className="hover:bg-admin-card">
+                                    <td className="py-4 px-2 text-sm">{user.email}</td>
+                                    <td className="py-4 px-2">
+                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${roleColors[user.role] || 'bg-gray-500/20 text-gray-300'}`}>{user.role}</span>
+                                    </td>
+                                    <td className="py-4 px-2 text-sm whitespace-nowrap">
+                                        <button onClick={() => handleOpenModal(user)} className="font-semibold text-blue-400 hover:text-blue-300 mr-4">Edit</button>
+                                        {db.adminUsers.length > 1 && (
+                                            <button onClick={() => handleDelete(user.id)} className="font-semibold text-red-400 hover:text-red-300">Delete</button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
             {isModalOpen && <UserFormModal user={editingUser} onSave={handleSave} onClose={handleCloseModal} />}
         </div>

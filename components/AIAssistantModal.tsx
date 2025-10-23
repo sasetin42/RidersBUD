@@ -1,17 +1,121 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Chat } from '@google/genai';
 import Spinner from './Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { startAssistantChat } from '../services/aiAssistantService';
+import { Service, Part } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface Message {
     sender: 'user' | 'ai';
     text: string;
+    sources?: any[]; // Array of grounding chunks
 }
 
 interface AIAssistantModalProps {
     onClose: () => void;
 }
+
+// This component parses the AI's message to render content, sources, and actionable buttons.
+const AIMessageContent: React.FC<{ text: string; sources?: any[]; onClose: () => void }> = ({ text, sources, onClose }) => {
+    const { db } = useDatabase();
+    const navigate = useNavigate();
+
+    // As requested, this logic detects services or parts mentioned in the AI's response
+    // and prepares them to be displayed as clickable quick-action buttons.
+    const foundItems = useMemo(() => {
+        if (!text || !db) return [];
+
+        const allItems: (Service | Part)[] = [...db.services, ...db.parts];
+        const uniqueFoundItems: { [key: string]: (Service | Part) & { type: 'service' | 'part' } } = {};
+
+        // Find all mentions of services or parts in the text
+        for (const item of allItems) {
+            // Use a case-insensitive regex with word boundaries to avoid partial matches (e.g., "oil" in "boil")
+            const regex = new RegExp(`\\b${item.name}\\b`, 'ig');
+            if (regex.test(text)) {
+                // Check if already found to avoid duplicates
+                if (!uniqueFoundItems[item.id]) {
+                    uniqueFoundItems[item.id] = {
+                        ...item,
+                        type: 'sku' in item ? 'part' : 'service'
+                    };
+                }
+            }
+        }
+        return Object.values(uniqueFoundItems);
+    }, [text, db]);
+
+    const handleButtonClick = (item: (Service | Part) & { type: 'service' | 'part' }) => {
+        if (item.type === 'service') {
+            navigate(`/service/${item.id}`);
+        } else {
+            navigate(`/part/${item.id}`);
+        }
+        onClose(); // Close the modal after navigating
+    };
+
+    return (
+        <div>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
+            {/* This section renders the sources provided by Google Search and Google Maps grounding. */}
+            {sources && sources.length > 0 && (
+                 <div className="mt-3 space-y-2 border-t border-dark-gray/50 pt-3">
+                    <p className="text-xs font-semibold text-light-gray mb-1">Sources:</p>
+                    <div className="flex flex-wrap gap-2">
+                        {sources.filter(s => s.web).map((source, index) => (
+                            <a 
+                                href={source.web.uri} 
+                                key={`web-${index}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-xs bg-field p-1.5 rounded-md hover:bg-gray-600 transition truncate flex items-center gap-1"
+                            >
+                                📄 <span className="truncate">{source.web.title || new URL(source.web.uri).hostname}</span>
+                            </a>
+                        ))}
+                        {sources.filter(s => s.maps).map((source, index) => (
+                            <a 
+                                href={source.maps.uri} 
+                                key={`map-${index}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-xs bg-field p-1.5 rounded-md hover:bg-gray-600 transition flex items-center gap-1"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-400" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+                                <span className="truncate">{source.maps.title}</span>
+                            </a>
+                        ))}
+                    </div>
+                </div>
+            )}
+            {/* This section renders the quick-action buttons for detected services and parts. */}
+            {foundItems.length > 0 && (
+                <div className="mt-3 space-y-2 border-t border-dark-gray/50 pt-3">
+                    <p className="text-xs font-semibold text-light-gray mb-1">Quick Actions:</p>
+                    {foundItems.map(item => (
+                        <button
+                            key={item.id}
+                            onClick={() => handleButtonClick(item)}
+                            className="w-full text-left bg-field p-2 rounded-lg hover:bg-gray-600 transition flex items-center gap-3"
+                        >
+                            <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-md object-cover flex-shrink-0" />
+                            <div className="flex-grow">
+                                <p className="font-semibold text-white text-sm">{item.type === 'service' ? 'Book:' : 'Buy:'} {item.name}</p>
+                                <p className="text-xs text-primary">{item.type === 'service' ? 'Go to Service' : 'Go to Store'}</p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 
 const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -21,6 +125,7 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
     const [error, setError] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
     const { db } = useDatabase();
+    const { user } = useAuth();
 
     useEffect(() => {
         if (!db) {
@@ -31,7 +136,7 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
 
         const initializeChat = async () => {
             try {
-                const newChat = startAssistantChat(db);
+                const newChat = startAssistantChat(db, user);
                 setChat(newChat);
 
                 const initialResponseStream = await newChat.sendMessageStream({ message: "Hello, introduce yourself." });
@@ -54,7 +159,7 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
         };
 
         initializeChat();
-    }, [db]);
+    }, [db, user]);
     
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -70,16 +175,30 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
         setError(null);
 
         setMessages(prev => [...prev, { sender: 'user', text: userInput }]);
-        setMessages(prev => [...prev, { sender: 'ai', text: "" }]);
+        setMessages(prev => [...prev, { sender: 'ai', text: "", sources: [] }]);
 
         try {
             const responseStream = await chat.sendMessageStream({ message: userInput });
             let fullText = "";
+            let sources: any[] = [];
             for await (const chunk of responseStream) {
                 fullText += chunk.text;
+
+                // Check for and process grounding metadata from Google Search to display as sources.
+                if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+                    const newChunks = chunk.candidates[0].groundingMetadata.groundingChunks;
+                    newChunks.forEach((newChunk: any) => {
+                        const isWeb = newChunk.web && !sources.some(s => s.web?.uri === newChunk.web.uri);
+                        const isMap = newChunk.maps && !sources.some(s => s.maps?.uri === newChunk.maps.uri);
+                        if (isWeb || isMap) {
+                            sources.push(newChunk);
+                        }
+                    });
+                }
+
                 setMessages(prev => {
                     const newMessages = [...prev];
-                    newMessages[newMessages.length - 1] = { sender: 'ai', text: fullText };
+                    newMessages[newMessages.length - 1] = { sender: 'ai', text: fullText, sources: [...sources] };
                     return newMessages;
                 });
             }
@@ -133,6 +252,8 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({ onClose }) => {
                         <div className={`max-w-xs md:max-w-md p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-primary text-white rounded-br-none' : 'bg-dark-gray text-white rounded-bl-none'}`}>
                             {isLoading && index === messages.length - 1 && msg.sender === 'ai' && msg.text === '' ? (
                                 <p className="text-sm text-light-gray italic animate-pulse">typing...</p>
+                            ) : msg.sender === 'ai' ? (
+                                <AIMessageContent text={msg.text} sources={msg.sources} onClose={onClose} />
                             ) : (
                                 <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                             )}

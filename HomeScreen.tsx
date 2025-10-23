@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import { getAIServiceSuggestions } from '../services/geminiService';
 import Spinner from '../components/Spinner';
-import { Booking, Mechanic } from '../types';
+import { Booking, BookingStatus, Mechanic } from '../types';
 import HomeLiveMap from '../components/HomeLiveMap';
 import NotificationBell from '../components/NotificationBell';
 
@@ -14,6 +14,44 @@ interface AISuggestion {
     serviceName: string;
     reason: string;
 }
+
+const CompletedInvoiceModal: React.FC<{ booking: Booking; onClose: () => void; db: any; }> = ({ booking, onClose, db }) => {
+    const navigate = useNavigate();
+    return (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={onClose}>
+            <div className="bg-dark-gray rounded-xl p-6 shadow-2xl animate-scaleUp border border-green-500/30 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+                <div className="text-center mb-4">
+                    <img src={db.settings.appLogoUrl} alt="Logo" className="w-24 mx-auto mb-2" />
+                    <h2 className="text-2xl font-bold text-white">Service Complete!</h2>
+                    <p className="text-sm text-green-400">Please review your invoice.</p>
+                </div>
+                <div className="space-y-3 bg-field p-4 rounded-lg">
+                    <div className="flex justify-between items-center text-sm border-b border-dark-gray pb-2">
+                        <span className="text-light-gray">Service:</span>
+                        <span className="font-semibold text-white">{booking.service.name}</span>
+                    </div>
+                     <div className="flex justify-between items-center text-sm">
+                        <span className="text-light-gray">Mechanic:</span>
+                        <span className="font-semibold text-white">{booking.mechanic?.name}</span>
+                    </div>
+                </div>
+                <div className="mt-4 pt-4 border-t border-dark-gray text-right">
+                    <p className="text-light-gray">Total Amount Due:</p>
+                    <p className="text-4xl font-bold text-primary">₱{booking.service.price.toLocaleString()}</p>
+                </div>
+                <div className="mt-6 flex flex-col gap-3">
+                     <button onClick={() => { onClose(); navigate('/booking-history'); }} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
+                        Proceed to Pay
+                    </button>
+                    <button onClick={onClose} className="w-full text-sm text-light-gray hover:text-white transition">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 // Haversine distance formula to calculate distance between two lat/lng points
 const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -175,9 +213,19 @@ const JobProgressModal: React.FC<{
     const mapInstanceRef = useRef<any>(null);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
-    const timelineSteps = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress'];
+    const timelineSteps: BookingStatus[] = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'];
     const currentStatusIndex = useMemo(() => {
-        return Math.max(0, ...timelineSteps.map(step => booking.statusHistory?.findIndex(h => h.status === step) ?? -1), timelineSteps.findIndex(s => s === booking.status));
+        const historyStatuses = booking.statusHistory?.map(h => h.status) || [];
+        const allStatuses = [...historyStatuses, booking.status];
+        
+        let highestIndex = -1;
+        allStatuses.forEach(status => {
+            const indexInTimeline = timelineSteps.indexOf(status as BookingStatus);
+            if (indexInTimeline > highestIndex) {
+                highestIndex = indexInTimeline;
+            }
+        });
+        return highestIndex;
     }, [booking.status, booking.statusHistory]);
 
     useEffect(() => {
@@ -197,7 +245,7 @@ const JobProgressModal: React.FC<{
     const ImagePlaceholder = () => (
         <div className="w-full h-28 bg-field border-2 border-dashed border-dark-gray rounded-md flex flex-col items-center justify-center text-center p-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            <p className="text-xs text-gray-500 mt-1">Awaiting Photo</p>
+            <p className="text-xs text-gray-500 mt-1">No Photo Uploaded</p>
         </div>
     );
 
@@ -287,7 +335,7 @@ const HomeScreen: React.FC = () => {
     const [isLoadingAI, setIsLoadingAI] = useState(false);
     const [aiError, setAiError] = useState<string | null>(null);
     const [trackingBooking, setTrackingBooking] = useState<Booking | null>(null);
-    const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
+    const [progressModalBooking, setProgressModalBooking] = useState<Booking | null>(null);
     const [currentBanner, setCurrentBanner] = useState(0);
     const [isBannerPaused, setIsBannerPaused] = useState(false);
     const bannerIntervalRef = useRef<any>(null);
@@ -296,6 +344,10 @@ const HomeScreen: React.FC = () => {
     const [specFilterOpen, setSpecFilterOpen] = useState(false);
     const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
     const [ratingFilter, setRatingFilter] = useState(0);
+    
+    // State for notification modals
+    const [completedBooking, setCompletedBooking] = useState<Booking | null>(null);
+    const shownNotifications = useRef(new Set<string>());
     
     const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
 
@@ -342,6 +394,33 @@ const HomeScreen: React.FC = () => {
             })
             .map(mechanic => ({ ...mechanic, isAvailable: (mechanic.availability?.[todayDayOfWeek]?.isAvailable ?? false) && !busyMechanicIds.has(mechanic.id) }));
     }, [db, selectedSpecs, ratingFilter]);
+
+    useEffect(() => {
+        if (!db || !user) return;
+    
+        const myBookings = db.bookings.filter(b => b.customerName === user.name);
+    
+        const inProgressNotif = myBookings.find(b => 
+            b.status === 'In Progress' && 
+            !shownNotifications.current.has(`${b.id}-in-progress`)
+        );
+    
+        if (inProgressNotif) {
+            setProgressModalBooking(inProgressNotif);
+            shownNotifications.current.add(`${inProgressNotif.id}-in-progress`);
+        }
+        
+        const completedNotif = myBookings.find(b => 
+            b.status === 'Completed' && 
+            !shownNotifications.current.has(`${b.id}-completed`)
+        );
+        
+        if (completedNotif) {
+            setCompletedBooking(completedNotif);
+            shownNotifications.current.add(`${completedNotif.id}-completed`);
+        }
+    
+    }, [db, user]);
 
     useEffect(() => {
         if (!db || db.banners.length === 0 || isBannerPaused) {
@@ -423,7 +502,7 @@ const HomeScreen: React.FC = () => {
         if (upcomingAppointment.status === 'En Route') {
             setTrackingBooking(upcomingAppointment);
         } else if (upcomingAppointment.status === 'In Progress') {
-            setIsProgressModalOpen(true);
+            setProgressModalBooking(upcomingAppointment);
         } else {
             navigate('/booking-history');
         }
@@ -633,7 +712,8 @@ const HomeScreen: React.FC = () => {
             </div>
 
             {trackingBooking && <TrackMechanicModal booking={trackingBooking} customerLocation={customerLocation} onClose={() => setTrackingBooking(null)} onShare={handleShare} />}
-            {isProgressModalOpen && upcomingAppointment && <JobProgressModal booking={upcomingAppointment} customerLocation={customerLocation} onClose={() => setIsProgressModalOpen(false)} />}
+            {progressModalBooking && <JobProgressModal booking={progressModalBooking} customerLocation={customerLocation} onClose={() => setProgressModalBooking(null)} />}
+            {completedBooking && <CompletedInvoiceModal booking={completedBooking} onClose={() => setCompletedBooking(null)} db={db} />}
         </div>
     );
 };

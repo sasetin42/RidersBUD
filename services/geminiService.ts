@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Vehicle } from '../types';
 
@@ -16,10 +17,15 @@ export const getAIServiceSuggestions = async (vehicle: Vehicle, serviceHistory: 
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            // Per the request, using the gemini-2.5-pro model for complex tasks that require deeper analysis.
+            model: "gemini-2.5-pro",
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
+                // Thinking mode is enabled with the maximum budget of 32768 tokens for sophisticated query processing.
+                thinkingConfig: {
+                    thinkingBudget: 32768,
+                },
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {

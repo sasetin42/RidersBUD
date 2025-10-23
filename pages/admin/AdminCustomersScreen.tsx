@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Customer, Vehicle } from '../../types';
 import Modal from '../../components/admin/Modal';
@@ -142,7 +143,7 @@ const AdminCustomersScreen: React.FC = () => {
     
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-shrink-0 px-6 lg:px-8 pt-6">
+            <div className="flex-shrink-0">
                  <h1 className="text-3xl font-bold">Manage Customers</h1>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 my-6">
                     <StatCard title="Total Customers" value={stats.total} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>} />
@@ -156,33 +157,35 @@ const AdminCustomersScreen: React.FC = () => {
                     <button onClick={() => setViewingCustomer({} as Customer)} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition w-full md:w-auto">+ Add Customer</button>
                 </div>
             </div>
-            <div className="flex-1 overflow-auto px-6 lg:px-8 mt-4">
-                <table className="w-full text-left border-collapse">
-                     <thead className="sticky top-0 bg-admin-bg z-10">
-                        <tr>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Name</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Email</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Phone</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border text-center">Vehicles</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border text-center">Total Bookings</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-admin-border">
-                        {filteredCustomers.map((customer) => (
-                             <tr key={customer.id} className="hover:bg-admin-card">
-                                <td className="py-3 px-2 text-sm">
-                                    <div className="flex items-center gap-3"><img src={customer.picture || 'https://picsum.photos/seed/placeholder/200/200'} alt={customer.name} className="w-10 h-10 rounded-full object-cover" /><span>{customer.name}</span></div>
-                                </td>
-                                <td className="py-3 px-2 text-sm">{customer.email}</td>
-                                <td className="py-3 px-2 text-sm">{customer.phone}</td>
-                                <td className="py-3 px-2 text-sm text-center">{customer.vehicles.length}</td>
-                                <td className="py-3 px-2 text-sm text-center font-bold">{customerBookingsCount[customer.id] || 0}</td>
-                                <td className="py-3 px-2 text-sm"><button onClick={() => setViewingCustomer(customer)} className="font-semibold text-blue-400 hover:text-blue-300">View/Edit</button></td>
+            <div className="flex-1 overflow-auto mt-4">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[800px]">
+                        <thead className="sticky top-0 bg-admin-bg z-10">
+                            <tr>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Name</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Email</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border hidden sm:table-cell">Phone</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border text-center">Vehicles</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border text-center">Bookings</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-admin-border">
+                            {filteredCustomers.map((customer) => (
+                                <tr key={customer.id} className="hover:bg-admin-card">
+                                    <td className="py-3 px-2 text-sm">
+                                        <div className="flex items-center gap-3"><img src={customer.picture || 'https://picsum.photos/seed/placeholder/200/200'} alt={customer.name} className="w-10 h-10 rounded-full object-cover" /><span>{customer.name}</span></div>
+                                    </td>
+                                    <td className="py-3 px-2 text-sm">{customer.email}</td>
+                                    <td className="py-3 px-2 text-sm hidden sm:table-cell">{customer.phone}</td>
+                                    <td className="py-3 px-2 text-sm text-center">{customer.vehicles.length}</td>
+                                    <td className="py-3 px-2 text-sm text-center font-bold">{customerBookingsCount[customer.id] || 0}</td>
+                                    <td className="py-3 px-2 text-sm"><button onClick={() => setViewingCustomer(customer)} className="font-semibold text-blue-400 hover:text-blue-300">View/Edit</button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
             {viewingCustomer && <CustomerFormModal customer={viewingCustomer.id ? viewingCustomer : undefined} onClose={() => setViewingCustomer(null)} onSave={handleSaveCustomer} onDelete={handleDeleteCustomer} />}
         </div>
