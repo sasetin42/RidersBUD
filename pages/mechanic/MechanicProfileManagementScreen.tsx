@@ -308,7 +308,7 @@ const ChangePasswordModal: React.FC<{
                 <input type="password" name="confirmPassword" placeholder="Confirm New Password" value={passwordData.confirmPassword} onChange={handlePasswordInputChange} className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray" />
                 {passwordMessage.text && <p className={`text-xs text-center pt-1 ${passwordMessage.type === 'error' ? 'text-red-400' : 'text-green-400'}`}>{passwordMessage.text}</p>}
                 <div className="mt-6 flex justify-end gap-4">
-                    <button type="button" onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition">Cancel</button>
+                    <button type="button" onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 transition">Cancel</button>
                     <button type="submit" className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">Update Password</button>
                 </div>
             </form>
@@ -325,7 +325,7 @@ const ReviewsModal: React.FC<{ reviews: Review[], onClose: () => void }> = ({ re
                         <div className="flex justify-between items-center mb-1">
                             <p className="font-semibold text-sm text-white">{review.customerName}</p>
                             <div className="flex items-center text-yellow-400">
-                                {[...Array(5)].map((_, i) => <svg key={i} xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${i < review.rating ? 'fill-current' : 'text-gray-600'}`} viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
+                                {[...Array(5)].map((_, i) => <svg key={i} xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${i < review.rating ? 'fill-current' : 'text-gray-600'}`} viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>)}
                             </div>
                         </div>
                         <p className="text-xs text-light-gray">{review.comment}</p>
@@ -338,6 +338,112 @@ const ReviewsModal: React.FC<{ reviews: Review[], onClose: () => void }> = ({ re
         </div>
     </Modal>
 );
+
+const PayoutRequestModal: React.FC<{
+    mechanic: Mechanic;
+    availableBalance: number;
+    onClose: () => void;
+}> = ({ mechanic, availableBalance, onClose }) => {
+    const { addPayoutRequest, db } = useDatabase();
+    const [amount, setAmount] = useState('');
+    const [error, setError] = useState('');
+    const [isSuccess, setIsSuccess] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+
+    const settings = db!.settings;
+
+    const handleRequest = async () => {
+        setError('');
+        const requestAmount = parseFloat(amount);
+        if (isNaN(requestAmount) || requestAmount <= 0) {
+            setError('Please enter a valid amount greater than zero.');
+            return;
+        }
+        if (settings.minimumPayout && requestAmount < settings.minimumPayout) {
+            setError(`Minimum payout amount is ₱${settings.minimumPayout.toLocaleString()}.`);
+            return;
+        }
+        if (settings.maximumPayout && requestAmount > settings.maximumPayout) {
+            setError(`Maximum payout amount is ₱${settings.maximumPayout.toLocaleString()}.`);
+            return;
+        }
+        if (requestAmount > availableBalance) {
+            setError('Requested amount exceeds available balance.');
+            return;
+        }
+        
+        setIsProcessing(true);
+        try {
+            await addPayoutRequest({
+                mechanicId: mechanic.id,
+                mechanicName: mechanic.name,
+                amount: requestAmount
+            });
+            setIsSuccess(true);
+        } catch(e) {
+            setError("Failed to submit request. Please try again.");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    if (isSuccess) {
+        return (
+            <Modal title="Request Sent" isOpen={true} onClose={onClose}>
+                <div className="text-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-green-400 mx-auto" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <h3 className="text-xl font-bold text-white mt-4">Payout Requested!</h3>
+                    <p className="text-light-gray mt-2">Your request for <strong>₱{parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong> has been submitted. It will be processed within 3-5 business days.</p>
+                    <button onClick={onClose} className="mt-6 w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">Done</button>
+                </div>
+            </Modal>
+        );
+    }
+
+    const hasPayoutDetails = mechanic.payoutDetails && mechanic.payoutDetails.accountName && mechanic.payoutDetails.accountNumber;
+
+    return (
+        <Modal title="Request a Payout" isOpen={true} onClose={onClose}>
+            <div className="space-y-4">
+                <div className="bg-field p-4 rounded-lg text-center">
+                    <p className="text-sm text-light-gray">Available for Payout</p>
+                    <p className="text-3xl font-bold text-green-400">₱{availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </div>
+
+                {!hasPayoutDetails ? (
+                    <div className="p-4 bg-red-900/50 border border-red-500/50 rounded-lg text-center">
+                        <p className="text-red-300 font-semibold">No Payout Details Found</p>
+                        <p className="text-xs text-red-200 mt-1">Please set up your payout details before requesting a payout.</p>
+                    </div>
+                ) : (
+                    <div className="bg-field p-4 rounded-lg">
+                        <h4 className="font-semibold text-white mb-2">Payout Destination</h4>
+                        <p className="text-sm"><span className="text-light-gray">Account:</span> {mechanic.payoutDetails?.accountName}</p>
+                        <p className="text-sm"><span className="text-light-gray">Number:</span> ****{mechanic.payoutDetails?.accountNumber.slice(-4)}</p>
+                        <p className="text-sm"><span className="text-light-gray">Method:</span> {mechanic.payoutDetails?.method} ({mechanic.payoutDetails?.method === 'Bank Transfer' ? mechanic.payoutDetails?.bankName : mechanic.payoutDetails?.walletName})</p>
+                    </div>
+                )}
+                
+                <div>
+                    <label className="text-xs text-light-gray mb-1">Amount to Withdraw</label>
+                    <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-light-gray">₱</span>
+                        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} disabled={!hasPayoutDetails} className="w-full p-3 pl-8 bg-field border border-secondary rounded-md disabled:opacity-50" placeholder="0.00"/>
+                    </div>
+                    {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
+                </div>
+            </div>
+             <div className="mt-6 flex justify-end gap-4">
+                <button onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition">Cancel</button>
+                <button onClick={handleRequest} disabled={!hasPayoutDetails || isProcessing} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition disabled:opacity-50 min-w-[140px] flex justify-center">
+                    {isProcessing ? <Spinner size="sm"/> : 'Request Payout'}
+                </button>
+            </div>
+        </Modal>
+    );
+};
 
 const PayoutDetailsModal: React.FC<{
     payoutDetails: Mechanic['payoutDetails'];
@@ -404,7 +510,6 @@ const PayoutDetailsModal: React.FC<{
                             <select name="walletName" value={details.walletName || 'GCash'} onChange={handleInputChange} className="w-full p-2 bg-field border border-secondary rounded-md">
                                 <option>GCash</option>
                                 <option>Paymaya</option>
-                                <option>GrabPay</option>
                             </select>
                         </div>
                         <div>
@@ -551,13 +656,25 @@ const MechanicProfileManagementScreen: React.FC = () => {
     const [activeModal, setActiveModal] = useState<string | null>(null);
     const navigate = useNavigate();
 
-    const kpiData = useMemo(() => {
-        if (!mechanic || !db) return { totalJobs: 0, lifetimeEarnings: 0 };
+    const { totalJobs, lifetimeEarnings, availableForPayout } = useMemo(() => {
+        if (!mechanic || !db) return { totalJobs: 0, lifetimeEarnings: 0, availableForPayout: 0 };
+        
         const completedJobs = db.bookings.filter(b => b.mechanic?.id === mechanic.id && b.status === 'Completed');
         const lifetimeEarnings = completedJobs.reduce((sum, job) => sum + job.service.price, 0);
+
+        const paidJobs = completedJobs.filter(b => b.isPaid !== false); // Assume undefined/null is paid for older data
+        const totalEarnedAndPaid = paidJobs.reduce((sum, job) => sum + job.service.price, 0);
+
+        const totalPaidOut = db.payouts
+            .filter(p => p.mechanicId === mechanic.id && (p.status === 'Approved' || p.status === 'Pending'))
+            .reduce((sum, p) => sum + p.amount, 0);
+
+        const availableForPayout = totalEarnedAndPaid - totalPaidOut;
+
         return {
             totalJobs: completedJobs.length,
             lifetimeEarnings,
+            availableForPayout,
         };
     }, [db, mechanic]);
 
@@ -613,9 +730,9 @@ const MechanicProfileManagementScreen: React.FC = () => {
                 <div>
                     <h3 className="text-lg font-semibold mb-2 text-primary">Performance Snapshot</h3>
                     <div className="grid grid-cols-3 gap-3">
-                        <StatCard title="Total Jobs" value={kpiData.totalJobs} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6-6H3.5A2.5 2.5 0 001 4.5v15A2.5 2.5 0 003.5 22h17a2.5 2.5 0 002.5-2.5v-15A2.5 2.5 0 0020.5 2H15" /></svg>} />
-                        <StatCard title="Lifetime Earnings" value={`₱${(kpiData.lifetimeEarnings/1000).toFixed(1)}k`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>} />
-                        <StatCard title="Overall Rating" value={mechanic.rating.toFixed(1)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>} />
+                        <StatCard title="Total Jobs" value={totalJobs} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6-6H3.5A2.5 2.5 0 001 4.5v15A2.5 2.5 0 003.5 22h17a2.5 2.5 0 002.5-2.5v-15A2.5 2.5 0 0020.5 2H15" /></svg>} />
+                        <StatCard title="Lifetime Earnings" value={`₱${(lifetimeEarnings/1000).toFixed(1)}k`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>} />
+                        <StatCard title="Overall Rating" value={mechanic.rating.toFixed(1)} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>} />
                     </div>
                 </div>
 
@@ -625,8 +742,9 @@ const MechanicProfileManagementScreen: React.FC = () => {
                     <MenuItem label="My Reviews" onClick={() => setActiveModal('reviews')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="My Weekly Availability" onClick={() => setActiveModal('availability')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="Set Time Off" onClick={() => setActiveModal('timeOff')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" /></svg>} />
-                    <MenuItem label="Legal & Insurance" onClick={() => setActiveModal('legal')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h2a2 2 0 002-2V4a2 2 0 00-2-2H9z" /><path d="M4 12a2 2 0 012-2h10a2 2 0 012 2v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5z" /></svg>} />
+                    <MenuItem label="Request Payout" onClick={() => setActiveModal('payoutRequest')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.5 2.5 0 004 0V7.151c.221.07.412.164.567.267C13.863 8.32 14 9.143 14 10c0 .857-.137 1.68-.433 2.582a1 1 0 01-1.848-.758C12 11.42 12 10.71 12 10c0-.71-.001-1.42-.002-2.147a1 1 0 01.002-.103zm-4.866 0c.155-.103.346-.196.567-.267v1.698a2.5 2.5 0 004 0V7.151c.221.07.412.164.567.267C8.863 8.32 9 9.143 9 10c0 .857-.137 1.68-.433 2.582a1 1 0 01-1.848-.758C7 11.42 7 10.71 7 10c0-.71-.001-1.42-.002-2.147a1 1 0 01.002-.103z" /><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.002 6.002 0 0111.336 0 1 1 0 01-.577 1.395c-.346.164-.71.164-1.055 0a1 1 0 01-.577-1.395A4.002 4.002 0 006.543 8.027a1 1 0 01-1.055 0 1 1 0 01-.577-1.395z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="Payout Details" onClick={() => setActiveModal('payouts')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg>} />
+                    <MenuItem label="Legal & Insurance" onClick={() => setActiveModal('legal')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h2a2 2 0 002-2V4a2 2 0 00-2-2H9z" /><path d="M4 12a2 2 0 012-2h10a2 2 0 012 2v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5z" /></svg>} />
                     <MenuItem label="Notification Settings" onClick={() => navigate('/mechanic/notification-settings')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" /></svg>} />
                     <MenuItem label="Help & Support" onClick={() => setActiveModal('support')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>} />
                     <MenuItem label="Change Password" onClick={() => setActiveModal('password')} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clipRule="evenodd" /></svg>} />
@@ -640,6 +758,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
             {activeModal === 'timeOff' && <TimeOffModal unavailableDates={mechanic.unavailableDates || []} onClose={() => setActiveModal(null)} onSave={handleTimeOffSave} />}
             {activeModal === 'password' && <ChangePasswordModal currentPass={mechanic.password} onClose={() => setActiveModal(null)} onSave={handlePasswordSave} />}
             {activeModal === 'reviews' && <ReviewsModal reviews={mechanic.reviewsList || []} onClose={() => setActiveModal(null)} />}
+            {activeModal === 'payoutRequest' && <PayoutRequestModal mechanic={mechanic} availableBalance={availableForPayout} onClose={() => setActiveModal(null)} />}
             {activeModal === 'payouts' && <PayoutDetailsModal payoutDetails={mechanic.payoutDetails} onClose={() => setActiveModal(null)} onSave={handlePayoutDetailsSave} />}
             {activeModal === 'support' && <HelpSupportModal contactEmail={db.settings.contactEmail} contactPhone={db.settings.contactPhone} onClose={() => setActiveModal(null)} />}
             {activeModal === 'legal' && <LegalDocsModal mechanic={mechanic} onClose={() => setActiveModal(null)} onSave={handleProfileSave} />}

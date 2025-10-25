@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus } from '../types';
+import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest } from '../types';
 import { getSeedData } from '../data/mockData';
 
 // This interface defines the functions that the context will provide
@@ -16,12 +16,14 @@ interface DatabaseContextType {
     updateMechanic: (updatedMechanic: Mechanic) => Promise<void>;
     deleteMechanic: (mechanicId: string) => Promise<void>;
     updateMechanicStatus: (mechanicId: string, status: 'Active' | 'Inactive' | 'Pending') => Promise<void>;
+    updateMechanicLocation: (mechanicId: string, location: { lat: number; lng: number }) => Promise<void>;
     addBooking: (booking: Omit<Booking, 'id'>) => Promise<Booking | null>;
     updateBookingStatus: (bookingId: string, status: BookingStatus) => Promise<void>;
     cancelBooking: (bookingId: string, reason: string) => Promise<void>;
     acceptJobRequest: (bookingId: string, mechanic: Mechanic) => Promise<void>;
     updateBookingNotes: (bookingId: string, notes: string) => Promise<void>;
     updateBookingImages: (bookingId: string, beforeImages: string[], afterImages: string[]) => Promise<void>;
+    markBookingAsPaid: (bookingId: string) => Promise<void>;
     addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
     updateCustomer: (updatedCustomer: Customer) => Promise<void>;
     deleteCustomer: (customerId: string) => Promise<void>;
@@ -44,6 +46,8 @@ interface DatabaseContextType {
     deleteTask: (taskId: string) => Promise<void>;
     deleteMultipleTasks: (taskIds: string[]) => Promise<void>;
     updateMultipleTasksStatus: (taskIds: string[], isComplete: boolean) => Promise<void>;
+    addPayoutRequest: (payoutRequest: Omit<PayoutRequest, 'id' | 'status' | 'requestDate'>) => Promise<void>;
+    processPayoutRequest: (payoutId: string, status: 'Approved' | 'Rejected', rejectionReason?: string) => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
@@ -158,6 +162,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     const updateMechanicStatus = async (mechanicId: string, status: 'Active' | 'Inactive' | 'Pending') => {
         setDb(prevDb => prevDb ? { ...prevDb, mechanics: prevDb.mechanics.map(m => m.id === mechanicId ? { ...m, status } : m) } : null);
     };
+    const updateMechanicLocation = async (mechanicId: string, location: { lat: number; lng: number }) => {
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const newMechanics = prevDb.mechanics.map(m => 
+                m.id === mechanicId ? { ...m, lat: location.lat, lng: location.lng } : m
+            );
+            return { ...prevDb, mechanics: newMechanics };
+        });
+    };
 
     // --- Booking Operations ---
     const addBooking = async (booking: Omit<Booking, 'id'>): Promise<Booking | null> => {
@@ -211,6 +224,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return {
                 ...prevDb,
                 bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, beforeImages, afterImages } : b)
+            };
+        });
+    };
+
+    const markBookingAsPaid = async (bookingId: string) => {
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            return {
+                ...prevDb,
+                bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, isPaid: true } : b)
             };
         });
     };
@@ -395,13 +418,35 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         } : null);
     };
 
+    // --- Payout Operations ---
+    const addPayoutRequest = async (payoutRequest: Omit<PayoutRequest, 'id' | 'status' | 'requestDate'>) => {
+        const newRequest: PayoutRequest = {
+            ...payoutRequest,
+            id: `po-${Date.now()}`,
+            status: 'Pending',
+            requestDate: new Date().toISOString(),
+        };
+        setDb(prevDb => prevDb ? { ...prevDb, payouts: [...(prevDb.payouts || []), newRequest] } : null);
+    };
+    const processPayoutRequest = async (payoutId: string, status: 'Approved' | 'Rejected', rejectionReason?: string) => {
+        setDb(prevDb => prevDb ? {
+            ...prevDb,
+            payouts: (prevDb.payouts || []).map(p => 
+                p.id === payoutId 
+                ? { ...p, status, processDate: new Date().toISOString(), rejectionReason: status === 'Rejected' ? rejectionReason : undefined } 
+                : p
+            )
+        } : null);
+    };
+
 
     const value = {
         db, loading, addService, updateService, deleteService, addPart, updatePart, deletePart, addMechanic, updateMechanic, deleteMechanic,
-        updateMechanicStatus, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, updateBookingImages, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
+        updateMechanicStatus, updateMechanicLocation, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, updateBookingImages, markBookingAsPaid, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
         addOrder, updateOrderStatus, updateSettings, addReviewToMechanic, addBanner, updateBanner, deleteBanner,
         addAdminUser, updateAdminUser, deleteAdminUser, addRole, updateRole, deleteRole,
-        addTask, updateTask, deleteTask, deleteMultipleTasks, updateMultipleTasksStatus
+        addTask, updateTask, deleteTask, deleteMultipleTasks, updateMultipleTasksStatus,
+        addPayoutRequest, processPayoutRequest
     };
 
     return (
@@ -409,4 +454,4 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             {children}
         </DatabaseContext.Provider>
     );
-};
+}

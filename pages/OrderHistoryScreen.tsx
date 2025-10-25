@@ -30,7 +30,7 @@ const OrderCard: React.FC<{ order: Order; isExpanded: boolean; onToggle: () => v
                     <h4 className="font-semibold text-white">Items:</h4>
                     {order.items.map(item => (
                         <div key={item.id} className="flex items-center">
-                            <img src={item.imageUrl} alt={item.name} className="w-12 h-12 rounded-md object-cover mr-3" />
+                            <img src={item.imageUrls[0]} alt={item.name} className="w-12 h-12 rounded-md object-cover mr-3" />
                             <div className="flex-grow">
                                 <p className="text-sm font-medium text-white">{item.name}</p>
                                 <p className="text-xs text-light-gray">Qty: {item.quantity}</p>

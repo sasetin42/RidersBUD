@@ -125,6 +125,7 @@ const VehicleDetailRow: React.FC<{ label: string, value?: string | number }> = (
 
 const MaintenanceHistory: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
     const { db } = useDatabase();
+    const navigate = useNavigate();
     const history = useMemo(() => {
         if (!db) return [];
         return db.bookings
@@ -134,9 +135,17 @@ const MaintenanceHistory: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
 
     return (
         <div className="mt-4 pt-4 border-t border-field animate-fadeIn space-y-3">
-            <h4 className="font-semibold text-primary mb-2">Maintenance History</h4>
+            <div className="flex justify-between items-center mb-2">
+                <h4 className="font-semibold text-primary">Maintenance History</h4>
+                <button 
+                    onClick={() => navigate(`/booking-history/${vehicle.plateNumber}`)}
+                    className="text-xs text-primary font-semibold hover:underline"
+                >
+                    View All
+                </button>
+            </div>
             {history.length > 0 ? (
-                history.map(item => (
+                history.slice(0, 3).map(item => (
                     <div key={item.id} className="bg-field p-3 rounded-md">
                         <div className="flex justify-between items-start">
                             <div>

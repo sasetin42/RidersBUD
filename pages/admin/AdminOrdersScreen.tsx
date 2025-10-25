@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Order, OrderStatus } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -37,7 +36,7 @@ const OrderDetailsModal: React.FC<{ order: Order; onClose: () => void; }> = ({ o
                     <div className="space-y-3">
                         {order.items.map(item => (
                             <div key={item.id} className="flex items-center gap-3 border-b border-admin-border pb-3 last:pb-0 last:border-b-0">
-                                <img src={item.imageUrl} alt={item.name} className="w-14 h-14 rounded-md object-cover" />
+                                <img src={item.imageUrls[0]} alt={item.name} className="w-14 h-14 rounded-md object-cover" />
                                 <div className="flex-grow">
                                     <p className="font-semibold text-sm">{item.name}</p>
                                     <p className="text-xs text-admin-text-secondary">

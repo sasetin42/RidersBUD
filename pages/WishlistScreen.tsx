@@ -16,7 +16,7 @@ const PartWishlistItem: React.FC<{ item: Part }> = ({ item }) => {
 
     return (
         <div className="flex items-center bg-dark-gray p-3 rounded-lg">
-            <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
+            <img src={item.imageUrls[0]} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
             <div className="flex-grow">
                 <h4 className="font-bold text-white">{item.name}</h4>
                 <p className="text-primary font-semibold">₱{item.price.toFixed(2)}</p>

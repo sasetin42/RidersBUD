@@ -1,4 +1,4 @@
-import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory, AdminUser, Role, Task } from '../types';
+import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory, AdminUser, Role, Task, PayoutRequest } from '../types';
 
 // This file now acts as a "seeder" for the database on the first run.
 // It provides the initial state if no data is found in localStorage.
@@ -121,7 +121,12 @@ export const seedParts: Part[] = [
         name: 'Synthetic Engine Oil',
         description: '5 Quarts of 5W-30 Full Synthetic motor oil. Provides excellent engine protection and performance.',
         price: 1750.00,
-        imageUrl: 'https://picsum.photos/seed/engineoil/400/300',
+        salesPrice: 1599.00,
+        imageUrls: [
+            'https://picsum.photos/seed/engineoil/400/300',
+            'https://picsum.photos/seed/engineoil2/400/300',
+            'https://picsum.photos/seed/engineoil3/400/300'
+        ],
         category: 'Engine',
         sku: 'SYN-5W30-5QT',
         stock: 50
@@ -131,18 +136,22 @@ export const seedParts: Part[] = [
         name: 'Ceramic Brake Pads',
         description: 'Front set of premium ceramic brake pads for superior stopping power, low dust, and quiet operation.',
         price: 2999.00,
-        salesPrice: 2499.00,
-        imageUrl: 'https://picsum.photos/seed/brakepads/400/300',
+        imageUrls: [
+            'https://picsum.photos/seed/brakepads/400/300',
+            'https://picsum.photos/seed/brakepads2/400/300'
+        ],
         category: 'Brakes',
         sku: 'CER-PAD-F78',
-        stock: 25
+        stock: 8
     },
     {
         id: 'p3',
         name: 'Engine Air Filter',
         description: 'High-performance pleated paper engine air filter. Improves airflow and engine efficiency.',
         price: 999.00,
-        imageUrl: 'https://picsum.photos/seed/airfilter/400/300',
+        imageUrls: [
+            'https://picsum.photos/seed/airfilter/400/300'
+        ],
         category: 'Engine',
         sku: 'AIR-FIL-H21',
         stock: 0
@@ -152,7 +161,11 @@ export const seedParts: Part[] = [
         name: 'Wiper Blades (Set of 2)',
         description: 'All-weather performance wiper blades for a clear, streak-free wipe. Easy to install.',
         price: 1250.00,
-        imageUrl: 'https://picsum.photos/seed/wipers/400/300',
+        salesPrice: 1099.00,
+        imageUrls: [
+            'https://picsum.photos/seed/wipers/400/300',
+            'https://picsum.photos/seed/wipers2/400/300',
+        ],
         category: 'Exterior',
         sku: 'WPR-BLD-22',
         stock: 100
@@ -430,6 +443,7 @@ export const seedBookings: Booking[] = [
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
         },
+        location: { lat: 14.5510, lng: 121.0232 },
         statusHistory: [
             { status: 'Booking Confirmed', timestamp: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString() },
             { status: 'Mechanic Assigned', timestamp: new Date().toISOString() },
@@ -449,6 +463,8 @@ export const seedBookings: Booking[] = [
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
+        location: { lat: 14.5510, lng: 121.0232 },
+        isPaid: true,
         beforeImages: [],
         afterImages: [],
     },
@@ -464,6 +480,8 @@ export const seedBookings: Booking[] = [
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
+        location: { lat: 14.5510, lng: 121.0232 },
+        isPaid: true,
         beforeImages: [],
         afterImages: [],
     },
@@ -479,6 +497,24 @@ export const seedBookings: Booking[] = [
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
+        location: { lat: 14.5510, lng: 121.0232 },
+        beforeImages: [],
+        afterImages: [],
+    },
+     {
+        id: 'b-unpaid',
+        customerName: 'Juan Dela Cruz',
+        service: seedServices[4], // Body Repair
+        mechanic: seedMechanics[2], // Carlos Rivera
+        date: new Date(new Date().setDate(new Date().getDate() - 5)).toISOString().split('T')[0],
+        time: '10:00 AM',
+        status: 'Completed',
+        vehicle: { 
+            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png', isPrimary: false,
+            vin: 'JT1AZ01Z000654321', mileage: 45000, insuranceProvider: 'BPI/MS Insurance', insurancePolicyNumber: 'POL-123456789'
+        },
+        location: { lat: 14.5510, lng: 121.0232 },
+        isPaid: false,
         beforeImages: [],
         afterImages: [],
     },
@@ -494,6 +530,7 @@ export const seedBookings: Booking[] = [
             make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png', isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         },
+        location: { lat: 14.6042, lng: 121.0485 },
         beforeImages: [],
         afterImages: [],
     },
@@ -508,6 +545,7 @@ export const seedBookings: Booking[] = [
             make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'DEF 456', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png', isPrimary: false,
             vin: 'TY1AZ01Z000445566', mileage: 35000, insuranceProvider: 'Geico', insurancePolicyNumber: 'POL-GC-778899'
         },
+        location: { lat: 14.6521, lng: 121.0333 },
         beforeImages: [],
         afterImages: [],
     },
@@ -522,6 +560,7 @@ export const seedBookings: Booking[] = [
             make: 'Ford', model: 'Everest', year: 2023, plateNumber: 'GHI 123', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_blue.png', isPrimary: true,
             vin: 'FD1AZ01Z000778899', mileage: 5000, insuranceProvider: 'Allstate', insurancePolicyNumber: 'POL-AS-112233'
         },
+        location: { lat: 14.5510, lng: 121.0232 }, // Placeholder
         beforeImages: [],
         afterImages: [],
     },
@@ -536,6 +575,7 @@ export const seedBookings: Booking[] = [
             make: 'Hyundai', model: 'Tucson', year: 2020, plateNumber: 'JKL 789', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_gray.png', isPrimary: true,
             vin: 'HY1AZ01Z000998877', mileage: 60000, insuranceProvider: 'Progressive', insurancePolicyNumber: 'POL-PG-665544'
         },
+        location: { lat: 14.5510, lng: 121.0232 }, // Placeholder
         beforeImages: [],
         afterImages: [],
     }
@@ -556,6 +596,14 @@ export const seedCustomers: Customer[] = [
             { 
                 make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png', isPrimary: false,
                 vin: 'JT1AZ01Z000654321', mileage: 45000, insuranceProvider: 'BPI/MS Insurance', insurancePolicyNumber: 'POL-123456789'
+            },
+             { 
+                make: 'Ford', model: 'Ranger', year: 2022, plateNumber: 'RAP 888', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_red.png', isPrimary: false,
+                vin: 'FD1RAPTOR00012345', mileage: 32000, insuranceProvider: 'FPG Insurance', insurancePolicyNumber: 'POL-FPG-456789'
+            },
+            { 
+                make: 'Nissan', model: 'Navara', year: 2020, plateNumber: 'NAV 777', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_black.png', isPrimary: false,
+                vin: 'NS1NVRA000777', mileage: 55000, insuranceProvider: 'Standard Insurance', insurancePolicyNumber: 'POL-STD-555444'
             }
         ],
         picture: 'https://picsum.photos/seed/juan/200/200',
@@ -676,6 +724,36 @@ export const seedTasks: Task[] = [
     }
 ];
 
+export const seedPayouts: PayoutRequest[] = [
+    {
+        id: 'po1',
+        mechanicId: 'm1',
+        mechanicName: 'Ricardo Reyes',
+        amount: 5000,
+        requestDate: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString(),
+        status: 'Pending',
+    },
+    {
+        id: 'po2',
+        mechanicId: 'm2',
+        mechanicName: 'Jane Smith',
+        amount: 3500,
+        requestDate: new Date(new Date().setDate(new Date().getDate() - 3)).toISOString(),
+        status: 'Approved',
+        processDate: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString(),
+    },
+    {
+        id: 'po3',
+        mechanicId: 'm3',
+        mechanicName: 'Carlos Rivera',
+        amount: 8000,
+        requestDate: new Date(new Date().setDate(new Date().getDate() - 5)).toISOString(),
+        status: 'Rejected',
+        processDate: new Date(new Date().setDate(new Date().getDate() - 4)).toISOString(),
+        rejectionReason: 'Payout details do not match bank records.',
+    }
+];
+
 export const seedBanners: Banner[] = [
     {
         id: 'banner1',
@@ -745,6 +823,9 @@ Your responses should be friendly, conversational, and easy to understand. Keep 
     adminSidebarLogoUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_icon.png',
     serviceCategories: ['Maintenance', 'Repair', 'Emergency', 'Diagnostics'],
     partCategories: ['Engine', 'Brakes', 'Exterior'],
+    minimumPayout: 1000,
+    maximumPayout: 50000,
+    payoutSchedule: 'Manual',
 };
 
 export const seedFaqs: FAQCategory[] = [
@@ -806,4 +887,5 @@ export const getSeedData = () => ({
     adminUsers: seedAdminUsers,
     roles: seedRoles,
     tasks: seedTasks,
+    payouts: seedPayouts,
 });

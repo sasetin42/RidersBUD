@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import SplashScreen from './pages/SplashScreen';
@@ -59,11 +60,12 @@ import AdminOrdersScreen from './pages/admin/AdminOrdersScreen';
 import MechanicTasksScreen from './pages/mechanic/MechanicTasksScreen';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import NotificationToasts from './components/NotificationToasts';
+import AdminPayoutsScreen from './pages/admin/AdminPayoutsScreen';
+import ServicePaymentScreen from './pages/ServicePaymentScreen';
+import ServicePaymentConfirmationScreen from './pages/ServicePaymentConfirmationScreen';
 
 const usePrevious = <T,>(value: T) => {
-    // FIX: The `useRef` hook requires an initial value. Initialize with `undefined`
-    // and update the type to `T | undefined` to correctly track the previous value.
-    const ref = useRef<T | undefined>(undefined);
+    const ref = useRef<T | undefined>();
     useEffect(() => {
         ref.current = value;
     }, [value]);
@@ -120,8 +122,7 @@ const AppContent: React.FC = () => {
     const { openChatIds } = useChatNotification();
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     
-    // FIX: Pass 'db' to the 'usePrevious' hook to correctly track its previous value.
-    const prevDb = usePrevious(db);
+    const prevDb = usePrevious<Database | null>(db);
     
     // Effect to generate notifications based on database changes
     useEffect(() => {
@@ -174,6 +175,21 @@ const AppContent: React.FC = () => {
                     link: `/mechanic/job/${job.id}`,
                     recipientId: `mechanic-${mechanic.id}`
                 });
+            });
+
+            // 3. Payment Received
+            db.bookings.forEach(currentBooking => {
+                if (currentBooking.mechanic?.id !== mechanic.id) return;
+                const oldBooking = prevDb.bookings.find(b => b.id === currentBooking.id);
+                if (oldBooking && oldBooking.isPaid !== true && currentBooking.isPaid === true) {
+                    addNotification({
+                        type: 'general',
+                        title: 'Payment Received!',
+                        message: `You've received a payment of ₱${currentBooking.service.price.toLocaleString()} for booking #${currentBooking.id.slice(-6)}.`,
+                        link: `/mechanic/earnings`,
+                        recipientId: `mechanic-${mechanic.id}`
+                    });
+                }
             });
         }
 
@@ -274,6 +290,7 @@ const AppContent: React.FC = () => {
                                     <Route path="mechanics" element={<AdminMechanicsScreen />} />
                                     <Route path="bookings" element={<AdminBookingsScreen />} />
                                     <Route path="orders" element={<AdminOrdersScreen />} />
+                                    <Route path="payouts" element={<AdminPayoutsScreen />} />
                                     <Route path="customers" element={<AdminCustomersScreen />} />
                                     <Route path="analytics" element={<AdminAnalyticsScreen />} />
                                     <Route path="marketing" element={<AdminMarketingScreen />} />
@@ -332,7 +349,9 @@ const AppContent: React.FC = () => {
                                             <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
                                             <Route path="/cart" element={<CartScreen />} />
                                             <Route path="/payment" element={<PaymentScreen />} />
+                                            <Route path="/service-payment" element={<ServicePaymentScreen />} />
                                             <Route path="/order-confirmation" element={<OrderConfirmationScreen />} />
+                                            <Route path="/service-payment-confirmation" element={<ServicePaymentConfirmationScreen />} />
                                             <Route path="/profile" element={<ProfileScreen />} />
                                             <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
                                             <Route path="/my-garage" element={<MyGarageScreen />} />
@@ -358,11 +377,12 @@ const AppContent: React.FC = () => {
                                 <>
                                     <button
                                         onClick={() => setIsAssistantOpen(true)}
-                                        className="absolute bottom-20 right-5 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition-transform transform hover:scale-110 active:scale-100 z-40"
+                                        className="absolute bottom-20 right-5 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition-transform transform hover:scale-110 active:scale-100 z-[5]"
                                         aria-label="Open AI Assistant"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fillRule="evenodd" d="M9.628 2.034a1 1 0 011.744 0l1.494 3.026a1 1 0 00.745.542l3.32.483a1 1 0 01.554 1.705l-2.402 2.34a1 1 0 00-.287.885l.568 3.306a1 1 0 01-1.45 1.054l-2.968-1.56a1 1 0 00-.932 0l-2.968 1.56a1 1 0 01-1.45-1.054l.568-3.306a1 1 0 00-.287-.885l-2.402-2.34a1 1 0 01.554-1.705l3.32-.483a1 1 0 00.745-.542L9.628 2.034z" clipRule="evenodd" />
+                                          <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
+                                          <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
                                         </svg>
                                     </button>
                                     <BottomNav />

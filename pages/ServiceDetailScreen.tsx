@@ -76,7 +76,6 @@ const ServiceDetailScreen: React.FC = () => {
         );
     }
     
-    const virtualMechanicName = db?.settings.virtualMechanicName || 'an Assistant';
     const isWishlisted = isInWishlist(service.id);
 
     const handleToggleWishlist = () => {
@@ -87,13 +86,8 @@ const ServiceDetailScreen: React.FC = () => {
         }
     };
 
-    const buttonText = service.price > 0 ? 'Book Now' : 'Request a Quote';
-    const handlePrimaryAction = () => {
-        if (service.price > 0) {
-            navigate(`/booking/${service.id}`);
-        } else {
-            setIsChatOpen(true);
-        }
+    const handleBookNow = () => {
+        navigate(`/booking/${service.id}`);
     };
 
     return (
@@ -165,10 +159,10 @@ const ServiceDetailScreen: React.FC = () => {
                     Chat
                 </button>
                 <button 
-                    onClick={handlePrimaryAction} 
+                    onClick={handleBookNow} 
                     className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition-all duration-300 ease-in-out transform hover:scale-[1.03] hover:shadow-lg hover:shadow-primary/40 active:scale-100"
                 >
-                    {buttonText}
+                    Book Now
                 </button>
             </div>
              {isChatOpen && <ChatModal service={service} onClose={() => setIsChatOpen(false)} />}

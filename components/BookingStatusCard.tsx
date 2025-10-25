@@ -71,7 +71,7 @@ const statusColors: { [key in BookingStatus]: string } = {
 };
 
 
-const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean }> = ({ booking, showHeader = true }) => {
+const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean; onTrack?: (booking: Booking) => void; }> = ({ booking, showHeader = true, onTrack }) => {
     const { cancelBooking } = useDatabase();
     const { user: customer } = useAuth();
     const [isCancelling, setIsCancelling] = useState(false);
@@ -190,6 +190,16 @@ const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean }> = 
                             className="flex-1 bg-blue-500/10 text-blue-300 font-bold py-3 rounded-lg hover:bg-blue-500/20 transition"
                         >
                             Set Reminder
+                        </button>
+                    </div>
+                )}
+                {booking.status === 'En Route' && onTrack && (
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => onTrack(booking)}
+                            className="flex-1 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition"
+                        >
+                            Track Mechanic Live
                         </button>
                     </div>
                 )}

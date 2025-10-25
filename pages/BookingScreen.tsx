@@ -1,10 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Spinner from '../components/Spinner';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import { Service, Mechanic, Booking, Vehicle, Settings } from '../types';
 import { getNotificationSettings, showNotification } from '../utils/notificationManager';
+
+declare const L: any;
 
 const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, onSelect: () => void }> = ({ service, isSelected, onSelect }) => (
     <div
@@ -76,7 +78,7 @@ const MechanicAvailabilityCard: React.FC<{
                 <div className="flex-grow">
                     <p className="text-xl font-bold text-white">{mechanic.name}</p>
                     <div className="flex items-center gap-1.5 text-sm text-yellow-400 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
                         <span className="font-semibold">{mechanic.rating.toFixed(1)}</span>
                         <span className="text-xs text-light-gray">({mechanic.reviews} jobs)</span>
                     </div>
@@ -136,7 +138,6 @@ const getInitialState = (serviceIdFromUrl?: string) => {
         if (savedStateJSON) {
             const savedState = JSON.parse(savedStateJSON);
             
-            // If a new booking flow is started via URL, invalidate the old state.
             if (serviceIdFromUrl && savedState.selectedServiceId && savedState.selectedServiceId !== serviceIdFromUrl) {
                 sessionStorage.removeItem(BOOKING_STATE_KEY);
                 return null;
@@ -164,11 +165,9 @@ const BookingScreen: React.FC = () => {
 
     const rebookingState = location.state as { vehiclePlateNumber?: string; } | undefined;
 
-    // Use a lazy initializer to read from sessionStorage only on the first render
     const [step, setStep] = useState(() => getInitialState(initialServiceId)?.step || 1);
     const [error, setError] = useState('');
 
-    // Step 1 State
     const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(() => getInitialState(initialServiceId)?.selectedServiceId || initialServiceId);
     const [selectedVehiclePlate, setSelectedVehiclePlate] = useState(() => 
         rebookingState?.vehiclePlateNumber || 
@@ -176,10 +175,12 @@ const BookingScreen: React.FC = () => {
         ''
     );
     
-    // Step 2 State
     const [selectedDate, setSelectedDate] = useState(() => getInitialState(initialServiceId)?.selectedDate || new Date(new Date().setDate(new Date().getDate() + 1)));
     
-    // Step 3 State
+    const [serviceLocation, setServiceLocation] = useState<{ lat: number; lng: number } | null>(() => getInitialState(initialServiceId)?.serviceLocation || null);
+    const [locationStatus, setLocationStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
+    const [locationError, setLocationError] = useState('');
+    
     const [mechanicSearch, setMechanicSearch] = useState(() => getInitialState(initialServiceId)?.mechanicSearch || '');
     const [specializationFilter, setSpecializationFilter] = useState(() => getInitialState(initialServiceId)?.specializationFilter || 'all');
     const [sortOption, setSortOption] = useState<'rating' | 'jobs' | 'name'>(() => getInitialState(initialServiceId)?.sortOption || 'rating');
@@ -187,33 +188,83 @@ const BookingScreen: React.FC = () => {
     const [selectedTime, setSelectedTime] = useState('');
     const [selectedMechanic, setSelectedMechanic] = useState<Mechanic | null>(null);
 
-    // Step 4 State
     const [notes, setNotes] = useState('');
     const [isBooking, setIsBooking] = useState(false);
 
-    // Effect to set initial vehicle if one isn't already selected from session/rebooking state
+    // Hooks for Step 3 Map - moved to top level to fix conditional hook call error
+    const mapRef = useRef<HTMLDivElement>(null);
+    const mapInstanceRef = useRef<any>(null);
+    const markerRef = useRef<any>(null);
+
     useEffect(() => {
         if (user && user.vehicles.length > 0 && !selectedVehiclePlate) {
             const primaryVehicle = user.vehicles.find(v => v.isPrimary);
-            // Default to primary, or fallback to the first vehicle if none is primary.
             setSelectedVehiclePlate(primaryVehicle?.plateNumber || user.vehicles[0].plateNumber);
         }
     }, [user, selectedVehiclePlate]);
 
-    // Effect to save state to sessionStorage whenever it changes
     useEffect(() => {
         const stateToSave = {
             step,
             selectedServiceId,
             selectedVehiclePlate,
             selectedDate: selectedDate.toISOString(),
+            serviceLocation,
             mechanicSearch,
             specializationFilter,
             sortOption,
             availableNowFilter,
         };
         sessionStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-    }, [step, selectedServiceId, selectedVehiclePlate, selectedDate, mechanicSearch, specializationFilter, sortOption, availableNowFilter]);
+    }, [step, selectedServiceId, selectedVehiclePlate, selectedDate, serviceLocation, mechanicSearch, specializationFilter, sortOption, availableNowFilter]);
+
+    // Geolocation effect for Step 3
+    useEffect(() => {
+        if (step === 3 && locationStatus === 'idle' && !serviceLocation) {
+            setLocationStatus('fetching');
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    setServiceLocation({ lat: latitude, lng: longitude });
+                    setLocationStatus('success');
+                    setLocationError('');
+                },
+                (error) => {
+                    console.error("Geolocation error:", error);
+                    setLocationStatus('error');
+                    setLocationError('Could not get your location. Please enable location services and try again.');
+                }
+            );
+        }
+    }, [step, locationStatus, serviceLocation]);
+
+    // Map initialization effect for Step 3
+    useEffect(() => {
+        if (step === 3 && serviceLocation && mapRef.current && !mapInstanceRef.current && typeof L !== 'undefined') {
+            mapInstanceRef.current = L.map(mapRef.current).setView([serviceLocation.lat, serviceLocation.lng], 16);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
+
+            const locationIcon = L.divIcon({
+                html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-primary animate-pulse" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>`,
+                className: 'bg-transparent border-0',
+                iconSize: [40, 40],
+                iconAnchor: [20, 40]
+            });
+
+            markerRef.current = L.marker([serviceLocation.lat, serviceLocation.lng], { icon: locationIcon, draggable: true }).addTo(mapInstanceRef.current);
+            markerRef.current.on('dragend', (e: any) => {
+                const { lat, lng } = e.target.getLatLng();
+                setServiceLocation({ lat, lng });
+            });
+        }
+
+        return () => {
+            if (mapInstanceRef.current) {
+                mapInstanceRef.current.remove();
+                mapInstanceRef.current = null;
+            }
+        };
+    }, [step, serviceLocation]);
 
 
     const handleBack = () => {
@@ -229,8 +280,9 @@ const BookingScreen: React.FC = () => {
         switch(step) {
             case 1: return 'Select Service & Vehicle';
             case 2: return 'Select a Date';
-            case 3: return 'Select Mechanic & Time';
-            case 4: return 'Confirm Booking';
+            case 3: return 'Confirm Service Location';
+            case 4: return 'Select Mechanic & Time';
+            case 5: return 'Confirm Booking';
             default: return 'Book a Service';
         }
     };
@@ -263,7 +315,6 @@ const BookingScreen: React.FC = () => {
         let availableMechanics = mechanics.filter(mechanic => {
             if (mechanic.status !== 'Active') return false;
 
-            // Check specific unavailable dates first
             if (mechanic.unavailableDates?.some(d => {
                 const start = new Date(d.startDate.replace(/-/g, '/'));
                 const end = new Date(d.endDate.replace(/-/g, '/'));
@@ -274,10 +325,8 @@ const BookingScreen: React.FC = () => {
                 return false;
             }
 
-            // Check weekly availability
             if (!mechanic.availability?.[selectedDayOfWeek]?.isAvailable) return false;
             
-            // Implicitly filter by service specialization
             if (selectedService) {
                 const serviceNameLower = selectedService.name.toLowerCase();
                 const serviceCategoryLower = selectedService.category.toLowerCase();
@@ -296,10 +345,8 @@ const BookingScreen: React.FC = () => {
                 if (!hasSpecializationMatch && !hasCategoryMatch) return false;
             }
 
-            // Apply manual specialization filter from dropdown
             if (specializationFilter !== 'all' && !mechanic.specializations.includes(specializationFilter)) return false;
 
-            // Apply "Available Now" filter
             if (availableNowFilter && isToday) {
                 const schedule = mechanic.availability?.[selectedDayOfWeek];
                 if (!schedule?.isAvailable) return false;
@@ -311,13 +358,11 @@ const BookingScreen: React.FC = () => {
                 }
             }
             
-            // Apply search filter
             if (mechanicSearch && !mechanic.name.toLowerCase().includes(mechanicSearch.toLowerCase())) return false;
 
             return true;
         });
 
-        // Apply sorting
         availableMechanics.sort((a, b) => {
             switch (sortOption) {
                 case 'rating': return b.rating - a.rating;
@@ -342,16 +387,21 @@ const BookingScreen: React.FC = () => {
         else { setError(''); setStep(3); }
     };
 
+    const handleStep3Continue = () => {
+        if (!serviceLocation) setError('Please confirm your location.');
+        else { setError(''); setStep(4); }
+    };
+
     const handleSelectTimeSlot = (mechanic: Mechanic, time: string) => {
         setSelectedMechanic(mechanic);
         setSelectedTime(time);
-        setStep(4);
+        setStep(5);
     };
     
     const handleBooking = async () => {
         const selectedService = services.find(s => s.id === selectedServiceId);
         const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
-        if (!selectedService || !user || !selectedMechanic || !selectedVehicle) {
+        if (!selectedService || !user || !selectedMechanic || !selectedVehicle || !serviceLocation) {
             setError('Missing booking information. Please start over.');
             return;
         }
@@ -368,6 +418,7 @@ const BookingScreen: React.FC = () => {
                 status: 'Upcoming' as const,
                 vehicle: selectedVehicle,
                 mechanic: selectedMechanic,
+                location: serviceLocation,
                 notes,
             };
             const newlyCreatedBooking = await addBooking(newBookingData);
@@ -487,7 +538,7 @@ const BookingScreen: React.FC = () => {
                 <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
                      {error && <p className="text-red-400 text-center text-sm mb-2">{error}</p>}
                     <button onClick={handleStep2Continue} disabled={!selectedDate} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
-                        See Available Mechanics
+                        Continue
                     </button>
                 </div>
             </>
@@ -495,18 +546,54 @@ const BookingScreen: React.FC = () => {
     };
 
     const renderStep3 = () => {
+        const retryLocation = () => {
+            setLocationStatus('idle');
+            setServiceLocation(null);
+        };
+    
+        return (
+            <>
+                <div className="p-6 flex-grow flex flex-col">
+                    <h3 className="text-lg font-semibold text-white">Confirm Service Location</h3>
+                    <p className="text-sm text-light-gray mb-4">Your mechanic will be dispatched here. Drag the pin to adjust if needed.</p>
+                    <div className="flex-grow bg-dark-gray rounded-lg relative overflow-hidden">
+                        {locationStatus === 'fetching' && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-dark-gray z-10">
+                                <Spinner size="lg" />
+                                <p className="mt-4 text-light-gray">Getting your location...</p>
+                            </div>
+                        )}
+                        {locationStatus === 'error' && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-dark-gray z-10 p-4 text-center">
+                                <p className="text-red-400">{locationError}</p>
+                                <button onClick={retryLocation} className="mt-4 bg-primary text-white font-semibold py-2 px-4 rounded-lg">Try Again</button>
+                            </div>
+                        )}
+                        <div ref={mapRef} className={`h-full w-full transition-opacity ${locationStatus === 'success' ? 'opacity-100' : 'opacity-0'}`} />
+                    </div>
+                </div>
+                <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
+                    <button onClick={handleStep3Continue} disabled={locationStatus !== 'success'} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
+                        Confirm Location & See Mechanics
+                    </button>
+                </div>
+            </>
+        );
+    };
+
+    const renderStep4 = () => {
         const isToday = selectedDate.toDateString() === new Date().toDateString();
         const selectedService = services.find(s => s.id === selectedServiceId);
 
         return (
-             <div className="p-4 space-y-4 flex-grow flex flex-col overflow-hidden">
+            <div className="p-4 space-y-4 flex-grow overflow-y-auto">
                 {selectedService && (
-                    <div className="text-center text-sm text-light-gray -mt-2 mb-2 flex-shrink-0 bg-field p-2 rounded-md border border-dark-gray">
+                    <div className="text-center text-sm text-light-gray -mt-2 mb-2 bg-field p-2 rounded-md border border-dark-gray">
                         <p>Showing mechanics specializing in <strong>{selectedService.name}</strong>.</p>
                     </div>
                 )}
                 
-                <div className="bg-field p-3 rounded-lg border border-dark-gray flex-shrink-0">
+                <div className="bg-field p-3 rounded-lg border border-dark-gray">
                     <h4 className="text-sm font-semibold text-light-gray mb-3">Refine Your Search</h4>
                     <div className="space-y-3">
                         {isToday && (
@@ -558,7 +645,7 @@ const BookingScreen: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-grow overflow-y-auto space-y-4 pt-2">
+                <div className="space-y-4 pt-2">
                     {filteredAndSortedMechanics.length === 0 ? (
                         <p className="text-center text-light-gray pt-8">No mechanics found matching your criteria for this day.</p>
                     ) : (
@@ -578,7 +665,7 @@ const BookingScreen: React.FC = () => {
         );
     };
 
-    const renderStep4 = () => {
+    const renderStep5 = () => {
         const selectedService = services.find(s => s.id === selectedServiceId);
         const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
         
@@ -640,6 +727,7 @@ const BookingScreen: React.FC = () => {
             {step === 2 && renderStep2()}
             {step === 3 && renderStep3()}
             {step === 4 && renderStep4()}
+            {step === 5 && renderStep5()}
         </div>
     );
 };

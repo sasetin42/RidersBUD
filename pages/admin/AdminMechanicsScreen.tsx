@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Mechanic } from '../../types';
 import Modal from '../../components/admin/Modal';
@@ -44,7 +43,6 @@ const MechanicFormModal: React.FC<{
                 password: formData.password || mechanic.password // Keep old password if new one is not provided
             });
         } else {
-             // Fix: Added missing registrationDate and birthday properties to satisfy the type constraints of the onSave function parameter.
              onSave({
                 ...formData,
                 password: formData.password || 'password123', // Default password for new mechanics
@@ -102,14 +100,11 @@ const AdminMechanicsScreen: React.FC = () => {
         if ('id' in mechanicData) {
             updateMechanic(mechanicData);
         } else {
-            // Fix: Add missing properties for new mechanics.
             addMechanic({
                 ...mechanicData,
                 status: 'Pending',
                 rating: 0,
                 reviews: 0,
-                registrationDate: new Date().toISOString().split('T')[0],
-                birthday: ''
             });
         }
         setIsFormModalOpen(false);

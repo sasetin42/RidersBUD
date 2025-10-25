@@ -45,7 +45,6 @@ const MechanicSignUpScreen: React.FC = () => {
         
         setIsLoading(true);
         try {
-            // Fix: Add missing 'registrationDate' and 'birthday' properties to satisfy the Mechanic type.
             await register({
                 ...formData,
                 basePrice: formData.basePrice ? Number(formData.basePrice) : undefined,

@@ -165,7 +165,7 @@ const MechanicTasksScreen: React.FC = () => {
                                 <div className="flex flex-col items-end gap-2">
                                     <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${priorityColors[task.priority]}`}>{task.priority}</span>
                                     <button onClick={() => handleToggleComplete(task)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${task.isComplete ? 'bg-primary border-primary' : 'border-gray-500'}`} aria-label={`Mark task as ${task.isComplete ? 'incomplete' : 'complete'}`}>
-                                        {task.isComplete && <svg xmlns="http://www.w.3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                        {task.isComplete && <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                     </button>
                                 </div>
                             </div>

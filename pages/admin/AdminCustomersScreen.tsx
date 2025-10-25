@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Customer, Vehicle } from '../../types';
 import Modal from '../../components/admin/Modal';
@@ -19,7 +20,7 @@ const StatCard: React.FC<{ title: string; value: number | string; icon: React.Re
 const CustomerFormModal: React.FC<{ 
     customer?: Customer; 
     onClose: () => void; 
-    onSave: (customer: Customer | Omit<Customer, 'id' | 'vehicles'>) => void; 
+    onSave: (customer: Customer | Omit<Customer, 'id'>) => void; 
     onDelete?: (id: string) => void;
 }> = ({ customer, onClose, onSave, onDelete }) => {
     const [formData, setFormData] = useState({
@@ -37,7 +38,7 @@ const CustomerFormModal: React.FC<{
                 password: formData.password || customer.password
             });
         } else {
-            onSave({ ...formData, password: formData.password || 'password' });
+            onSave({ ...formData, password: formData.password || 'password', vehicles: [] });
         }
     };
     
@@ -126,12 +127,11 @@ const AdminCustomersScreen: React.FC = () => {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>
     }
 
-    const handleSaveCustomer = (customerData: Customer | Omit<Customer, 'id' | 'vehicles'>) => {
+    const handleSaveCustomer = (customerData: Customer | Omit<Customer, 'id'>) => {
         if ('id' in customerData) {
             updateCustomer(customerData);
         } else {
-            // FIX: Add the missing 'vehicles' property with a default empty array.
-            addCustomer({ ...customerData, vehicles: [] });
+            addCustomer(customerData);
         }
         setViewingCustomer(null);
     };

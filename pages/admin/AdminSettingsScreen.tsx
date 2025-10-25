@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Settings, Role, AdminModule, PermissionLevel } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -119,51 +120,6 @@ const ToggleSwitch: React.FC<{ label: string; enabled: boolean; onChange: (enabl
       </button>
     </div>
   );
-};
-
-const CategoryManager: React.FC<{
-    title: string;
-    categories: string[];
-    onAdd: (category: string) => void;
-    onDelete: (category: string) => void;
-}> = ({ title, categories, onAdd, onDelete }) => {
-    const [newCategory, setNewCategory] = useState('');
-
-    const handleAdd = () => {
-        if (newCategory.trim() && !categories.map(c => c.toLowerCase()).includes(newCategory.trim().toLowerCase())) {
-            onAdd(newCategory.trim());
-            setNewCategory('');
-        }
-    };
-
-    return (
-        <div>
-            <h3 className="text-lg font-bold text-admin-text-primary mb-3">{title}</h3>
-            <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg p-2 rounded-md">
-                {categories.map(cat => (
-                    <div key={cat} className="flex items-center justify-between bg-admin-card p-2 rounded">
-                        <span className="text-sm text-admin-text-primary">{cat}</span>
-                        <button onClick={() => onDelete(cat)} className="text-red-400 hover:text-red-300">
-                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
-                    </div>
-                ))}
-            </div>
-            <div className="flex gap-2">
-                <input
-                    type="text"
-                    value={newCategory}
-                    onChange={e => setNewCategory(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                    placeholder="Add new category..."
-                    className="flex-grow p-2 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary"
-                />
-                <button onClick={handleAdd} className="bg-admin-accent text-white font-bold py-2 px-4 rounded hover:bg-orange-600">Add</button>
-            </div>
-        </div>
-    );
 };
 
 const AdminSettingsScreen: React.FC = () => {
@@ -344,25 +300,6 @@ const AdminSettingsScreen: React.FC = () => {
                                     <label className="block text-sm font-medium text-admin-text-secondary mb-1">Business Address</label>
                                     <input type="text" name="address" value={settings.address} onChange={handleChange} className="w-full p-3 bg-admin-bg border border-admin-border rounded placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent" />
                                 </div>
-                            </div>
-                        </div>
-
-                        {/* Catalog Settings */}
-                        <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
-                            <h2 className="text-xl font-bold mb-4">Catalog Settings</h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <CategoryManager
-                                    title="Service Categories"
-                                    categories={settings.serviceCategories}
-                                    onAdd={(cat) => handleLocalSettingsChange({ serviceCategories: [...settings.serviceCategories, cat] })}
-                                    onDelete={(cat) => handleLocalSettingsChange({ serviceCategories: settings.serviceCategories.filter(c => c !== cat) })}
-                                />
-                                <CategoryManager
-                                    title="Part Categories"
-                                    categories={settings.partCategories}
-                                    onAdd={(cat) => handleLocalSettingsChange({ partCategories: [...settings.partCategories, cat] })}
-                                    onDelete={(cat) => handleLocalSettingsChange({ partCategories: settings.partCategories.filter(c => c !== cat) })}
-                                />
                             </div>
                         </div>
 

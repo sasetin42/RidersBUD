@@ -139,7 +139,7 @@ const MechanicJobProgressModal: React.FC<{
         mapInstanceRef.current = L.map(mapRef.current).setView([customer.lat, customer.lng], 15);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
         const workIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734-2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
+            html: `<svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734-2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
             className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 16]
         });
         L.marker([customer.lat, customer.lng], { icon: workIcon }).addTo(mapInstanceRef.current).bindPopup("Service Location");
@@ -222,16 +222,36 @@ const MechanicJobProgressModal: React.FC<{
 
 const MechanicJobDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
-    const { db, updateBookingStatus, loading } = useDatabase();
+    const { db, updateBookingStatus, updateMechanicLocation, loading } = useDatabase();
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isDirectionsOpen, setIsDirectionsOpen] = useState(false);
     const [showAwaitingPaymentModal, setShowAwaitingPaymentModal] = useState(false);
     const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
+    const watchIdRef = useRef<number | null>(null);
     
     const booking = db?.bookings.find(b => b.id === bookingId);
     const customer = db?.customers.find(c => c.name === booking?.customerName);
     const vehicle = booking?.vehicle;
     
+    // Cleanup GPS tracking on unmount or when job is no longer active
+    useEffect(() => {
+        const isJobActive = booking?.status === 'En Route' || booking?.status === 'In Progress';
+        
+        if (!isJobActive && watchIdRef.current !== null) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+            console.log("Geolocation tracking stopped.");
+        }
+
+        return () => {
+            if (watchIdRef.current !== null) {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+                console.log("Geolocation tracking stopped on unmount.");
+            }
+        };
+    }, [booking?.status]);
+
     if (loading || !db) {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" /></div>;
     }
@@ -254,17 +274,54 @@ const MechanicJobDetailScreen: React.FC = () => {
             alert("Customer location data is not available for navigation.");
         }
     };
+    
+    const handleAcceptJob = () => {
+        if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser.");
+            return;
+        }
 
-    // Fix: Changed parameter type from BookingStatus to string to match event value type.
+        if (!booking.mechanic) {
+            alert("Cannot start job: mechanic data is missing.");
+            return;
+        }
+
+        const mechanicId = booking.mechanic.id;
+
+        // First, get current position to check for permissions
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                // Permission granted, now start watching.
+                updateBookingStatus(booking.id, 'En Route');
+                
+                const { latitude, longitude } = position.coords;
+                updateMechanicLocation(mechanicId, { lat: latitude, lng: longitude });
+
+                watchIdRef.current = navigator.geolocation.watchPosition(
+                    (pos) => {
+                        console.log("Updating mechanic location:", pos.coords.latitude, pos.coords.longitude);
+                        updateMechanicLocation(mechanicId, { lat: pos.coords.latitude, lng: pos.coords.longitude });
+                    },
+                    (err) => {
+                        console.warn(`Geolocation watch error (${err.code}): ${err.message}`);
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            },
+            () => {
+                alert("Location access denied. You must enable location services to start this job.");
+            }
+        );
+    };
+
     const handleStatusChange = (newStatus: string) => {
-        // Fix: Cast the string to BookingStatus before calling the update function.
         updateBookingStatus(booking.id, newStatus as BookingStatus);
         if (newStatus === 'Completed') {
             setShowAwaitingPaymentModal(true);
         }
     };
 
-    const statusOptions: BookingStatus[] = ['Upcoming', 'En Route', 'In Progress', 'Completed'];
+    const statusOptions: BookingStatus[] = ['En Route', 'In Progress', 'Completed'];
 
     return (
         <div className="flex flex-col h-full bg-secondary">
@@ -317,7 +374,17 @@ const MechanicJobDetailScreen: React.FC = () => {
                 </div>
                 
                 {/* Status Management */}
-                {booking.status !== 'Completed' && (
+                {['Upcoming', 'Mechanic Assigned'].includes(booking.status) ? (
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <button 
+                            onClick={handleAcceptJob}
+                            className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition"
+                        >
+                            Accept Job & Start Travel
+                        </button>
+                         <p className="text-xs text-light-gray mt-2 text-center">This will notify the customer and start sharing your live location.</p>
+                    </div>
+                ) : booking.status !== 'Completed' && booking.status !== 'Cancelled' && (
                     <div className="bg-dark-gray p-4 rounded-lg">
                         <h3 className="text-lg font-semibold text-white mb-2">Manage Status</h3>
                         <select

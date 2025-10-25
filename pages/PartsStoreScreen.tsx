@@ -55,9 +55,14 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
     const navigate = useNavigate();
 
     const isWishlisted = isInWishlist(part.id);
+    const hasSale = part.salesPrice && part.salesPrice < part.price;
+    const stockStatus = part.stock > 10 ? 'in-stock' : part.stock > 0 ? 'low-stock' : 'out-of-stock';
+    const canAddToCart = stockStatus !== 'out-of-stock';
+
 
     const handleAddToCart = (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!canAddToCart) return;
         addToCart(part);
         setIsAdded(true);
         setTimeout(() => setIsAdded(false), 2000);
@@ -72,13 +77,15 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
     return (
         <div 
             onClick={() => navigate(`/part/${part.id}`)}
-            className="bg-dark-gray rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 cursor-pointer"
+            className="bg-dark-gray rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 cursor-pointer border border-transparent hover:border-primary/30"
         >
             <div className="relative">
-                <img src={part.imageUrl} alt={part.name} className="w-full h-28 object-cover" />
-                {part.stock === 0 && (
-                    <div className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">OUT OF STOCK</div>
+                <img src={part.imageUrls[0]} alt={part.name} className="w-full h-32 object-cover" />
+                
+                {hasSale && (
+                    <div className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">SALE</div>
                 )}
+                 
                  <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <button onClick={(e) => { e.stopPropagation(); onToggleCompare(part); }} className={`bg-black/40 backdrop-blur-sm rounded-full p-2 z-10 transition-all duration-200 hover:scale-110 ${isComparing ? 'bg-primary/80 text-white' : 'text-white'}`} aria-label="Compare">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
@@ -86,25 +93,35 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
                 </div>
             </div>
             <div className="p-3 flex-grow flex flex-col">
-                <h3 className="text-[12px] font-medium text-white leading-tight flex-grow">{part.name}</h3>
+                <h3 className="text-sm font-semibold text-white leading-tight flex-grow group-hover:text-primary transition-colors">{part.name}</h3>
                 
-                <div className="mt-2 pt-2 border-t border-field">
-                    <p className="text-primary font-semibold text-base">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    <div className="flex items-center gap-2 mt-2">
+                <div className="mt-2">
+                    {hasSale ? (
+                        <div className="flex items-baseline gap-2">
+                            <p className="text-primary font-bold text-lg">₱{part.salesPrice!.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            <p className="text-light-gray font-semibold text-sm line-through">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                    ) : (
+                        <p className="text-primary font-bold text-lg">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    )}
+                </div>
+
+                <div className="mt-2 pt-2 border-t border-field flex items-center justify-between">
+                     <div>
+                        {stockStatus === 'in-stock' && <p className="text-xs text-green-400 font-semibold">In Stock</p>}
+                        {stockStatus === 'low-stock' && <p className="text-xs text-orange-400 font-semibold">Low Stock ({part.stock} left)</p>}
+                        {stockStatus === 'out-of-stock' && <p className="text-xs text-red-400 font-semibold">Out of Stock</p>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button onClick={handleToggleWishlist} className="flex-shrink-0 bg-field rounded-md p-1.5 transition-transform duration-200 hover:scale-110" aria-label="Toggle Wishlist">
+                             <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
+                        </button>
                         <button
                             onClick={handleAddToCart}
-                            className={`w-full text-white font-medium py-1.5 px-3 rounded-md text-xs transition-colors duration-300 ${
-                                isAdded
-                                    ? 'bg-green-600'
-                                    : 'bg-primary hover:bg-orange-600 disabled:bg-gray-500 disabled:cursor-not-allowed'
-                            }`}
-                            aria-label={`Add ${part.name} to cart`}
-                            disabled={isAdded || part.stock === 0}
+                            className={`text-white font-medium py-1.5 px-3 rounded-md text-xs transition-colors duration-300 ${isAdded ? 'bg-green-600' : 'bg-primary hover:bg-orange-600 disabled:bg-gray-700 disabled:cursor-not-allowed'}`}
+                            disabled={isAdded || !canAddToCart}
                         >
-                            {isAdded ? 'Added ✓' : (part.stock > 0 ? 'Add to Cart' : 'Out of Stock')}
-                        </button>
-                        <button onClick={handleToggleWishlist} className="flex-shrink-0 bg-field rounded-md p-2 transition-transform duration-200 hover:scale-110" aria-label="Toggle Wishlist">
-                             <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
+                            {isAdded ? 'Added ✓' : 'Add to Cart'}
                         </button>
                     </div>
                 </div>
@@ -160,10 +177,11 @@ const PartsStoreScreen: React.FC = () => {
         if (priceRange !== 'all') {
             const [min, max] = priceRange.split('-').map(Number);
             filteredParts = filteredParts.filter(p => {
+                const price = p.salesPrice || p.price;
                 if (max) {
-                    return p.price >= min && p.price <= max;
+                    return price >= min && price <= max;
                 }
-                return p.price >= min;
+                return price >= min;
             });
         }
         
@@ -194,8 +212,8 @@ const PartsStoreScreen: React.FC = () => {
                         return score;
                     };
                     return getScore(b) - getScore(a);
-                case 'price-asc': return a.price - b.price;
-                case 'price-desc': return b.price - a.price;
+                case 'price-asc': return (a.salesPrice || a.price) - (b.salesPrice || b.price);
+                case 'price-desc': return (b.salesPrice || b.price) - (a.salesPrice || a.price);
                 case 'stock-desc': return b.stock - a.stock;
                 case 'name-asc':
                 default:

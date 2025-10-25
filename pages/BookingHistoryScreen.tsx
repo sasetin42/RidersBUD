@@ -6,6 +6,7 @@ import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import BookingStatusCard from '../components/BookingStatusCard';
+import TrackMechanicModal from '../components/TrackMechanicModal';
 
 declare const L: any;
 
@@ -104,7 +105,7 @@ const JobProgressModal: React.FC<{
         mapInstanceRef.current = L.map(mapRef.current).setView([customerLocation.lat, customerLocation.lng], 15);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
         const workIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
+            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734-2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
             className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 16]
         });
         L.marker([customerLocation.lat, customerLocation.lng], { icon: workIcon }).addTo(mapInstanceRef.current).bindPopup("Service Location");
@@ -249,17 +250,21 @@ const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking)
             {/* Conditional Content */}
             {booking.status === 'Completed' && (
                 <div className="border-t border-field pt-3 flex gap-2">
-                     <button onClick={() => onViewProgress(booking)} className="flex-1 bg-secondary text-white font-bold py-2 rounded-lg hover:bg-gray-700 transition text-sm">
+                    <button onClick={() => onViewProgress(booking)} className="flex-1 bg-secondary text-white font-bold py-2 rounded-lg hover:bg-gray-700 transition text-sm">
                         View Progress
                     </button>
                     <button onClick={handleBookAgain} className="flex-1 bg-field text-white font-bold py-2 rounded-lg hover:bg-gray-600 transition text-sm">
                         Book Again
                     </button>
-                    {!booking.isReviewed && (
-                         <button onClick={() => onReview(booking)} className="flex-1 bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition text-sm">
+                    {!booking.isPaid ? (
+                        <button onClick={() => navigate('/service-payment', { state: { booking } })} className="flex-1 bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition text-sm">
+                            Pay Now
+                        </button>
+                    ) : !booking.isReviewed ? (
+                        <button onClick={() => onReview(booking)} className="flex-1 bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition text-sm">
                             Rate & Review
                         </button>
-                    )}
+                    ) : null}
                 </div>
             )}
             {booking.status === 'Cancelled' && booking.cancellationReason && (
@@ -282,6 +287,7 @@ const BookingHistoryScreen: React.FC = () => {
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [reviewingBooking, setReviewingBooking] = useState<Booking | null>(null);
     const [progressBooking, setProgressBooking] = useState<Booking | null>(null);
+    const [trackingBooking, setTrackingBooking] = useState<Booking | null>(null);
     const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
     const [mechanicFilter, setMechanicFilter] = useState<string>('all');
     const [vehicleFilter, setVehicleFilter] = useState<string>(plateNumber || 'all');
@@ -345,6 +351,20 @@ const BookingHistoryScreen: React.FC = () => {
             handleCloseReviewModal();
         } else {
             alert("Could not submit review. Mechanic or user information is missing.");
+        }
+    };
+
+    const handleShare = async () => {
+        if (!trackingBooking) return;
+        const shareData = {
+            title: 'RidersBUD Booking Update',
+            text: `Track my mechanic for my ${trackingBooking.service.name} service!`,
+            url: window.location.href,
+        };
+        try {
+            await navigator.share(shareData);
+        } catch (err) {
+            console.error('Error sharing:', err);
         }
     };
 
@@ -417,7 +437,7 @@ const BookingHistoryScreen: React.FC = () => {
                     <h2 className="text-xl font-semibold mb-3 text-white px-2">Upcoming</h2>
                     {upcomingBookings.length > 0 ? (
                         <div className="space-y-4">
-                            {upcomingBookings.map(booking => <BookingStatusCard key={booking.id} booking={booking} />)}
+                            {upcomingBookings.map(booking => <BookingStatusCard key={booking.id} booking={booking} onTrack={setTrackingBooking} />)}
                         </div>
                     ) : (
                         <div className="text-center py-8 px-4 bg-dark-gray rounded-lg">
@@ -446,6 +466,7 @@ const BookingHistoryScreen: React.FC = () => {
                 />
             )}
             {progressBooking && <JobProgressModal booking={progressBooking} customerLocation={customerLocation} onClose={() => setProgressBooking(null)} />}
+            {trackingBooking && <TrackMechanicModal booking={trackingBooking} customerLocation={customerLocation} onClose={() => setTrackingBooking(null)} onShare={handleShare} />}
         </div>
     );
 };

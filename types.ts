@@ -1,6 +1,5 @@
 
 
-// FIX: Removed self-import which was causing a circular dependency and declaration conflicts.
 // This file contains all the type definitions for the application.
 
 export interface Notification {
@@ -31,7 +30,7 @@ export interface Part {
     description: string;
     price: number;
     salesPrice?: number;
-    imageUrl: string;
+    imageUrls: string[];
     category: string;
     sku: string;
     stock: number;
@@ -124,12 +123,14 @@ export interface Booking {
     time: string;
     status: BookingStatus;
     vehicle: Vehicle;
+    location?: { lat: number, lng: number };
     statusHistory?: { status: string, timestamp: string }[];
     beforeImages?: string[];
     afterImages?: string[];
     notes?: string;
     cancellationReason?: string;
     isReviewed?: boolean;
+    isPaid?: boolean;
 }
 
 export interface Customer {
@@ -169,6 +170,17 @@ export interface Banner {
     endDate: string;
 }
 
+export interface PayoutRequest {
+    id: string;
+    mechanicId: string;
+    mechanicName: string;
+    amount: number;
+    requestDate: string;
+    status: 'Pending' | 'Approved' | 'Rejected';
+    processDate?: string;
+    rejectionReason?: string;
+}
+
 export interface FAQItem {
     question: string;
     answer: string;
@@ -200,6 +212,9 @@ export interface Settings {
     adminSidebarLogoUrl: string;
     serviceCategories: string[];
     partCategories: string[];
+    minimumPayout: number;
+    maximumPayout: number;
+    payoutSchedule: 'Manual' | 'Weekly' | 'Bi-weekly';
 }
 
 export type PermissionLevel = 'none' | 'view' | 'edit';
@@ -262,4 +277,5 @@ export interface Database {
     adminUsers: AdminUser[];
     roles: Role[];
     tasks: Task[];
+    payouts: PayoutRequest[];
 }

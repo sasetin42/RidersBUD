@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Service } from '../types';
+import { Service, Mechanic } from '../types';
 import Header from '../components/Header';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
@@ -63,7 +63,7 @@ const ServiceCard: React.FC<{ service: Service; }> = ({ service }) => {
                         <span>{service.estimatedTime}</span>
                     </div>
                     <span className="text-xs font-semibold text-primary group-hover:underline flex items-center gap-1">
-                        Details <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                        Details <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                     </span>
                 </div>
             </div>
@@ -74,14 +74,47 @@ const ServiceCard: React.FC<{ service: Service; }> = ({ service }) => {
 
 const ServicesScreen: React.FC = () => {
     const { db, loading } = useDatabase();
+    const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
+    const [priceRange, setPriceRange] = useState('all');
+    const [availabilityFilter, setAvailabilityFilter] = useState(false);
 
     const services = db?.services || [];
 
     const serviceCategories = useMemo(() => {
         if (!db?.settings.serviceCategories) return ['all'];
         return ['all', ...db.settings.serviceCategories];
+    }, [db]);
+
+    const availableMechanicSpecializations = useMemo(() => {
+        if (!db) return new Set<string>();
+        const today = new Date();
+        const todayDayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
+
+        const availableMechanics = db.mechanics.filter(mechanic => {
+            const daySchedule = mechanic.availability?.[todayDayOfWeek];
+            if (mechanic.status !== 'Active' || !daySchedule?.isAvailable) {
+                return false;
+            }
+            // Check if unavailable for the whole day
+            if (mechanic.unavailableDates?.some(d => {
+                const start = new Date(d.startDate.replace(/-/g, '/'));
+                start.setHours(0,0,0,0);
+                const end = new Date(d.endDate.replace(/-/g, '/'));
+                end.setHours(0,0,0,0);
+                return today >= start && today <= end;
+            })) {
+                return false;
+            }
+            return true;
+        });
+
+        const specSet = new Set<string>();
+        availableMechanics.forEach(m => {
+            m.specializations.forEach(s => specSet.add(s.toLowerCase()));
+        });
+        return specSet;
     }, [db]);
 
     const displayedServices = useMemo(() => {
@@ -93,15 +126,27 @@ const ServicesScreen: React.FC = () => {
                 : true;
 
             const categoryMatch = filterCategory !== 'all' ? service.category === filterCategory : true;
+
+            const priceMatch = priceRange === 'all' ? true : (() => {
+                if (service.price === 0) return true; // Always include "Quote Required"
+                const [min, max] = priceRange.split('-').map(Number);
+                if (max) return service.price >= min && service.price <= max;
+                return service.price >= min;
+            })();
             
-            return searchMatch && categoryMatch;
+            const availabilityMatch = !availabilityFilter ? true : (
+                availableMechanicSpecializations.has(service.category.toLowerCase()) ||
+                availableMechanicSpecializations.has(service.name.toLowerCase())
+            );
+            
+            return searchMatch && categoryMatch && priceMatch && availabilityMatch;
         });
 
         // Default sort for consistent ordering
         filtered.sort((a, b) => a.name.localeCompare(b.name));
         
         return filtered;
-    }, [searchQuery, filterCategory, services]);
+    }, [searchQuery, filterCategory, priceRange, services, availabilityFilter, availableMechanicSpecializations]);
 
     return (
         <div className="flex flex-col h-full bg-secondary">
@@ -124,6 +169,30 @@ const ServicesScreen: React.FC = () => {
                     />
                 </div>
                 
+                <div className="grid grid-cols-2 gap-4">
+                    <select
+                        value={priceRange}
+                        onChange={e => setPriceRange(e.target.value)}
+                        className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary h-[42px]"
+                    >
+                        <option value="all">All Prices</option>
+                        <option value="0-1000">Under ₱1,000</option>
+                        <option value="1000-2500">₱1,000 - ₱2,500</option>
+                        <option value="2500-5000">₱2,500 - ₱5,000</option>
+                        <option value="5000">Over ₱5,000</option>
+                    </select>
+                    <div className="flex items-center bg-field rounded-lg px-4 h-[42px] border border-dark-gray">
+                        <input 
+                            id="availability-filter" 
+                            type="checkbox" 
+                            checked={availabilityFilter} 
+                            onChange={e => setAvailabilityFilter(e.target.checked)} 
+                            className="h-4 w-4 rounded border-gray-500 bg-secondary text-primary focus:ring-primary focus:ring-offset-field"
+                        />
+                        <label htmlFor="availability-filter" className="ml-3 text-sm font-medium text-white select-none cursor-pointer">Available Today</label>
+                    </div>
+                </div>
+
                 <div className="flex space-x-3 overflow-x-auto scrollbar-hide -mx-4 px-4">
                     {serviceCategories.map(category => (
                         <button 

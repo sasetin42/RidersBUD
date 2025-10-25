@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import Header from '../components/Header';
 import { useCart } from '../context/CartContext';
 import { useNavigate } from 'react-router-dom';
@@ -7,17 +6,31 @@ import { useWishlist } from '../context/WishlistContext';
 import { CartItem } from '../types';
 
 const CartScreen: React.FC = () => {
-    const { cartItems, removeFromCart, addToCart, clearCart, removeAllFromCart } = useCart();
+    const { cartItems, removeFromCart, addToCart, clearCart, removeAllFromCart, itemCount } = useCart();
     const { addToWishlist } = useWishlist();
     const navigate = useNavigate();
+
+    const [promoCode, setPromoCode] = useState('');
+    const [discount, setDiscount] = useState(0);
+    const [promoError, setPromoError] = useState('');
     
-    const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+    const subtotal = cartItems.reduce((acc, item) => acc + (item.salesPrice || item.price) * item.quantity, 0);
     const shippingFee = subtotal > 0 ? 150.00 : 0;
-    const total = subtotal + shippingFee;
+    const total = subtotal - discount + shippingFee;
 
     const handleMoveToWishlist = (item: CartItem) => {
         addToWishlist(item);
         removeAllFromCart(item.id);
+    };
+
+    const handleApplyPromo = () => {
+        setPromoError('');
+        if (promoCode.trim().toUpperCase() === 'SAVE10') {
+            setDiscount(subtotal * 0.10);
+        } else {
+            setDiscount(0);
+            setPromoError('Invalid promotional code.');
+        }
     };
 
     return (
@@ -40,10 +53,10 @@ const CartScreen: React.FC = () => {
                         <button onClick={() => navigate('/order-history')} className="w-full text-sm text-primary text-right font-semibold hover:underline">View Order History</button>
                         {cartItems.map(item => (
                             <div key={item.id} className="flex items-start bg-dark-gray p-3 rounded-lg animate-fadeIn">
-                                <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
+                                <img src={item.imageUrls[0]} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
                                 <div className="flex-grow">
                                     <h4 className="font-bold text-white text-sm leading-tight">{item.name}</h4>
-                                    <p className="text-primary font-semibold text-sm">₱{item.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-primary font-semibold text-sm">₱{(item.salesPrice || item.price).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                                     <div className="flex items-center mt-2 flex-wrap gap-x-4 gap-y-2">
                                         <div className="flex items-center space-x-3">
                                             <button onClick={() => removeFromCart(item.id)} className="w-7 h-7 bg-field rounded-full font-bold text-lg flex items-center justify-center">-</button>
@@ -61,7 +74,7 @@ const CartScreen: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                                <p className="font-bold text-lg text-white">₱{(item.price * item.quantity).toFixed(2)}</p>
+                                <p className="font-bold text-lg text-white">₱{((item.salesPrice || item.price) * item.quantity).toFixed(2)}</p>
                             </div>
                         ))}
                     </div>
@@ -69,8 +82,21 @@ const CartScreen: React.FC = () => {
             </div>
             {cartItems.length > 0 && (
                  <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray space-y-4">
+                    <div className="flex gap-2">
+                        <input 
+                            type="text"
+                            value={promoCode}
+                            onChange={(e) => { setPromoCode(e.target.value); setPromoError(''); }}
+                            placeholder="Enter Promo Code"
+                            className="flex-grow px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm"
+                        />
+                        <button onClick={handleApplyPromo} className="bg-primary text-white font-bold py-2 px-4 rounded-lg text-sm">Apply</button>
+                    </div>
+                    {promoError && <p className="text-red-400 text-xs text-center -mt-2">{promoError}</p>}
+                    
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between text-light-gray"><span>Subtotal</span><span>₱{subtotal.toFixed(2)}</span></div>
+                        {discount > 0 && <div className="flex justify-between text-green-400"><span>Discount (10%)</span><span>- ₱{discount.toFixed(2)}</span></div>}
                         <div className="flex justify-between text-light-gray"><span>Shipping Fee</span><span>₱{shippingFee.toFixed(2)}</span></div>
                         <div className="flex justify-between text-lg font-bold border-t border-dark-gray pt-2 mt-2">
                             <span className="text-white">Grand Total:</span>
@@ -81,7 +107,7 @@ const CartScreen: React.FC = () => {
                         onClick={() => navigate('/payment', { state: { total } })} 
                         className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition"
                     >
-                         Proceed to Checkout
+                         Proceed to Checkout ({itemCount} {itemCount > 1 ? 'items' : 'item'})
                      </button>
                      <button onClick={clearCart} className="w-full text-center text-sm text-light-gray hover:text-red-400">Clear Cart</button>
                  </div>

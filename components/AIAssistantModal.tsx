@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Chat } from '@google/genai';
@@ -102,7 +100,8 @@ const AIMessageContent: React.FC<{ text: string; sources?: any[]; onClose: () =>
                             onClick={() => handleButtonClick(item)}
                             className="w-full text-left bg-field p-2 rounded-lg hover:bg-gray-600 transition flex items-center gap-3"
                         >
-                            <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-md object-cover flex-shrink-0" />
+                            {/* FIX: Conditionally access `imageUrl` or `imageUrls[0]` based on item type. */}
+                            <img src={'sku' in item ? item.imageUrls[0] : item.imageUrl} alt={item.name} className="w-10 h-10 rounded-md object-cover flex-shrink-0" />
                             <div className="flex-grow">
                                 <p className="font-semibold text-white text-sm">{item.type === 'service' ? 'Book:' : 'Buy:'} {item.name}</p>
                                 <p className="text-xs text-primary">{item.type === 'service' ? 'Go to Service' : 'Go to Store'}</p>

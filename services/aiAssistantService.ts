@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI, Chat } from "@google/genai";
 import { Service, Part, Mechanic, Settings, Customer, Database } from '../types';
 
@@ -58,7 +57,6 @@ When the conversation starts, greet the user and ask how you can help them with 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     const chat = ai.chats.create({
         // Per the request, using gemini-2.5-flash for a balance of speed and features for general chatbot and grounding tasks.
-        // While gemini-2.5-flash-lite could be used for lower latency, gemini-2.5-flash is better suited for grounding capabilities.
         model: 'gemini-2.5-flash',
         config: {
             systemInstruction: systemInstruction,

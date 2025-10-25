@@ -2,6 +2,17 @@
 
 // This file contains all the type definitions for the application.
 
+export interface Notification {
+    id: string;
+    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job';
+    title: string;
+    message: string;
+    timestamp: number;
+    read: boolean;
+    link?: string;
+    recipientId: 'all' | `customer-${string}` | `mechanic-${string}`;
+}
+
 export interface Service {
     id: string;
     name: string;
@@ -19,7 +30,7 @@ export interface Part {
     description: string;
     price: number;
     salesPrice?: number;
-    imageUrl: string;
+    imageUrls: string[];
     category: string;
     sku: string;
     stock: number;
@@ -112,12 +123,14 @@ export interface Booking {
     time: string;
     status: BookingStatus;
     vehicle: Vehicle;
+    location?: { lat: number, lng: number };
     statusHistory?: { status: string, timestamp: string }[];
     beforeImages?: string[];
     afterImages?: string[];
     notes?: string;
     cancellationReason?: string;
     isReviewed?: boolean;
+    isPaid?: boolean;
 }
 
 export interface Customer {
@@ -155,6 +168,17 @@ export interface Banner {
     category: 'Services' | 'Store' | 'Reminders' | 'Booking';
     startDate: string;
     endDate: string;
+}
+
+export interface PayoutRequest {
+    id: string;
+    mechanicId: string;
+    mechanicName: string;
+    amount: number;
+    requestDate: string;
+    status: 'Pending' | 'Approved' | 'Rejected';
+    processDate?: string;
+    rejectionReason?: string;
 }
 
 export interface FAQItem {
@@ -250,4 +274,5 @@ export interface Database {
     adminUsers: AdminUser[];
     roles: Role[];
     tasks: Task[];
+    payouts: PayoutRequest[];
 }

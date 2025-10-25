@@ -26,6 +26,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
             center: [14.58, 121.05], // Centered on Metro Manila
             zoom: 12,
             zoomControl: true,
+            scrollWheelZoom: false, // Disable zoom on scroll
         });
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -128,7 +129,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
 
     }, [mechanics]);
 
-    return <div ref={mapRef} className="h-full w-full rounded-xl" />;
+    return <div ref={mapRef} className="h-full w-full" />;
 };
 
 export default HomeLiveMap;

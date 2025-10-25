@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Service, Part } from '../../types';
 import Modal from '../../components/admin/Modal';
@@ -15,6 +14,80 @@ const StatCard: React.FC<{ title: string; value: number | string; icon: React.Re
         </div>
     </div>
 );
+
+const CategoryManagerModal: React.FC<{
+    onClose: () => void;
+}> = ({ onClose }) => {
+    const { db, updateSettings } = useDatabase();
+    const [serviceCategories, setServiceCategories] = useState(db?.settings.serviceCategories || []);
+    const [partCategories, setPartCategories] = useState(db?.settings.partCategories || []);
+    const [newServiceCategory, setNewServiceCategory] = useState('');
+    const [newPartCategory, setNewPartCategory] = useState('');
+
+    const handleSave = () => {
+        updateSettings({ serviceCategories, partCategories });
+        onClose();
+    };
+
+    const handleAdd = (type: 'service' | 'part') => {
+        if (type === 'service' && newServiceCategory.trim()) {
+            setServiceCategories(prev => [...prev, newServiceCategory.trim()]);
+            setNewServiceCategory('');
+        } else if (type === 'part' && newPartCategory.trim()) {
+            setPartCategories(prev => [...prev, newPartCategory.trim()]);
+            setNewPartCategory('');
+        }
+    };
+    
+    const handleDelete = (type: 'service' | 'part', categoryToDelete: string) => {
+        if (type === 'service') {
+            setServiceCategories(prev => prev.filter(c => c !== categoryToDelete));
+        } else {
+            setPartCategories(prev => prev.filter(c => c !== categoryToDelete));
+        }
+    };
+
+    return (
+        <Modal title="Manage Categories" isOpen={true} onClose={onClose}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[60vh] overflow-y-auto pr-2">
+                <div>
+                    <h3 className="text-lg font-bold text-admin-text-primary mb-3">Service Categories</h3>
+                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg p-2 rounded-md">
+                        {serviceCategories.map(cat => (
+                            <div key={cat} className="flex items-center justify-between bg-admin-card p-2 rounded">
+                                <span className="text-sm">{cat}</span>
+                                <button onClick={() => handleDelete('service', cat)} className="text-red-400 hover:text-red-300">&times;</button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex gap-2">
+                        <input type="text" value={newServiceCategory} onChange={e => setNewServiceCategory(e.target.value)} placeholder="New category..." className="flex-grow p-2 bg-admin-bg border border-admin-border rounded" />
+                        <button onClick={() => handleAdd('service')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded">Add</button>
+                    </div>
+                </div>
+                <div>
+                     <h3 className="text-lg font-bold text-admin-text-primary mb-3">Part Categories</h3>
+                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg p-2 rounded-md">
+                        {partCategories.map(cat => (
+                            <div key={cat} className="flex items-center justify-between bg-admin-card p-2 rounded">
+                                <span className="text-sm">{cat}</span>
+                                <button onClick={() => handleDelete('part', cat)} className="text-red-400 hover:text-red-300">&times;</button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex gap-2">
+                        <input type="text" value={newPartCategory} onChange={e => setNewPartCategory(e.target.value)} placeholder="New category..." className="flex-grow p-2 bg-admin-bg border border-admin-border rounded" />
+                        <button onClick={() => handleAdd('part')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded">Add</button>
+                    </div>
+                </div>
+            </div>
+            <div className="flex justify-end gap-4 mt-6 border-t border-admin-border pt-4">
+                <button onClick={onClose} className="bg-admin-border font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button onClick={handleSave} className="bg-admin-accent font-bold py-2 px-4 rounded-lg">Save Categories</button>
+            </div>
+        </Modal>
+    );
+};
 
 const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void; onCancel: () => void; categories: string[] }> = ({ service, onSave, onCancel, categories }) => {
     const [formData, setFormData] = useState({ id: service?.id || '', name: service?.name || '', description: service?.description || '', price: service?.price ?? '', estimatedTime: service?.estimatedTime || '', category: service?.category || (categories[0] || ''), imageUrl: service?.imageUrl || '', icon: service?.icon || '', });
@@ -61,7 +134,8 @@ const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void;
 };
 
 const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: () => void; categories: string[] }> = ({ part, onSave, onCancel, categories }) => {
-    const [formData, setFormData] = useState({ id: part?.id || '', name: part?.name || '', description: part?.description || '', price: part?.price ?? '', salesPrice: part?.salesPrice ?? '', category: part?.category || (categories[0] || ''), sku: part?.sku || '', imageUrl: part?.imageUrl || '', stock: part?.stock ?? 0 });
+    // FIX: The `Part` type uses `imageUrls` (an array). Initialize `imageUrl` from the first element.
+    const [formData, setFormData] = useState({ id: part?.id || '', name: part?.name || '', description: part?.description || '', price: part?.price ?? '', salesPrice: part?.salesPrice ?? '', category: part?.category || (categories[0] || ''), sku: part?.sku || '', imageUrl: part?.imageUrls?.[0] || '', stock: part?.stock ?? 0 });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
@@ -85,7 +159,14 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
             catch (err) { setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.'})); }
         }
     };
-    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (validate()) { onSave({ ...formData, price: Number(formData.price), salesPrice: formData.salesPrice ? Number(formData.salesPrice) : undefined, stock: Number(formData.stock) }); } };
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (validate()) {
+            // FIX: Convert the single `imageUrl` from form state back into an `imageUrls` array to match the `Part` type.
+            const { imageUrl, ...rest } = formData;
+            onSave({ ...rest, price: Number(formData.price), salesPrice: formData.salesPrice ? Number(formData.salesPrice) : undefined, stock: Number(formData.stock), imageUrls: [imageUrl] });
+        }
+    };
     const isSaveDisabled = Object.keys(errors).length > 0 || !formData.name || formData.price === '' || formData.stock === null || !formData.category || !formData.sku || !formData.imageUrl;
 
     return (
@@ -115,10 +196,12 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
 
 const ItemCard: React.FC<{ item: Service | Part, onEdit: () => void, onDelete: () => void }> = ({ item, onEdit, onDelete }) => {
     const hasSalesPrice = 'salesPrice' in item && item.salesPrice && item.salesPrice > 0;
+    // FIX: Conditionally access `imageUrl` or `imageUrls[0]` based on whether the item is a Service or a Part.
+    const imageUrl = 'sku' in item ? item.imageUrls[0] : item.imageUrl;
     
     return (
         <div className="bg-admin-card rounded-lg overflow-hidden group relative flex flex-col border border-admin-border">
-            <img src={item.imageUrl} alt={item.name} className="h-40 w-full object-cover" />
+            <img src={imageUrl} alt={item.name} className="h-40 w-full object-cover" />
             <div className="absolute top-0 right-0 p-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={onEdit} className="bg-black/50 p-2 rounded-full hover:bg-blue-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg></button>
                 <button onClick={onDelete} className="bg-black/50 p-2 rounded-full hover:bg-red-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
@@ -150,6 +233,7 @@ const AdminCatalogScreen: React.FC = () => {
     const [editingService, setEditingService] = useState<Service | undefined>(undefined);
     const [isPartModalOpen, setIsPartModalOpen] = useState(false);
     const [editingPart, setEditingPart] = useState<Part | undefined>(undefined);
+    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
     const serviceCategories = useMemo(() => ['all', ...(db?.settings.serviceCategories || [])], [db]);
     const partCategories = useMemo(() => ['all', ...(db?.settings.partCategories || [])], [db]);
@@ -191,7 +275,10 @@ const AdminCatalogScreen: React.FC = () => {
                         <input type="text" placeholder={activeTab === 'services' ? "Search name or category..." : "Search name or SKU..."} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full sm:w-64 p-2 bg-admin-card border border-admin-border rounded-lg" />
                         <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="w-full sm:w-auto p-2 bg-admin-card border border-admin-border rounded-lg">{(activeTab === 'services' ? serviceCategories : partCategories).map(cat => <option key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</option>)}</select>
                     </div>
-                    <button onClick={activeTab === 'services' ? () => handleOpenServiceModal() : () => handleOpenPartModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition w-full md:w-auto whitespace-nowrap">+ Add {activeTab === 'services' ? 'Service' : 'Part'}</button>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button onClick={() => setIsCategoryModalOpen(true)} className="bg-admin-card text-white font-bold py-2 px-4 rounded-lg hover:bg-admin-border transition whitespace-nowrap">Manage Categories</button>
+                        <button onClick={activeTab === 'services' ? () => handleOpenServiceModal() : () => handleOpenPartModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition w-full whitespace-nowrap">+ Add {activeTab === 'services' ? 'Service' : 'Part'}</button>
+                    </div>
                 </div>
             </div>
             <div className="border-b border-admin-border flex-shrink-0">
@@ -211,6 +298,7 @@ const AdminCatalogScreen: React.FC = () => {
                     </div>
                 )}
             </div>
+            {isCategoryModalOpen && <CategoryManagerModal onClose={() => setIsCategoryModalOpen(false)} />}
             <Modal title={editingService ? 'Edit Service' : 'Add Service'} isOpen={isServiceModalOpen} onClose={handleCloseServiceModal}>
                 <ServiceForm service={editingService} onSave={handleSaveService} onCancel={handleCloseServiceModal} categories={db.settings.serviceCategories.filter(c => c !== 'all')} />
             </Modal>

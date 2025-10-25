@@ -15,6 +15,7 @@ const PartDetailScreen: React.FC = () => {
     const [isAdded, setIsAdded] = useState(false);
 
     const part = db?.parts.find(p => p.id === id);
+    const [mainImage, setMainImage] = useState(part?.imageUrls[0] || '');
 
     if (!db) {
         return <div className="flex items-center justify-center h-full bg-secondary"><Spinner size="lg" /></div>;
@@ -28,8 +29,13 @@ const PartDetailScreen: React.FC = () => {
             </div>
         );
     }
+    
+    if (part && !mainImage) {
+        setMainImage(part.imageUrls[0]);
+    }
 
     const isWishlisted = isInWishlist(part.id);
+    const hasSale = part.salesPrice && part.salesPrice < part.price;
 
     const handleToggleWishlist = () => {
         if (isWishlisted) {
@@ -49,12 +55,7 @@ const PartDetailScreen: React.FC = () => {
 
     const handleBuyNow = () => {
         if (part.stock <= 0) return;
-        
-        // Add the item to the cart context first to ensure it's included in the total calculation
         addToCart(part);
-
-        // Then, navigate immediately to the cart page, which will show the updated total
-        // and allow the user to proceed to checkout.
         navigate('/cart');
     };
 
@@ -64,14 +65,30 @@ const PartDetailScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-secondary">
             <Header title={part.name} showBackButton />
             <div className="flex-grow overflow-y-auto">
-                <img src={part.imageUrl} alt={part.name} className="w-full h-64 object-cover" />
+                <div className="relative bg-dark-gray">
+                    <img src={mainImage} alt={part.name} className="w-full h-64 object-contain" />
+                    {part.imageUrls.length > 1 && (
+                        <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-2">
+                            {part.imageUrls.map((img, index) => (
+                                <button key={index} onClick={() => setMainImage(img)} className={`w-14 h-14 rounded-md overflow-hidden border-2 transition-all ${mainImage === img ? 'border-primary scale-110' : 'border-transparent opacity-70 hover:opacity-100'}`}>
+                                    <img src={img} alt={`Thumbnail ${index + 1}`} className="w-full h-full object-cover"/>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
                 <div className="p-6">
                     <div className="flex justify-between items-start mb-2">
                         <div>
                             <h1 className="text-2xl font-bold text-white pr-4">{part.name}</h1>
-                            <p className="text-2xl font-bold text-primary mt-1">
-                                ₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
+                             {hasSale ? (
+                                <div className="flex items-baseline gap-2 mt-1">
+                                    <p className="text-primary font-bold text-2xl">₱{part.salesPrice!.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-light-gray font-semibold text-lg line-through">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                            ) : (
+                                <p className="text-primary font-bold text-2xl mt-1">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            )}
                         </div>
                         <button 
                             onClick={handleToggleWishlist} 
@@ -83,12 +100,13 @@ const PartDetailScreen: React.FC = () => {
                             </svg>
                         </button>
                     </div>
+                    
+                    <div className="mt-2">
+                        {part.stock > 10 && <span className="inline-block bg-green-500/20 text-green-300 text-xs font-semibold px-2 py-1 rounded-full">In Stock</span>}
+                        {part.stock > 0 && part.stock <= 10 && <span className="inline-block bg-orange-500/20 text-orange-300 text-xs font-semibold px-2 py-1 rounded-full">Hurry, only {part.stock} left!</span>}
+                        {part.stock <= 0 && <span className="inline-block bg-red-500/20 text-red-400 text-xs font-semibold px-2 py-1 rounded-full">Out of Stock</span>}
+                    </div>
 
-                    {part.stock > 0 ? (
-                        <span className="inline-block bg-green-500/20 text-green-300 text-xs font-semibold px-2 py-1 rounded-full">In Stock</span>
-                    ) : (
-                        <span className="inline-block bg-red-500/20 text-red-400 text-xs font-semibold px-2 py-1 rounded-full">Out of Stock</span>
-                    )}
 
                     <p className="text-light-gray mt-4">{part.description}</p>
                     
