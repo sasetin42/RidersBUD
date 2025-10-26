@@ -62,11 +62,11 @@ const NewJobRequestModal: React.FC<{
 
 
 const MechanicDashboardScreen: React.FC = () => {
-    const { mechanic } = useMechanicAuth();
+    const { mechanic, updateOnlineStatus } = useMechanicAuth();
     const { db, loading, acceptJobRequest } = useDatabase();
     const navigate = useNavigate();
 
-    const [isOnline, setIsOnline] = useState(true);
+    const isOnline = mechanic?.isOnline ?? true;
     const [newJobRequest, setNewJobRequest] = useState<Booking | null>(null);
     const [newAssignedJob, setNewAssignedJob] = useState<Booking | null>(null);
 
@@ -239,7 +239,7 @@ const MechanicDashboardScreen: React.FC = () => {
                     <button
                         type="button"
                         className={`${isOnline ? 'bg-green-500' : 'bg-field'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-dark-gray`}
-                        onClick={() => setIsOnline(!isOnline)}
+                        onClick={() => updateOnlineStatus(!isOnline)}
                         aria-pressed={isOnline}
                     >
                         <span className={`${isOnline ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />

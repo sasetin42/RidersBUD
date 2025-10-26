@@ -2,6 +2,8 @@ import React, { createContext, useState, useContext, ReactNode, useEffect } from
 import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest } from '../types';
 import { getSeedData } from '../data/mockData';
 
+const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
 // This interface defines the functions that the context will provide
 interface DatabaseContextType {
     db: Database | null;
@@ -16,6 +18,7 @@ interface DatabaseContextType {
     updateMechanic: (updatedMechanic: Mechanic) => Promise<void>;
     deleteMechanic: (mechanicId: string) => Promise<void>;
     updateMechanicStatus: (mechanicId: string, status: 'Active' | 'Inactive' | 'Pending') => Promise<void>;
+    updateMechanicOnlineStatus: (mechanicId: string, isOnline: boolean) => Promise<void>;
     updateMechanicLocation: (mechanicId: string, location: { lat: number; lng: number }) => Promise<void>;
     addBooking: (booking: Omit<Booking, 'id'>) => Promise<Booking | null>;
     updateBookingStatus: (bookingId: string, status: BookingStatus) => Promise<void>;
@@ -126,43 +129,58 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // --- Service Operations ---
     const addService = async (service: Omit<Service, 'id'>) => {
+        await delay(300);
         const newService = { ...service, id: `s-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, services: [...prevDb.services, newService] } : null);
     };
     const updateService = async (updatedService: Service) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, services: prevDb.services.map(s => s.id === updatedService.id ? updatedService : s) } : null);
     };
     const deleteService = async (serviceId: string) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, services: prevDb.services.filter(s => s.id !== serviceId) } : null);
     };
 
     // --- Part Operations ---
     const addPart = async (part: Omit<Part, 'id'>) => {
+        await delay(300);
         const newPart = { ...part, id: `p-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, parts: [...prevDb.parts, newPart] } : null);
     };
     const updatePart = async (updatedPart: Part) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, parts: prevDb.parts.map(p => p.id === updatedPart.id ? updatedPart : p) } : null);
     };
     const deletePart = async (partId: string) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, parts: prevDb.parts.filter(p => p.id !== partId) } : null);
     };
 
     // --- Mechanic Operations ---
     const addMechanic = async (mechanic: Omit<Mechanic, 'id'>) => {
+        await delay(500);
         const newMechanic = { ...mechanic, id: `m-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, mechanics: [...prevDb.mechanics, newMechanic] } : null);
     };
     const updateMechanic = async (updatedMechanic: Mechanic) => {
+        await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, mechanics: prevDb.mechanics.map(m => m.id === updatedMechanic.id ? updatedMechanic : m) } : null);
     };
     const deleteMechanic = async (mechanicId: string) => {
+        await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, mechanics: prevDb.mechanics.filter(m => m.id !== mechanicId) } : null);
     };
     const updateMechanicStatus = async (mechanicId: string, status: 'Active' | 'Inactive' | 'Pending') => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, mechanics: prevDb.mechanics.map(m => m.id === mechanicId ? { ...m, status } : m) } : null);
     };
+    const updateMechanicOnlineStatus = async (mechanicId: string, isOnline: boolean) => {
+        // No delay for this one as it should feel instant
+        setDb(prevDb => prevDb ? { ...prevDb, mechanics: prevDb.mechanics.map(m => m.id === mechanicId ? { ...m, isOnline } : m) } : null);
+    };
     const updateMechanicLocation = async (mechanicId: string, location: { lat: number; lng: number }) => {
+        // No delay for this one as it's a real-time update
         setDb(prevDb => {
             if (!prevDb) return null;
             const newMechanics = prevDb.mechanics.map(m => 
@@ -174,11 +192,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // --- Booking Operations ---
     const addBooking = async (booking: Omit<Booking, 'id'>): Promise<Booking | null> => {
+        await delay(500);
         const newBooking = { ...booking, id: `b-${Date.now()}` } as Booking;
         setDb(prevDb => prevDb ? { ...prevDb, bookings: [...prevDb.bookings, newBooking] } : null);
         return newBooking;
     };
     const updateBookingStatus = async (bookingId: string, status: BookingStatus) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             return {
@@ -195,9 +215,11 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
     const cancelBooking = async (bookingId: string, reason: string) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, status: 'Cancelled', cancellationReason: reason } : b) } : null);
     };
     const acceptJobRequest = async (bookingId: string, mechanic: Mechanic) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             const newBookings = prevDb.bookings.map(b => 
@@ -209,6 +231,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
     const updateBookingNotes = async (bookingId: string, notes: string) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             return {
@@ -219,6 +242,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const updateBookingImages = async (bookingId: string, beforeImages: string[], afterImages: string[]) => {
+        await delay(500);
         setDb(prevDb => {
             if (!prevDb) return null;
             return {
@@ -229,6 +253,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const markBookingAsPaid = async (bookingId: string) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             return {
@@ -240,17 +265,21 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // --- Customer Operations ---
     const addCustomer = async (customer: Omit<Customer, 'id'>): Promise<Customer | null> => {
+        await delay(500);
         const newCustomer = { ...customer, id: `c-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, customers: [...prevDb.customers, newCustomer] } : null);
         return newCustomer;
     };
     const updateCustomer = async (updatedCustomer: Customer) => {
+        await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, customers: prevDb.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c) } : null);
     };
     const deleteCustomer = async (customerId: string) => {
+        await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, customers: prevDb.customers.filter(c => c.id !== customerId) } : null);
     };
     const deleteVehicleFromCustomer = async (customerId: string, plateNumber: string) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             return {
@@ -267,6 +296,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // --- Order Operations ---
     const addOrder = async (customerName: string, items: CartItem[], total: number, paymentMethod: string): Promise<Order | null> => {
+        await delay(500);
         const newOrder: Order = {
             id: `o-${Date.now()}`,
             customerName,
@@ -281,6 +311,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const updateOrderStatus = async (orderId: string, status: OrderStatus) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             return {
@@ -304,11 +335,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     
     // --- Settings Operations ---
     const updateSettings = async (newSettings: Partial<Settings>) => {
+        await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, settings: { ...prevDb.settings, ...newSettings } } : null);
     };
     
     // --- Review Operations ---
     const addReviewToMechanic = async (mechanicId: string, bookingId: string, reviewData: { rating: number, comment: string }, customerName: string) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             
@@ -347,18 +380,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     
     // --- Banner Operations ---
     const addBanner = async (banner: Omit<Banner, 'id'>) => {
+        await delay(300);
         const newBanner = { ...banner, id: `banner-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, banners: [...prevDb.banners, newBanner] } : null);
     };
     const updateBanner = async (updatedBanner: Banner) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, banners: prevDb.banners.map(b => b.id === updatedBanner.id ? updatedBanner : b) } : null);
     };
     const deleteBanner = async (bannerId: string) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, banners: prevDb.banners.filter(b => b.id !== bannerId) } : null);
     };
 
     // --- Admin User & Role Operations ---
     const addRole = async (role: Omit<Role, 'isEditable'>) => {
+        await delay(300);
         const newRole: Role = { ...role, isEditable: true };
         setDb(prevDb => {
             if (!prevDb) return null;
@@ -369,12 +406,14 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
     const updateRole = async (updatedRole: Role) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             return { ...prevDb, roles: prevDb.roles.map(r => r.name === updatedRole.name ? updatedRole : r) };
         });
     };
     const deleteRole = async (roleName: string) => {
+        await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
             const roleInUse = prevDb.adminUsers.some(u => u.role === roleName);
@@ -385,41 +424,60 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
     const addAdminUser = async (user: Omit<AdminUser, 'id'>) => {
+        await delay(300);
         const newUser = { ...user, id: `au-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, adminUsers: [...prevDb.adminUsers, newUser] } : null);
     };
     const updateAdminUser = async (updatedUser: AdminUser) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, adminUsers: prevDb.adminUsers.map(u => u.id === updatedUser.id ? updatedUser : u) } : null);
     };
     const deleteAdminUser = async (userId: string) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, adminUsers: prevDb.adminUsers.filter(u => u.id !== userId) } : null);
     };
 
     // --- Task Operations ---
     const addTask = async (task: Omit<Task, 'id'>) => {
+        await delay(300);
         const newTask = { ...task, id: `task-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, tasks: [...(prevDb.tasks || []), newTask] } : null);
     };
     const updateTask = async (updatedTask: Task) => {
+        await delay(200);
         setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).map(t => t.id === updatedTask.id ? updatedTask : t) } : null);
     };
     const deleteTask = async (taskId: string) => {
+        await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).filter(t => t.id !== taskId) } : null);
     };
     const deleteMultipleTasks = async (taskIds: string[]) => {
+        await delay(300);
         const idSet = new Set(taskIds);
         setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).filter(t => !idSet.has(t.id)) } : null);
     };
     const updateMultipleTasksStatus = async (taskIds: string[], isComplete: boolean) => {
+        await delay(300);
         const idSet = new Set(taskIds);
-        setDb(prevDb => prevDb ? {
-            ...prevDb,
-            tasks: (prevDb.tasks || []).map(t => idSet.has(t.id) ? { ...t, isComplete } : t)
-        } : null);
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const newTasks = (prevDb.tasks || []).map(t => {
+                if (idSet.has(t.id)) {
+                    return { 
+                        ...t, 
+                        isComplete,
+                        completionDate: isComplete ? new Date().toISOString().split('T')[0] : t.completionDate
+                    };
+                }
+                return t;
+            });
+            return { ...prevDb, tasks: newTasks };
+        });
     };
 
     // --- Payout Operations ---
     const addPayoutRequest = async (payoutRequest: Omit<PayoutRequest, 'id' | 'status' | 'requestDate'>) => {
+        await delay(500);
         const newRequest: PayoutRequest = {
             ...payoutRequest,
             id: `po-${Date.now()}`,
@@ -429,6 +487,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         setDb(prevDb => prevDb ? { ...prevDb, payouts: [...(prevDb.payouts || []), newRequest] } : null);
     };
     const processPayoutRequest = async (payoutId: string, status: 'Approved' | 'Rejected', rejectionReason?: string) => {
+        await delay(500);
         setDb(prevDb => prevDb ? {
             ...prevDb,
             payouts: (prevDb.payouts || []).map(p => 
@@ -442,7 +501,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const value = {
         db, loading, addService, updateService, deleteService, addPart, updatePart, deletePart, addMechanic, updateMechanic, deleteMechanic,
-        updateMechanicStatus, updateMechanicLocation, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, updateBookingImages, markBookingAsPaid, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
+        updateMechanicStatus, updateMechanicLocation, updateMechanicOnlineStatus, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, updateBookingImages, markBookingAsPaid, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
         addOrder, updateOrderStatus, updateSettings, addReviewToMechanic, addBanner, updateBanner, deleteBanner,
         addAdminUser, updateAdminUser, deleteAdminUser, addRole, updateRole, deleteRole,
         addTask, updateTask, deleteTask, deleteMultipleTasks, updateMultipleTasksStatus,

@@ -4,7 +4,7 @@
 
 export interface Notification {
     id: string;
-    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job';
+    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job' | 'success' | 'error';
     title: string;
     message: string;
     timestamp: number;
@@ -75,6 +75,7 @@ export interface Mechanic {
     reviews: number;
     specializations: string[];
     status: 'Active' | 'Inactive' | 'Pending';
+    isOnline?: boolean;
     imageUrl: string;
     lat: number;
     lng: number;
@@ -247,6 +248,7 @@ export interface Task {
     dueDate: string;
     isComplete: boolean;
     priority: TaskPriority;
+    completionDate?: string;
 }
 
 export interface Reminder {

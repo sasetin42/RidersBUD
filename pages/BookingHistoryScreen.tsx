@@ -91,7 +91,7 @@ const JobProgressModal: React.FC<{
         
         let highestIndex = -1;
         allStatuses.forEach(status => {
-            const indexInTimeline = timelineSteps.indexOf(status);
+            const indexInTimeline = timelineSteps.indexOf(status as BookingStatus);
             if (indexInTimeline > highestIndex) {
                 highestIndex = indexInTimeline;
             }
@@ -155,7 +155,7 @@ const JobProgressModal: React.FC<{
                                             <div className={`-left-2 absolute w-2 h-2 rounded-full mt-[7px] ${isCompleted ? 'bg-primary ring-4 ring-primary/20' : 'bg-field'}`}></div>
                                             <div className="ml-4">
                                                 <p className={`font-semibold text-sm ${isCompleted ? 'text-white' : 'text-gray-500'}`}>{step}</p>
-                                                <p className="text-xs text-gray-400">{historyEntry ? new Date(historyEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                                                <p className="text-xs text-gray-400">{historyEntry ? new Date(historyEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}</p>
                                             </div>
                                         </div>
                                     </div>

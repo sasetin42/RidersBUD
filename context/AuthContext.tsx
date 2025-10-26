@@ -2,6 +2,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Customer, Vehicle } from '../types';
 import { useDatabase } from './DatabaseContext';
+import { useNotification } from './NotificationContext';
 
 interface AuthContextType {
     isAuthenticated: boolean;
@@ -12,13 +13,13 @@ interface AuthContextType {
     loginWithGoogle: () => Promise<void>;
     loginWithFacebook: () => Promise<void>;
     logout: () => void;
-    addUserVehicle: (vehicle: Vehicle) => void;
-    deleteUserVehicle: (plateNumber: string) => void;
+    addUserVehicle: (vehicle: Vehicle) => Promise<void>;
+    deleteUserVehicle: (plateNumber: string) => Promise<void>;
     updateUserProfile: (updatedData: { name: string; email: string; phone: string }) => Promise<void>;
-    updateUserVehicle: (vehicle: Vehicle) => void;
-    setPrimaryVehicle: (plateNumber: string) => void;
-    addFavoriteMechanic: (mechanicId: string) => void;
-    removeFavoriteMechanic: (mechanicId: string) => void;
+    updateUserVehicle: (vehicle: Vehicle) => Promise<void>;
+    setPrimaryVehicle: (plateNumber: string) => Promise<void>;
+    addFavoriteMechanic: (mechanicId: string) => Promise<void>;
+    removeFavoriteMechanic: (mechanicId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -35,6 +36,7 @@ const SESSION_KEY = 'ridersbud_session';
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { db, addCustomer, updateCustomer, loading: dbLoading } = useDatabase();
+    const { addNotification } = useNotification();
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [user, setUser] = useState<Customer | null>(null);
     const [loading, setLoading] = useState(true);
@@ -85,6 +87,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const newCustomer = await addCustomer({ name, email, phone, password, vehicles: [] });
         if(newCustomer) {
             loginUser(newCustomer);
+            addNotification({ type: 'success', title: 'Welcome!', message: 'Your account has been created successfully.' });
         } else {
             throw new Error("Failed to create account.");
         }
@@ -168,7 +171,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         sessionStorage.removeItem(SESSION_KEY); // Clear session
     };
 
-    const addUserVehicle = (vehicle: Vehicle) => {
+    const addUserVehicle = async (vehicle: Vehicle) => {
         if (!user) return;
         const isFirstVehicle = user.vehicles.length === 0;
         const newVehicleWithPrimary = { ...vehicle, isPrimary: isFirstVehicle };
@@ -177,11 +180,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             ...user,
             vehicles: [...user.vehicles, newVehicleWithPrimary],
         };
-        updateCustomer(updatedUser);
+        await updateCustomer(updatedUser);
         setUser(updatedUser); // Update local state immediately for responsiveness
     };
     
-    const deleteUserVehicle = (plateNumber: string) => {
+    const deleteUserVehicle = async (plateNumber: string) => {
         if (!user) return;
 
         const vehicleToDelete = user.vehicles.find(v => v.plateNumber === plateNumber);
@@ -198,11 +201,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             ...user,
             vehicles: updatedVehicles,
         };
-        updateCustomer(updatedUser);
+        await updateCustomer(updatedUser);
         setUser(updatedUser);
     };
 
-    const setPrimaryVehicle = (plateNumber: string) => {
+    const setPrimaryVehicle = async (plateNumber: string) => {
         if (!user) return;
         const updatedVehicles = user.vehicles.map(v => ({
             ...v,
@@ -212,23 +215,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             ...user,
             vehicles: updatedVehicles,
         };
-        updateCustomer(updatedUser);
+        await updateCustomer(updatedUser);
         setUser(updatedUser);
     };
 
     const updateUserProfile = async (updatedData: { name: string; email: string; phone: string }) => {
         if (!user) return;
-        // Simulate async operation for loading spinner feedback
-        await new Promise(resolve => setTimeout(resolve, 750));
         const updatedUser: Customer = {
             ...user,
             ...updatedData
         };
-        updateCustomer(updatedUser);
+        await updateCustomer(updatedUser);
         setUser(updatedUser);
     };
 
-    const updateUserVehicle = (vehicle: Vehicle) => {
+    const updateUserVehicle = async (vehicle: Vehicle) => {
         if (!user) return;
         const updatedVehicles = user.vehicles.map(v =>
             v.plateNumber === vehicle.plateNumber ? { ...vehicle, isPrimary: v.isPrimary } : v // Preserve isPrimary status on edit
@@ -237,28 +238,30 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             ...user,
             vehicles: updatedVehicles,
         };
-        updateCustomer(updatedUser);
+        await updateCustomer(updatedUser);
         setUser(updatedUser);
     };
     
-    const addFavoriteMechanic = (mechanicId: string) => {
+    const addFavoriteMechanic = async (mechanicId: string) => {
         if (!user) return;
         const updatedUser: Customer = {
             ...user,
             favoriteMechanicIds: [...new Set([...(user.favoriteMechanicIds || []), mechanicId])],
         };
-        updateCustomer(updatedUser);
+        await updateCustomer(updatedUser);
         setUser(updatedUser);
+        addNotification({ type: 'success', title: 'Favorite Added', message: 'Mechanic saved to your favorites.' });
     };
 
-    const removeFavoriteMechanic = (mechanicId: string) => {
+    const removeFavoriteMechanic = async (mechanicId: string) => {
         if (!user) return;
         const updatedUser: Customer = {
             ...user,
             favoriteMechanicIds: (user.favoriteMechanicIds || []).filter(id => id !== mechanicId),
         };
-        updateCustomer(updatedUser);
+        await updateCustomer(updatedUser);
         setUser(updatedUser);
+        addNotification({ type: 'success', title: 'Favorite Removed', message: 'Mechanic removed from your favorites.' });
     };
 
 

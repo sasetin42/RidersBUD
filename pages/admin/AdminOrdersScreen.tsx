@@ -3,6 +3,7 @@ import { Order, OrderStatus } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
+import { useNotification } from '../../context/NotificationContext';
 
 type SortableKeys = 'customerName' | 'date' | 'total' | 'status';
 
@@ -86,6 +87,7 @@ const OrderDetailsModal: React.FC<{ order: Order; onClose: () => void; }> = ({ o
 
 const AdminOrdersScreen: React.FC = () => {
     const { db, updateOrderStatus, loading } = useDatabase();
+    const { addNotification } = useNotification();
     const [searchQuery, setSearchQuery] = useState('');
     const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
     const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
@@ -148,6 +150,15 @@ const AdminOrdersScreen: React.FC = () => {
     if (loading || !db) {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
     }
+
+    const handleUpdateStatus = async (orderId: string, status: OrderStatus) => {
+        try {
+            await updateOrderStatus(orderId, status);
+            addNotification({ type: 'success', title: 'Order Updated', message: `Order #${orderId.slice(-6)} status set to ${status}.` });
+        } catch (e) {
+            addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message });
+        }
+    };
     
     const orderStatuses: Array<OrderStatus | 'all'> = ['all', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
     const statusColors: Record<OrderStatus, string> = { Processing: 'bg-blue-500/20 text-blue-300', Shipped: 'bg-yellow-500/20 text-yellow-300', Delivered: 'bg-green-500/20 text-green-300', Cancelled: 'bg-red-500/20 text-red-300' };
@@ -198,7 +209,7 @@ const AdminOrdersScreen: React.FC = () => {
                                             <button onClick={() => setViewingOrder(order)} className="font-semibold text-blue-400 hover:text-blue-300 text-sm">View</button>
                                             <select 
                                                 value={order.status} 
-                                                onChange={(e) => updateOrderStatus(order.id, e.target.value as OrderStatus)} 
+                                                onChange={(e) => handleUpdateStatus(order.id, e.target.value as OrderStatus)} 
                                                 className="bg-admin-card border border-admin-border p-1 rounded text-xs"
                                                 onClick={(e) => e.stopPropagation()} // Prevent row click
                                             >

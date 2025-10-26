@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Booking, BookingStatus } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
@@ -84,9 +84,30 @@ const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean; onTr
         });
     };
 
-    const confirmedStep = booking.statusHistory?.find(s => s.status === 'Booking Confirmed');
-    const assignedStep = booking.statusHistory?.find(s => s.status === 'Mechanic Assigned');
-    const isEnRoute = booking.status === 'En Route' || booking.status === 'In Progress' || booking.status === 'Completed';
+    const timelineSteps: BookingStatus[] = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress'];
+    
+    const statusIcons: Record<string, React.ReactNode> = {
+        'Booking Confirmed': <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>,
+        'Mechanic Assigned': <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
+        'En Route': <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 11c0 3.517-1.009 6.789-2.75 9.566-1.74 2.777-2.75 4.434-2.75 4.434H12M12 11c0-3.517 1.009-6.789 2.75-9.566 1.74-2.777 2.75-4.434 2.75-4.434H12M12 11v9M12 11V2" /></svg>,
+        'In Progress': <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734-2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" /></svg>,
+    };
+
+    const currentStatusIndex = useMemo(() => {
+        if (!booking) return -1;
+        
+        let highestIndex = -1;
+        const allStatuses = [...(booking.statusHistory?.map(h => h.status) || []), booking.status];
+        
+        for (const status of allStatuses) {
+            const index = timelineSteps.indexOf(status as BookingStatus);
+            if (index > highestIndex) {
+                highestIndex = index;
+            }
+        }
+        return highestIndex;
+    }, [booking]);
+
 
     const handleConfirmCancellation = (reason: string) => {
         cancelBooking(booking.id, reason);
@@ -119,25 +140,28 @@ const BookingStatusCard: React.FC<{ booking: Booking; showHeader?: boolean; onTr
                 <div>
                     <h3 className="font-semibold text-white mb-4">Booking Status</h3>
                     <div className="space-y-0">
-                        <StatusStep
-                            title="Booking Confirmed"
-                            subtitle={confirmedStep ? formatTimestamp(confirmedStep.timestamp) : 'Pending'}
-                            isCompleted={!!confirmedStep}
-                            icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                        />
-                         <StatusStep
-                            title="Mechanic Assigned"
-                            subtitle={assignedStep ? formatTimestamp(assignedStep.timestamp) : 'Waiting for assignment'}
-                            isCompleted={!!assignedStep}
-                            icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>}
-                        />
-                         <StatusStep
-                            title="En Route"
-                            subtitle={isEnRoute ? 'Your mechanic is on the way!' : 'Pending'}
-                            isCompleted={isEnRoute}
-                            isLast
-                            icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 11c0 3.517-1.009 6.789-2.75 9.566-1.74 2.777-2.75 4.434-2.75 4.434H12M12 11c0-3.517 1.009-6.789 2.75-9.566 1.74-2.777 2.75-4.434 2.75-4.434H12M12 11v9M12 11V2" /></svg>}
-                        />
+                         {timelineSteps.map((step, index) => {
+                            const isCompleted = index <= currentStatusIndex;
+                            const historyEntry = booking.statusHistory?.find(s => s.status === step);
+                            
+                            let subtitle = 'Pending';
+                            if (historyEntry) {
+                                subtitle = formatTimestamp(historyEntry.timestamp);
+                            } else if (step === 'Mechanic Assigned' && !isCompleted) {
+                                subtitle = 'Waiting for assignment';
+                            }
+
+                            return (
+                                <StatusStep
+                                    key={step}
+                                    title={step}
+                                    subtitle={subtitle}
+                                    isCompleted={isCompleted}
+                                    icon={statusIcons[step]}
+                                    isLast={index === timelineSteps.length - 1}
+                                />
+                            );
+                        })}
                     </div>
                 </div>
 

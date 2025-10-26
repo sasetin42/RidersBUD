@@ -3,6 +3,7 @@ import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { PayoutRequest, Settings } from '../../types';
 import Modal from '../../components/admin/Modal';
+import { useNotification } from '../../context/NotificationContext';
 
 const StatCard: React.FC<{ title: string; value: string | number; }> = ({ title, value }) => (
     <div className="bg-admin-card p-4 rounded-xl shadow border border-admin-border">
@@ -14,20 +15,25 @@ const StatCard: React.FC<{ title: string; value: string | number; }> = ({ title,
 const PayoutDetailsModal: React.FC<{
     request: PayoutRequest;
     onClose: () => void;
-    onProcess: (payoutId: string, status: 'Approved' | 'Rejected', reason?: string) => void;
+    onProcess: (payoutId: string, status: 'Approved' | 'Rejected', reason?: string) => Promise<void>;
 }> = ({ request, onClose, onProcess }) => {
     const { db } = useDatabase();
     const [rejectionReason, setRejectionReason] = useState('');
     const [showRejectionInput, setShowRejectionInput] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [error, setError] = useState('');
 
     const mechanic = db?.mechanics.find(m => m.id === request.mechanicId);
     
-    const handleReject = () => {
-        if (!rejectionReason.trim()) {
-            alert('Please provide a reason for rejection.');
+    const handleProcess = async (status: 'Approved' | 'Rejected') => {
+        if (status === 'Rejected' && !rejectionReason.trim()) {
+            setError('Please provide a reason for rejection.');
             return;
         }
-        onProcess(request.id, 'Rejected', rejectionReason);
+        setError('');
+        setIsProcessing(true);
+        await onProcess(request.id, status, rejectionReason);
+        setIsProcessing(false);
     };
 
     return (
@@ -63,15 +69,20 @@ const PayoutDetailsModal: React.FC<{
                 {showRejectionInput && (
                     <div className="pt-4">
                         <label className="text-sm text-admin-text-secondary">Reason for Rejection</label>
-                        <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} rows={3} className="w-full p-2 bg-admin-bg border border-admin-border rounded mt-1" />
-                        <button onClick={handleReject} className="w-full mt-2 bg-red-600 font-bold py-2 px-4 rounded-lg">Confirm Rejection</button>
+                        <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} rows={3} className={`w-full p-2 bg-admin-bg border rounded mt-1 ${error ? 'border-red-500' : 'border-admin-border'}`} />
+                         {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
+                        <button onClick={() => handleProcess('Rejected')} disabled={isProcessing} className="w-full mt-2 bg-red-600 font-bold py-2 px-4 rounded-lg flex items-center justify-center">
+                             {isProcessing ? <Spinner size="sm" /> : 'Confirm Rejection'}
+                        </button>
                     </div>
                 )}
             </div>
             {request.status === 'Pending' && !showRejectionInput && (
                  <div className="mt-6 flex justify-end gap-4 border-t border-admin-border pt-4">
-                    <button onClick={() => setShowRejectionInput(true)} className="bg-red-800/50 text-red-300 font-bold py-2 px-4 rounded-lg hover:bg-red-800/80">Reject</button>
-                    <button onClick={() => onProcess(request.id, 'Approved')} className="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Approve Payout</button>
+                    <button onClick={() => setShowRejectionInput(true)} disabled={isProcessing} className="bg-red-800/50 text-red-300 font-bold py-2 px-4 rounded-lg hover:bg-red-800/80">Reject</button>
+                    <button onClick={() => handleProcess('Approved')} disabled={isProcessing} className="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 flex items-center justify-center min-w-[150px]">
+                        {isProcessing ? <Spinner size="sm" /> : 'Approve Payout'}
+                    </button>
                 </div>
             )}
         </Modal>
@@ -83,9 +94,12 @@ const PayoutSettingsModal: React.FC<{
 }> = ({ onClose }) => {
     const { db, updateSettings } = useDatabase();
     const [settings, setSettings] = useState(db!.settings);
+    const [isSaving, setIsSaving] = useState(false);
 
-    const handleSave = () => {
-        updateSettings(settings);
+    const handleSave = async () => {
+        setIsSaving(true);
+        await updateSettings(settings);
+        setIsSaving(false);
         onClose();
     };
 
@@ -124,8 +138,10 @@ const PayoutSettingsModal: React.FC<{
                 </div>
             </div>
             <div className="mt-6 flex justify-end gap-4 border-t border-admin-border pt-4">
-                <button onClick={onClose} className="bg-admin-border font-bold py-2 px-4 rounded-lg">Cancel</button>
-                <button onClick={handleSave} className="bg-admin-accent font-bold py-2 px-4 rounded-lg">Save Settings</button>
+                <button onClick={onClose} disabled={isSaving} className="bg-admin-border font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button onClick={handleSave} disabled={isSaving} className="bg-admin-accent font-bold py-2 px-4 rounded-lg flex items-center justify-center min-w-[120px]">
+                    {isSaving ? <Spinner size="sm"/> : 'Save Settings'}
+                </button>
             </div>
         </Modal>
     );
@@ -134,6 +150,7 @@ const PayoutSettingsModal: React.FC<{
 
 const AdminPayoutsScreen: React.FC = () => {
     const { db, processPayoutRequest, loading } = useDatabase();
+    const { addNotification } = useNotification();
     const [statusFilter, setStatusFilter] = useState<'all' | PayoutRequest['status']>('all');
     const [viewingRequest, setViewingRequest] = useState<PayoutRequest | null>(null);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -163,6 +180,16 @@ const AdminPayoutsScreen: React.FC = () => {
     if (loading || !db) {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
     }
+
+    const handleProcessRequest = async (payoutId: string, status: 'Approved' | 'Rejected', reason?: string) => {
+        try {
+            await processPayoutRequest(payoutId, status, reason);
+            addNotification({ type: 'success', title: 'Payout Processed', message: `Request #${payoutId.slice(-6)} has been ${status.toLowerCase()}.` });
+            setViewingRequest(null);
+        } catch (e) {
+            addNotification({ type: 'error', title: 'Processing Failed', message: (e as Error).message });
+        }
+    };
     
     const statusColors: Record<PayoutRequest['status'], string> = { Pending: 'bg-yellow-500/20 text-yellow-300', Approved: 'bg-green-500/20 text-green-300', Rejected: 'bg-red-500/20 text-red-300' };
 
@@ -176,7 +203,7 @@ const AdminPayoutsScreen: React.FC = () => {
                         Payout Settings
                     </button>
                 </div>
-                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 my-6">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-6">
                     <StatCard title="Pending Requests" value={stats.pending} />
                     <StatCard title="Paid This Month" value={`₱${(stats.totalPaidMonth/1000).toFixed(1)}k`} />
                 </div>
@@ -219,7 +246,7 @@ const AdminPayoutsScreen: React.FC = () => {
                 </div>
                  {filteredPayouts.length === 0 && <p className="text-center py-10 text-admin-text-secondary">No payout requests match the current filters.</p>}
             </div>
-            {viewingRequest && <PayoutDetailsModal request={viewingRequest} onClose={() => setViewingRequest(null)} onProcess={processPayoutRequest} />}
+            {viewingRequest && <PayoutDetailsModal request={viewingRequest} onClose={() => setViewingRequest(null)} onProcess={handleProcessRequest} />}
             {isSettingsModalOpen && <PayoutSettingsModal onClose={() => setIsSettingsModalOpen(false)} />}
         </div>
     );

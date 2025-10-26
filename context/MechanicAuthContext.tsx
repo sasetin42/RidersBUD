@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Mechanic } from '../types';
 import { useDatabase } from './DatabaseContext';
+import { useNotification } from './NotificationContext';
 
 interface MechanicAuthContextType {
     isMechanicAuthenticated: boolean;
@@ -10,6 +11,7 @@ interface MechanicAuthContextType {
     logout: () => void;
     register: (mechanicData: Omit<Mechanic, 'id' | 'status' | 'rating' | 'reviews' | 'reviewsList' | 'password'> & { password?: string }) => Promise<void>;
     updateMechanicProfile: (updatedMechanic: Mechanic) => Promise<void>;
+    updateOnlineStatus: (isOnline: boolean) => Promise<void>;
 }
 
 const MechanicAuthContext = createContext<MechanicAuthContextType | undefined>(undefined);
@@ -23,7 +25,8 @@ export const useMechanicAuth = () => {
 };
 
 export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const { db, addMechanic, updateMechanic: dbUpdateMechanic, loading: dbLoading } = useDatabase();
+    const { db, addMechanic, updateMechanic: dbUpdateMechanic, updateMechanicOnlineStatus, loading: dbLoading } = useDatabase();
+    const { addNotification } = useNotification();
     const [isMechanicAuthenticated, setIsMechanicAuthenticated] = useState<boolean>(false);
     const [mechanic, setMechanic] = useState<Mechanic | null>(null);
     const [loading, setLoading] = useState(true);
@@ -76,7 +79,7 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
             throw new Error("An account with this email already exists.");
         }
 
-        addMechanic({ 
+        await addMechanic({ 
             ...mechanicData, 
             password: mechanicData.password || 'password123', // Use provided password or a default
             status: 'Pending', 
@@ -85,15 +88,21 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         });
     };
     
+    const updateOnlineStatus = async (isOnline: boolean) => {
+        if (!mechanic) return;
+        await updateMechanicOnlineStatus(mechanic.id, isOnline);
+    };
+
     const updateMechanicProfile = async (updatedMechanic: Mechanic) => {
         await dbUpdateMechanic(updatedMechanic);
         setMechanic(updatedMechanic);
+        addNotification({ type: 'success', title: 'Profile Updated', message: 'Your changes have been saved.' });
     };
 
     const isLoadingAuth = loading || dbLoading;
 
     return (
-        <MechanicAuthContext.Provider value={{ isMechanicAuthenticated, mechanic, loading: isLoadingAuth, login, logout, register, updateMechanicProfile }}>
+        <MechanicAuthContext.Provider value={{ isMechanicAuthenticated, mechanic, loading: isLoadingAuth, login, logout, register, updateMechanicProfile, updateOnlineStatus }}>
             {children}
         </MechanicAuthContext.Provider>
     );

@@ -194,6 +194,7 @@ export const seedMechanics: Mechanic[] = [
         reviews: 120,
         specializations: ['Oil Change', 'Engine Diagnostics', 'Mitsubishi Expert'],
         status: 'Active',
+        isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech1/200/200',
         lat: 14.5547,
         lng: 121.0244,
@@ -245,6 +246,7 @@ export const seedMechanics: Mechanic[] = [
         reviews: 97,
         specializations: ['Brake Systems', 'Honda Pro', 'Suspension'],
         status: 'Active',
+        isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech2/200/200',
         lat: 14.6091,
         lng: 121.0223,
@@ -280,6 +282,7 @@ export const seedMechanics: Mechanic[] = [
         reviews: 152,
         specializations: ['BMW Specialist', 'EV Certified', 'Aircon Repair', 'Maintenance'],
         status: 'Active',
+        isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech3/200/200',
         lat: 14.5825,
         lng: 121.0616,
@@ -313,6 +316,7 @@ export const seedMechanics: Mechanic[] = [
         reviews: 88,
         specializations: ['General Maintenance', 'Towing', 'Tire Services'],
         status: 'Active',
+        isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech4/200/200',
         lat: 14.5560, // Near m1
         lng: 121.0250,
@@ -346,6 +350,7 @@ export const seedMechanics: Mechanic[] = [
         reviews: 110,
         specializations: ['Ford Certified', 'Diagnostics', 'Electrical'],
         status: 'Active',
+        isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech5/200/200',
         lat: 14.6105, // Near m2
         lng: 121.0235,
@@ -703,7 +708,8 @@ export const seedTasks: Task[] = [
         description: 'Get the OEM Mitsubishi filter from the parts supplier.',
         dueDate: new Date().toISOString().split('T')[0],
         isComplete: true,
-        priority: 'High'
+        priority: 'High',
+        completionDate: new Date(new Date().setDate(new Date().getDate() -1)).toISOString().split('T')[0],
     },
     {
         id: 't3',

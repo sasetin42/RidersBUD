@@ -56,12 +56,15 @@ When the conversation starts, greet the user and ask how you can help them with 
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     const chat = ai.chats.create({
-        // Per the request, using gemini-2.5-flash for a balance of speed and features for general chatbot and grounding tasks.
-        model: 'gemini-2.5-flash',
+        // As per the request, using gemini-2.5-pro for complex user queries.
+        model: 'gemini-2.5-pro',
         config: {
             systemInstruction: systemInstruction,
-            // Per the request, enabling both Google Search and Google Maps grounding tools.
-            // This allows the AI to fetch up-to-date, real-world information and answer location-based queries.
+            // Thinking mode is enabled with the maximum budget to handle complex planning and reasoning.
+            thinkingConfig: {
+                thinkingBudget: 32768,
+            },
+            // Grounding tools are enabled to answer real-world and location-based questions.
             tools: [{ googleSearch: {} }, { googleMaps: {} }],
             toolConfig: toolConfig,
         }

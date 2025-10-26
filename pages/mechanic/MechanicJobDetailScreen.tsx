@@ -90,6 +90,7 @@ const JobTimeline: React.FC<{ booking: Booking }> = ({ booking }) => {
                 {timelineSteps.map((step, index) => {
                     const isCompleted = index < currentStatusIndex;
                     const isActive = index === currentStatusIndex;
+                    const historyEntry = booking.statusHistory?.find(s => s.status === step);
 
                     return (
                         <div key={step} className={`relative pb-8 ${index === timelineSteps.length - 1 ? 'pb-0' : ''}`}>
@@ -102,9 +103,14 @@ const JobTimeline: React.FC<{ booking: Booking }> = ({ booking }) => {
                                 }`}>
                                     {isCompleted && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                                 </div>
-                                <p className={`font-semibold text-sm ml-4 ${
-                                    isActive ? 'text-primary' : isCompleted ? 'text-white' : 'text-gray-500'
-                                }`}>{step}</p>
+                                <div className="ml-4">
+                                    <p className={`font-semibold text-sm ${
+                                        isActive ? 'text-primary' : isCompleted ? 'text-white' : 'text-gray-500'
+                                    }`}>{step}</p>
+                                    {historyEntry && (
+                                        <p className="text-xs text-gray-400">{new Date(historyEntry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     );

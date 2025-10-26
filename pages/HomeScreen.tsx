@@ -4,8 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import { getAIServiceSuggestions } from '../services/geminiService';
 import Spinner from '../components/Spinner';
-import { Booking, Mechanic } from '../types';
+import { Booking, BookingStatus, Mechanic } from '../types';
 import HomeLiveMap from '../components/HomeLiveMap';
+import NotificationBell from '../components/NotificationBell';
+import TrackMechanicModal from '../components/TrackMechanicModal';
 
 declare const L: any;
 
@@ -13,308 +15,6 @@ interface AISuggestion {
     serviceName: string;
     reason: string;
 }
-
-interface Notification {
-    id: string;
-    title: string;
-    message: string;
-    timestamp: string;
-    read: boolean;
-    link?: string;
-}
-
-const mockNotifications: Notification[] = [
-    { id: '1', title: 'Mechanic En Route!', message: 'Ricardo Reyes is on the way for your Change Oil service.', timestamp: '5m ago', read: false, link: '/booking-history' },
-    { id: '2', title: 'Order Shipped', message: 'Your order #A4B6C8 for Ceramic Brake Pads has been shipped.', timestamp: '2h ago', read: false, link: '/order-history' },
-    { id: '3', title: 'Service Reminder', message: 'Your Battery check for Toyota Camry is due in 3 days.', timestamp: '1d ago', read: true, link: '/reminders' },
-];
-
-const newMockNotification: Notification = {
-    id: '4', title: 'New Booking!', message: 'You have a new booking for Aircon service tomorrow.', timestamp: '1m ago', read: false, link: '/booking-history' 
-};
-
-const InProgressNotificationModal: React.FC<{ booking: Booking; onClose: () => void; }> = ({ booking, onClose }) => (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={onClose}>
-        <div className="bg-dark-gray rounded-xl p-6 shadow-2xl animate-scaleUp border border-primary/30 w-full max-w-sm text-center" onClick={e => e.stopPropagation()}>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-primary mx-auto mb-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-            </svg>
-            <h2 className="text-xl font-bold text-white">Work has begun!</h2>
-            <p className="text-light-gray mt-2 mb-4">
-                {booking.mechanic?.name} has started working on your {booking.vehicle.make} {booking.vehicle.model}.
-            </p>
-            <button onClick={onClose} className="w-full bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition">
-                Okay
-            </button>
-        </div>
-    </div>
-);
-
-const CompletedInvoiceModal: React.FC<{ booking: Booking; onClose: () => void; db: any; }> = ({ booking, onClose, db }) => {
-    const navigate = useNavigate();
-    return (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={onClose}>
-            <div className="bg-dark-gray rounded-xl p-6 shadow-2xl animate-scaleUp border border-green-500/30 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-                <div className="text-center mb-4">
-                    <img src={db.settings.appLogoUrl} alt="Logo" className="w-24 mx-auto mb-2" />
-                    <h2 className="text-2xl font-bold text-white">Service Complete!</h2>
-                    <p className="text-sm text-green-400">Please review your invoice.</p>
-                </div>
-                <div className="space-y-3 bg-field p-4 rounded-lg">
-                    <div className="flex justify-between items-center text-sm border-b border-dark-gray pb-2">
-                        <span className="text-light-gray">Service:</span>
-                        <span className="font-semibold text-white">{booking.service.name}</span>
-                    </div>
-                     <div className="flex justify-between items-center text-sm">
-                        <span className="text-light-gray">Mechanic:</span>
-                        <span className="font-semibold text-white">{booking.mechanic?.name}</span>
-                    </div>
-                </div>
-                <div className="mt-4 pt-4 border-t border-dark-gray text-right">
-                    <p className="text-light-gray">Total Amount Due:</p>
-                    <p className="text-4xl font-bold text-primary">₱{booking.service.price.toLocaleString()}</p>
-                </div>
-                <div className="mt-6 flex flex-col gap-3">
-                     <button onClick={() => { onClose(); navigate('/booking-history'); }} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
-                        Proceed to Pay
-                    </button>
-                    <button onClick={onClose} className="w-full text-sm text-light-gray hover:text-white transition">
-                        Close
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
-// Haversine distance formula to calculate distance between two lat/lng points
-const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371; // Radius of the Earth in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) *
-        Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-};
-
-const NotificationPanel: React.FC<{
-    notifications: Notification[];
-    onClose: () => void;
-    onNotificationClick: (notification: Notification) => void;
-}> = ({ notifications, onClose, onNotificationClick }) => {
-    const navigate = useNavigate();
-    const handleClick = (notification: Notification) => {
-        onNotificationClick(notification);
-        if (notification.link) {
-            navigate(notification.link);
-        }
-        onClose();
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/60 z-50 animate-fadeIn" onClick={onClose}>
-            <div
-                className="absolute top-16 right-6 w-80 max-w-[calc(100%-3rem)] bg-dark-gray rounded-lg shadow-2xl animate-scaleUp origin-top-right"
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="p-3 border-b border-field">
-                    <h3 className="font-bold text-white">Notifications</h3>
-                </div>
-                <div className="max-h-96 overflow-y-auto">
-                    {notifications.length > 0 ? (
-                        notifications.map(notif => (
-                            <div
-                                key={notif.id}
-                                onClick={() => handleClick(notif)}
-                                className={`p-3 border-b border-field hover:bg-field cursor-pointer ${!notif.read ? 'bg-primary/10' : ''}`}
-                            >
-                                <p className="font-semibold text-white text-sm">{notif.title}</p>
-                                <p className="text-xs text-light-gray">{notif.message}</p>
-                                <p className="text-[10px] text-gray-500 mt-1">{notif.timestamp}</p>
-                            </div>
-                        ))
-                    ) : (
-                        <p className="p-4 text-center text-sm text-light-gray">No new notifications.</p>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
-const TrackMechanicModal: React.FC<{ 
-    booking: Booking; 
-    onClose: () => void; 
-    onShare: () => void;
-    customerLocation: { lat: number; lng: number } | null 
-}> = ({ booking, onClose, onShare, customerLocation }) => {
-    const mapRef = useRef<HTMLDivElement>(null);
-    const mapInstanceRef = useRef<any>(null);
-    const mechanicMarkerRef = useRef<any>(null);
-    const [routeInfo, setRouteInfo] = useState({ distance: '...', eta: '...' });
-    const mechanic = booking.mechanic;
-    const destination = customerLocation;
-
-    useEffect(() => {
-        if (!mapRef.current || !mechanic || !destination || mapInstanceRef.current || typeof L === 'undefined') return;
-
-        mapInstanceRef.current = L.map(mapRef.current).setView([mechanic.lat, mechanic.lng], 13);
-        
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        }).addTo(mapInstanceRef.current);
-
-        const homeIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>`,
-            className: '', iconSize: [32, 32], iconAnchor: [16, 32]
-        });
-        L.marker([destination.lat, destination.lng], { icon: homeIcon }).addTo(mapInstanceRef.current).bindPopup("Your Location");
-
-        const mechanicIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 24 24" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>`,
-            className: '', iconSize: [32, 32], iconAnchor: [16, 32]
-        });
-        mechanicMarkerRef.current = L.marker([mechanic.lat, mechanic.lng], { icon: mechanicIcon }).addTo(mapInstanceRef.current).bindPopup(`<b>${mechanic.name}</b>`);
-        
-        const bounds = L.latLngBounds([destination, { lat: mechanic.lat, lng: mechanic.lng }]);
-        mapInstanceRef.current.fitBounds(bounds.pad(0.25));
-
-        return () => {
-            if (mapInstanceRef.current) {
-                mapInstanceRef.current.remove();
-                mapInstanceRef.current = null;
-            }
-        };
-    }, [mechanic, destination]);
-
-    useEffect(() => {
-        if (!mechanic || !destination) return;
-        const interval = setInterval(() => {
-            if (!mechanicMarkerRef.current) return;
-            const currentPos = mechanicMarkerRef.current.getLatLng();
-            const distKm = getDistanceInKm(currentPos.lat, currentPos.lng, destination.lat, destination.lng);
-            
-            // Assuming average speed of 40 km/h for ETA calculation
-            const etaMins = Math.ceil((distKm / 40) * 60);
-
-             if (distKm < 0.1) { // 100 meters threshold
-                clearInterval(interval);
-                mechanicMarkerRef.current.setLatLng([destination.lat, destination.lng]);
-                setRouteInfo({ distance: '0 km', eta: 'Arrived' });
-                return;
-            }
-
-            setRouteInfo({
-                distance: `${distKm.toFixed(1)} km`,
-                eta: `${etaMins} min`
-            });
-
-            // Simulate movement
-            const newLat = currentPos.lat + (destination.lat - currentPos.lat) * 0.1;
-            const newLng = currentPos.lng + (destination.lng - currentPos.lng) * 0.1;
-
-            mechanicMarkerRef.current.setLatLng([newLat, newLng]);
-        }, 2000);
-        return () => clearInterval(interval);
-    }, [mechanic, destination]);
-
-    if (!mechanic) return null;
-
-    if (!destination) {
-         return (
-             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true">
-                <header className="flex items-center justify-between pb-4 flex-shrink-0">
-                    <h2 className="text-xl font-bold text-white">Track Mechanic</h2>
-                    <button onClick={onClose} className="text-white text-3xl">&times;</button>
-                </header>
-                <div className="flex-grow rounded-lg bg-field flex items-center justify-center text-center p-4">
-                    <p className="text-light-gray">Customer location data is not available for tracking.</p>
-                </div>
-                 <footer className="bg-field mt-4 p-4 rounded-lg flex-shrink-0">
-                    <div className="flex items-center gap-3">
-                        <img src={mechanic.imageUrl} alt={mechanic.name} className="w-12 h-12 rounded-full object-cover" />
-                        <div>
-                            <p className="font-bold text-white">{mechanic.name}</p>
-                            <p className="text-sm text-yellow-400">⭐ {mechanic.rating} ({mechanic.reviews} jobs)</p>
-                        </div>
-                    </div>
-                </footer>
-            </div>
-        )
-    }
-
-    return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true">
-            <header className="flex items-center justify-between pb-4 flex-shrink-0">
-                <h2 className="text-xl font-bold text-white">Track Mechanic</h2>
-                <button onClick={onClose} className="text-white text-3xl">&times;</button>
-            </header>
-            <div ref={mapRef} className="flex-grow rounded-lg" />
-            <footer className="bg-field mt-4 p-4 rounded-lg flex-shrink-0">
-                 <div className="flex justify-between items-center text-center mb-3">
-                    <div>
-                        <p className="text-xs text-light-gray">ETA</p>
-                        <p className="text-lg text-primary font-bold">{routeInfo.eta}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs text-light-gray">DISTANCE</p>
-                        <p className="text-lg text-white font-bold">{routeInfo.distance}</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3 mt-3 border-t border-dark-gray pt-3">
-                    <img src={mechanic.imageUrl} alt={mechanic.name} className="w-12 h-12 rounded-full object-cover" />
-                    <div className="flex-grow">
-                        <p className="font-bold text-white">{mechanic.name}</p>
-                        <p className="text-sm text-yellow-400">⭐ {mechanic.rating} ({mechanic.reviews} jobs)</p>
-                    </div>
-                     <button onClick={onShare} className="bg-secondary text-white p-3 rounded-full hover:bg-gray-600 transition" aria-label="Share tracking link">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.368a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-                        </svg>
-                    </button>
-                </div>
-            </footer>
-        </div>
-    );
-};
-
-const ArrivalNotification: React.FC<{
-    booking: Booking;
-    onTrack: () => void;
-    onConfirm: () => void;
-}> = ({ booking, onTrack, onConfirm }) => {
-    const mechanic = booking.mechanic;
-    if (!mechanic) return null;
-
-    return (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md p-4 z-50">
-            <div className="bg-field rounded-xl p-4 shadow-2xl animate-slideInUp border border-primary/30">
-                <div className="flex items-center gap-4">
-                    <img src={mechanic.imageUrl} alt={mechanic.name} className="w-14 h-14 rounded-full object-cover flex-shrink-0" />
-                    <div>
-                        <p className="font-bold text-primary">{mechanic.name} is arriving!</p>
-                        <p className="text-sm text-light-gray">Estimated arrival in 5 minutes.</p>
-                    </div>
-                </div>
-                <div className="mt-4 flex gap-3">
-                    <button onClick={onConfirm} className="flex-1 bg-dark-gray text-white font-bold py-2 rounded-lg hover:bg-gray-700 transition text-sm">
-                        Confirm Arrival
-                    </button>
-                    <button onClick={onTrack} className="flex-1 bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition text-sm">
-                        Track Live
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 const JobProgressModal: React.FC<{
     booking: Booking;
@@ -325,9 +25,19 @@ const JobProgressModal: React.FC<{
     const mapInstanceRef = useRef<any>(null);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
-    const timelineSteps = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress'];
+    const timelineSteps: BookingStatus[] = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'];
     const currentStatusIndex = useMemo(() => {
-        return Math.max(0, ...timelineSteps.map(step => booking.statusHistory?.findIndex(h => h.status === step) ?? -1), timelineSteps.findIndex(s => s === booking.status));
+        const historyStatuses = booking.statusHistory?.map(h => h.status) || [];
+        const allStatuses = [...historyStatuses, booking.status];
+        
+        let highestIndex = -1;
+        allStatuses.forEach(status => {
+            const indexInTimeline = timelineSteps.indexOf(status as BookingStatus);
+            if (indexInTimeline > highestIndex) {
+                highestIndex = indexInTimeline;
+            }
+        });
+        return highestIndex;
     }, [booking.status, booking.statusHistory]);
 
     useEffect(() => {
@@ -336,7 +46,7 @@ const JobProgressModal: React.FC<{
         mapInstanceRef.current = L.map(mapRef.current).setView([customerLocation.lat, customerLocation.lng], 15);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
         const workIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
+            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734-2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
             className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 16]
         });
         L.marker([customerLocation.lat, customerLocation.lng], { icon: workIcon }).addTo(mapInstanceRef.current).bindPopup("Service Location");
@@ -347,7 +57,7 @@ const JobProgressModal: React.FC<{
     const ImagePlaceholder = () => (
         <div className="w-full h-28 bg-field border-2 border-dashed border-dark-gray rounded-md flex flex-col items-center justify-center text-center p-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            <p className="text-xs text-gray-500 mt-1">Awaiting Photo</p>
+            <p className="text-xs text-gray-500 mt-1">No Photo Uploaded</p>
         </div>
     );
 
@@ -437,31 +147,20 @@ const HomeScreen: React.FC = () => {
     const [isLoadingAI, setIsLoadingAI] = useState(false);
     const [aiError, setAiError] = useState<string | null>(null);
     const [trackingBooking, setTrackingBooking] = useState<Booking | null>(null);
-    const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
+    const [progressModalBooking, setProgressModalBooking] = useState<Booking | null>(null);
     const [currentBanner, setCurrentBanner] = useState(0);
-    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-    const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
     const [isBannerPaused, setIsBannerPaused] = useState(false);
     const bannerIntervalRef = useRef<any>(null);
-    const [showArrivalNotif, setShowArrivalNotif] = useState(false);
-    const [arrivalNotifDismissed, setArrivalNotifDismissed] = useState(false);
     
     // New filter states
     const [specFilterOpen, setSpecFilterOpen] = useState(false);
     const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
     const [ratingFilter, setRatingFilter] = useState(0);
     
-    // State for notification modals
-    const [inProgressBooking, setInProgressBooking] = useState<Booking | null>(null);
-    const [completedBooking, setCompletedBooking] = useState<Booking | null>(null);
-    const shownNotifications = useRef(new Set<string>());
-    
     const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
 
-    const unreadCount = notifications.filter(n => !n.read).length;
-
     const upcomingAppointment = db?.bookings
-        .filter(b => b.customerName === user?.name && (b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress'))
+        .filter(b => b.customerName === user?.name && (['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress'].includes(b.status)))
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
 
     const allSpecializations = useMemo(() => {
@@ -505,33 +204,6 @@ const HomeScreen: React.FC = () => {
     }, [db, selectedSpecs, ratingFilter]);
 
     useEffect(() => {
-        if (!db || !user) return;
-    
-        const myBookings = db.bookings.filter(b => b.customerName === user.name);
-    
-        const inProgressNotif = myBookings.find(b => 
-            b.status === 'In Progress' && 
-            !shownNotifications.current.has(`${b.id}-in-progress`)
-        );
-    
-        if (inProgressNotif) {
-            setInProgressBooking(inProgressNotif);
-            shownNotifications.current.add(`${inProgressNotif.id}-in-progress`);
-        }
-        
-        const completedNotif = myBookings.find(b => 
-            b.status === 'Completed' && 
-            !shownNotifications.current.has(`${b.id}-completed`)
-        );
-        
-        if (completedNotif) {
-            setCompletedBooking(completedNotif);
-            shownNotifications.current.add(`${completedNotif.id}-completed`);
-        }
-    
-    }, [db, user]);
-
-    useEffect(() => {
         if (!db || db.banners.length === 0 || isBannerPaused) {
             if (bannerIntervalRef.current) clearTimeout(bannerIntervalRef.current);
             return;
@@ -545,30 +217,6 @@ const HomeScreen: React.FC = () => {
             if (bannerIntervalRef.current) clearTimeout(bannerIntervalRef.current);
         };
     }, [currentBanner, db, isBannerPaused]);
-
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setNotifications(prev => {
-                // Fix: Cannot find name 'newMockNotification'
-                if (prev.find(n => n.id === newMockNotification.id)) return prev;
-                return [newMockNotification, ...prev];
-            });
-        }, 8000); // Add after 8 seconds
-
-        return () => clearTimeout(timer);
-    }, []);
-
-    useEffect(() => {
-        let timer: any;
-        if (upcomingAppointment?.status === 'En Route' && !showArrivalNotif && !arrivalNotifDismissed) {
-            timer = setTimeout(() => {
-                setShowArrivalNotif(true);
-            }, 5000); // 5-second delay to simulate mechanic getting closer
-        }
-        return () => {
-            if (timer) clearTimeout(timer);
-        };
-    }, [upcomingAppointment, showArrivalNotif, arrivalNotifDismissed]);
 
     const handleNextBanner = () => {
         if (!db) return;
@@ -603,10 +251,6 @@ const HomeScreen: React.FC = () => {
         }
     };
 
-    const handleNotificationClick = (notification: Notification) => {
-        setNotifications(prev => prev.map(n => n.id === notification.id ? { ...n, read: true } : n));
-    };
-
     if (!db) {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" /></div>;
     }
@@ -639,7 +283,7 @@ const HomeScreen: React.FC = () => {
         if (upcomingAppointment.status === 'En Route') {
             setTrackingBooking(upcomingAppointment);
         } else if (upcomingAppointment.status === 'In Progress') {
-            setIsProgressModalOpen(true);
+            setProgressModalBooking(upcomingAppointment);
         } else {
             navigate('/booking-history');
         }
@@ -667,30 +311,12 @@ const HomeScreen: React.FC = () => {
         }
     };
 
-    const handleConfirmArrival = () => {
-        if (upcomingAppointment) {
-            updateBookingStatus(upcomingAppointment.id, 'In Progress');
-            setShowArrivalNotif(false);
-            setArrivalNotifDismissed(true);
-        }
-    };
-
-    const handleOpenTrackerFromNotif = () => {
-        if (upcomingAppointment) {
-            setTrackingBooking(upcomingAppointment);
-            setShowArrivalNotif(false);
-            setArrivalNotifDismissed(true);
-        }
-    };
-
     const getStatusWidth = () => {
         if (!upcomingAppointment) return '0%';
-        switch(upcomingAppointment.status) {
-            case 'Upcoming': return '50%';
-            case 'En Route': return '75%';
-            case 'In Progress': return '90%';
-            default: return '25%';
-        }
+        const statusOrder: BookingStatus[] = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress'];
+        const currentIndex = statusOrder.indexOf(upcomingAppointment.status);
+        if (currentIndex === -1) return '25%'; // Default for 'Upcoming' or other initial states
+        return `${((currentIndex + 2) / 5) * 100}%`;
     };
 
     const getAppointmentActionText = () => {
@@ -709,16 +335,7 @@ const HomeScreen: React.FC = () => {
                     <p className="text-light-gray">Welcome back,</p>
                     <h1 className="text-4xl font-bold text-white">{user?.name.split(' ')[0]}!</h1>
                 </div>
-                <button onClick={() => setIsNotificationsOpen(true)} className="relative text-light-gray hover:text-white mt-2" aria-label={`Notifications (${unreadCount} unread)`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-                    </svg>
-                    {unreadCount > 0 && (
-                        <span className="absolute top-0 right-0 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                            {unreadCount}
-                        </span>
-                    )}
-                </button>
+                <NotificationBell />
             </div>
 
             {!user?.vehicles || user.vehicles.length === 0 ? (
@@ -868,23 +485,13 @@ const HomeScreen: React.FC = () => {
                         <option value={3}>3 ★ & Up</option>
                     </select>
                 </div>
-                <div className="h-96 w-full rounded-xl shadow-lg overflow-hidden">
+                <div className="h-96 w-full rounded-xl shadow-lg overflow-hidden relative z-0">
                    <HomeLiveMap mechanics={mechanicsWithAvailability} />
                 </div>
             </div>
 
-            {showArrivalNotif && upcomingAppointment && (
-                <ArrivalNotification 
-                    booking={upcomingAppointment}
-                    onTrack={handleOpenTrackerFromNotif}
-                    onConfirm={handleConfirmArrival}
-                />
-            )}
             {trackingBooking && <TrackMechanicModal booking={trackingBooking} customerLocation={customerLocation} onClose={() => setTrackingBooking(null)} onShare={handleShare} />}
-            {isProgressModalOpen && upcomingAppointment && <JobProgressModal booking={upcomingAppointment} customerLocation={customerLocation} onClose={() => setIsProgressModalOpen(false)} />}
-            {isNotificationsOpen && <NotificationPanel notifications={notifications} onClose={() => setIsNotificationsOpen(false)} onNotificationClick={handleNotificationClick} />}
-            {inProgressBooking && <InProgressNotificationModal booking={inProgressBooking} onClose={() => setInProgressBooking(null)} />}
-            {completedBooking && <CompletedInvoiceModal booking={completedBooking} onClose={() => setCompletedBooking(null)} db={db} />}
+            {progressModalBooking && <JobProgressModal booking={progressModalBooking} customerLocation={customerLocation} onClose={() => setProgressModalBooking(null)} />}
         </div>
     );
 };

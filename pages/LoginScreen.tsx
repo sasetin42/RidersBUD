@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useMechanicAuth } from '../context/MechanicAuthContext';
@@ -38,6 +39,10 @@ const LoginScreen: React.FC = () => {
         return <div className="flex items-center justify-center h-screen bg-secondary"><Spinner size="lg"/></div>;
     }
     const { settings } = db;
+    // Set the default logo as a fallback to ensure it's always available.
+    const defaultLogo = "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
+    const logoUrl = settings.appLogoUrl || defaultLogo;
+
 
     const validateCustomerField = (name: string, value: string) => {
         let fieldError = '';
@@ -118,8 +123,8 @@ const LoginScreen: React.FC = () => {
         <div className="flex flex-col items-center justify-center h-full bg-secondary p-8">
             <div className="w-full max-w-sm">
                 <div className="text-center mb-8">
-                    {settings.appLogoUrl ? (
-                        <img src={settings.appLogoUrl} alt="Logo" className="w-48 mb-8 max-h-24 object-contain mx-auto" />
+                    {logoUrl ? (
+                        <img src={logoUrl} alt="Logo" className="w-48 mb-8 max-h-24 object-contain mx-auto" />
                     ) : (
                         <h1 className="text-5xl font-bold text-primary mb-4">{settings.appName || 'RidersBUD'}</h1>
                     )}

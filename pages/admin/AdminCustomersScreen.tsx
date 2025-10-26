@@ -6,6 +6,7 @@ import Modal from '../../components/admin/Modal';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import LocationMap from '../../components/admin/LocationMap';
+import { useNotification } from '../../context/NotificationContext';
 
 const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
     <div className="bg-admin-card p-5 rounded-xl shadow-lg flex items-center gap-4 border border-admin-border">
@@ -20,8 +21,8 @@ const StatCard: React.FC<{ title: string; value: number | string; icon: React.Re
 const CustomerFormModal: React.FC<{ 
     customer?: Customer; 
     onClose: () => void; 
-    onSave: (customer: Customer | Omit<Customer, 'id'>) => void; 
-    onDelete?: (id: string) => void;
+    onSave: (customer: Customer | Omit<Customer, 'id'>) => Promise<void>; 
+    onDelete?: (id: string) => Promise<void>;
 }> = ({ customer, onClose, onSave, onDelete }) => {
     const [formData, setFormData] = useState({
         name: customer?.name || '',
@@ -29,16 +30,22 @@ const CustomerFormModal: React.FC<{
         phone: customer?.phone || '',
         password: '',
     });
+    const [isSaving, setIsSaving] = useState(false);
 
-    const handleSave = () => {
-        if(customer) {
-            onSave({
-                ...customer,
-                ...formData,
-                password: formData.password || customer.password
-            });
-        } else {
-            onSave({ ...formData, password: formData.password || 'password', vehicles: [] });
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            if (customer) {
+                await onSave({
+                    ...customer,
+                    ...formData,
+                    password: formData.password || customer.password
+                });
+            } else {
+                await onSave({ ...formData, password: formData.password || 'password', vehicles: [] });
+            }
+        } finally {
+            setIsSaving(false);
         }
     };
     
@@ -79,8 +86,10 @@ const CustomerFormModal: React.FC<{
                          <button onClick={() => onDelete(customer.id)} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Delete Customer</button>
                      )}
                      <div className="flex-grow flex justify-end gap-3">
-                        <button onClick={onClose} className="bg-admin-border font-bold py-2 px-4 rounded-lg">Cancel</button>
-                        <button onClick={handleSave} className="bg-admin-accent font-bold py-2 px-4 rounded-lg">Save</button>
+                        <button onClick={onClose} disabled={isSaving} className="bg-admin-border font-bold py-2 px-4 rounded-lg">Cancel</button>
+                        <button onClick={handleSave} disabled={isSaving} className="bg-admin-accent font-bold py-2 px-4 rounded-lg flex items-center justify-center min-w-[80px]">
+                            {isSaving ? <Spinner size="sm" /> : 'Save'}
+                        </button>
                     </div>
                  </div>
             </div>
@@ -92,6 +101,7 @@ const CustomerFormModal: React.FC<{
 // Main Screen Component
 const AdminCustomersScreen: React.FC = () => {
     const { db, addCustomer, updateCustomer, deleteCustomer, loading } = useDatabase();
+    const { addNotification } = useNotification();
     const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -127,18 +137,29 @@ const AdminCustomersScreen: React.FC = () => {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>
     }
 
-    const handleSaveCustomer = (customerData: Customer | Omit<Customer, 'id'>) => {
-        if ('id' in customerData) {
-            updateCustomer(customerData);
-        } else {
-            addCustomer(customerData);
+    const handleSaveCustomer = async (customerData: Customer | Omit<Customer, 'id'>) => {
+        try {
+            if ('id' in customerData) {
+                await updateCustomer(customerData);
+                addNotification({ type: 'success', title: 'Customer Updated', message: `${customerData.name}'s profile has been saved.` });
+            } else {
+                await addCustomer(customerData);
+                addNotification({ type: 'success', title: 'Customer Added', message: `${customerData.name} has been added.` });
+            }
+            setViewingCustomer(null);
+        } catch (e) {
+            addNotification({ type: 'error', title: 'Save Failed', message: (e as Error).message });
         }
-        setViewingCustomer(null);
     };
 
-    const handleDeleteCustomer = (id: string) => {
-        deleteCustomer(id);
-        setViewingCustomer(null);
+    const handleDeleteCustomer = async (id: string) => {
+        try {
+            await deleteCustomer(id);
+            addNotification({ type: 'success', title: 'Customer Deleted', message: 'The customer profile has been removed.' });
+            setViewingCustomer(null);
+        } catch (e) {
+            addNotification({ type: 'error', title: 'Deletion Failed', message: (e as Error).message });
+        }
     };
     
     return (

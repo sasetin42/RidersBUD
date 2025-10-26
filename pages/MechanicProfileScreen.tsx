@@ -15,7 +15,7 @@ const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
             <div className="flex items-center text-yellow-400">
                 {[...Array(5)].map((_, i) => (
                     <svg key={i} xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${i < review.rating ? 'fill-current' : 'text-gray-600'}`} viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                     </svg>
                 ))}
             </div>
@@ -25,20 +25,63 @@ const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
     </div>
 );
 
+const SkeletonLoader = () => (
+    <div className="flex flex-col h-full bg-secondary">
+        <Header title="Mechanic Profile" showBackButton />
+        <div className="flex-grow p-6 space-y-6 overflow-y-auto animate-pulse">
+            {/* Profile Header Skeleton */}
+            <div className="flex flex-col items-center text-center">
+                <div className="w-28 h-28 rounded-full bg-dark-gray mb-4"></div>
+                <div className="h-8 w-48 bg-dark-gray rounded mb-2"></div>
+                <div className="h-5 w-32 bg-dark-gray rounded"></div>
+                {/* Specializations skeleton moved here */}
+                <div className="flex flex-wrap gap-2 mt-4 justify-center">
+                    <div className="h-8 w-24 bg-dark-gray rounded-full"></div>
+                    <div className="h-8 w-28 bg-dark-gray rounded-full"></div>
+                    <div className="h-8 w-20 bg-dark-gray rounded-full"></div>
+                </div>
+            </div>
+
+            {/* Bio Skeleton */}
+            <div>
+                <div className="h-6 w-32 bg-dark-gray rounded mb-3"></div>
+                <div className="bg-dark-gray p-4 rounded-lg space-y-2">
+                    <div className="h-4 bg-field rounded w-full"></div>
+                    <div className="h-4 bg-field rounded w-5/6"></div>
+                </div>
+            </div>
+
+            {/* Portfolio Skeleton */}
+            <div>
+                <div className="h-6 w-24 bg-dark-gray rounded mb-3"></div>
+                <div className="bg-dark-gray rounded-lg h-48 w-full"></div>
+            </div>
+
+            {/* Reviews Skeleton */}
+            <div>
+                <div className="h-6 w-44 bg-dark-gray rounded mb-3"></div>
+                <div className="space-y-4">
+                    <div className="bg-dark-gray p-4 rounded-lg h-20"></div>
+                    <div className="bg-dark-gray p-4 rounded-lg h-20"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
 
 const MechanicProfileScreen: React.FC = () => {
     const { mechanicId } = useParams<{ mechanicId: string }>();
-    const { db } = useDatabase();
+    const { db, loading } = useDatabase();
     const { user, addFavoriteMechanic, removeFavoriteMechanic } = useAuth();
     const navigate = useNavigate();
     const [reviewFilter, setReviewFilter] = useState<number>(0); // 0 for All stars
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstance = useRef<any>(null);
 
-    const mechanic = db?.mechanics.find(m => m.id === mechanicId);
-    
     const isFavorited = useMemo(() => user?.favoriteMechanicIds?.includes(mechanicId!), [user, mechanicId]);
 
     const handleToggleFavorite = (e: React.MouseEvent) => {
@@ -63,6 +106,12 @@ const MechanicProfileScreen: React.FC = () => {
         const formattedHours = hoursNum % 12 || 12;
         return `${formattedHours}:${minutes} ${ampm}`;
     };
+    
+    if (loading || !db) {
+        return <SkeletonLoader />;
+    }
+
+    const mechanic = db.mechanics.find(m => m.id === mechanicId);
 
     useEffect(() => {
         if (!mapRef.current || mapInstance.current || typeof L === 'undefined' || !mechanic?.lat || !mechanic?.lng) return;
@@ -127,9 +176,6 @@ const MechanicProfileScreen: React.FC = () => {
         return reviews;
     }, [mechanic?.reviewsList, reviewFilter, sortOrder]);
 
-    if (!db) {
-        return <div className="flex items-center justify-center h-full bg-secondary"><Spinner size="lg" /></div>;
-    }
 
     if (!mechanic) {
         return (
@@ -156,6 +202,14 @@ const MechanicProfileScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
+            {fullScreenImage && (
+                <div 
+                    className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fadeIn cursor-pointer" 
+                    onClick={() => setFullScreenImage(null)}
+                >
+                    <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg" />
+                </div>
+            )}
             <Header title="Mechanic Profile" showBackButton />
             <div className="flex-grow p-6 space-y-6 overflow-y-auto">
                 {/* Profile Header */}
@@ -170,9 +224,15 @@ const MechanicProfileScreen: React.FC = () => {
                         </button>
                     </div>
                     <div className="flex items-center text-yellow-400 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
                         <span className="font-bold">{mechanic.rating.toFixed(1)}</span>
                         <span className="text-sm text-light-gray ml-2">({mechanic.reviews} jobs completed)</span>
+                    </div>
+                    {/* Top 3 Specializations */}
+                    <div className="flex flex-wrap gap-2 mt-4 justify-center">
+                        {mechanic.specializations.slice(0, 3).map((spec, index) => (
+                             <span key={index} className="bg-primary/20 text-primary text-sm font-medium px-3 py-1 rounded-full">{spec}</span>
+                        ))}
                     </div>
                 </div>
 
@@ -181,16 +241,6 @@ const MechanicProfileScreen: React.FC = () => {
                     <h2 className="text-xl font-semibold mb-3 text-white">About Me</h2>
                     <div className="bg-dark-gray p-4 rounded-lg">
                         <p className="text-sm text-light-gray leading-relaxed">{mechanic.bio}</p>
-                    </div>
-                </div>
-                
-                {/* Specializations */}
-                <div>
-                    <h2 className="text-xl font-semibold mb-3 text-white">Specializations</h2>
-                    <div className="flex flex-wrap gap-2">
-                        {mechanic.specializations.map((spec, index) => (
-                             <span key={index} className="bg-primary/20 text-primary text-sm font-medium px-3 py-1 rounded-full">{spec}</span>
-                        ))}
                     </div>
                 </div>
 
@@ -236,7 +286,12 @@ const MechanicProfileScreen: React.FC = () => {
                             <div className="flex transition-transform duration-500 ease-in-out" style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}>
                                 {mechanic.portfolioImages.map((img, index) => (
                                     <div key={index} className="flex-shrink-0 w-full">
-                                        <img src={img} alt={`Portfolio image ${index + 1}`} className="w-full h-48 object-cover" />
+                                        <img 
+                                            src={img} 
+                                            alt={`Portfolio image ${index + 1}`} 
+                                            className="w-full h-48 object-cover cursor-pointer" 
+                                            onClick={() => setFullScreenImage(img)}
+                                        />
                                     </div>
                                 ))}
                             </div>

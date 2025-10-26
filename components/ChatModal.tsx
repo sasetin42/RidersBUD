@@ -33,7 +33,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
             try {
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
                 const newChat = ai.chats.create({
-                    model: 'gemini-2.5-flash',
+                    model: 'gemini-2.5-pro',
                     config: {
                         systemInstruction: `You are ${db.settings.virtualMechanicName || 'RiderAI'}, an expert and friendly AI mechanic for RidersBUD. 
                         Your knowledge base consists of all the services we offer. Here is the full list:
@@ -49,6 +49,9 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
                         Your primary role is to answer their questions about this specific service, but you must also be prepared to answer questions about any other service from the list. Be helpful, professional, and keep your answers precise and easy to understand.
                         
                         Start the conversation by greeting the user and asking how you can help them with the "${service.name}" service.`,
+                        thinkingConfig: {
+                            thinkingBudget: 32768,
+                        },
                     }
                 });
                 

@@ -1,9 +1,11 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { Booking, BookingStatus, Customer } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
+import { useNotification } from '../../context/NotificationContext';
 
 type SortableKeys = 'customerName' | 'mechanicName' | 'date' | 'price';
 
@@ -110,6 +112,7 @@ const CancellationModal: React.FC<{
 
 const AdminBookingsScreen: React.FC = () => {
     const { db, updateBookingStatus, cancelBooking, loading } = useDatabase();
+    const { addNotification } = useNotification();
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [selectedMechanicId, setSelectedMechanicId] = useState<string>('all');
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -133,15 +136,28 @@ const AdminBookingsScreen: React.FC = () => {
     const serviceCategories = useMemo(() => ['all', ...settings.serviceCategories], [settings.serviceCategories]);
     const bookingStatuses: Array<BookingStatus | 'all'> = ['all', 'Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled'];
 
-    const handleStatusChange = (booking: Booking, newStatus: BookingStatus) => {
-        if (newStatus === 'Cancelled') setCancellingBooking(booking);
-        else updateBookingStatus(booking.id, newStatus);
+    const handleStatusChange = async (booking: Booking, newStatus: BookingStatus) => {
+        if (newStatus === 'Cancelled') {
+            setCancellingBooking(booking);
+        } else {
+            try {
+                await updateBookingStatus(booking.id, newStatus);
+                addNotification({ type: 'success', title: 'Status Updated', message: `Booking #${booking.id.slice(-6)} is now ${newStatus}.` });
+            } catch (e) {
+                addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message });
+            }
+        }
     };
     
-    const handleConfirmCancellation = (reason: string) => {
+    const handleConfirmCancellation = async (reason: string) => {
         if (cancellingBooking) {
-            cancelBooking(cancellingBooking.id, reason);
-            setCancellingBooking(null);
+            try {
+                await cancelBooking(cancellingBooking.id, reason);
+                addNotification({ type: 'success', title: 'Booking Cancelled', message: `Booking #${cancellingBooking.id.slice(-6)} has been cancelled.` });
+                setCancellingBooking(null);
+            } catch (e) {
+                addNotification({ type: 'error', title: 'Cancellation Failed', message: (e as Error).message });
+            }
         }
     };
 
