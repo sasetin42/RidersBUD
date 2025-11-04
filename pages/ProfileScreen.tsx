@@ -1,22 +1,50 @@
+
 import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Reminder, Customer } from '../types';
 import Spinner from '../components/Spinner';
+import { fileToBase64 } from '../utils/fileUtils';
 
 const EditProfileModal: React.FC<{
     user: Customer;
     onClose: () => void;
-    onSave: (data: { name: string; email: string; phone: string }) => Promise<void>;
+    onSave: (data: { name: string; email: string; phone: string; picture?: string; }) => Promise<void>;
 }> = ({ user, onClose, onSave }) => {
     const [formData, setFormData] = useState({
         name: user.name,
         email: user.email,
         phone: user.phone,
+        picture: user.picture || '',
     });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [isSaving, setIsSaving] = useState(false);
+
+    const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (file.size > 2 * 1024 * 1024) { // 2MB limit
+                setErrors(prev => ({...prev, picture: 'Image size cannot exceed 2MB.'}));
+                return;
+            }
+            try {
+                const base64 = await fileToBase64(file);
+                setFormData(prev => ({ ...prev, picture: base64 as string }));
+                if (errors.picture) {
+                    setErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors.picture;
+                        return newErrors;
+                    });
+                }
+            } catch (error) {
+                console.error("Error converting file:", error);
+                setErrors(prev => ({...prev, picture: 'Failed to upload image.'}));
+            }
+        }
+    };
+
 
     const validate = () => {
         const newErrors: { [key: string]: string } = {};
@@ -46,9 +74,24 @@ const EditProfileModal: React.FC<{
     
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="edit-profile-title">
-            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp">
+            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp max-h-[90vh] overflow-y-auto scrollbar-hide">
                 <h2 id="edit-profile-title" className="text-xl font-bold mb-4">Edit Profile</h2>
                 <form onSubmit={handleSave} noValidate>
+                    <div className="relative w-24 h-24 mx-auto mb-6 group">
+                        <img 
+                            src={formData.picture || `https://i.pravatar.cc/150?u=${user.id}`} 
+                            alt="Profile Preview" 
+                            className="w-24 h-24 rounded-full object-cover border-2 border-primary" 
+                        />
+                        <label htmlFor="picture-upload" className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586l-1-1.414A2 2 0 0013.414 3H6.586a2 2 0 00-1.414.586L4.172 5H4zm6 9a4 4 0 100-8 4 4 0 000 8zm-2-4a2 2 0 114 0 2 2 0 01-4 0z" clipRule="evenodd" />
+                            </svg>
+                        </label>
+                        <input id="picture-upload" type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+                    </div>
+                    {errors.picture && <p className="text-red-400 text-xs text-center -mt-4 mb-4">{errors.picture}</p>}
+
                     <div className="space-y-4">
                         <div>
                              <label className="text-sm text-light-gray mb-1 block">Full Name</label>
@@ -121,7 +164,7 @@ const ProfileScreen: React.FC = () => {
         }
     }, []);
 
-    const handleSaveProfile = async (updatedData: { name: string; email: string; phone: string }) => {
+    const handleSaveProfile = async (updatedData: { name: string; email: string; phone: string; picture?: string; }) => {
         await updateUserProfile(updatedData);
         setIsEditModalOpen(false);
     };

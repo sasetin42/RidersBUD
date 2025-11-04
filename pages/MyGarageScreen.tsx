@@ -21,22 +21,44 @@ const VehicleFormModal: React.FC<{
         mileage: vehicle?.mileage?.toString() || '',
         insuranceProvider: vehicle?.insuranceProvider || '',
         insurancePolicyNumber: vehicle?.insurancePolicyNumber || '',
-        imageUrl: vehicle?.imageUrl || ''
+        imageUrls: vehicle?.imageUrls || []
     });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            try {
-                const base64Image = await fileToBase64(file);
-                setFormData(prev => ({ ...prev, imageUrl: base64Image }));
-            } catch (error) {
-                console.error("Error converting file to base64:", error);
-                setErrors(prev => ({ ...prev, imageUrl: 'Failed to upload image.' }));
-            }
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+
+        if ((formData.imageUrls.length + files.length) > 5) {
+            setErrors(prev => ({ ...prev, imageUrls: 'You can upload a maximum of 5 images.' }));
+            return;
+        }
+        
+        try {
+            // Fix: Explicitly type 'file' as File to prevent TypeScript from inferring it as 'unknown'.
+            const base64Images = await Promise.all(files.map((file: File) => fileToBase64(file)));
+            setFormData(prev => ({
+                ...prev,
+                imageUrls: [...prev.imageUrls, ...base64Images as string[]]
+            }));
+            setErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors.imageUrls;
+                return newErrors;
+            });
+        } catch (error) {
+            console.error("Error converting files to base64:", error);
+            setErrors(prev => ({ ...prev, imageUrls: 'Failed to upload one or more images.' }));
         }
     };
+    
+    const handleDeleteImage = (indexToDelete: number) => {
+        setFormData(prev => ({
+            ...prev,
+            imageUrls: prev.imageUrls.filter((_, index) => index !== indexToDelete)
+        }));
+    };
+
 
     const validate = () => {
         const newErrors: { [key: string]: string } = {};
@@ -73,10 +95,17 @@ const VehicleFormModal: React.FC<{
             <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp max-h-[90vh] overflow-y-auto scrollbar-hide">
                 <h2 className="text-xl font-bold mb-4">{vehicle ? 'Edit Vehicle' : 'Add New Vehicle'}</h2>
                 <form onSubmit={handleSave} noValidate className="space-y-4">
-                    <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1">Vehicle Image</h3>
+                    <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1">Vehicle Images</h3>
                     <div>
-                        {formData.imageUrl ? (
-                            <img src={formData.imageUrl} alt="Vehicle preview" className="w-full h-40 object-cover rounded-lg bg-field mb-2 border border-field" />
+                        {formData.imageUrls.length > 0 ? (
+                            <div className="grid grid-cols-3 gap-2 mb-2">
+                                {formData.imageUrls.map((img, index) => (
+                                    <div key={index} className="relative group">
+                                        <img src={img} alt="Vehicle preview" className="w-full h-20 object-cover rounded-md bg-field border border-field" />
+                                        <button type="button" onClick={() => handleDeleteImage(index)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
+                                    </div>
+                                ))}
+                            </div>
                         ) : (
                             <div className="w-full h-40 bg-field rounded-lg mb-2 border border-dashed border-dark-gray flex items-center justify-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
@@ -84,14 +113,19 @@ const VehicleFormModal: React.FC<{
                                 </svg>
                             </div>
                         )}
-                        <label className="block text-xs text-light-gray mb-1">Upload Image</label>
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleImageUpload}
-                            className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                        />
-                         {errors.imageUrl && <p className="text-red-400 text-xs mt-1">{errors.imageUrl}</p>}
+                        {formData.imageUrls.length < 5 && (
+                             <div>
+                                <label className="block text-xs text-light-gray mb-1">Upload Images (up to 5)</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={handleImageUpload}
+                                    className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                                />
+                            </div>
+                        )}
+                         {errors.imageUrls && <p className="text-red-400 text-xs mt-1">{errors.imageUrls}</p>}
                     </div>
                     
                     <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1 pt-2">Core Information</h3>
@@ -167,6 +201,55 @@ const MaintenanceHistory: React.FC<{ vehicle: Vehicle }> = ({ vehicle }) => {
     );
 };
 
+const VehicleImageCarousel: React.FC<{ images: string[] }> = ({ images }) => {
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    const goToPrevious = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const isFirstSlide = currentIndex === 0;
+        const newIndex = isFirstSlide ? images.length - 1 : currentIndex - 1;
+        setCurrentIndex(newIndex);
+    };
+
+    const goToNext = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const isLastSlide = currentIndex === images.length - 1;
+        const newIndex = isLastSlide ? 0 : currentIndex + 1;
+        setCurrentIndex(newIndex);
+    };
+
+    if (!images || images.length === 0) {
+        return (
+            <div className="w-28 h-20 object-cover rounded-md flex-shrink-0 bg-secondary flex items-center justify-center">
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-500" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+                </svg>
+            </div>
+        );
+    }
+    
+    return (
+        <div className="w-28 h-20 relative group flex-shrink-0">
+            <img src={images[currentIndex]} alt="Vehicle" className="w-full h-full object-cover rounded-md bg-secondary" />
+            {images.length > 1 && (
+                <>
+                    <button onClick={goToPrevious} className="absolute top-1/2 left-1 transform -translate-y-1/2 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                    </button>
+                    <button onClick={goToNext} className="absolute top-1/2 right-1 transform -translate-y-1/2 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </button>
+                    <div className="absolute bottom-1 left-0 right-0 flex justify-center gap-1">
+                        {images.map((_, index) => (
+                            <div key={index} className={`w-1.5 h-1.5 rounded-full ${currentIndex === index ? 'bg-white' : 'bg-white/50'}`}></div>
+                        ))}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 
 const MyGarageScreen: React.FC = () => {
     const { user, addUserVehicle, updateUserVehicle, deleteUserVehicle, setPrimaryVehicle, loading } = useAuth();
@@ -222,7 +305,7 @@ const MyGarageScreen: React.FC = () => {
                                     </span>
                                 )}
                                 <div className="flex items-center gap-4">
-                                    <img src={v.imageUrl || 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png'} alt={`${v.make} ${v.model}`} className="w-28 h-20 object-cover rounded-md flex-shrink-0 bg-secondary" />
+                                    <VehicleImageCarousel images={v.imageUrls} />
                                     <div>
                                         <p className="font-bold text-white text-lg">{v.make} {v.model}</p>
                                         <p className="text-sm text-light-gray">{v.year}</p>

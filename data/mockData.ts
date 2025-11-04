@@ -576,7 +576,7 @@ export const seedBookings: Booking[] = [
         time: '11:00 AM',
         status: 'En Route',
         vehicle: { 
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -596,7 +596,7 @@ export const seedBookings: Booking[] = [
         time: '01:00 PM',
         status: 'Completed',
         vehicle: { 
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -621,7 +621,7 @@ export const seedBookings: Booking[] = [
         time: '09:00 AM',
         status: 'Completed',
         vehicle: { 
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -643,7 +643,7 @@ export const seedBookings: Booking[] = [
         status: 'Cancelled',
         cancellationReason: 'Customer no longer available.',
         vehicle: { 
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -663,7 +663,7 @@ export const seedBookings: Booking[] = [
         time: '10:00 AM',
         status: 'Completed',
         vehicle: { 
-            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png', isPrimary: false,
+            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png'], isPrimary: false,
             vin: 'JT1AZ01Z000654321', mileage: 45000, insuranceProvider: 'BPI/MS Insurance', insurancePolicyNumber: 'POL-123456789'
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -684,7 +684,7 @@ export const seedBookings: Booking[] = [
         time: '10:00 AM',
         status: 'Upcoming',
         vehicle: { 
-            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png', isPrimary: true,
+            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png'], isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         },
         location: { lat: 14.6042, lng: 121.0485 },
@@ -699,7 +699,7 @@ export const seedBookings: Booking[] = [
         time: '02:00 PM',
         status: 'Upcoming',
         vehicle: { 
-            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'DEF 456', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png', isPrimary: false,
+            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'DEF 456', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png'], isPrimary: false,
             vin: 'TY1AZ01Z000445566', mileage: 35000, insuranceProvider: 'Geico', insurancePolicyNumber: 'POL-GC-778899'
         },
         location: { lat: 14.6521, lng: 121.0333 },
@@ -714,7 +714,7 @@ export const seedBookings: Booking[] = [
         time: '04:00 PM',
         status: 'Upcoming',
         vehicle: { 
-            make: 'Ford', model: 'Everest', year: 2023, plateNumber: 'GHI 123', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_blue.png', isPrimary: true,
+            make: 'Ford', model: 'Everest', year: 2023, plateNumber: 'GHI 123', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_blue.png'], isPrimary: true,
             vin: 'FD1AZ01Z000778899', mileage: 5000, insuranceProvider: 'Allstate', insurancePolicyNumber: 'POL-AS-112233'
         },
         location: { lat: 14.5510, lng: 121.0232 }, // Placeholder
@@ -729,7 +729,7 @@ export const seedBookings: Booking[] = [
         time: '11:00 AM',
         status: 'Upcoming',
         vehicle: { 
-            make: 'Hyundai', model: 'Tucson', year: 2020, plateNumber: 'JKL 789', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_gray.png', isPrimary: true,
+            make: 'Hyundai', model: 'Tucson', year: 2020, plateNumber: 'JKL 789', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_gray.png'], isPrimary: true,
             vin: 'HY1AZ01Z000998877', mileage: 60000, insuranceProvider: 'Progressive', insurancePolicyNumber: 'POL-PG-665544'
         },
         location: { lat: 14.5510, lng: 121.0232 }, // Placeholder
@@ -747,19 +747,19 @@ export const seedCustomers: Customer[] = [
         phone: '555-123-4567',
         vehicles: [
             { 
-                make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
+                make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
                 vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
             },
             { 
-                make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png', isPrimary: false,
+                make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png'], isPrimary: false,
                 vin: 'JT1AZ01Z000654321', mileage: 45000, insuranceProvider: 'BPI/MS Insurance', insurancePolicyNumber: 'POL-123456789'
             },
              { 
-                make: 'Ford', model: 'Ranger', year: 2022, plateNumber: 'RAP 888', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_red.png', isPrimary: false,
+                make: 'Ford', model: 'Ranger', year: 2022, plateNumber: 'RAP 888', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_red.png'], isPrimary: false,
                 vin: 'FD1RAPTOR00012345', mileage: 32000, insuranceProvider: 'FPG Insurance', insurancePolicyNumber: 'POL-FPG-456789'
             },
             { 
-                make: 'Nissan', model: 'Navara', year: 2020, plateNumber: 'NAV 777', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_black.png', isPrimary: false,
+                make: 'Nissan', model: 'Navara', year: 2020, plateNumber: 'NAV 777', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_black.png'], isPrimary: false,
                 vin: 'NS1NVRA000777', mileage: 55000, insuranceProvider: 'Standard Insurance', insurancePolicyNumber: 'POL-STD-555444'
             }
         ],
@@ -770,7 +770,7 @@ export const seedCustomers: Customer[] = [
     { 
         id: 'c2', name: 'Alex Rider', email: 'alex.rider@example.com', password: 'password', phone: '555-111-2222', 
         vehicles: [{ 
-            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png', isPrimary: true,
+            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png'], isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         }], 
         picture: 'https://picsum.photos/seed/alex/200/200', 

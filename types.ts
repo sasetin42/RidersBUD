@@ -106,7 +106,7 @@ export interface Vehicle {
     model: string;
     year: number;
     plateNumber: string;
-    imageUrl: string;
+    imageUrls: string[];
     isPrimary?: boolean;
     vin?: string;
     mileage?: number;

@@ -16,7 +16,7 @@ interface AuthContextType {
     logout: () => void;
     addUserVehicle: (vehicle: Vehicle) => Promise<void>;
     deleteUserVehicle: (plateNumber: string) => Promise<void>;
-    updateUserProfile: (updatedData: { name: string; email: string; phone: string }) => Promise<void>;
+    updateUserProfile: (updatedData: { name: string; email: string; phone: string; picture?: string; }) => Promise<void>;
     updateUserVehicle: (vehicle: Vehicle) => Promise<void>;
     setPrimaryVehicle: (plateNumber: string) => Promise<void>;
     addFavoriteMechanic: (mechanicId: string) => Promise<void>;
@@ -222,7 +222,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(updatedUser);
     };
 
-    const updateUserProfile = async (updatedData: { name: string; email: string; phone: string }) => {
+    const updateUserProfile = async (updatedData: { name: string; email: string; phone: string; picture?: string; }) => {
         if (!user) return;
         const updatedUser: Customer = {
             ...user,

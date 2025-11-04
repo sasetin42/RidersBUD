@@ -63,7 +63,7 @@ const CustomerFormModal: React.FC<{
                         <div className="space-y-2">
                             {customer.vehicles.map(v => (
                                 <div key={v.plateNumber} className="bg-admin-bg p-3 rounded-lg flex items-center gap-3">
-                                    <img src={v.imageUrl || 'https://picsum.photos/seed/car/200/200'} alt={`${v.make} ${v.model}`} className="w-16 h-12 rounded object-cover" />
+                                    <img src={v.imageUrls?.[0] || 'https://picsum.photos/seed/car/200/200'} alt={`${v.make} ${v.model}`} className="w-16 h-12 rounded object-cover" />
                                     <div>
                                         <p className="font-bold text-sm">{v.year} {v.make} {v.model}</p>
                                         <p className="text-xs text-admin-text-secondary font-mono">{v.plateNumber}</p>
@@ -134,7 +134,7 @@ const AdminCustomersScreen: React.FC = () => {
 
 
     if (loading || !db) {
-        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>
+        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
     }
 
     const handleSaveCustomer = async (customerData: Customer | Omit<Customer, 'id'>) => {

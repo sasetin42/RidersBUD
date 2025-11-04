@@ -134,7 +134,7 @@ const BookingConfirmationScreen: React.FC = () => {
                             <div className="p-5">
                                 <p className="text-sm font-bold text-primary tracking-wider uppercase mb-3">Vehicle</p>
                                 <div className="flex items-center gap-4">
-                                    <img src={vehicle.imageUrl} alt={`${vehicle.make} ${vehicle.model}`} className="w-24 h-16 object-cover rounded-md flex-shrink-0 bg-secondary" />
+                                    <img src={vehicle.imageUrls[0]} alt={`${vehicle.make} ${vehicle.model}`} className="w-24 h-16 object-cover rounded-md flex-shrink-0 bg-secondary" />
                                     <div>
                                         <p className="font-bold text-white">{vehicle.make} {vehicle.model} ({vehicle.year})</p>
                                         <p className="text-sm bg-field inline-block px-2 py-0.5 mt-1 rounded font-mono tracking-wider text-white">{vehicle.plateNumber}</p>
