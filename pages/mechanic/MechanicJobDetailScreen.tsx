@@ -228,7 +228,7 @@ const MechanicJobProgressModal: React.FC<{
 
 const MechanicJobDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
-    const { db, updateBookingStatus, updateMechanicLocation, loading } = useDatabase();
+    const { db, updateBookingStatus, updateMechanicLocation, respondToReschedule, loading } = useDatabase();
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isDirectionsOpen, setIsDirectionsOpen] = useState(false);
     const [showAwaitingPaymentModal, setShowAwaitingPaymentModal] = useState(false);
@@ -327,6 +327,10 @@ const MechanicJobDetailScreen: React.FC = () => {
         }
     };
 
+    const handleRescheduleResponse = (response: 'accepted' | 'rejected') => {
+        respondToReschedule(booking.id, response);
+    };
+
     const statusOptions: BookingStatus[] = ['En Route', 'In Progress', 'Completed'];
 
     return (
@@ -339,6 +343,24 @@ const MechanicJobDetailScreen: React.FC = () => {
                     <DetailRow label="Date" value={new Date(booking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} />
                     <DetailRow label="Time" value={booking.time} />
                 </div>
+
+                {/* Reschedule Request */}
+                {booking.status === 'Reschedule Requested' && booking.rescheduleDetails && (
+                    <div className="bg-orange-900/50 border border-orange-500/50 p-4 rounded-lg animate-pulse">
+                        <h3 className="text-lg font-bold text-orange-300">Reschedule Requested</h3>
+                        <p className="text-sm text-white mt-2">The customer has requested to move this appointment to:</p>
+                        <div className="bg-field p-3 rounded-md my-2">
+                            <p><span className="font-semibold">New Date:</span> {new Date(booking.rescheduleDetails.newDate.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+                            <p><span className="font-semibold">New Time:</span> {booking.rescheduleDetails.newTime}</p>
+                        </div>
+                        <p className="text-sm text-white">Reason:</p>
+                        <p className="text-sm italic text-light-gray bg-field p-2 rounded-md">"{booking.rescheduleDetails.reason}"</p>
+                        <div className="flex gap-3 mt-4">
+                            <button onClick={() => handleRescheduleResponse('rejected')} className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg hover:bg-red-700">Reject</button>
+                            <button onClick={() => handleRescheduleResponse('accepted')} className="flex-1 bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700">Accept</button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Customer & Vehicle Info */}
                 <div className="bg-dark-gray p-4 rounded-lg">
@@ -390,7 +412,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </button>
                          <p className="text-xs text-light-gray mt-2 text-center">This will notify the customer and start sharing your live location.</p>
                     </div>
-                ) : booking.status !== 'Completed' && booking.status !== 'Cancelled' && (
+                ) : booking.status !== 'Completed' && booking.status !== 'Cancelled' && booking.status !== 'Reschedule Requested' && (
                     <div className="bg-dark-gray p-4 rounded-lg">
                         <h3 className="text-lg font-semibold text-white mb-2">Manage Status</h3>
                         <select

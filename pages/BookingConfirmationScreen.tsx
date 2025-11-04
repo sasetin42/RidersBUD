@@ -4,39 +4,69 @@ import Header from '../components/Header';
 import { Booking } from '../types';
 import { useAuth } from '../context/AuthContext';
 import CustomerMechanicChatModal from '../components/customer/CustomerMechanicChatModal';
+import MapComponent from '../components/MapComponent';
+
+declare const L: any; // Declare Leaflet global
 
 const BookingConfirmationScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { user: customer } = useAuth();
-    const { booking } = (location.state as { booking: Booking }) || {};
+    const { bookings } = (location.state as { bookings: Booking[] }) || {};
     const [isChatOpen, setIsChatOpen] = useState(false);
 
     React.useEffect(() => {
-        if (!booking) {
+        if (!bookings || bookings.length === 0) {
             navigate('/');
         }
-    }, [booking, navigate]);
+    }, [bookings, navigate]);
 
-    if (!booking || !customer) {
+    if (!bookings || bookings.length === 0 || !customer) {
         return null;
     }
 
-    const { mechanic, vehicle } = booking;
+    // Use the first booking for common details
+    const primaryBooking = bookings[0];
+    const { mechanic, vehicle } = primaryBooking;
+    const totalCost = bookings.reduce((sum, b) => sum + b.service.price, 0);
+    const serviceLocation = primaryBooking.location;
+
+    // Prepare marker for the map
+    const mapMarkers = serviceLocation && typeof L !== 'undefined' ? [{
+        position: [serviceLocation.lat, serviceLocation.lng] as [number, number],
+        popupContent: 'Service Location',
+        icon: L.divIcon({
+            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary animate-pulse" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>`,
+            className: 'bg-transparent border-0',
+            iconSize: [32, 32],
+            iconAnchor: [16, 32]
+        })
+    }] : [];
     
     const handleSetReminder = () => {
+        // Just set a reminder for the first service in the bundle
         navigate('/reminders', {
             state: {
-                serviceName: booking.service.name,
-                date: booking.date,
-                vehicle: `${booking.vehicle.make} ${booking.vehicle.model}`
+                serviceName: primaryBooking.service.name,
+                date: primaryBooking.date,
+                vehicle: `${primaryBooking.vehicle.make} ${primaryBooking.vehicle.model}`
             }
+        });
+    };
+
+    const handleBookAgain = () => {
+        const serviceIds = bookings.map(b => b.service.id);
+        navigate(`/booking/${serviceIds[0]}`, { 
+            state: { 
+                vehiclePlateNumber: primaryBooking.vehicle.plateNumber,
+                initialServiceIds: serviceIds
+            } 
         });
     };
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title={`Booking #${booking.id.toUpperCase().slice(-6)}`} />
+            <Header title={`Booking #${primaryBooking.id.toUpperCase().slice(-6)}`} />
             <div className="flex-grow flex flex-col items-center justify-start p-4 space-y-4 overflow-y-auto">
                  <div className="w-full max-w-md">
                      <div className="text-center my-4">
@@ -53,15 +83,26 @@ const BookingConfirmationScreen: React.FC = () => {
                         {/* Appointment Details */}
                         <div className="p-5">
                             <p className="text-sm font-bold text-primary tracking-wider uppercase">Appointment Details</p>
-                            <p className="text-2xl font-bold text-white mt-2">{booking.service.name}</p>
+                            <div className="mt-2 space-y-2">
+                                {bookings.map(b => (
+                                    <div key={b.id} className="flex justify-between items-center text-white">
+                                        <span className="text-sm">{b.service.name}</span>
+                                        <span className="text-sm font-semibold">₱{b.service.price.toLocaleString()}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex justify-between items-baseline mt-3 pt-3 border-t border-field">
+                                <span className="text-lg font-bold text-primary">Total</span>
+                                <span className="text-lg font-bold text-primary">₱{totalCost.toLocaleString()}</span>
+                            </div>
                             <div className="flex justify-between items-start mt-4 text-left">
                                 <div>
                                     <p className="text-sm text-light-gray mb-1">Date</p>
-                                    <p className="font-semibold text-white">{new Date(booking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                                    <p className="font-semibold text-white">{new Date(primaryBooking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-sm text-light-gray mb-1">Time</p>
-                                    <p className="font-semibold text-white">{booking.time}</p>
+                                    <p className="font-semibold text-white">{primaryBooking.time}</p>
                                 </div>
                             </div>
                         </div>
@@ -101,20 +142,44 @@ const BookingConfirmationScreen: React.FC = () => {
                                 </div>
                             </div>
                         </>
+
+                        {/* Service Location Map */}
+                        {serviceLocation && (
+                            <>
+                                <hr className="border-field mx-5" />
+                                <div className="p-5">
+                                    <p className="text-sm font-bold text-primary tracking-wider uppercase mb-3">Service Location</p>
+                                    <div className="h-48 w-full rounded-lg overflow-hidden bg-field">
+                                        <MapComponent
+                                            center={[serviceLocation.lat, serviceLocation.lng]}
+                                            zoom={15}
+                                            markers={mapMarkers}
+                                            disableScrollZoom={true}
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
-             <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex flex-col gap-4">
+             <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex flex-col gap-3">
+                 <button
+                    onClick={handleBookAgain}
+                    className="w-full bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition"
+                >
+                    Book Again
+                </button>
                 <button
                     onClick={handleSetReminder}
                     className="w-full bg-blue-500/20 text-blue-300 font-bold py-3 rounded-lg hover:bg-blue-500/40 transition"
                 >
-                    Set Reminder for this Appointment
+                    Set Maintenance Reminder
                 </button>
-                <div className="flex gap-4">
+                <div className="flex gap-3">
                     <button 
                         onClick={() => navigate('/booking-history')} 
-                        className="w-1/2 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition"
+                        className="w-1/2 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-700 transition"
                     >
                         View History
                     </button>
@@ -129,7 +194,7 @@ const BookingConfirmationScreen: React.FC = () => {
 
             {isChatOpen && mechanic && (
                 <CustomerMechanicChatModal
-                    booking={booking}
+                    booking={primaryBooking}
                     customer={customer}
                     mechanic={mechanic}
                     onClose={() => setIsChatOpen(false)}

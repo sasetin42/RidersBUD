@@ -7,6 +7,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import BookingStatusCard from '../components/BookingStatusCard';
 import TrackMechanicModal from '../components/TrackMechanicModal';
+import { getAIServiceSuggestions } from '../services/geminiService';
 
 declare const L: any;
 
@@ -295,6 +296,27 @@ const BookingHistoryScreen: React.FC = () => {
     
     const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
 
+    useEffect(() => {
+        const fetchSuggestions = async () => {
+            if (plateNumber && user && db && !sessionStorage.getItem('ai_suggestions')) {
+                const vehicle = user.vehicles.find(v => v.plateNumber === plateNumber);
+                if (vehicle) {
+                    const serviceHistory = db.bookings
+                        .filter(b => b.customerName === user.name && b.status === 'Completed' && b.vehicle.plateNumber === vehicle.plateNumber)
+                        .map(b => b.service.name) || [];
+                    
+                    try {
+                        const suggestions = await getAIServiceSuggestions(vehicle, serviceHistory);
+                        sessionStorage.setItem('ai_suggestions', JSON.stringify(suggestions));
+                    } catch (error) {
+                        console.error("Failed to get AI suggestions:", error);
+                    }
+                }
+            }
+        };
+        fetchSuggestions();
+    }, [plateNumber, user, db]);
+
     const { upcomingBookings, pastBookings } = useMemo(() => {
         if (!user || !db) {
             return { upcomingBookings: [], pastBookings: [] };
@@ -303,7 +325,7 @@ const BookingHistoryScreen: React.FC = () => {
         let bookingsToFilter = db.bookings.filter(b => b.customerName === user.name);
 
         const upcoming = bookingsToFilter
-            .filter(b => b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Mechanic Assigned' || b.status === 'Booking Confirmed' )
+            .filter(b => ['Upcoming', 'En Route', 'In Progress', 'Mechanic Assigned', 'Booking Confirmed', 'Reschedule Requested'].includes(b.status))
             .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             
         let past = bookingsToFilter.filter(b => b.status === 'Completed' || b.status === 'Cancelled');
@@ -437,7 +459,7 @@ const BookingHistoryScreen: React.FC = () => {
                     <h2 className="text-xl font-semibold mb-3 text-white px-2">Upcoming</h2>
                     {upcomingBookings.length > 0 ? (
                         <div className="space-y-4">
-                            {upcomingBookings.map(booking => <BookingStatusCard key={booking.id} booking={booking} onTrack={setTrackingBooking} />)}
+                            {upcomingBookings.map(booking => <BookingStatusCard key={booking.id} booking={booking} onTrack={setTrackingBooking} onProgressView={setProgressBooking} />)}
                         </div>
                     ) : (
                         <div className="text-center py-8 px-4 bg-dark-gray rounded-lg">

@@ -17,6 +17,7 @@ const JobHistoryCard: React.FC<{ booking: Booking }> = ({ booking }) => {
         Cancelled: 'bg-red-500/20 text-red-300',
         'Booking Confirmed': 'bg-cyan-500/20 text-cyan-300',
         'Mechanic Assigned': 'bg-sky-500/20 text-sky-300',
+        'Reschedule Requested': 'bg-orange-500/20 text-orange-300',
     };
 
     return (
@@ -60,7 +61,7 @@ const MechanicJobsScreen: React.FC = () => {
             .filter(b => b.mechanic?.id === mechanic.id)
             .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             
-        const upcoming = myJobs.filter(j => j.status === 'Upcoming' || j.status === 'En Route' || j.status === 'Booking Confirmed' || j.status === 'Mechanic Assigned');
+        const upcoming = myJobs.filter(j => ['Upcoming', 'En Route', 'Booking Confirmed', 'Mechanic Assigned', 'Reschedule Requested'].includes(j.status));
         const inProgress = myJobs.filter(j => j.status === 'In Progress');
         const past = myJobs.filter(j => j.status === 'Completed' || j.status === 'Cancelled');
         

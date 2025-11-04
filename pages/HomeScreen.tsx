@@ -152,10 +152,11 @@ const HomeScreen: React.FC = () => {
     const [isBannerPaused, setIsBannerPaused] = useState(false);
     const bannerIntervalRef = useRef<any>(null);
     
-    // New filter states
+    // New states
     const [specFilterOpen, setSpecFilterOpen] = useState(false);
     const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
     const [ratingFilter, setRatingFilter] = useState(0);
+    const [selectedMechanicId, setSelectedMechanicId] = useState<string | null>(null);
     
     const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
 
@@ -179,6 +180,23 @@ const HomeScreen: React.FC = () => {
             prev.includes(spec) ? prev.filter(s => s !== spec) : [...prev, spec]
         );
     };
+    
+    const handleMapClickToBook = (latlng: { lat: number, lng: number }) => {
+        if (window.confirm(`Book a diagnostic service at this location? A nearby mechanic will be assigned.`)) {
+            // serviceId for Diagnostics is '3'
+            navigate(`/booking/3`, { state: { serviceLocation: latlng } });
+        }
+    };
+    
+    const handleBookMechanic = (mechanic: Mechanic) => {
+        if (window.confirm(`Book a diagnostic service with ${mechanic.name}? This will use their current location as the service address.`)) {
+            // Service ID '3' is for Diagnostics
+            navigate('/booking/3', { state: { 
+                serviceLocation: { lat: mechanic.lat, lng: mechanic.lng },
+                preselectedMechanicId: mechanic.id 
+            }});
+        }
+    };
 
     const mechanicsWithAvailability = useMemo(() => {
         if (!db) return [];
@@ -195,7 +213,7 @@ const HomeScreen: React.FC = () => {
 
         return mechanics
             .filter(mechanic => {
-                const isActive = mechanic.status === 'Active';
+                const isActive = mechanic.status === 'Active' && mechanic.isOnline;
                 const hasSelectedSpec = selectedSpecs.length === 0 || selectedSpecs.some(spec => mechanic.specializations.includes(spec));
                 const meetsRating = mechanic.rating >= ratingFilter;
                 return isActive && hasSelectedSpec && meetsRating;
@@ -486,7 +504,28 @@ const HomeScreen: React.FC = () => {
                     </select>
                 </div>
                 <div className="h-96 w-full rounded-xl shadow-lg overflow-hidden relative z-0">
-                   <HomeLiveMap mechanics={mechanicsWithAvailability} />
+                   <HomeLiveMap
+                        mechanics={mechanicsWithAvailability}
+                        customerLocation={customerLocation}
+                        selectedMechanicId={selectedMechanicId}
+                        onMarkerClick={setSelectedMechanicId}
+                        onMapClickToBook={handleMapClickToBook}
+                        onBookMechanic={handleBookMechanic}
+                    />
+                </div>
+                <div className="flex overflow-x-auto scrollbar-hide gap-3 p-2 -mx-2 mt-4">
+                    {mechanicsWithAvailability.map(m => (
+                        <div key={m.id} onClick={() => setSelectedMechanicId(m.id)} onDoubleClick={() => navigate(`/mechanic-profile/${m.id}`)} className={`flex-shrink-0 w-64 bg-dark-gray p-3 rounded-lg cursor-pointer border-2 transition-all ${selectedMechanicId === m.id ? 'border-primary' : 'border-transparent'}`}>
+                            <div className="flex items-center gap-3">
+                                <img src={m.imageUrl} alt={m.name} className="w-12 h-12 rounded-full object-cover"/>
+                                <div className="flex-grow overflow-hidden">
+                                    <p className="font-bold text-white text-sm truncate">{m.name}</p>
+                                    <p className="text-xs text-yellow-400">★ {m.rating} ({m.reviews} jobs)</p>
+                                    {m.isAvailable ? <p className="text-xs text-green-400 font-semibold">Available Today</p> : <p className="text-xs text-gray-500">Unavailable</p>}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
 

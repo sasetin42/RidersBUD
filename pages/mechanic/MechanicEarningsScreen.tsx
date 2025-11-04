@@ -1,5 +1,3 @@
-
-
 import React, { useMemo, useState } from 'react';
 import Header from '../../components/Header';
 import { Booking } from '../../types';
@@ -50,7 +48,14 @@ const EarningItemCard: React.FC<{ booking: Booking }> = ({ booking }) => {
                 <p className="font-semibold text-white text-sm">{booking.service.name}</p>
                 <p className="text-xs text-light-gray">{booking.customerName}</p>
             </div>
-            <p className="font-bold text-lg text-green-400">+ ₱{booking.service.price.toLocaleString()}</p>
+            <div className="text-right">
+                <p className="font-bold text-lg text-green-400">+ ₱{booking.service.price.toLocaleString()}</p>
+                 {booking.isPaid === false ? (
+                     <span className="text-xs font-semibold bg-yellow-500/20 text-yellow-300 px-2 py-0.5 rounded-full">Pending Payment</span>
+                ) : (
+                     <span className="text-xs font-semibold bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full">Paid</span>
+                )}
+            </div>
         </div>
     );
 };
@@ -91,9 +96,10 @@ const MechanicEarningsScreen: React.FC = () => {
             );
         }
 
-        const earnings = filteredJobs.reduce((sum, job) => sum + job.service.price, 0);
+        const paidJobsInPeriod = filteredJobs.filter(job => job.isPaid !== false);
+        const earnings = paidJobsInPeriod.reduce((sum, job) => sum + job.service.price, 0);
         const jobsCount = filteredJobs.length;
-        const avgValue = jobsCount > 0 ? earnings / jobsCount : 0;
+        const avgValue = paidJobsInPeriod.length > 0 ? earnings / paidJobsInPeriod.length : 0;
         
         const last7Days = Array.from({ length: 7 }).map((_, i) => {
             const d = new Date();
@@ -104,7 +110,7 @@ const MechanicEarningsScreen: React.FC = () => {
         const dailyEarnings = last7Days.map(day => {
             const dayStr = day.toISOString().split('T')[0];
             const earningsForDay = myCompletedJobs
-                .filter(job => job.date === dayStr)
+                .filter(job => job.date === dayStr && job.isPaid !== false)
                 .reduce((sum, job) => sum + job.service.price, 0);
             return {
                 label: day.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -166,7 +172,7 @@ const MechanicEarningsScreen: React.FC = () => {
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                      <StatCard 
-                        title="Earnings in Period"
+                        title="Paid Earnings in Period"
                         value={`₱${earningsInPeriod.toLocaleString()}`}
                         icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}
                     />
@@ -177,7 +183,7 @@ const MechanicEarningsScreen: React.FC = () => {
                     />
                     <div className="col-span-1 sm:col-span-2">
                          <StatCard 
-                            title="Average Job Value"
+                            title="Average Paid Job Value"
                             value={`₱${avgJobValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 2v.01" /></svg>}
                         />

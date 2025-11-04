@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Service, Mechanic } from '../types';
@@ -6,13 +7,17 @@ import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { useWishlist } from '../context/WishlistContext';
 
-const ServiceCard: React.FC<{ service: Service; }> = ({ service }) => {
+const ServiceCard: React.FC<{
+    service: Service;
+    rating: number;
+    reviewCount: number;
+}> = React.memo(({ service, rating, reviewCount }) => {
     const navigate = useNavigate();
     const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
     const isWishlisted = isInWishlist(service.id);
 
     const handleToggleWishlist = (e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent navigation when clicking the heart
+        e.stopPropagation();
         if (isWishlisted) {
             removeFromWishlist(service.id);
         } else {
@@ -20,19 +25,26 @@ const ServiceCard: React.FC<{ service: Service; }> = ({ service }) => {
         }
     };
 
+    const handleDetails = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigate(`/service/${service.id}`);
+    };
+
+    const handleBookNow = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        // All services, including those needing a quote, now go to the booking screen.
+        navigate(`/booking/${service.id}`);
+    };
+
     return (
         <div 
-            onClick={() => navigate(`/service/${service.id}`)} 
-            className="bg-dark-gray rounded-2xl overflow-hidden flex flex-col cursor-pointer group shadow-lg transition-transform duration-300 hover:-translate-y-1 border border-transparent hover:border-primary/50"
-            role="button"
-            aria-label={`View details for ${service.name}`}
+            className="bg-dark-gray rounded-lg overflow-hidden flex flex-col group shadow-lg transition-all duration-300 hover:shadow-primary/20 hover:-translate-y-1"
+            aria-label={`Service card for ${service.name}`}
         >
             {/* Image Section */}
             <div className="relative">
-                <img src={service.imageUrl} alt={service.name} className="w-full h-32 object-cover transition-transform duration-300 group-hover:scale-105" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
-                
-                {/* Wishlist Button */}
+                <img src={service.imageUrl} alt={service.name} className="w-full h-36 object-cover transition-transform duration-300 group-hover:scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent"></div>
                 <button 
                     onClick={handleToggleWishlist} 
                     className="absolute top-2 right-2 bg-black/40 backdrop-blur-sm rounded-full p-2 transition-all duration-200 hover:scale-110 hover:bg-black/60 active:scale-95 z-10" 
@@ -42,34 +54,52 @@ const ServiceCard: React.FC<{ service: Service; }> = ({ service }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
                     </svg>
                 </button>
-
-                {/* Category Tag */}
-                <span className="absolute top-2 left-2 bg-black/40 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm">
-                    {service.category}
-                </span>
+                <div className="absolute bottom-0 left-0 p-3">
+                     <span className="bg-black/40 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
+                        <div className="w-4 h-4" dangerouslySetInnerHTML={{ __html: service.icon }} />
+                        {service.category}
+                    </span>
+                    <h3 className="font-bold text-lg text-white mt-1 leading-tight">{service.name}</h3>
+                </div>
             </div>
 
             {/* Content Section */}
-            <div className="p-3 flex flex-col flex-grow">
-                <h3 className="font-bold text-base leading-tight text-white group-hover:text-primary transition-colors">{service.name}</h3>
+            <div className="p-3">
+                <div className="flex justify-between items-center">
+                     <p className="font-semibold text-primary text-xl">
+                        {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Get Quote'}
+                    </p>
+                     {reviewCount > 0 ? (
+                        <div className="flex items-center gap-1 text-xs text-yellow-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                            <span className="font-bold">{rating.toFixed(1)}</span>
+                            <span className="text-light-gray">({reviewCount})</span>
+                        </div>
+                    ) : (
+                        <div className="h-4"></div> // Placeholder for consistent height
+                    )}
+                </div>
+                 <p className="text-xs text-light-gray mt-1">Est. Time: {service.estimatedTime}</p>
                 
-                <p className="font-semibold text-primary mt-1 text-lg">
-                    {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Quote Required'}
-                </p>
-
-                <div className="flex justify-between items-center mt-auto pt-2 border-t border-field">
-                    <div className="flex items-center gap-1 text-xs text-light-gray/90">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <span>{service.estimatedTime}</span>
-                    </div>
-                    <span className="text-xs font-semibold text-primary group-hover:underline flex items-center gap-1">
-                        Details <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                    </span>
+                {/* Action Buttons */}
+                <div className="mt-4 flex gap-2">
+                    <button 
+                        onClick={handleDetails}
+                        className="flex-1 bg-field text-white font-bold py-2 px-3 rounded-lg text-sm hover:bg-gray-600 transition duration-200"
+                    >
+                        Details
+                    </button>
+                    <button 
+                        onClick={handleBookNow}
+                        className="flex-1 bg-primary text-white font-bold py-2 px-3 rounded-lg text-sm hover:bg-orange-600 transition duration-200"
+                    >
+                        {service.price > 0 ? 'Book Now' : 'Get Quote'}
+                    </button>
                 </div>
             </div>
         </div>
     );
-};
+});
 
 
 const ServicesScreen: React.FC = () => {
@@ -97,7 +127,6 @@ const ServicesScreen: React.FC = () => {
             if (mechanic.status !== 'Active' || !daySchedule?.isAvailable) {
                 return false;
             }
-            // Check if unavailable for the whole day
             if (mechanic.unavailableDates?.some(d => {
                 const start = new Date(d.startDate.replace(/-/g, '/'));
                 start.setHours(0,0,0,0);
@@ -116,6 +145,42 @@ const ServicesScreen: React.FC = () => {
         });
         return specSet;
     }, [db]);
+
+    const serviceRatings = useMemo(() => {
+        if (!db) return new Map();
+
+        const categoryToMechanics = new Map<string, Mechanic[]>();
+        db.mechanics.forEach(mechanic => {
+            mechanic.specializations.forEach(spec => {
+                const specLower = spec.toLowerCase();
+                if (!categoryToMechanics.has(specLower)) {
+                    categoryToMechanics.set(specLower, []);
+                }
+                categoryToMechanics.get(specLower)!.push(mechanic);
+            });
+        });
+
+        return new Map(db.services.map(service => {
+            const serviceNameLower = service.name.toLowerCase();
+            const serviceCategoryLower = service.category.toLowerCase();
+            
+            const nameMechanics = categoryToMechanics.get(serviceNameLower) || [];
+            const categoryMechanics = categoryToMechanics.get(serviceCategoryLower) || [];
+            
+            const relevantMechanics = [...new Set([...nameMechanics, ...categoryMechanics])];
+
+            if (relevantMechanics.length === 0) {
+                return [service.id, { avgRating: 0, totalReviews: 0 }];
+            }
+            
+            const totalReviews = relevantMechanics.reduce((sum, m) => sum + m.reviews, 0);
+            const weightedTotalRating = relevantMechanics.reduce((sum, m) => sum + (m.rating * m.reviews), 0);
+            const avgRating = totalReviews > 0 ? weightedTotalRating / totalReviews : 0;
+
+            return [service.id, { avgRating, totalReviews }];
+        }));
+    }, [db]);
+
 
     const displayedServices = useMemo(() => {
         const lowercasedQuery = searchQuery.toLowerCase();
@@ -142,7 +207,6 @@ const ServicesScreen: React.FC = () => {
             return searchMatch && categoryMatch && priceMatch && availabilityMatch;
         });
 
-        // Default sort for consistent ordering
         filtered.sort((a, b) => a.name.localeCompare(b.name));
         
         return filtered;
@@ -164,9 +228,20 @@ const ServicesScreen: React.FC = () => {
                         placeholder="Search for any service..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-field border border-dark-gray rounded-full text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="w-full pl-10 pr-10 py-2 bg-field border border-dark-gray rounded-full text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
                         aria-label="Search services"
                     />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute inset-y-0 right-0 flex items-center pr-3"
+                            aria-label="Clear search"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
@@ -217,9 +292,10 @@ const ServicesScreen: React.FC = () => {
             ) : (
                 <div className="flex-grow p-4 pt-0 grid grid-cols-2 gap-4 overflow-y-auto">
                     {displayedServices.length > 0 ? (
-                        displayedServices.map(service => (
-                            <ServiceCard key={service.id} service={service} />
-                        ))
+                        displayedServices.map(service => {
+                            const ratings = serviceRatings.get(service.id) || { avgRating: 0, totalReviews: 0 };
+                            return <ServiceCard key={service.id} service={service} rating={ratings.avgRating} reviewCount={ratings.totalReviews} />;
+                        })
                     ) : (
                         <div className="col-span-2 flex flex-col items-center justify-center text-center h-full text-light-gray p-8">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

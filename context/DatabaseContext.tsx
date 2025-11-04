@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest } from '../types';
+import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest, RentalCar, RentalBooking } from '../types';
 import { getSeedData } from '../data/mockData';
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -17,16 +17,19 @@ interface DatabaseContextType {
     addMechanic: (mechanic: Omit<Mechanic, 'id'>) => Promise<void>;
     updateMechanic: (updatedMechanic: Mechanic) => Promise<void>;
     deleteMechanic: (mechanicId: string) => Promise<void>;
-    updateMechanicStatus: (mechanicId: string, status: 'Active' | 'Inactive' | 'Pending') => Promise<void>;
+    updateMechanicStatus: (mechanicId: string, status: Mechanic['status']) => Promise<void>;
     updateMechanicOnlineStatus: (mechanicId: string, isOnline: boolean) => Promise<void>;
     updateMechanicLocation: (mechanicId: string, location: { lat: number; lng: number }) => Promise<void>;
     addBooking: (booking: Omit<Booking, 'id'>) => Promise<Booking | null>;
+    updateBooking: (bookingId: string, updates: Partial<Booking>) => Promise<void>;
     updateBookingStatus: (bookingId: string, status: BookingStatus) => Promise<void>;
     cancelBooking: (bookingId: string, reason: string) => Promise<void>;
     acceptJobRequest: (bookingId: string, mechanic: Mechanic) => Promise<void>;
     updateBookingNotes: (bookingId: string, notes: string) => Promise<void>;
     updateBookingImages: (bookingId: string, beforeImages: string[], afterImages: string[]) => Promise<void>;
     markBookingAsPaid: (bookingId: string) => Promise<void>;
+    requestReschedule: (bookingId: string, newDate: string, newTime: string, reason: string) => Promise<void>;
+    respondToReschedule: (bookingId: string, response: 'accepted' | 'rejected') => Promise<void>;
     addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
     updateCustomer: (updatedCustomer: Customer) => Promise<void>;
     deleteCustomer: (customerId: string) => Promise<void>;
@@ -44,13 +47,14 @@ interface DatabaseContextType {
     addRole: (role: Omit<Role, 'isEditable'>) => Promise<void>;
     updateRole: (updatedRole: Role) => Promise<void>;
     deleteRole: (roleName: string) => Promise<void>;
-    addTask: (task: Omit<Task, 'id'>) => Promise<void>;
+    addTask: (task: Omit<Task, 'id' | 'isComplete' | 'completionDate'>) => Promise<void>;
     updateTask: (updatedTask: Task) => Promise<void>;
     deleteTask: (taskId: string) => Promise<void>;
     deleteMultipleTasks: (taskIds: string[]) => Promise<void>;
     updateMultipleTasksStatus: (taskIds: string[], isComplete: boolean) => Promise<void>;
     addPayoutRequest: (payoutRequest: Omit<PayoutRequest, 'id' | 'status' | 'requestDate'>) => Promise<void>;
     processPayoutRequest: (payoutId: string, status: 'Approved' | 'Rejected', rejectionReason?: string) => Promise<void>;
+    addRentalBooking: (booking: Omit<RentalBooking, 'id'>) => Promise<RentalBooking | null>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
@@ -171,7 +175,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, mechanics: prevDb.mechanics.filter(m => m.id !== mechanicId) } : null);
     };
-    const updateMechanicStatus = async (mechanicId: string, status: 'Active' | 'Inactive' | 'Pending') => {
+    const updateMechanicStatus = async (mechanicId: string, status: Mechanic['status']) => {
         await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, mechanics: prevDb.mechanics.map(m => m.id === mechanicId ? { ...m, status } : m) } : null);
     };
@@ -196,6 +200,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         const newBooking = { ...booking, id: `b-${Date.now()}` } as Booking;
         setDb(prevDb => prevDb ? { ...prevDb, bookings: [...prevDb.bookings, newBooking] } : null);
         return newBooking;
+    };
+     const updateBooking = async (bookingId: string, updates: Partial<Booking>) => {
+        await delay(300);
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const updatedBookings = prevDb.bookings.map(b =>
+                b.id === bookingId ? { ...b, ...updates } : b
+            );
+            return { ...prevDb, bookings: updatedBookings };
+        });
     };
     const updateBookingStatus = async (bookingId: string, status: BookingStatus) => {
         await delay(300);
@@ -259,6 +273,68 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return {
                 ...prevDb,
                 bookings: prevDb.bookings.map(b => b.id === bookingId ? { ...b, isPaid: true } : b)
+            };
+        });
+    };
+
+    const requestReschedule = async (bookingId: string, newDate: string, newTime: string, reason: string) => {
+        await delay(300);
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            return {
+                ...prevDb,
+                bookings: prevDb.bookings.map(b => {
+                    if (b.id === bookingId) {
+                        const newStatus: BookingStatus = 'Reschedule Requested';
+                        const newHistoryEntry = { status: newStatus, timestamp: new Date().toISOString() };
+                        const updatedHistory = [...(b.statusHistory || []), newHistoryEntry];
+                        return { 
+                            ...b, 
+                            status: newStatus, 
+                            statusHistory: updatedHistory,
+                            rescheduleDetails: { newDate, newTime, reason }
+                        };
+                    }
+                    return b;
+                })
+            };
+        });
+    };
+
+    const respondToReschedule = async (bookingId: string, response: 'accepted' | 'rejected') => {
+        await delay(300);
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            return {
+                ...prevDb,
+                bookings: prevDb.bookings.map(b => {
+                    if (b.id === bookingId) {
+                        const originalStatusBeforeRequest = b.statusHistory?.slice().reverse().find(h => h.status !== 'Reschedule Requested')?.status as BookingStatus || 'Booking Confirmed';
+                        
+                        if (response === 'accepted' && b.rescheduleDetails) {
+                            const newHistoryEntry = { status: 'Booking Confirmed', timestamp: new Date().toISOString() };
+                            const updatedHistory = [...(b.statusHistory || []), newHistoryEntry];
+                            return { 
+                                ...b, 
+                                status: 'Booking Confirmed', 
+                                statusHistory: updatedHistory,
+                                date: b.rescheduleDetails.newDate,
+                                time: b.rescheduleDetails.newTime,
+                                rescheduleDetails: undefined
+                            };
+                        } else { // rejected
+                            const newHistoryEntry = { status: originalStatusBeforeRequest, timestamp: new Date().toISOString() };
+                            const updatedHistory = [...(b.statusHistory || []), newHistoryEntry];
+                            return {
+                                ...b,
+                                status: originalStatusBeforeRequest,
+                                statusHistory: updatedHistory,
+                                rescheduleDetails: undefined
+                            };
+                        }
+                    }
+                    return b;
+                })
             };
         });
     };
@@ -384,45 +460,18 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         const newBanner = { ...banner, id: `banner-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, banners: [...prevDb.banners, newBanner] } : null);
     };
+
     const updateBanner = async (updatedBanner: Banner) => {
         await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, banners: prevDb.banners.map(b => b.id === updatedBanner.id ? updatedBanner : b) } : null);
     };
+
     const deleteBanner = async (bannerId: string) => {
         await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, banners: prevDb.banners.filter(b => b.id !== bannerId) } : null);
     };
 
     // --- Admin User & Role Operations ---
-    const addRole = async (role: Omit<Role, 'isEditable'>) => {
-        await delay(300);
-        const newRole: Role = { ...role, isEditable: true };
-        setDb(prevDb => {
-            if (!prevDb) return null;
-            if (prevDb.roles.some(r => r.name.toLowerCase() === newRole.name.toLowerCase())) {
-                throw new Error("A role with this name already exists.");
-            }
-            return { ...prevDb, roles: [...prevDb.roles, newRole] };
-        });
-    };
-    const updateRole = async (updatedRole: Role) => {
-        await delay(300);
-        setDb(prevDb => {
-            if (!prevDb) return null;
-            return { ...prevDb, roles: prevDb.roles.map(r => r.name === updatedRole.name ? updatedRole : r) };
-        });
-    };
-    const deleteRole = async (roleName: string) => {
-        await delay(300);
-        setDb(prevDb => {
-            if (!prevDb) return null;
-            const roleInUse = prevDb.adminUsers.some(u => u.role === roleName);
-            if (roleInUse) {
-                throw new Error("Cannot delete role. It is currently assigned to one or more users.");
-            }
-            return { ...prevDb, roles: prevDb.roles.filter(r => r.name !== roleName) };
-        });
-    };
     const addAdminUser = async (user: Omit<AdminUser, 'id'>) => {
         await delay(300);
         const newUser = { ...user, id: `au-${Date.now()}` };
@@ -436,76 +485,161 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await delay(300);
         setDb(prevDb => prevDb ? { ...prevDb, adminUsers: prevDb.adminUsers.filter(u => u.id !== userId) } : null);
     };
-
-    // --- Task Operations ---
-    const addTask = async (task: Omit<Task, 'id'>) => {
+    const addRole = async (role: Omit<Role, 'isEditable'>) => {
         await delay(300);
-        const newTask = { ...task, id: `task-${Date.now()}` };
-        setDb(prevDb => prevDb ? { ...prevDb, tasks: [...(prevDb.tasks || []), newTask] } : null);
+        const newRole = { ...role, isEditable: true }; // Custom roles are always editable
+        setDb(prevDb => prevDb ? { ...prevDb, roles: [...prevDb.roles, newRole] } : null);
     };
-    const updateTask = async (updatedTask: Task) => {
-        await delay(200);
-        setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).map(t => t.id === updatedTask.id ? updatedTask : t) } : null);
-    };
-    const deleteTask = async (taskId: string) => {
+    const updateRole = async (updatedRole: Role) => {
         await delay(300);
-        setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).filter(t => t.id !== taskId) } : null);
+        setDb(prevDb => prevDb ? { ...prevDb, roles: prevDb.roles.map(r => r.name === updatedRole.name ? updatedRole : r) } : null);
     };
-    const deleteMultipleTasks = async (taskIds: string[]) => {
+    const deleteRole = async (roleName: string) => {
         await delay(300);
-        const idSet = new Set(taskIds);
-        setDb(prevDb => prevDb ? { ...prevDb, tasks: (prevDb.tasks || []).filter(t => !idSet.has(t.id)) } : null);
-    };
-    const updateMultipleTasksStatus = async (taskIds: string[], isComplete: boolean) => {
-        await delay(300);
-        const idSet = new Set(taskIds);
         setDb(prevDb => {
             if (!prevDb) return null;
-            const newTasks = (prevDb.tasks || []).map(t => {
-                if (idSet.has(t.id)) {
-                    return { 
-                        ...t, 
-                        isComplete,
-                        completionDate: isComplete ? new Date().toISOString().split('T')[0] : t.completionDate
-                    };
-                }
-                return t;
-            });
-            return { ...prevDb, tasks: newTasks };
+            // Prevent deleting the role if it's in use
+            const isRoleInUse = prevDb.adminUsers.some(u => u.role === roleName);
+            if (isRoleInUse) {
+                throw new Error("Cannot delete role: it is currently assigned to one or more users.");
+            }
+            return { ...prevDb, roles: prevDb.roles.filter(r => r.name !== roleName) };
         });
     };
 
-    // --- Payout Operations ---
+    // --- Task Operations ---
+    const addTask = async (task: Omit<Task, 'id' | 'isComplete' | 'completionDate'>) => {
+        await delay(100);
+        const newTask: Task = { ...task, id: `t-${Date.now()}`, isComplete: false };
+        setDb(prevDb => prevDb ? { ...prevDb, tasks: [...prevDb.tasks, newTask] } : null);
+    };
+    const updateTask = async (updatedTask: Task) => {
+        await delay(100);
+        setDb(prevDb => prevDb ? { ...prevDb, tasks: prevDb.tasks.map(t => t.id === updatedTask.id ? updatedTask : t) } : null);
+    };
+    const deleteTask = async (taskId: string) => {
+        await delay(100);
+        setDb(prevDb => prevDb ? { ...prevDb, tasks: prevDb.tasks.filter(t => t.id !== taskId) } : null);
+    };
+
+    const deleteMultipleTasks = async (taskIds: string[]) => {
+        await delay(300);
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const idSet = new Set(taskIds);
+            return { ...prevDb, tasks: prevDb.tasks.filter(t => !idSet.has(t.id)) };
+        });
+    };
+
+    const updateMultipleTasksStatus = async (taskIds: string[], isComplete: boolean) => {
+        await delay(300);
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const idSet = new Set(taskIds);
+            const completionDate = isComplete ? new Date().toISOString().split('T')[0] : undefined;
+            return {
+                ...prevDb,
+                tasks: prevDb.tasks.map(t =>
+                    idSet.has(t.id) ? { ...t, isComplete, completionDate } : t
+                )
+            };
+        });
+    };
+
+     // --- Payout Operations ---
     const addPayoutRequest = async (payoutRequest: Omit<PayoutRequest, 'id' | 'status' | 'requestDate'>) => {
-        await delay(500);
+        await delay(300);
         const newRequest: PayoutRequest = {
             ...payoutRequest,
             id: `po-${Date.now()}`,
             status: 'Pending',
             requestDate: new Date().toISOString(),
         };
-        setDb(prevDb => prevDb ? { ...prevDb, payouts: [...(prevDb.payouts || []), newRequest] } : null);
+        setDb(prevDb => prevDb ? { ...prevDb, payouts: [...prevDb.payouts, newRequest] } : null);
     };
+
     const processPayoutRequest = async (payoutId: string, status: 'Approved' | 'Rejected', rejectionReason?: string) => {
         await delay(500);
         setDb(prevDb => prevDb ? {
             ...prevDb,
-            payouts: (prevDb.payouts || []).map(p => 
-                p.id === payoutId 
-                ? { ...p, status, processDate: new Date().toISOString(), rejectionReason: status === 'Rejected' ? rejectionReason : undefined } 
-                : p
+            payouts: prevDb.payouts.map(p =>
+                p.id === payoutId
+                    ? { ...p, status, processDate: new Date().toISOString(), rejectionReason: status === 'Rejected' ? rejectionReason : undefined }
+                    : p
             )
         } : null);
     };
 
+    // --- Rental Operations ---
+    const addRentalBooking = async (booking: Omit<RentalBooking, 'id'>): Promise<RentalBooking | null> => {
+        await delay(500);
+        const newBooking: RentalBooking = { ...booking, id: `rb-${Date.now()}` };
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const updatedCars = prevDb.rentalCars.map(car =>
+                car.id === newBooking.carId ? { ...car, isAvailable: false } : car
+            );
+            return {
+                ...prevDb,
+                rentalCars: updatedCars,
+                rentalBookings: [...(prevDb.rentalBookings || []), newBooking]
+            };
+        });
+        return newBooking;
+    };
 
-    const value = {
-        db, loading, addService, updateService, deleteService, addPart, updatePart, deletePart, addMechanic, updateMechanic, deleteMechanic,
-        updateMechanicStatus, updateMechanicLocation, updateMechanicOnlineStatus, addBooking, updateBookingStatus, cancelBooking, acceptJobRequest, updateBookingNotes, updateBookingImages, markBookingAsPaid, addCustomer, updateCustomer, deleteCustomer, deleteVehicleFromCustomer,
-        addOrder, updateOrderStatus, updateSettings, addReviewToMechanic, addBanner, updateBanner, deleteBanner,
-        addAdminUser, updateAdminUser, deleteAdminUser, addRole, updateRole, deleteRole,
-        addTask, updateTask, deleteTask, deleteMultipleTasks, updateMultipleTasksStatus,
-        addPayoutRequest, processPayoutRequest
+
+    // --- Context Provider Value ---
+    const value: DatabaseContextType = {
+        db,
+        loading,
+        addService,
+        updateService,
+        deleteService,
+        addPart,
+        updatePart,
+        deletePart,
+        addMechanic,
+        updateMechanic,
+        deleteMechanic,
+        updateMechanicStatus,
+        updateMechanicOnlineStatus,
+        updateMechanicLocation,
+        addBooking,
+        updateBooking,
+        updateBookingStatus,
+        cancelBooking,
+        acceptJobRequest,
+        updateBookingNotes,
+        updateBookingImages,
+        markBookingAsPaid,
+        requestReschedule,
+        respondToReschedule,
+        addCustomer,
+        updateCustomer,
+        deleteCustomer,
+        deleteVehicleFromCustomer,
+        addOrder,
+        updateOrderStatus,
+        updateSettings,
+        addReviewToMechanic,
+        addBanner,
+        updateBanner,
+        deleteBanner,
+        addAdminUser,
+        updateAdminUser,
+        deleteAdminUser,
+        addRole,
+        updateRole,
+        deleteRole,
+        addTask,
+        updateTask,
+        deleteTask,
+        deleteMultipleTasks,
+        updateMultipleTasksStatus,
+        addPayoutRequest,
+        processPayoutRequest,
+        addRentalBooking,
     };
 
     return (
@@ -513,4 +647,4 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             {children}
         </DatabaseContext.Provider>
     );
-}
+};

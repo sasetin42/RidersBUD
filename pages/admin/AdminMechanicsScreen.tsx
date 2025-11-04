@@ -53,6 +53,7 @@ const MechanicFormModal: React.FC<{
             });
         }
         setIsSaving(false);
+        onClose();
     };
     
     return (

@@ -91,6 +91,7 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     const updateOnlineStatus = async (isOnline: boolean) => {
         if (!mechanic) return;
         await updateMechanicOnlineStatus(mechanic.id, isOnline);
+        setMechanic(prev => prev ? { ...prev, isOnline } : null);
     };
 
     const updateMechanicProfile = async (updatedMechanic: Mechanic) => {

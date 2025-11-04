@@ -4,6 +4,7 @@ import Modal from '../../components/admin/Modal';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { fileToBase64 } from '../../utils/fileUtils';
+import { Banner } from '../../types';
 
 const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
     <div className="bg-admin-card p-5 rounded-xl shadow-lg flex items-center gap-4 border border-admin-border">
@@ -134,8 +135,7 @@ const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void;
 };
 
 const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: () => void; categories: string[] }> = ({ part, onSave, onCancel, categories }) => {
-    // FIX: The `Part` type uses `imageUrls` (an array). Initialize `imageUrl` from the first element.
-    const [formData, setFormData] = useState({ id: part?.id || '', name: part?.name || '', description: part?.description || '', price: part?.price ?? '', salesPrice: part?.salesPrice ?? '', category: part?.category || (categories[0] || ''), sku: part?.sku || '', imageUrl: part?.imageUrls?.[0] || '', stock: part?.stock ?? 0 });
+    const [formData, setFormData] = useState({ id: part?.id || '', name: part?.name || '', description: part?.description || '', price: part?.price ?? '', salesPrice: part?.salesPrice ?? '', category: part?.category || (categories[0] || ''), sku: part?.sku || '', imageUrl: part?.imageUrls?.[0] || '', stock: part?.stock ?? 0, brand: part?.brand || '' });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
@@ -162,7 +162,6 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (validate()) {
-            // FIX: Convert the single `imageUrl` from form state back into an `imageUrls` array to match the `Part` type.
             const { imageUrl, ...rest } = formData;
             onSave({ ...rest, price: Number(formData.price), salesPrice: formData.salesPrice ? Number(formData.salesPrice) : undefined, stock: Number(formData.stock), imageUrls: [imageUrl] });
         }
@@ -182,7 +181,10 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
                 <select name="category" value={formData.category} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded ${errors.category ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`}><option value="" disabled>Select a category</option>{categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
                 <input type="number" name="stock" value={formData.stock} onChange={handleChange} placeholder="Stock Quantity" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.stock ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
             </div>
-            <input type="text" name="sku" value={formData.sku} onChange={handleChange} placeholder="SKU" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.sku ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
+            <div className="grid grid-cols-2 gap-4">
+                <input type="text" name="sku" value={formData.sku} onChange={handleChange} placeholder="SKU" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.sku ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
+                 <input type="text" name="brand" value={formData.brand} onChange={handleChange} placeholder="Brand" className="w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary border-admin-border focus:ring-admin-accent focus:border-admin-accent" />
+            </div>
             <div>
                 <label className="block text-sm font-medium text-admin-text-secondary mb-1">Part Image</label>
                 <input type="file" onChange={handleFileChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
@@ -196,7 +198,6 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
 
 const ItemCard: React.FC<{ item: Service | Part, onEdit: () => void, onDelete: () => void }> = ({ item, onEdit, onDelete }) => {
     const hasSalesPrice = 'salesPrice' in item && item.salesPrice && item.salesPrice > 0;
-    // FIX: Conditionally access `imageUrl` or `imageUrls[0]` based on whether the item is a Service or a Part.
     const imageUrl = 'sku' in item ? item.imageUrls[0] : item.imageUrl;
     
     return (

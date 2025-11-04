@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mechanic } from '../types';
 
@@ -9,16 +10,30 @@ type MappedMechanic = Mechanic & { isAvailable: boolean };
 
 interface HomeLiveMapProps {
     mechanics: MappedMechanic[];
+    customerLocation: { lat: number, lng: number } | null;
+    selectedMechanicId: string | null;
+    onMarkerClick: (mechanicId: string | null) => void;
+    onMapClickToBook: (latlng: { lat: number, lng: number }) => void;
+    onBookMechanic: (mechanic: MappedMechanic) => void;
 }
 
-const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
+const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, selectedMechanicId, onMarkerClick, onMapClickToBook, onBookMechanic }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
     const markersLayerRef = useRef<any>(null); // To hold the cluster group
     const markersRef = useRef<{ [key: string]: any }>({}); // To hold individual markers for updates
     const navigate = useNavigate();
 
-    // 1. Initialize map on component mount
+    // Use refs for callbacks to avoid stale closures in Leaflet event handlers
+    const onMarkerClickRef = useRef(onMarkerClick);
+    onMarkerClickRef.current = onMarkerClick;
+    const onMapClickToBookRef = useRef(onMapClickToBook);
+    onMapClickToBookRef.current = onMapClickToBook;
+    const onBookMechanicRef = useRef(onBookMechanic);
+    onBookMechanicRef.current = onBookMechanic;
+    const mechanicsRef = useRef(mechanics);
+    mechanicsRef.current = mechanics;
+
     useEffect(() => {
         if (!mapRef.current || mapInstanceRef.current || typeof L === 'undefined') return;
 
@@ -26,7 +41,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
             center: [14.58, 121.05], // Centered on Metro Manila
             zoom: 12,
             zoomControl: true,
-            scrollWheelZoom: false, // Disable zoom on scroll
+            scrollWheelZoom: false,
         });
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -43,18 +58,38 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
             },
         });
         mapInstanceRef.current.addLayer(markersLayerRef.current);
+        
+        mapInstanceRef.current.on('click', (e: any) => {
+             // Ignore clicks on markers as they have their own handlers
+            if (e.originalEvent.target.closest('.leaflet-marker-pane')) {
+                return;
+            }
+             // Deselect any active marker
+            onMarkerClickRef.current(null);
 
-        // Add a single, persistent event listener to the map for popup events
+            // Directly call the booking handler from props using a ref
+            onMapClickToBookRef.current(e.latlng);
+        });
+
         mapInstanceRef.current.on('popupopen', (e: any) => {
             const popupNode = e.popup.getElement();
             const viewProfileBtn = popupNode.querySelector('.view-profile-btn');
             if (viewProfileBtn) {
-                // Use L.DomEvent to handle the click without closing the popup
                 L.DomEvent.on(viewProfileBtn, 'click', (ev: any) => {
-                    L.DomEvent.stop(ev); // Prevent the map from handling the click
+                    L.DomEvent.stop(ev);
                     const mechanicId = ev.target.dataset.mechanicId;
-                    if (mechanicId) {
-                        navigate(`/mechanic-profile/${mechanicId}`);
+                    if (mechanicId) navigate(`/mechanic-profile/${mechanicId}`);
+                });
+            }
+            // Add handler for new "Book Diagnostic" button
+            const bookBtn = popupNode.querySelector('.book-diagnostic-btn');
+            if (bookBtn) {
+                 L.DomEvent.on(bookBtn, 'click', (ev: any) => {
+                    L.DomEvent.stop(ev);
+                    const mechanicId = ev.target.dataset.mechanicId;
+                    const mechanic = mechanicsRef.current.find(m => m.id === mechanicId);
+                    if (mechanic) {
+                        onBookMechanicRef.current(mechanic);
                     }
                 });
             }
@@ -66,15 +101,13 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
                 mapInstanceRef.current = null;
             }
         };
-    }, [navigate]);
+    }, [navigate]); // navigate is stable, so this effect runs only once.
 
-    // 2. Sync markers with mechanics prop
     useEffect(() => {
         if (!markersLayerRef.current || !mechanics) return;
         
         const mechanicIds = new Set(mechanics.map(m => m.id));
 
-        // Remove markers for mechanics no longer present
         Object.keys(markersRef.current).forEach(markerId => {
             if (!mechanicIds.has(markerId)) {
                 markersLayerRef.current.removeLayer(markersRef.current[markerId]);
@@ -82,13 +115,14 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
             }
         });
 
-        // Add or update markers
         mechanics.forEach(mechanic => {
             const isAvailable = mechanic.isAvailable;
+            const isSelected = mechanic.id === selectedMechanicId;
             
-             const animationClass = isAvailable ? 'pulse-green' : '';
+            const animationClass = isAvailable ? 'pulse-green' : '';
+            const selectedClass = isSelected ? 'selected' : '';
             const iconHtml = `
-                <div class="custom-marker-container ${animationClass}">
+                <div class="custom-marker-container ${animationClass} ${selectedClass}">
                     <img src="${mechanic.imageUrl}" class="custom-marker-image ${!isAvailable ? 'unavailable' : ''}" alt="${mechanic.name}" />
                 </div>`;
                 
@@ -102,12 +136,15 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
 
             const popupContent = `
                 <div class="ridersbud-popup-inner">
-                    <img src="${mechanic.imageUrl}" class="ridersbud-popup-img" alt="${mechanic.name}" />
+                    <img src="${mechanic.imageUrl}" alt="${mechanic.name}" class="ridersbud-popup-img" />
                     <h3 class="ridersbud-popup-name">${mechanic.name}</h3>
-                    <p class="ridersbud-popup-spec">${mechanic.specializations.slice(0, 2).join(', ')}</p>
-                    <p class="ridersbud-popup-rating">⭐ ${mechanic.rating.toFixed(1)} (${mechanic.reviews} jobs)</p>
+                    <p class="ridersbud-popup-spec">${mechanic.specializations.slice(0, 2).join(' & ')}</p>
+                    <p class="ridersbud-popup-rating">★ ${mechanic.rating.toFixed(1)}</p>
                     <button class="view-profile-btn ridersbud-popup-btn" data-mechanic-id="${mechanic.id}">
                         View Profile
+                    </button>
+                    <button class="book-diagnostic-btn ridersbud-popup-btn" data-mechanic-id="${mechanic.id}" style="background-color: #3b82f6; margin-top: 4px;">
+                        Book Diagnostic
                     </button>
                 </div>
             `;
@@ -122,12 +159,29 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics }) => {
             } else {
                 const newMarker = L.marker([mechanic.lat, mechanic.lng], { icon: icon });
                 newMarker.bindPopup(popupContent, popupOptions);
+                
+                newMarker.on('click', (e: any) => {
+                    L.DomEvent.stop(e);
+                    onMarkerClickRef.current(mechanic.id);
+                });
+
                 markersLayerRef.current.addLayer(newMarker);
                 markersRef.current[mechanic.id] = newMarker;
             }
         });
 
-    }, [mechanics]);
+        if (selectedMechanicId && markersRef.current[selectedMechanicId] && mapInstanceRef.current) {
+            const marker = markersRef.current[selectedMechanicId];
+            const latLng = marker.getLatLng();
+            markersLayerRef.current.zoomToShowLayer(marker, () => {
+                mapInstanceRef.current.setView(latLng, 15, { animate: true, pan: { duration: 0.5 }});
+                if (!marker.isPopupOpen()) {
+                    marker.openPopup();
+                }
+            });
+        }
+
+    }, [mechanics, customerLocation, selectedMechanicId]);
 
     return <div ref={mapRef} className="h-full w-full" />;
 };

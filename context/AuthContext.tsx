@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Customer, Vehicle } from '../types';
 import { useDatabase } from './DatabaseContext';
@@ -20,6 +21,8 @@ interface AuthContextType {
     setPrimaryVehicle: (plateNumber: string) => Promise<void>;
     addFavoriteMechanic: (mechanicId: string) => Promise<void>;
     removeFavoriteMechanic: (mechanicId: string) => Promise<void>;
+    subscribeToMechanic: (mechanicId: string) => Promise<void>;
+    unsubscribeFromMechanic: (mechanicId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -264,6 +267,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addNotification({ type: 'success', title: 'Favorite Removed', message: 'Mechanic removed from your favorites.' });
     };
 
+    const subscribeToMechanic = async (mechanicId: string) => {
+        if (!user) return;
+        const updatedUser: Customer = {
+            ...user,
+            subscribedMechanicIds: [...new Set([...(user.subscribedMechanicIds || []), mechanicId])],
+        };
+        await updateCustomer(updatedUser);
+        setUser(updatedUser);
+        addNotification({ type: 'success', title: 'Subscribed!', message: 'You will now receive updates from this mechanic.' });
+    };
+
+    const unsubscribeFromMechanic = async (mechanicId: string) => {
+        if (!user) return;
+        const updatedUser: Customer = {
+            ...user,
+            subscribedMechanicIds: (user.subscribedMechanicIds || []).filter(id => id !== mechanicId),
+        };
+        await updateCustomer(updatedUser);
+        setUser(updatedUser);
+        addNotification({ type: 'success', title: 'Unsubscribed', message: 'You will no longer receive updates.' });
+    };
+
 
     const isLoadingAuth = loading || dbLoading;
 
@@ -284,6 +309,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setPrimaryVehicle,
             addFavoriteMechanic,
             removeFavoriteMechanic,
+            subscribeToMechanic,
+            unsubscribeFromMechanic,
         }}>
             {children}
         </AuthContext.Provider>

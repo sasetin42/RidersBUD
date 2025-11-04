@@ -75,6 +75,7 @@ export interface Mechanic {
     reviews: number;
     specializations: string[];
     status: 'Active' | 'Inactive' | 'Pending';
+    isOnline?: boolean;
     imageUrl: string;
     lat: number;
     lng: number;
@@ -112,7 +113,7 @@ export interface Vehicle {
     insurancePolicyNumber?: string;
 }
 
-export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Completed' | 'Cancelled';
+export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Completed' | 'Cancelled' | 'Reschedule Requested';
 
 export interface Booking {
     id: string;
@@ -129,6 +130,7 @@ export interface Booking {
     afterImages?: string[];
     notes?: string;
     cancellationReason?: string;
+    rescheduleDetails?: { newDate: string; newTime: string; reason: string };
     isReviewed?: boolean;
     isPaid?: boolean;
 }

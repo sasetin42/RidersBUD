@@ -48,6 +48,7 @@
             position: relative;
             width: 36px;
             height: 36px;
+            transition: transform 0.2s ease-out;
         }
         .custom-marker-image {
             width: 100%;
@@ -56,12 +57,19 @@
             object-fit: cover;
             border: 3px solid #28a745; /* Green for available */
             box-shadow: 0 0 8px rgba(40, 167, 69, 0.7);
+            transition: all 0.2s ease-out;
         }
         .custom-marker-image.unavailable {
             border-color: #dc3545; /* Red for unavailable */
             box-shadow: 0 0 8px rgba(220, 53, 69, 0.7);
             filter: grayscale(80%);
         }
+        .custom-marker-container.selected .custom-marker-image {
+            transform: scale(1.25);
+            box-shadow: 0 0 12px rgba(254, 120, 3, 0.9);
+            border-color: #FE7803;
+        }
+
 
         .pulse-green {
             animation: pulse-green 2s infinite;

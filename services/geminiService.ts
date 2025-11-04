@@ -17,12 +17,10 @@ export const getAIServiceSuggestions = async (vehicle: Vehicle, serviceHistory: 
 
     try {
         const response = await ai.models.generateContent({
-            // Per the request, using the gemini-2.5-pro model for complex tasks that require deeper analysis.
             model: "gemini-2.5-pro",
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
-                // Thinking mode is enabled with the maximum budget of 32768 tokens for sophisticated query processing.
                 thinkingConfig: {
                     thinkingBudget: 32768,
                 },
@@ -54,7 +52,6 @@ export const getAIServiceSuggestions = async (vehicle: Vehicle, serviceHistory: 
         });
         
         const jsonText = response.text.trim();
-        // A schema guarantees the output is valid JSON, so we can parse it directly.
         const data = JSON.parse(jsonText);
         return data.suggestions || [];
 

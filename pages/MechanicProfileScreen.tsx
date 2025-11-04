@@ -1,12 +1,11 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { Review, Mechanic } from '../types';
 import { useAuth } from '../context/AuthContext';
-
-declare const L: any;
+import HomeLiveMap from '../components/HomeLiveMap';
 
 const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
     <div className="bg-dark-gray p-4 rounded-lg">
@@ -69,18 +68,34 @@ const SkeletonLoader = () => (
     </div>
 );
 
+const StatCard: React.FC<{ title: string, value: React.ReactNode, icon: React.ReactNode }> = ({ title, value, icon }) => (
+    <div className="bg-dark-gray p-3 rounded-lg flex flex-col items-center justify-center text-center h-full">
+        <div className="text-primary h-6 w-6 mb-1">{icon}</div>
+        <div className="font-bold text-white">{value}</div>
+        <p className="text-xs text-light-gray mt-1">{title}</p>
+    </div>
+);
+
 
 const MechanicProfileScreen: React.FC = () => {
     const { mechanicId } = useParams<{ mechanicId: string }>();
     const { db, loading } = useDatabase();
     const { user, addFavoriteMechanic, removeFavoriteMechanic } = useAuth();
     const navigate = useNavigate();
-    const [reviewFilter, setReviewFilter] = useState<number>(0); // 0 for All stars
+    
+    // State for the main profile page
+    const [reviewFilter, setReviewFilter] = useState<number>(0);
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
-    const mapRef = useRef<HTMLDivElement>(null);
-    const mapInstance = useRef<any>(null);
+
+    // State for the "Find Other Mechanics" section
+    const [specFilterOpen, setSpecFilterOpen] = useState(false);
+    const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
+    const [nearbyRatingFilter, setNearbyRatingFilter] = useState(0);
+    const [mechanicSearch, setMechanicSearch] = useState('');
+    const [nearbySortOption, setNearbySortOption] = useState('rating');
+    const [selectedMechanicId, setSelectedMechanicId] = useState<string | null>(null);
 
     const isFavorited = useMemo(() => user?.favoriteMechanicIds?.includes(mechanicId!), [user, mechanicId]);
 
@@ -94,87 +109,71 @@ const MechanicProfileScreen: React.FC = () => {
         }
     };
 
-
-    const daysOfWeek: (keyof Required<Mechanic>['availability'])[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    const todayKey = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
-
-    const formatTime = (timeString: string) => {
-        if (!timeString) return '';
-        const [hours, minutes] = timeString.split(':');
-        const hoursNum = parseInt(hours, 10);
-        const ampm = hoursNum >= 12 ? 'PM' : 'AM';
-        const formattedHours = hoursNum % 12 || 12;
-        return `${formattedHours}:${minutes} ${ampm}`;
-    };
-    
     if (loading || !db) {
         return <SkeletonLoader />;
     }
 
     const mechanic = db.mechanics.find(m => m.id === mechanicId);
 
-    useEffect(() => {
-        if (!mapRef.current || mapInstance.current || typeof L === 'undefined' || !mechanic?.lat || !mechanic?.lng) return;
-
-        mapInstance.current = L.map(mapRef.current).setView([mechanic.lat, mechanic.lng], 14);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; CARTO'
-        }).addTo(mapInstance.current);
-
-        const icon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>`,
-            className: 'bg-transparent border-0',
-            iconSize: [40, 40],
-            iconAnchor: [20, 40],
-            popupAnchor: [0, -40]
-        });
-
-        const popupContent = `
-            <div style="font-family: 'Poppins', sans-serif; color: #333;">
-                <h3 style="font-weight: 700; margin: 0 0 4px;">${mechanic.name}</h3>
-                <p style="font-size: 0.8rem; color: #f59e0b; font-weight: 600; margin: 0;">⭐ ${mechanic.rating.toFixed(1)}</p>
-            </div>
-        `;
-
-        L.marker([mechanic.lat, mechanic.lng], { icon }).addTo(mapInstance.current).bindPopup(popupContent).openPopup();
-        
-        setTimeout(() => {
-            if (mapInstance.current) {
-                mapInstance.current.invalidateSize();
-            }
-        }, 100);
-
-        return () => {
-            if (mapInstance.current) {
-                mapInstance.current.remove();
-                mapInstance.current = null;
-            }
-        };
-    }, [mechanic]);
-
     const filteredReviews = useMemo(() => {
         if (!mechanic?.reviewsList) return [];
-        
-        let reviews = reviewFilter === 0 
-            ? [...mechanic.reviewsList]
-            : mechanic.reviewsList.filter(r => r.rating === reviewFilter);
-        
+        let reviews = reviewFilter === 0 ? [...mechanic.reviewsList] : mechanic.reviewsList.filter(r => r.rating === reviewFilter);
         reviews.sort((a, b) => {
             switch (sortOrder) {
-                case 'highest':
-                    return b.rating - a.rating;
-                case 'lowest':
-                    return a.rating - b.rating;
-                case 'oldest':
-                    return new Date(a.date).getTime() - new Date(b.date).getTime();
-                case 'newest':
-                default:
-                    return new Date(b.date).getTime() - new Date(a.date).getTime();
+                case 'highest': return b.rating - a.rating;
+                case 'lowest': return a.rating - b.rating;
+                case 'oldest': return new Date(a.date).getTime() - new Date(b.date).getTime();
+                case 'newest': default: return new Date(b.date).getTime() - new Date(a.date).getTime();
             }
         });
-
         return reviews;
     }, [mechanic?.reviewsList, reviewFilter, sortOrder]);
+
+    // --- Logic for "Find Other Mechanics Nearby" ---
+    const allSpecializations = useMemo(() => {
+        const specSet = new Set<string>();
+        db.mechanics.forEach(m => { if (m.status === 'Active') m.specializations.forEach(spec => specSet.add(spec)) });
+        return Array.from(specSet).sort();
+    }, [db.mechanics]);
+
+    const handleSpecToggle = (spec: string) => {
+        setSelectedSpecs(prev => prev.includes(spec) ? prev.filter(s => s !== spec) : [...prev, spec]);
+    };
+
+    const filteredNearbyMechanics = useMemo(() => {
+        if (!db) return [];
+        const { bookings, mechanics } = db;
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        const todayDayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
+        const busyMechanicIds = new Set(bookings.filter(b => (b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress') && b.mechanic && b.date === todayStr).map(b => b.mechanic!.id));
+
+        let filtered = mechanics.filter(m => {
+            if (m.id === mechanicId) return false; // Exclude current mechanic
+            const isActive = m.status === 'Active';
+            const hasSelectedSpec = selectedSpecs.length === 0 || selectedSpecs.some(spec => m.specializations.includes(spec));
+            const meetsRating = m.rating >= nearbyRatingFilter;
+            const searchMatch = mechanicSearch.trim() === '' || m.name.toLowerCase().includes(mechanicSearch.toLowerCase().trim()) || m.specializations.some(spec => spec.toLowerCase().includes(mechanicSearch.toLowerCase().trim()));
+            return isActive && hasSelectedSpec && meetsRating && searchMatch;
+        });
+        
+        filtered.sort((a, b) => {
+            if (nearbySortOption === 'jobs') return b.reviews - a.reviews;
+            return b.rating - a.rating; // Default to rating
+        });
+
+        return filtered.map(m => ({ ...m, isAvailable: (m.isOnline ?? false) && (m.availability?.[todayDayOfWeek]?.isAvailable ?? false) && !busyMechanicIds.has(m.id) }));
+    }, [db, selectedSpecs, nearbyRatingFilter, mechanicSearch, nearbySortOption, mechanicId]);
+
+    const handleBookMechanic = (mechanic: Mechanic) => {
+        if (window.confirm(`Book a diagnostic service with ${mechanic.name}? This will use the mechanic's location as the service address.`)) {
+            // Service ID '3' is for Diagnostics
+            navigate('/booking/3', { state: { 
+                serviceLocation: { lat: mechanic.lat, lng: mechanic.lng },
+                preselectedMechanicId: mechanic.id 
+            }});
+        }
+    };
 
 
     if (!mechanic) {
@@ -188,97 +187,58 @@ const MechanicProfileScreen: React.FC = () => {
         );
     }
     
-    const nextImage = () => {
-        if (mechanic.portfolioImages) {
-            setCurrentImageIndex((prevIndex) => (prevIndex + 1) % mechanic.portfolioImages!.length);
-        }
-    };
+    const nextImage = () => { if (mechanic.portfolioImages) setCurrentImageIndex((prevIndex) => (prevIndex + 1) % mechanic.portfolioImages!.length); };
+    const prevImage = () => { if (mechanic.portfolioImages) setCurrentImageIndex((prevIndex) => (prevIndex - 1 + mechanic.portfolioImages!.length) % mechanic.portfolioImages!.length); };
 
-    const prevImage = () => {
-        if (mechanic.portfolioImages) {
-            setCurrentImageIndex((prevIndex) => (prevIndex - 1 + mechanic.portfolioImages!.length) % mechanic.portfolioImages!.length);
-        }
-    };
+    const onlineStatus = mechanic.status === 'Active' ? (mechanic.isOnline ? 'Online' : 'Offline') : mechanic.status;
+    const onlineStatusIconColor = mechanic.status === 'Active' 
+        ? (mechanic.isOnline ? 'bg-green-500' : 'bg-gray-500') 
+        : mechanic.status === 'Pending' ? 'bg-yellow-500' : 'bg-red-500';
 
     return (
         <div className="flex flex-col h-full bg-secondary">
             {fullScreenImage && (
-                <div 
-                    className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fadeIn cursor-pointer" 
-                    onClick={() => setFullScreenImage(null)}
-                >
+                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fadeIn cursor-pointer" onClick={() => setFullScreenImage(null)}>
                     <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg" />
                 </div>
             )}
             <Header title="Mechanic Profile" showBackButton />
-            <div className="flex-grow p-6 space-y-6 overflow-y-auto">
-                {/* Profile Header */}
+            <div className="flex-grow p-6 space-y-8 overflow-y-auto">
                 <div className="flex flex-col items-center text-center">
                     <img src={mechanic.imageUrl} alt={mechanic.name} className="w-28 h-28 rounded-full object-cover mb-4 border-4 border-primary" />
                     <div className="flex items-center gap-3">
                          <h1 className="text-3xl font-bold text-white">{mechanic.name}</h1>
                          <button onClick={handleToggleFavorite} className="text-yellow-400" aria-label="Toggle Favorite">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 transition-transform transform hover:scale-125" viewBox="0 0 20 20" fill={isFavorited ? "currentColor" : "none"} stroke="currentColor" strokeWidth={isFavorited ? 0 : 1.5}>
-                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                             </svg>
                         </button>
                     </div>
-                    <div className="flex items-center text-yellow-400 mt-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
-                        <span className="font-bold">{mechanic.rating.toFixed(1)}</span>
-                        <span className="text-sm text-light-gray ml-2">({mechanic.reviews} jobs completed)</span>
-                    </div>
-                    {/* Top 3 Specializations */}
-                    <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                        {mechanic.specializations.slice(0, 3).map((spec, index) => (
-                             <span key={index} className="bg-primary/20 text-primary text-sm font-medium px-3 py-1 rounded-full">{spec}</span>
-                        ))}
-                    </div>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4">
+                    <StatCard title="Rating" value={<span className="text-xl">{mechanic.rating.toFixed(1)}</span>} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8-2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>} />
+                    <StatCard title="Jobs Completed" value={<span className="text-xl">{mechanic.reviews}</span>} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>} />
+                    <StatCard 
+                        title="Status" 
+                        value={
+                            <div className="flex items-center justify-center gap-1.5 text-lg">
+                                <span className={`h-2.5 w-2.5 rounded-full ${onlineStatusIconColor}`}></span>
+                                <span>{onlineStatus}</span>
+                            </div>
+                        } 
+                        icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z" /></svg>}
+                    />
+                </div>
+                <div className="flex flex-wrap gap-2 justify-center">
+                    {mechanic.specializations.map((spec, index) => <span key={index} className="bg-primary/20 text-primary text-sm font-medium px-3 py-1 rounded-full">{spec}</span>)}
                 </div>
 
-                {/* Bio */}
                 <div>
                     <h2 className="text-xl font-semibold mb-3 text-white">About Me</h2>
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <p className="text-sm text-light-gray leading-relaxed">{mechanic.bio}</p>
-                    </div>
+                    <div className="bg-dark-gray p-4 rounded-lg"><p className="text-sm text-light-gray leading-relaxed">{mechanic.bio}</p></div>
                 </div>
 
-                {/* Credentials & Documents */}
-                {(mechanic.businessLicenseUrl || (mechanic.certifications && mechanic.certifications.length > 0) || (mechanic.insurances && mechanic.insurances.length > 0)) && (
-                    <div>
-                        <h2 className="text-xl font-semibold mb-3 text-white">Credentials &amp; Documents</h2>
-                        <div className="bg-dark-gray p-4 rounded-lg space-y-3">
-                            {mechanic.businessLicenseUrl && (
-                                <a href={mechanic.businessLicenseUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-sm text-blue-400 hover:text-blue-300 transition-colors">
-                                    <span>View Business License</span>
-                                    <span>&#x2197;</span>
-                                </a>
-                            )}
-                            {mechanic.certifications?.map((cert, i) => (
-                                <a key={i} href={cert.fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-sm text-blue-400 hover:text-blue-300 transition-colors">
-                                    <span>{cert.name}</span>
-                                    <span>&#x2197;</span>
-                                </a>
-                            ))}
-                             {mechanic.insurances?.map((ins, i) => (
-                                <div key={i} className="text-sm text-light-gray">
-                                    <span className="font-semibold text-white">{ins.type} Insurance:</span> {ins.provider} (Policy #{ins.policyNumber})
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Location */}
-                {mechanic.lat && mechanic.lng && (
-                    <div>
-                        <h2 className="text-xl font-semibold mb-3 text-white">Location</h2>
-                        <div ref={mapRef} className="h-48 w-full rounded-lg bg-dark-gray" />
-                    </div>
-                )}
-
-                {/* Portfolio */}
                 {mechanic.portfolioImages && mechanic.portfolioImages.length > 0 && (
                     <div>
                         <h2 className="text-xl font-semibold mb-3 text-white">My Work</h2>
@@ -286,107 +246,81 @@ const MechanicProfileScreen: React.FC = () => {
                             <div className="flex transition-transform duration-500 ease-in-out" style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}>
                                 {mechanic.portfolioImages.map((img, index) => (
                                     <div key={index} className="flex-shrink-0 w-full">
-                                        <img 
-                                            src={img} 
-                                            alt={`Portfolio image ${index + 1}`} 
-                                            className="w-full h-48 object-cover cursor-pointer" 
-                                            onClick={() => setFullScreenImage(img)}
-                                        />
+                                        <img src={img} alt={`Portfolio image ${index + 1}`} className="w-full h-48 object-cover cursor-pointer" onClick={() => setFullScreenImage(img)} />
                                     </div>
                                 ))}
                             </div>
-                            {mechanic.portfolioImages.length > 1 && (
-                                <>
-                                    <button onClick={prevImage} className="absolute top-1/2 left-2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Previous image">
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                                    </button>
-                                    <button onClick={nextImage} className="absolute top-1/2 right-2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Next image">
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                    </button>
-                                </>
-                            )}
+                            {mechanic.portfolioImages.length > 1 && (<>
+                                <button onClick={prevImage} className="absolute top-1/2 left-2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Previous image"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+                                <button onClick={nextImage} className="absolute top-1/2 right-2 -translate-y-1/2 bg-black/50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Next image"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button>
+                            </>)}
                         </div>
                     </div>
                 )}
 
-                 {/* Working Hours */}
                 <div>
-                    <h2 className="text-xl font-semibold mb-3 text-white">Working Hours</h2>
-                    <div className="bg-dark-gray p-4 rounded-lg space-y-1">
-                        {daysOfWeek.map(day => {
-                            const dayAvailability = mechanic.availability?.[day];
-                            const isToday = day === todayKey;
-                            return (
-                                <div key={day} className={`flex justify-between items-center text-sm p-2 rounded-md ${isToday ? 'bg-primary/10' : ''}`}>
-                                    <div className="flex items-center gap-2">
-                                        <span className={`h-2 w-2 rounded-full ${dayAvailability?.isAvailable ? 'bg-green-400' : 'bg-gray-500'}`}></span>
-                                        <span className={`capitalize font-medium ${isToday ? 'text-primary' : 'text-light-gray'}`}>{day}</span>
-                                    </div>
-                                    {dayAvailability?.isAvailable ? (
-                                        <span className="font-semibold text-white">{formatTime(dayAvailability.startTime)} - {formatTime(dayAvailability.endTime)}</span>
-                                    ) : (
-                                        <span className="font-semibold text-gray-500">Off-duty</span>
-                                    )}
+                    <h2 className="text-xl font-semibold mb-3 text-white">Customer Reviews</h2>
+                    {mechanic.reviewsList && mechanic.reviewsList.length > 0 ? (<>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                            <div className="flex space-x-2 overflow-x-auto scrollbar-hide pb-2">
+                                {[0, 5, 4, 3, 2, 1].map(star => <button key={star} onClick={() => setReviewFilter(star)} className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${reviewFilter === star ? 'bg-primary text-white' : 'bg-field text-light-gray hover:bg-dark-gray'}`}>{star === 0 ? 'All' : `${star} ★`}</button>)}
+                            </div>
+                            <div>
+                                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as any)} className="bg-field text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2" aria-label="Sort reviews"><option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="highest">Highest Rating</option><option value="lowest">Lowest Rating</option></select>
+                            </div>
+                        </div>
+                        {filteredReviews.length > 0 ? (<div className="space-y-4">{filteredReviews.map(review => <ReviewCard key={review.id} review={review} />)}</div>) : (<div className="bg-dark-gray text-center text-light-gray p-6 rounded-lg"><p>No reviews found for this rating.</p></div>)}
+                    </>) : (<div className="bg-dark-gray text-center text-light-gray p-6 rounded-lg"><p>This mechanic has no reviews yet.</p></div>)}
+                </div>
+
+                <div className="border-t border-field pt-8">
+                    <h2 className="text-2xl font-semibold mb-4 text-white">Find Other Mechanics Nearby</h2>
+                     <div className="mb-4 space-y-3">
+                        <input type="text" value={mechanicSearch} onChange={e => setMechanicSearch(e.target.value)} placeholder="Search name or specialty..." className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white" />
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-light-gray mb-1">Specialization</label>
+                                <div className="relative">
+                                    <button onClick={() => setSpecFilterOpen(!specFilterOpen)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white text-left flex justify-between items-center h-[42px]"><span className="truncate">{selectedSpecs.length > 0 ? `${selectedSpecs.length} spec${selectedSpecs.length > 1 ? 's' : ''} selected` : 'All'}</span><svg className={`w-4 h-4 transition-transform ${specFilterOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
+                                    {specFilterOpen && (<div className="absolute top-full left-0 w-full mt-1 bg-field border border-dark-gray rounded-lg z-10 max-h-48 overflow-y-auto">{allSpecializations.map(spec => (<label key={spec} className="flex items-center gap-2 p-2 hover:bg-dark-gray cursor-pointer"><input type="checkbox" checked={selectedSpecs.includes(spec)} onChange={() => handleSpecToggle(spec)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" /><span>{spec}</span></label>))}</div>)}
                                 </div>
-                            );
-                        })}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-light-gray mb-1">Minimum Rating</label>
+                                <select value={nearbyRatingFilter} onChange={(e) => setNearbyRatingFilter(Number(e.target.value))} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white h-[42px]"><option value={0}>All Ratings</option><option value={4}>4 ★ & Up</option><option value={3}>3 ★ & Up</option></select>
+                            </div>
+                        </div>
+                        <select value={nearbySortOption} onChange={e => setNearbySortOption(e.target.value)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white"><option value="rating">Sort: By Rating</option><option value="jobs">Sort: By Jobs Done</option></select>
+                    </div>
+                    <div className="h-80 w-full rounded-xl shadow-lg overflow-hidden relative z-0">
+                        <HomeLiveMap 
+                            mechanics={filteredNearbyMechanics} 
+                            customerLocation={{ lat: mechanic.lat, lng: mechanic.lng }} 
+                            selectedMechanicId={selectedMechanicId} 
+                            onMarkerClick={setSelectedMechanicId} 
+                            onMapClickToBook={(latlng) => { /* Do nothing on this map */ }}
+                            onBookMechanic={handleBookMechanic}
+                        />
+                    </div>
+                    <div className="flex overflow-x-auto scrollbar-hide gap-3 p-2 -mx-2 mt-4">
+                        {filteredNearbyMechanics.map(m => (
+                            <div key={m.id} onClick={() => setSelectedMechanicId(m.id)} onDoubleClick={() => navigate(`/mechanic-profile/${m.id}`)} className={`flex-shrink-0 w-64 bg-dark-gray p-3 rounded-lg cursor-pointer border-2 transition-all ${selectedMechanicId === m.id ? 'border-primary' : 'border-transparent'}`}>
+                                <div className="flex items-center gap-3">
+                                    <img src={m.imageUrl} alt={m.name} className="w-12 h-12 rounded-full object-cover"/>
+                                    <div className="flex-grow overflow-hidden">
+                                        <p className="font-bold text-white text-sm truncate">{m.name}</p>
+                                        <p className="text-xs text-yellow-400">★ {m.rating} ({m.reviews} jobs)</p>
+                                        {m.isAvailable ? <p className="text-xs text-green-400 font-semibold">Available Today</p> : <p className="text-xs text-gray-500">Unavailable</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
-                {/* Reviews */}
-                <div>
-                    <h2 className="text-xl font-semibold mb-3 text-white">Customer Reviews</h2>
-                    {mechanic.reviewsList && mechanic.reviewsList.length > 0 ? (
-                        <>
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                                {/* Filter Chips */}
-                                <div className="flex space-x-2 overflow-x-auto scrollbar-hide pb-2">
-                                    {[0, 5, 4, 3, 2, 1].map(star => (
-                                        <button
-                                            key={star}
-                                            onClick={() => setReviewFilter(star)}
-                                            className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
-                                                reviewFilter === star 
-                                                ? 'bg-primary text-white' 
-                                                : 'bg-field text-light-gray hover:bg-dark-gray'
-                                            }`}
-                                        >
-                                            {star === 0 ? 'All' : `${star} ★`}
-                                        </button>
-                                    ))}
-                                </div>
-                                {/* Sort Dropdown */}
-                                <div>
-                                    <select
-                                        value={sortOrder}
-                                        onChange={(e) => setSortOrder(e.target.value as any)}
-                                        className="bg-field text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2"
-                                        aria-label="Sort reviews"
-                                    >
-                                        <option value="newest">Newest First</option>
-                                        <option value="oldest">Oldest First</option>
-                                        <option value="highest">Highest Rating</option>
-                                        <option value="lowest">Lowest Rating</option>
-                                    </select>
-                                </div>
-                            </div>
-                            {/* Reviews List */}
-                            {filteredReviews.length > 0 ? (
-                                <div className="space-y-4">
-                                    {filteredReviews.map(review => <ReviewCard key={review.id} review={review} />)}
-                                </div>
-                            ) : (
-                                <div className="bg-dark-gray text-center text-light-gray p-6 rounded-lg">
-                                    <p>No reviews found for this rating.</p>
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        <div className="bg-dark-gray text-center text-light-gray p-6 rounded-lg">
-                            <p>This mechanic has no reviews yet.</p>
-                        </div>
-                    )}
-                </div>
+            </div>
+            <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
+                <button onClick={() => navigate('/services')} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition-all duration-300 ease-in-out transform hover:scale-[1.03] hover:shadow-lg hover:shadow-primary/40 active:scale-100">Book a Service</button>
             </div>
         </div>
     );

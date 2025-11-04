@@ -1,4 +1,4 @@
-import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory, AdminUser, Role, Task, PayoutRequest } from '../types';
+import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory, AdminUser, Role, Task, PayoutRequest, RentalCar } from '../types';
 
 // This file now acts as a "seeder" for the database on the first run.
 // It provides the initial state if no data is found in localStorage.
@@ -112,6 +112,86 @@ export const seedServices: Service[] = [
         imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_aircon.png',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m8.364-8.364h-1M2.636 12h1m14.092-5.636l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707m0 11.314l.707-.707m12.021-.707l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" /></svg>'
+    },
+    {
+        id: '7',
+        name: 'Driver for Hire',
+        description: 'Professional and reliable drivers for your special trips, errands, or emergencies. Choose from hourly, daily, or specific trip rates.',
+        price: 800,
+        estimatedTime: 'Per Hour',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_driver_hire.png',
+        category: 'Specialty Services',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21V9a4 4 0 00-4-4H9" /></svg>'
+    },
+    {
+        id: '8',
+        name: 'Auto Detailing',
+        description: 'Comprehensive interior and exterior cleaning, polishing, and waxing to make your car look brand new.',
+        price: 3000,
+        estimatedTime: '4 hours',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_detailing.png',
+        category: 'Cleaning & Detailing',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>'
+    },
+    {
+        id: '9',
+        name: 'Registration Assistance',
+        description: 'Hassle-free LTO car registration, license renewal, and transfer of ownership services. Let our liason handle the paperwork and long lines for you.',
+        price: 2500,
+        estimatedTime: 'Varies',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_lto.png',
+        category: 'Liason Services',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>'
+    },
+    {
+        id: '10',
+        name: 'Rent a Car',
+        description: 'Browse and rent from our collection of well-maintained vehicles for your personal or business needs. Redirects to the rental page.',
+        price: 0,
+        estimatedTime: 'N/A',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_rent_car.png',
+        category: 'Rentals',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>'
+    },
+    {
+        id: '11',
+        name: 'Brake Service',
+        description: 'Includes inspection of pads, rotors, and brake fluid. Replacement of pads if necessary.',
+        price: 3200,
+        estimatedTime: '1.5 hours',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_brakes.png',
+        category: 'Maintenance',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>'
+    },
+    {
+        id: '12',
+        name: 'Tire Rotation & Balancing',
+        description: 'Rotate tires to ensure even wear and balance them to prevent vibrations. Improves tire life and ride quality.',
+        price: 1500,
+        estimatedTime: '1 hour',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_tires.png',
+        category: 'Maintenance',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>'
+    },
+    {
+        id: '13',
+        name: 'Engine Tune-up',
+        description: 'Comprehensive engine check, spark plug replacement, and performance optimization for better fuel efficiency and power.',
+        price: 2800,
+        estimatedTime: '2 hours',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_engine.png',
+        category: 'Maintenance',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12V6a2 2 0 012-2h10a2 2 0 012 2v6m-7-3h4m-6 6h6m-3-3v3m-6 3h12a2 2 0 002-2v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>'
+    },
+    {
+        id: '14',
+        name: 'Engine Diagnostics',
+        description: 'Comprehensive diagnostic scan using OBD-II tools to identify and troubleshoot engine and electronic issues.',
+        price: 1200,
+        estimatedTime: '1 hour',
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_diagnostics.png',
+        category: 'Diagnostics',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>'
     }
 ];
 
@@ -129,6 +209,7 @@ export const seedParts: Part[] = [
         ],
         category: 'Engine',
         sku: 'SYN-5W30-5QT',
+        brand: 'RidersBUD Pro',
         stock: 50
     },
     {
@@ -142,6 +223,7 @@ export const seedParts: Part[] = [
         ],
         category: 'Brakes',
         sku: 'CER-PAD-F78',
+        brand: 'Brembo',
         stock: 8
     },
     {
@@ -154,6 +236,7 @@ export const seedParts: Part[] = [
         ],
         category: 'Engine',
         sku: 'AIR-FIL-H21',
+        brand: 'ACDelco',
         stock: 0
     },
     {
@@ -168,8 +251,56 @@ export const seedParts: Part[] = [
         ],
         category: 'Exterior',
         sku: 'WPR-BLD-22',
+        brand: 'Bosch',
         stock: 100
     },
+];
+
+export const seedRentalCars: RentalCar[] = [
+    {
+        id: 'rc1',
+        make: 'Toyota',
+        model: 'Vios',
+        year: 2023,
+        type: 'Sedan',
+        pricePerDay: 2200,
+        seats: 5,
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png',
+        isAvailable: true,
+    },
+    {
+        id: 'rc2',
+        make: 'Mitsubishi',
+        model: 'Montero Sport',
+        year: 2024,
+        type: 'SUV',
+        pricePerDay: 3500,
+        seats: 7,
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png',
+        isAvailable: true,
+    },
+    {
+        id: 'rc3',
+        make: 'Toyota',
+        model: 'Hiace',
+        year: 2022,
+        type: 'Van',
+        pricePerDay: 4000,
+        seats: 12,
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/rental_van_white.png',
+        isAvailable: false,
+    },
+    {
+        id: 'rc4',
+        make: 'Ford',
+        model: 'Mustang',
+        year: 2024,
+        type: 'Luxury',
+        pricePerDay: 8000,
+        seats: 4,
+        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/rental_mustang_red.png',
+        isAvailable: true,
+    }
 ];
 
 const tomorrow = new Date();
@@ -192,7 +323,7 @@ export const seedMechanics: Mechanic[] = [
         bio: 'ASE certified mechanic with over 15 years of experience specializing in Japanese vehicles. Customer satisfaction is my top priority.',
         rating: 4.9,
         reviews: 120,
-        specializations: ['Oil Change', 'Engine Diagnostics', 'Mitsubishi Expert'],
+        specializations: ['Oil Change', 'Engine Diagnostics', 'Mitsubishi Expert', 'Brake Service'],
         status: 'Active',
         isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech1/200/200',
@@ -244,7 +375,7 @@ export const seedMechanics: Mechanic[] = [
         bio: 'Expert in European brake systems and suspension tuning. I treat every car like it\'s my own.',
         rating: 4.8,
         reviews: 97,
-        specializations: ['Brake Systems', 'Honda Pro', 'Suspension'],
+        specializations: ['Brake Systems', 'Honda Pro', 'Suspension', 'Brake Service'],
         status: 'Active',
         isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech2/200/200',
@@ -314,7 +445,7 @@ export const seedMechanics: Mechanic[] = [
         bio: 'General maintenance and emergency services expert. Available 24/7 for towing.',
         rating: 4.7,
         reviews: 88,
-        specializations: ['General Maintenance', 'Towing', 'Tire Services'],
+        specializations: ['General Maintenance', 'Towing', 'Tire Services', 'Tire Rotation & Balancing'],
         status: 'Active',
         isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech4/200/200',
@@ -348,7 +479,7 @@ export const seedMechanics: Mechanic[] = [
         bio: 'Ford certified and a wizard with electrical diagnostics. No check engine light is safe!',
         rating: 4.8,
         reviews: 110,
-        specializations: ['Ford Certified', 'Diagnostics', 'Electrical'],
+        specializations: ['Ford Certified', 'Diagnostics', 'Electrical', 'Tire Rotation & Balancing', 'Engine Tune-up'],
         status: 'Active',
         isOnline: true,
         imageUrl: 'https://picsum.photos/seed/mech5/200/200',
@@ -382,7 +513,7 @@ export const seedMechanics: Mechanic[] = [
         bio: 'Subaru specialist with a passion for bodywork and customization.',
         rating: 4.6,
         reviews: 75,
-        specializations: ['Subaru Specialist', 'Body Repair'],
+        specializations: ['Subaru Specialist', 'Body Repair', 'Engine Tune-up'],
         status: 'Inactive',
         imageUrl: 'https://picsum.photos/seed/mech6/200/200',
         lat: 14.5530, // Near m1
@@ -470,6 +601,14 @@ export const seedBookings: Booking[] = [
         },
         location: { lat: 14.5510, lng: 121.0232 },
         isPaid: true,
+        isReviewed: true,
+        statusHistory: [
+            { status: 'Booking Confirmed', timestamp: new Date(new Date().setDate(new Date().getDate() - 31)).toISOString() },
+            { status: 'Mechanic Assigned', timestamp: new Date(new Date().setDate(new Date().getDate() - 31)).toISOString() },
+            { status: 'En Route', timestamp: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString() },
+            { status: 'In Progress', timestamp: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString() },
+            { status: 'Completed', timestamp: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString() },
+        ],
         beforeImages: [],
         afterImages: [],
     },
@@ -487,6 +626,10 @@ export const seedBookings: Booking[] = [
         },
         location: { lat: 14.5510, lng: 121.0232 },
         isPaid: true,
+        isReviewed: false,
+        statusHistory: [
+             { status: 'Completed', timestamp: new Date(new Date().setDate(new Date().getDate() - 90)).toISOString() },
+        ],
         beforeImages: [],
         afterImages: [],
     },
@@ -498,11 +641,16 @@ export const seedBookings: Booking[] = [
         date: new Date(new Date().setDate(new Date().getDate() - 14)).toISOString().split('T')[0],
         time: '03:00 PM',
         status: 'Cancelled',
+        cancellationReason: 'Customer no longer available.',
         vehicle: { 
             make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png', isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321' 
         },
         location: { lat: 14.5510, lng: 121.0232 },
+        statusHistory: [
+             { status: 'Booking Confirmed', timestamp: new Date(new Date().setDate(new Date().getDate() - 15)).toISOString() },
+             { status: 'Cancelled', timestamp: new Date(new Date().setDate(new Date().getDate() - 14)).toISOString() },
+        ],
         beforeImages: [],
         afterImages: [],
     },
@@ -520,6 +668,10 @@ export const seedBookings: Booking[] = [
         },
         location: { lat: 14.5510, lng: 121.0232 },
         isPaid: false,
+        isReviewed: false,
+        statusHistory: [
+             { status: 'Completed', timestamp: new Date(new Date().setDate(new Date().getDate() - 5)).toISOString() },
+        ],
         beforeImages: [],
         afterImages: [],
     },
@@ -827,8 +979,8 @@ Your responses should be friendly, conversational, and easy to understand. Keep 
     mechanicMarkerUrl: '',
     adminPanelTitle: 'RidersBUD Admin',
     adminSidebarLogoUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_icon.png',
-    serviceCategories: ['Maintenance', 'Repair', 'Emergency', 'Diagnostics'],
-    partCategories: ['Engine', 'Brakes', 'Exterior'],
+    serviceCategories: ['Maintenance', 'Repair', 'Emergency', 'Diagnostics', 'Specialty Services', 'Cleaning & Detailing', 'Liason Services', 'Rentals'],
+    partCategories: ['Engine', 'Brakes', 'Exterior', 'Oils & Fluids'],
     minimumPayout: 1000,
     maximumPayout: 50000,
     payoutSchedule: 'Manual',
@@ -894,4 +1046,6 @@ export const getSeedData = () => ({
     roles: seedRoles,
     tasks: seedTasks,
     payouts: seedPayouts,
+    rentalCars: seedRentalCars,
+    rentalBookings: [],
 });

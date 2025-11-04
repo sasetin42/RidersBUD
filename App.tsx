@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import SplashScreen from './pages/SplashScreen';
@@ -63,6 +61,8 @@ import NotificationToasts from './components/NotificationToasts';
 import AdminPayoutsScreen from './pages/admin/AdminPayoutsScreen';
 import ServicePaymentScreen from './pages/ServicePaymentScreen';
 import ServicePaymentConfirmationScreen from './pages/ServicePaymentConfirmationScreen';
+import RentCarScreen from './pages/RentCarScreen';
+import HireDriverScreen from './pages/HireDriverScreen';
 
 const usePrevious = <T,>(value: T) => {
     const ref = useRef<T | undefined>();
@@ -363,6 +363,8 @@ const AppContent: React.FC = () => {
                                             <Route path="/warranties" element={<WarrantyScreen />} />
                                             <Route path="/wishlist" element={<WishlistScreen />} />
                                             <Route path="/faq" element={<FAQScreen />} />
+                                            <Route path="/rent-a-car" element={<RentCarScreen />} />
+                                            <Route path="/hire-a-driver" element={<HireDriverScreen />} />
                                             <Route path="*" element={<Navigate to="/" />} />
                                         </>
                                     ) : (

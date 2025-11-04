@@ -34,6 +34,7 @@ export interface Part {
     category: string;
     sku: string;
     stock: number;
+    brand: string;
 }
 
 export type Product = Service | Part;
@@ -113,7 +114,7 @@ export interface Vehicle {
     insurancePolicyNumber?: string;
 }
 
-export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Completed' | 'Cancelled';
+export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Completed' | 'Cancelled' | 'Reschedule Requested';
 
 export interface Booking {
     id: string;
@@ -130,6 +131,7 @@ export interface Booking {
     afterImages?: string[];
     notes?: string;
     cancellationReason?: string;
+    rescheduleDetails?: { newDate: string; newTime: string; reason: string };
     isReviewed?: boolean;
     isPaid?: boolean;
 }
@@ -145,6 +147,7 @@ export interface Customer {
     lat?: number;
     lng?: number;
     favoriteMechanicIds?: string[];
+    subscribedMechanicIds?: string[];
 }
 
 export type OrderStatus = 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
@@ -266,6 +269,27 @@ export interface Warranty {
     expiryDate: string;
 }
 
+export interface RentalCar {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    type: 'Sedan' | 'SUV' | 'Van' | 'Luxury';
+    pricePerDay: number;
+    seats: number;
+    imageUrl: string;
+    isAvailable: boolean;
+}
+
+export interface RentalBooking {
+    id: string;
+    carId: string;
+    customerName: string;
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+    totalPrice: number;
+}
+
 export interface Database {
     services: Service[];
     parts: Part[];
@@ -280,4 +304,6 @@ export interface Database {
     roles: Role[];
     tasks: Task[];
     payouts: PayoutRequest[];
+    rentalCars: RentalCar[];
+    rentalBookings: RentalBooking[];
 }

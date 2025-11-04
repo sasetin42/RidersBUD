@@ -8,9 +8,9 @@ import { getNotificationSettings, showNotification } from '../utils/notification
 
 declare const L: any;
 
-const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, onSelect: () => void }> = ({ service, isSelected, onSelect }) => (
+const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, onSelect: (serviceId: string) => void }> = ({ service, isSelected, onSelect }) => (
     <div
-        onClick={onSelect}
+        onClick={() => onSelect(service.id)}
         className={`bg-dark-gray p-4 rounded-lg flex items-center gap-4 cursor-pointer transition-all duration-200 border-2 ${isSelected ? 'border-primary' : 'border-transparent hover:border-primary/50'}`}
     >
         <div className="text-primary flex-shrink-0" dangerouslySetInnerHTML={{ __html: service.icon }} />
@@ -20,13 +20,13 @@ const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, on
                 {service.price > 0 ? `from ₱${service.price.toLocaleString()}` : 'Request Quote'}
             </p>
         </div>
-        {isSelected && (
-            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-white flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 border-2 transition-all duration-200 ${isSelected ? 'bg-primary border-primary' : 'bg-field border-dark-gray'}`}>
+            {isSelected && (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-            </div>
-        )}
+            )}
+        </div>
     </div>
 );
 
@@ -132,27 +132,32 @@ const MechanicAvailabilityCard: React.FC<{
 
 const BOOKING_STATE_KEY = 'ridersbud_booking_state';
 
-const getInitialState = (serviceIdFromUrl?: string) => {
+const getInitialState = (serviceIdFromUrl?: string, locationState?: any) => {
+    let state: any = {}; // Start with an empty object
     try {
         const savedStateJSON = sessionStorage.getItem(BOOKING_STATE_KEY);
         if (savedStateJSON) {
-            const savedState = JSON.parse(savedStateJSON);
-            
-            if (serviceIdFromUrl && savedState.selectedServiceId && savedState.selectedServiceId !== serviceIdFromUrl) {
+            const parsedState = JSON.parse(savedStateJSON);
+            if (serviceIdFromUrl && parsedState.selectedServiceIds && !parsedState.selectedServiceIds.includes(serviceIdFromUrl)) {
+                // If URL ID doesn't match saved state, clear the state
                 sessionStorage.removeItem(BOOKING_STATE_KEY);
-                return null;
+            } else {
+                state = parsedState;
+                if (state.selectedDate) {
+                    state.selectedDate = new Date(state.selectedDate);
+                }
             }
-
-            if (savedState.selectedDate) {
-                savedState.selectedDate = new Date(savedState.selectedDate);
-            }
-            return savedState;
         }
     } catch (error) {
         console.error("Could not parse booking state from sessionStorage", error);
         sessionStorage.removeItem(BOOKING_STATE_KEY);
     }
-    return null;
+
+    if (locationState?.serviceLocation) {
+        state.serviceLocation = locationState.serviceLocation;
+    }
+
+    return Object.keys(state).length > 0 ? state : null;
 };
 
 
@@ -162,36 +167,49 @@ const BookingScreen: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
     const location = useLocation();
+    
+    const locationState = location.state as { 
+        vehiclePlateNumber?: string; 
+        initialServiceIds?: string[];
+        serviceLocation?: { lat: number, lng: number };
+        preselectedMechanicId?: string;
+    } | undefined;
+    
+    const rebookingState = locationState;
+    const initialState = getInitialState(initialServiceId, location.state);
 
-    const rebookingState = location.state as { vehiclePlateNumber?: string; } | undefined;
-
-    const [step, setStep] = useState(() => getInitialState(initialServiceId)?.step || 1);
+    const [step, setStep] = useState(initialState?.step || 1);
     const [error, setError] = useState('');
 
-    const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(() => getInitialState(initialServiceId)?.selectedServiceId || initialServiceId);
+    const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
+        new Set(
+            rebookingState?.initialServiceIds ||
+            initialState?.selectedServiceIds ||
+            (initialServiceId ? [initialServiceId] : [])
+        )
+    );
     const [selectedVehiclePlate, setSelectedVehiclePlate] = useState(() => 
         rebookingState?.vehiclePlateNumber || 
-        getInitialState(initialServiceId)?.selectedVehiclePlate || 
+        initialState?.selectedVehiclePlate || 
         ''
     );
     
-    const [selectedDate, setSelectedDate] = useState(() => getInitialState(initialServiceId)?.selectedDate || new Date(new Date().setDate(new Date().getDate() + 1)));
+    const [selectedDate, setSelectedDate] = useState(initialState?.selectedDate || new Date(new Date().setDate(new Date().getDate() + 1)));
     
-    const [serviceLocation, setServiceLocation] = useState<{ lat: number; lng: number } | null>(() => getInitialState(initialServiceId)?.serviceLocation || null);
+    const [serviceLocation, setServiceLocation] = useState<{ lat: number; lng: number } | null>(initialState?.serviceLocation || null);
     const [locationStatus, setLocationStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
     const [locationError, setLocationError] = useState('');
     
-    const [mechanicSearch, setMechanicSearch] = useState(() => getInitialState(initialServiceId)?.mechanicSearch || '');
-    const [specializationFilter, setSpecializationFilter] = useState(() => getInitialState(initialServiceId)?.specializationFilter || 'all');
-    const [sortOption, setSortOption] = useState<'rating' | 'jobs' | 'name'>(() => getInitialState(initialServiceId)?.sortOption || 'rating');
-    const [availableNowFilter, setAvailableNowFilter] = useState(() => getInitialState(initialServiceId)?.availableNowFilter || false);
+    const [mechanicSearch, setMechanicSearch] = useState(initialState?.mechanicSearch || '');
+    const [specializationFilter, setSpecializationFilter] = useState(initialState?.specializationFilter || 'all');
+    const [sortOption, setSortOption] = useState<'rating' | 'jobs' | 'name'>(initialState?.sortOption || 'rating');
+    const [availableNowFilter, setAvailableNowFilter] = useState(initialState?.availableNowFilter || false);
     const [selectedTime, setSelectedTime] = useState('');
     const [selectedMechanic, setSelectedMechanic] = useState<Mechanic | null>(null);
 
-    const [notes, setNotes] = useState('');
+    const [notes, setNotes] = useState(initialState?.notes || '');
     const [isBooking, setIsBooking] = useState(false);
 
-    // Hooks for Step 3 Map - moved to top level to fix conditional hook call error
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
     const markerRef = useRef<any>(null);
@@ -206,7 +224,7 @@ const BookingScreen: React.FC = () => {
     useEffect(() => {
         const stateToSave = {
             step,
-            selectedServiceId,
+            selectedServiceIds: Array.from(selectedServiceIds),
             selectedVehiclePlate,
             selectedDate: selectedDate.toISOString(),
             serviceLocation,
@@ -214,31 +232,36 @@ const BookingScreen: React.FC = () => {
             specializationFilter,
             sortOption,
             availableNowFilter,
+            notes,
         };
         sessionStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-    }, [step, selectedServiceId, selectedVehiclePlate, selectedDate, serviceLocation, mechanicSearch, specializationFilter, sortOption, availableNowFilter]);
+    }, [step, selectedServiceIds, selectedVehiclePlate, selectedDate, serviceLocation, mechanicSearch, specializationFilter, sortOption, availableNowFilter, notes]);
 
-    // Geolocation effect for Step 3
     useEffect(() => {
-        if (step === 3 && locationStatus === 'idle' && !serviceLocation) {
-            setLocationStatus('fetching');
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    setServiceLocation({ lat: latitude, lng: longitude });
-                    setLocationStatus('success');
-                    setLocationError('');
-                },
-                (error) => {
-                    console.error("Geolocation error:", error);
-                    setLocationStatus('error');
-                    setLocationError('Could not get your location. Please enable location services and try again.');
-                }
-            );
+        if (step === 3) {
+            if (serviceLocation) {
+                 setLocationStatus('success');
+                 return;
+            }
+            if (locationStatus === 'idle') {
+                setLocationStatus('fetching');
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        setServiceLocation({ lat: latitude, lng: longitude });
+                        setLocationStatus('success');
+                        setLocationError('');
+                    },
+                    (error) => {
+                        console.error("Geolocation error:", error);
+                        setLocationStatus('error');
+                        setLocationError('Could not get your location. Please enable location services and try again.');
+                    }
+                );
+            }
         }
     }, [step, locationStatus, serviceLocation]);
 
-    // Map initialization effect for Step 3
     useEffect(() => {
         if (step === 3 && serviceLocation && mapRef.current && !mapInstanceRef.current && typeof L !== 'undefined') {
             mapInstanceRef.current = L.map(mapRef.current).setView([serviceLocation.lat, serviceLocation.lng], 16);
@@ -292,6 +315,19 @@ const BookingScreen: React.FC = () => {
     }
 
     const { services, bookings, mechanics } = db;
+    
+    const totalPrice = useMemo(() => {
+        return services
+            .filter(s => selectedServiceIds.has(s.id))
+            .reduce((sum, s) => sum + s.price, 0);
+    }, [selectedServiceIds, services]);
+
+    const isQuoteRequest = useMemo(() => {
+        if (selectedServiceIds.size === 0) return false;
+        const selectedServicesList = services.filter(s => selectedServiceIds.has(s.id));
+        return selectedServicesList.some(s => s.price === 0);
+    }, [selectedServiceIds, services]);
+
 
     const allSpecializations = useMemo(() => {
         if (!mechanics) return [];
@@ -309,8 +345,8 @@ const BookingScreen: React.FC = () => {
         const selectedDateWithoutTime = new Date(selectedDate);
         selectedDateWithoutTime.setHours(0, 0, 0, 0);
         const isToday = selectedDate.toDateString() === new Date().toDateString();
-
-        const selectedService = services.find(s => s.id === selectedServiceId);
+        
+        const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
 
         let availableMechanics = mechanics.filter(mechanic => {
             if (mechanic.status !== 'Active') return false;
@@ -327,22 +363,20 @@ const BookingScreen: React.FC = () => {
 
             if (!mechanic.availability?.[selectedDayOfWeek]?.isAvailable) return false;
             
-            if (selectedService) {
-                const serviceNameLower = selectedService.name.toLowerCase();
-                const serviceCategoryLower = selectedService.category.toLowerCase();
-                
-                const hasSpecializationMatch = mechanic.specializations.some(specRaw => {
-                    const spec = specRaw.toLowerCase();
-                    const serviceWords = serviceNameLower.split(' ');
-                    return serviceWords.some(word => word.length > 2 && spec.includes(word));
+            if (selectedServices.length > 0) {
+                 const hasSpecializationMatch = selectedServices.some(selectedService => {
+                    const serviceNameLower = selectedService.name.toLowerCase();
+                    const serviceCategoryLower = selectedService.category.toLowerCase();
+                    
+                    return mechanic.specializations.some(specRaw => {
+                        const spec = specRaw.toLowerCase();
+                        if (spec.includes(serviceCategoryLower)) return true;
+                        
+                        const serviceWords = serviceNameLower.split(' ');
+                        return serviceWords.some(word => word.length > 2 && spec.includes(word));
+                    });
                 });
-                
-                const hasCategoryMatch = mechanic.specializations.some(specRaw => {
-                    const spec = specRaw.toLowerCase();
-                    return spec.includes(serviceCategoryLower);
-                });
-
-                if (!hasSpecializationMatch && !hasCategoryMatch) return false;
+                if (!hasSpecializationMatch) return false;
             }
 
             if (specializationFilter !== 'all' && !mechanic.specializations.includes(specializationFilter)) return false;
@@ -372,12 +406,20 @@ const BookingScreen: React.FC = () => {
             }
         });
 
+        if (locationState?.preselectedMechanicId) {
+            const preselectedMechanic = availableMechanics.find(m => m.id === locationState.preselectedMechanicId);
+            if (preselectedMechanic) {
+                const otherMechanics = availableMechanics.filter(m => m.id !== locationState.preselectedMechanicId);
+                return [preselectedMechanic, ...otherMechanics];
+            }
+        }
+
         return availableMechanics;
-    }, [mechanics, services, selectedServiceId, selectedDate, specializationFilter, availableNowFilter, mechanicSearch, sortOption, db.bookings]);
+    }, [mechanics, services, selectedServiceIds, selectedDate, specializationFilter, availableNowFilter, mechanicSearch, sortOption, db.bookings, locationState]);
 
 
     const handleStep1Continue = () => {
-        if (!selectedServiceId) setError('Please select a service.');
+        if (selectedServiceIds.size === 0) setError('Please select at least one service.');
         else if (!selectedVehiclePlate) setError('Please select a vehicle.');
         else { setError(''); setStep(2); }
     };
@@ -399,9 +441,9 @@ const BookingScreen: React.FC = () => {
     };
     
     const handleBooking = async () => {
-        const selectedService = services.find(s => s.id === selectedServiceId);
+        const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
         const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
-        if (!selectedService || !user || !selectedMechanic || !selectedVehicle || !serviceLocation) {
+        if (selectedServices.length === 0 || !user || !selectedMechanic || !selectedVehicle || !serviceLocation) {
             setError('Missing booking information. Please start over.');
             return;
         }
@@ -410,30 +452,34 @@ const BookingScreen: React.FC = () => {
         setError('');
         
         try {
-            const newBookingData = {
-                customerName: user.name,
-                service: selectedService,
-                date: selectedDate.toISOString().split('T')[0],
-                time: selectedTime,
-                status: 'Upcoming' as const,
-                vehicle: selectedVehicle,
-                mechanic: selectedMechanic,
-                location: serviceLocation,
-                notes,
-            };
-            const newlyCreatedBooking = await addBooking(newBookingData);
+            const bookingPromises = selectedServices.map(service => {
+                 const newBookingData = {
+                    customerName: user.name,
+                    service: service,
+                    date: selectedDate.toISOString().split('T')[0],
+                    time: selectedTime,
+                    status: 'Upcoming' as const,
+                    vehicle: selectedVehicle,
+                    mechanic: selectedMechanic,
+                    location: serviceLocation,
+                    notes,
+                };
+                return addBooking(newBookingData);
+            });
             
-            if (newlyCreatedBooking) {
+            const newlyCreatedBookings = (await Promise.all(bookingPromises)).filter(b => b !== null) as Booking[];
+
+            if (newlyCreatedBookings.length === selectedServices.length) {
                 sessionStorage.removeItem(BOOKING_STATE_KEY);
                 const settings = getNotificationSettings();
                 if (settings.bookingUpdates) {
                     showNotification('Booking Confirmed!', {
-                        body: `Your appointment for ${selectedService.name} on ${selectedDate.toLocaleDateString()} is set.`
+                        body: `Your appointment for ${newlyCreatedBookings.length} service(s) on ${selectedDate.toLocaleDateString()} is set.`
                     });
                 }
-                navigate('/booking-confirmation', { state: { booking: newlyCreatedBooking } });
+                navigate('/booking-confirmation', { state: { bookings: newlyCreatedBookings } });
             } else {
-                 setError('Failed to create booking. Please try again.');
+                 setError('Failed to create one or more bookings. Please try again.');
             }
         } catch(err) {
             setError(err instanceof Error ? err.message : "An error occurred.");
@@ -441,7 +487,18 @@ const BookingScreen: React.FC = () => {
             setIsBooking(false);
         }
     };
-
+    
+    const handleServiceSelect = (serviceId: string) => {
+        setSelectedServiceIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(serviceId)) {
+                newSet.delete(serviceId);
+            } else {
+                newSet.add(serviceId);
+            }
+            return newSet;
+        });
+    };
 
     const renderStep1 = () => (
         <>
@@ -470,15 +527,34 @@ const BookingScreen: React.FC = () => {
                         </div>
                     )}
                 </div>
+                {isQuoteRequest && (
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-bold text-primary mb-2">Notes for Mechanic</h3>
+                        <p className="text-xs text-light-gray mb-2">Please describe the issue in detail to help us provide an accurate quote.</p>
+                        <textarea
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            placeholder="e.g., There's a rattling noise from the front-right wheel when driving over bumps."
+                            rows={4}
+                            className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
+                        />
+                    </div>
+                )}
                 <div className="space-y-3">
                     {services.map(service => (
-                        <ServiceSelectionCard key={service.id} service={service} isSelected={selectedServiceId === service.id} onSelect={() => setSelectedServiceId(service.id)} />
+                        <ServiceSelectionCard key={service.id} service={service} isSelected={selectedServiceIds.has(service.id)} onSelect={handleServiceSelect} />
                     ))}
                 </div>
             </div>
             <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
                  {error && <p className="text-red-400 text-center text-sm mb-2">{error}</p>}
-                 <button onClick={handleStep1Continue} disabled={!selectedServiceId || !selectedVehiclePlate} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
+                 {totalPrice > 0 && (
+                     <div className="flex justify-between items-center mb-2">
+                        <span className="text-light-gray">Total for {selectedServiceIds.size} service(s):</span>
+                        <span className="font-bold text-xl text-primary">₱{totalPrice.toLocaleString()}</span>
+                     </div>
+                 )}
+                 <button onClick={handleStep1Continue} disabled={selectedServiceIds.size === 0 || !selectedVehiclePlate} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
                     Continue
                 </button>
             </div>
@@ -583,13 +659,13 @@ const BookingScreen: React.FC = () => {
 
     const renderStep4 = () => {
         const isToday = selectedDate.toDateString() === new Date().toDateString();
-        const selectedService = services.find(s => s.id === selectedServiceId);
+        const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
 
         return (
             <div className="p-4 space-y-4 flex-grow overflow-y-auto">
-                {selectedService && (
+                {selectedServices.length > 0 && (
                     <div className="text-center text-sm text-light-gray -mt-2 mb-2 bg-field p-2 rounded-md border border-dark-gray">
-                        <p>Showing mechanics specializing in <strong>{selectedService.name}</strong>.</p>
+                        <p>Showing mechanics specializing in your selected services.</p>
                     </div>
                 )}
                 
@@ -666,10 +742,10 @@ const BookingScreen: React.FC = () => {
     };
 
     const renderStep5 = () => {
-        const selectedService = services.find(s => s.id === selectedServiceId);
+        const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
         const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
         
-        if (!selectedService || !selectedVehicle || !selectedMechanic) {
+        if (selectedServices.length === 0 || !selectedVehicle || !selectedMechanic) {
             return <div className="p-8 text-center">Something went wrong. Please start over.</div>
         }
 
@@ -678,8 +754,21 @@ const BookingScreen: React.FC = () => {
                 <div className="p-6 space-y-4 flex-grow overflow-y-auto">
                     <div className="bg-dark-gray p-4 rounded-lg">
                         <h3 className="font-bold text-primary mb-2">Service Details</h3>
-                        <p className="font-semibold text-white">{selectedService.name}</p>
-                        <p className="text-sm text-light-gray">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.plateNumber})</p>
+                         {selectedServices.map(service => (
+                             <div key={service.id} className="flex justify-between items-center py-1">
+                                <p className="font-semibold text-white">{service.name}</p>
+                                {service.price > 0 ? (
+                                    <p className="font-semibold text-white">₱{service.price.toLocaleString()}</p>
+                                ) : (
+                                    <p className="font-semibold text-yellow-400">Quote Required</p>
+                                )}
+                             </div>
+                         ))}
+                         <div className="flex justify-between items-center pt-2 mt-2 border-t border-field">
+                             <p className="font-bold text-primary">Total</p>
+                             <p className="font-bold text-primary text-lg">{totalPrice > 0 ? `₱${totalPrice.toLocaleString()}` : 'For Quotation'}</p>
+                         </div>
+                        <p className="text-sm text-light-gray mt-3">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.plateNumber})</p>
                     </div>
                      <div className="bg-dark-gray p-4 rounded-lg">
                         <h3 className="font-bold text-primary mb-2">Schedule</h3>
@@ -691,21 +780,23 @@ const BookingScreen: React.FC = () => {
                         <p className="font-semibold text-white">{selectedMechanic.name}</p>
                         <p className="text-sm text-yellow-400">⭐ {selectedMechanic.rating.toFixed(1)} ({selectedMechanic.reviews} jobs)</p>
                     </div>
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="font-bold text-primary mb-2">Additional Notes</h3>
-                        <textarea
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            placeholder="e.g., The doorbell is broken, please call upon arrival."
-                            rows={3}
-                            className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
-                        />
-                    </div>
+                    {!isQuoteRequest && (
+                        <div className="bg-dark-gray p-4 rounded-lg">
+                            <h3 className="font-bold text-primary mb-2">Additional Notes</h3>
+                            <textarea
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                placeholder="e.g., The doorbell is broken, please call upon arrival."
+                                rows={3}
+                                className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
+                            />
+                        </div>
+                    )}
                 </div>
                 <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
                      {error && <p className="text-red-400 text-center text-sm mb-2">{error}</p>}
                     <button onClick={handleBooking} disabled={isBooking} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition flex items-center justify-center disabled:opacity-50">
-                        {isBooking ? <Spinner size="sm" /> : 'Confirm & Book Now'}
+                        {isBooking ? <Spinner size="sm" /> : isQuoteRequest ? 'Confirm & Request Quote' : 'Confirm & Book Now'}
                     </button>
                 </div>
             </>

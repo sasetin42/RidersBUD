@@ -5,17 +5,22 @@ import Modal from '../admin/Modal';
 
 type CalendarView = 'month' | 'week' | 'day';
 
-interface MechanicCalendarProps {
-    bookings: Booking[];
-    unavailableDates: Array<{ startDate: string; endDate: string; reason?: string }>;
-}
-
-const DayDetailModal: React.FC<{
+interface DayDetailModalProps {
     date: Date;
     bookings: Booking[];
     onClose: () => void;
-}> = ({ date, bookings, onClose }) => {
+    isPublic?: boolean;
+}
+
+const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, bookings, onClose, isPublic }) => {
     const navigate = useNavigate();
+
+    const handleItemClick = (booking: Booking) => {
+        if (isPublic) {
+            return; // Not clickable for public view
+        }
+        navigate(`/mechanic/job/${booking.id}`);
+    };
 
     const statusColors: Record<BookingStatus, string> = {
         Completed: 'bg-green-500/20 text-green-300',
@@ -25,6 +30,7 @@ const DayDetailModal: React.FC<{
         Cancelled: 'bg-red-500/20 text-red-300',
         'Booking Confirmed': 'bg-cyan-500/20 text-cyan-300',
         'Mechanic Assigned': 'bg-sky-500/20 text-sky-300',
+        'Reschedule Requested': 'bg-orange-500/20 text-orange-300',
     };
 
     return (
@@ -37,16 +43,25 @@ const DayDetailModal: React.FC<{
                 {bookings.map(booking => (
                     <button 
                         key={booking.id}
-                        onClick={() => navigate(`/mechanic/job/${booking.id}`)}
-                        className="w-full text-left bg-field p-3 rounded-lg flex justify-between items-center cursor-pointer hover:bg-gray-600 transition-colors"
+                        onClick={() => handleItemClick(booking)}
+                        className={`w-full text-left bg-field p-3 rounded-lg flex justify-between items-center ${!isPublic ? 'cursor-pointer hover:bg-gray-600' : 'cursor-default'}`}
                     >
                         <div>
                             <p className="font-semibold text-primary">{booking.time}</p>
-                            <p className="text-sm font-medium text-white">{booking.service.name}</p>
-                            <p className="text-xs text-light-gray">{booking.customerName}</p>
+                            {isPublic ? (
+                                <p className="text-sm font-medium text-white">Booked Slot</p>
+                            ) : (
+                                <>
+                                    <p className="text-sm font-medium text-white">{booking.service.name}</p>
+                                    <p className="text-xs text-light-gray">{booking.customerName}</p>
+                                </>
+                            )}
                         </div>
                         <span className={`text-xs font-semibold px-2 py-1 rounded-full ${statusColors[booking.status] || ''}`}>
-                            {booking.status}
+                            {isPublic
+                                ? (booking.status === 'Completed' || booking.status === 'Cancelled' ? booking.status : 'Booked')
+                                : booking.status
+                            }
                         </span>
                     </button>
                 ))}
@@ -56,7 +71,13 @@ const DayDetailModal: React.FC<{
 };
 
 
-const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailableDates }) => {
+interface MechanicCalendarProps {
+    bookings: Booking[];
+    unavailableDates: Array<{ startDate: string; endDate: string; reason?: string }>;
+    isPublic?: boolean;
+}
+
+const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailableDates, isPublic }) => {
     const [view, setView] = useState<CalendarView>('month');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [viewingBookings, setViewingBookings] = useState<{ date: Date; bookings: Booking[] } | null>(null);
@@ -106,6 +127,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
             Cancelled: 'bg-red-500',
             'Booking Confirmed': 'bg-cyan-500',
             'Mechanic Assigned': 'bg-sky-500',
+            'Reschedule Requested': 'bg-orange-500',
         };
 
         const days = Array.from({ length: firstDay }, (_, i) => <div key={`empty-${i}`} className="border-r border-t border-field"></div>);
@@ -203,6 +225,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
                     date={viewingBookings.date}
                     bookings={viewingBookings.bookings}
                     onClose={() => setViewingBookings(null)}
+                    isPublic={isPublic}
                 />
             )}
         </div>

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Booking } from '../types';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Booking, BookingStatus } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
 
 declare const L: any;
@@ -56,6 +56,22 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
     const [routeInfo, setRouteInfo] = useState({ distance: '...', eta: '...' });
     const mechanic = booking.mechanic;
     const destination = customerLocation;
+
+     const timelineSteps: BookingStatus[] = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'];
+    const currentStatusIndex = useMemo(() => {
+        const historyStatuses = booking.statusHistory?.map(h => h.status) || [];
+        const allStatuses = [...historyStatuses, booking.status];
+        
+        let highestIndex = -1;
+        allStatuses.forEach(status => {
+            const indexInTimeline = timelineSteps.indexOf(status as BookingStatus);
+            if (indexInTimeline > highestIndex) {
+                highestIndex = indexInTimeline;
+            }
+        });
+        return highestIndex;
+    }, [booking.status, booking.statusHistory]);
+
 
     useEffect(() => {
         if (!mapRef.current || !mechanic || !destination || mapInstanceRef.current || typeof L === 'undefined') return;
@@ -151,7 +167,30 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
                 <h2 className="text-xl font-bold text-white">Track Mechanic</h2>
                 <button onClick={onClose} className="text-white text-3xl">&times;</button>
             </header>
+
+            <div className="bg-field mb-4 p-4 rounded-lg">
+                <div className="relative pl-5">
+                    {timelineSteps.map((step, index) => {
+                        const isCompleted = index <= currentStatusIndex;
+                        const historyEntry = booking.statusHistory?.find(h => h.status === step);
+                        return (
+                            <div key={step} className={`relative pb-4 ${index === timelineSteps.length - 1 ? 'pb-0' : ''}`}>
+                                {index < timelineSteps.length - 1 && <div className={`absolute top-2.5 left-[3px] w-0.5 h-full ${isCompleted && index < currentStatusIndex ? 'bg-primary' : 'bg-dark-gray'}`}></div>}
+                                <div className="flex items-start">
+                                    <div className={`-left-2 absolute w-2 h-2 rounded-full mt-[7px] ${isCompleted ? 'bg-primary ring-4 ring-primary/20' : 'bg-dark-gray'}`}></div>
+                                    <div className="ml-4">
+                                        <p className={`font-semibold text-xs ${isCompleted ? 'text-white' : 'text-gray-500'}`}>{step}</p>
+                                        <p className="text-[10px] text-gray-400">{historyEntry ? new Date(historyEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
             <div ref={mapRef} className="flex-grow rounded-lg" />
+
             <footer className="bg-field mt-4 p-4 rounded-lg flex-shrink-0">
                  <div className="flex justify-between items-center text-center mb-3">
                     <div>

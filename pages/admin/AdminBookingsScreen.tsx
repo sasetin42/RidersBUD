@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo } from 'react';
 import { Booking, BookingStatus, Customer } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -123,7 +122,7 @@ const AdminBookingsScreen: React.FC = () => {
     const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
 
     if (loading || !db) {
-        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>
+        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
     }
 
     const { bookings, mechanics, settings } = db;
@@ -134,7 +133,7 @@ const AdminBookingsScreen: React.FC = () => {
     }, [viewingBooking, db]);
 
     const serviceCategories = useMemo(() => ['all', ...settings.serviceCategories], [settings.serviceCategories]);
-    const bookingStatuses: Array<BookingStatus | 'all'> = ['all', 'Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled'];
+    const bookingStatuses: Array<BookingStatus | 'all'> = ['all', 'Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled', 'Reschedule Requested'];
 
     const handleStatusChange = async (booking: Booking, newStatus: BookingStatus) => {
         if (newStatus === 'Cancelled') {
@@ -206,12 +205,19 @@ const AdminBookingsScreen: React.FC = () => {
     };
 
     const statusColors: { [key in BookingStatus]: string } = {
-        Upcoming: 'bg-blue-900/50 text-blue-300 border border-blue-500/30', 'Booking Confirmed': 'bg-cyan-900/50 text-cyan-300 border border-cyan-500/30', 'Mechanic Assigned': 'bg-sky-900/50 text-sky-300 border border-sky-500/30', Completed: 'bg-green-900/50 text-green-300 border border-green-500/30', Cancelled: 'bg-red-900/50 text-red-300 border border-red-500/30', 'En Route': 'bg-yellow-900/50 text-yellow-300 border border-yellow-500/30', 'In Progress': 'bg-purple-900/50 text-purple-300 border border-purple-500/30',
+        Upcoming: 'bg-blue-900/50 text-blue-300 border border-blue-500/30',
+        'Booking Confirmed': 'bg-cyan-900/50 text-cyan-300 border border-cyan-500/30',
+        'Mechanic Assigned': 'bg-sky-900/50 text-sky-300 border border-sky-500/30',
+        Completed: 'bg-green-900/50 text-green-300 border border-green-500/30',
+        Cancelled: 'bg-red-900/50 text-red-300 border border-red-500/30',
+        'En Route': 'bg-yellow-900/50 text-yellow-300 border border-yellow-500/30',
+        'In Progress': 'bg-purple-900/50 text-purple-300 border border-purple-500/30',
+        'Reschedule Requested': 'bg-orange-900/50 text-orange-300 border border-orange-500/30',
     };
 
     const bookingStats = useMemo(() => ({
         total: bookings.length,
-        upcoming: bookings.filter(b => b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress').length,
+        upcoming: bookings.filter(b => b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Reschedule Requested').length,
         completed: bookings.filter(b => b.status === 'Completed').length,
         cancelled: bookings.filter(b => b.status === 'Cancelled').length,
     }), [bookings]);
@@ -253,7 +259,7 @@ const AdminBookingsScreen: React.FC = () => {
                         </thead>
                         <tbody className="divide-y divide-admin-border">
                             {sortedAndFilteredBookings.length > 0 ? sortedAndFilteredBookings.map((booking) => (
-                                <tr key={booking.id} className="hover:bg-admin-card">
+                                <tr key={booking.id} className="hover:bg-admin-card cursor-pointer" onClick={() => setViewingBooking(booking)}>
                                     <td className="py-3 px-2 text-sm">{booking.customerName}</td>
                                     <td className="py-3 px-2 text-sm">{booking.service.name}</td>
                                     <td className="py-3 px-2 text-xs hidden md:table-cell">{booking.vehicle.make} {booking.vehicle.model}</td>
@@ -261,13 +267,15 @@ const AdminBookingsScreen: React.FC = () => {
                                     <td className="py-3 px-2 text-xs whitespace-nowrap">{booking.date} at {booking.time}</td>
                                     <td className="py-3 px-2 text-sm text-right">₱{booking.service.price.toLocaleString()}</td>
                                     <td className="py-3 px-2"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[booking.status]}`}>{booking.status}</span></td>
-                                    <td className="py-3 px-2">
-                                        <div className="flex items-center justify-center gap-2">
-                                            <button onClick={() => setViewingBooking(booking)} className="font-semibold text-blue-400 hover:text-blue-300 text-sm">View</button>
-                                            <select value={booking.status} onChange={(e) => handleStatusChange(booking, e.target.value as BookingStatus)} className="bg-admin-card border border-admin-border p-1 rounded text-xs">
-                                                {bookingStatuses.slice(1).map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
-                                        </div>
+                                    <td className="py-3 px-2 text-center">
+                                        <select
+                                            value={booking.status}
+                                            onChange={(e) => handleStatusChange(booking, e.target.value as BookingStatus)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="bg-admin-card border border-admin-border p-1 rounded text-xs"
+                                        >
+                                            {bookingStatuses.slice(1).map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
                                     </td>
                                 </tr>
                             )) : (

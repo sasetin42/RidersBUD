@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Header from '../../components/Header';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useMechanicAuth } from '../../context/MechanicAuthContext';
@@ -8,7 +8,7 @@ import { Task, TaskPriority } from '../../types';
 const TaskFormModal: React.FC<{
     task?: Task;
     onClose: () => void;
-    onSave: (task: Omit<Task, 'id' | 'mechanicId' | 'isComplete'>, id?: string) => void;
+    onSave: (task: Omit<Task, 'id' | 'mechanicId' | 'isComplete' | 'completionDate'>, id?: string) => void;
 }> = ({ task, onClose, onSave }) => {
     const [title, setTitle] = useState(task?.title || '');
     const [description, setDescription] = useState(task?.description || '');
@@ -54,7 +54,7 @@ const MechanicTasksScreen: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
     const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
-    const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'complete'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'incomplete' | 'complete'>('incomplete');
     const [priorityFilter, setPriorityFilter] = useState<'all' | TaskPriority>('all');
     const [sortBy, setSortBy] = useState<'dueDate' | 'priority'>('dueDate');
 
@@ -75,36 +75,47 @@ const MechanicTasksScreen: React.FC = () => {
         const priorityOrder: Record<TaskPriority, number> = { High: 1, Medium: 2, Low: 3 };
         return filtered.sort((a, b) => {
             if (sortBy === 'priority') {
+                if (a.isComplete !== b.isComplete) return a.isComplete ? 1 : -1;
                 return priorityOrder[a.priority] - priorityOrder[b.priority];
             }
+            // Default sort by due date, incomplete first
+            if (a.isComplete !== b.isComplete) return a.isComplete ? 1 : -1;
             return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
         });
     }, [myTasks, statusFilter, priorityFilter, sortBy]);
 
-    const handleSaveTask = async (taskData: Omit<Task, 'id' | 'mechanicId' | 'isComplete'>, id?: string) => {
+    useEffect(() => {
+        // When filters change, clear selection as the visible items have changed
+        setSelectedTaskIds(new Set());
+    }, [statusFilter, priorityFilter, sortBy]);
+
+    const handleSaveTask = async (taskData: Omit<Task, 'id' | 'mechanicId' | 'isComplete' | 'completionDate'>, id?: string) => {
         if (id) {
             const taskToUpdate = myTasks.find(t => t.id === id);
             if(taskToUpdate) await updateTask({ ...taskToUpdate, ...taskData });
         } else {
-            if(mechanic) await addTask({ ...taskData, mechanicId: mechanic.id, isComplete: false });
+            if(mechanic) await addTask({ ...taskData, mechanicId: mechanic.id });
         }
         setIsModalOpen(false);
         setEditingTask(undefined);
     };
 
     const handleToggleComplete = async (task: Task) => {
-        await updateTask({ ...task, isComplete: !task.isComplete });
+        await updateMultipleTasksStatus([task.id], !task.isComplete);
     };
     
     const handleSelectTask = (taskId: string) => {
         const newSelection = new Set(selectedTaskIds);
-        if (newSelection.has(taskId)) newSelection.delete(taskId);
-        else newSelection.add(taskId);
+        if (newSelection.has(taskId)) {
+            newSelection.delete(taskId);
+        } else {
+            newSelection.add(taskId);
+        }
         setSelectedTaskIds(newSelection);
     };
     
     const handleSelectAll = () => {
-        if (selectedTaskIds.size === filteredAndSortedTasks.length) {
+        if (selectedTaskIds.size === filteredAndSortedTasks.length && filteredAndSortedTasks.length > 0) {
             setSelectedTaskIds(new Set());
         } else {
             setSelectedTaskIds(new Set(filteredAndSortedTasks.map(t => t.id)));
@@ -124,9 +135,9 @@ const MechanicTasksScreen: React.FC = () => {
     };
 
     const priorityColors: Record<TaskPriority, string> = { 
-        High: 'bg-red-600 text-white', 
-        Medium: 'bg-orange-500 text-white', 
-        Low: 'bg-gray-500 text-white' 
+        High: 'bg-red-600/80 border-red-500/50', 
+        Medium: 'bg-orange-500/80 border-orange-400/50', 
+        Low: 'bg-gray-500/80 border-gray-400/50' 
     };
 
     if (loading || !mechanic) {
@@ -136,7 +147,7 @@ const MechanicTasksScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary text-white">
             <Header title="My Tasks" />
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 border-b border-dark-gray">
                 <div className="grid grid-cols-2 gap-3">
                     <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm"><option value="all">All Statuses</option><option value="incomplete">Incomplete</option><option value="complete">Complete</option></select>
                     <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm"><option value="all">All Priorities</option><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select>
@@ -147,7 +158,7 @@ const MechanicTasksScreen: React.FC = () => {
             <div className="flex-grow overflow-y-auto px-4 pb-24">
                 {filteredAndSortedTasks.length > 0 && (
                     <div className="flex items-center gap-3 p-2 border-b border-field">
-                        <input type="checkbox" checked={selectedTaskIds.size === filteredAndSortedTasks.length && filteredAndSortedTasks.length > 0} onChange={handleSelectAll} className="h-5 w-5 rounded border-gray-500 text-primary focus:ring-primary" />
+                        <input type="checkbox" checked={filteredAndSortedTasks.length > 0 && selectedTaskIds.size === filteredAndSortedTasks.length} onChange={handleSelectAll} className="h-5 w-5 rounded border-gray-500 text-primary focus:ring-primary" />
                         <label className="text-sm text-light-gray">Select All</label>
                     </div>
                 )}
@@ -160,13 +171,23 @@ const MechanicTasksScreen: React.FC = () => {
                                 <input type="checkbox" checked={selectedTaskIds.has(task.id)} onChange={() => handleSelectTask(task.id)} className="mt-1 h-5 w-5 rounded border-gray-500 text-primary focus:ring-primary flex-shrink-0" />
                                 <div className="flex-grow cursor-pointer" onClick={() => {setEditingTask(task); setIsModalOpen(true);}}>
                                     <p className={`font-semibold ${task.isComplete ? 'line-through text-gray-500' : ''}`}>{task.title}</p>
-                                    <p className={`text-xs mt-1 ${task.isComplete ? 'line-through text-gray-600' : 'text-light-gray'}`}>{new Date(task.dueDate.replace(/-/g, '/')).toLocaleDateString()}</p>
+                                    {task.isComplete && task.completionDate ? (
+                                        <p className="text-xs mt-1 text-green-400">
+                                            Completed: {new Date(task.completionDate.replace(/-/g, '/')).toLocaleDateString()}
+                                        </p>
+                                    ) : (
+                                        <p className={`text-xs mt-1 ${task.isComplete ? 'line-through text-gray-600' : 'text-light-gray'}`}>
+                                            Due: {new Date(task.dueDate.replace(/-/g, '/')).toLocaleDateString()}
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="flex flex-col items-end gap-2">
-                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${priorityColors[task.priority]}`}>{task.priority}</span>
-                                    <button onClick={() => handleToggleComplete(task)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${task.isComplete ? 'bg-primary border-primary' : 'border-gray-500'}`} aria-label={`Mark task as ${task.isComplete ? 'incomplete' : 'complete'}`}>
-                                        {task.isComplete && <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${priorityColors[task.priority]}`}>{task.priority}</span>
+                                        <button onClick={() => handleToggleComplete(task)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${task.isComplete ? 'bg-primary border-primary' : 'border-gray-500'}`} aria-label={`Mark task as ${task.isComplete ? 'incomplete' : 'complete'}`}>
+                                            {task.isComplete && <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -181,8 +202,8 @@ const MechanicTasksScreen: React.FC = () => {
             )}
             
             {selectedTaskIds.size > 0 && (
-                <div className="fixed bottom-20 left-1/2 -translate-x-1/2 w-full max-w-md p-4 z-20">
-                    <div className="bg-field p-3 rounded-lg flex justify-between items-center shadow-lg animate-slideInUp">
+                <div className="fixed bottom-16 left-0 w-full p-4 z-20 animate-slideInUp">
+                    <div className="bg-field p-3 rounded-lg flex justify-between items-center shadow-lg max-w-md mx-auto">
                         <span className="text-sm font-semibold">{selectedTaskIds.size} selected</span>
                         <div className="flex gap-2">
                             <button onClick={handleBatchComplete} className="bg-green-600 text-white font-bold py-2 px-3 rounded-md text-xs">Mark Complete</button>
