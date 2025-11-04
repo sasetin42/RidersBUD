@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
@@ -152,7 +152,7 @@ const HomeScreen: React.FC = () => {
     const [isBannerPaused, setIsBannerPaused] = useState(false);
     const bannerIntervalRef = useRef<any>(null);
     
-    // New states
+    // New filter states
     const [specFilterOpen, setSpecFilterOpen] = useState(false);
     const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
     const [ratingFilter, setRatingFilter] = useState(0);
@@ -181,14 +181,14 @@ const HomeScreen: React.FC = () => {
         );
     };
     
-    const handleMapClickToBook = (latlng: { lat: number, lng: number }) => {
+    const handleMapClickToBook = useCallback((latlng: { lat: number, lng: number }) => {
         if (window.confirm(`Book a diagnostic service at this location? A nearby mechanic will be assigned.`)) {
             // serviceId for Diagnostics is '3'
             navigate(`/booking/3`, { state: { serviceLocation: latlng } });
         }
-    };
+    }, [navigate]);
     
-    const handleBookMechanic = (mechanic: Mechanic) => {
+    const handleBookMechanic = useCallback((mechanic: Mechanic) => {
         if (window.confirm(`Book a diagnostic service with ${mechanic.name}? This will use their current location as the service address.`)) {
             // Service ID '3' is for Diagnostics
             navigate('/booking/3', { state: { 
@@ -196,7 +196,7 @@ const HomeScreen: React.FC = () => {
                 preselectedMechanicId: mechanic.id 
             }});
         }
-    };
+    }, [navigate]);
 
     const mechanicsWithAvailability = useMemo(() => {
         if (!db) return [];
@@ -513,19 +513,44 @@ const HomeScreen: React.FC = () => {
                         onBookMechanic={handleBookMechanic}
                     />
                 </div>
-                <div className="flex overflow-x-auto scrollbar-hide gap-3 p-2 -mx-2 mt-4">
-                    {mechanicsWithAvailability.map(m => (
-                        <div key={m.id} onClick={() => setSelectedMechanicId(m.id)} onDoubleClick={() => navigate(`/mechanic-profile/${m.id}`)} className={`flex-shrink-0 w-64 bg-dark-gray p-3 rounded-lg cursor-pointer border-2 transition-all ${selectedMechanicId === m.id ? 'border-primary' : 'border-transparent'}`}>
-                            <div className="flex items-center gap-3">
-                                <img src={m.imageUrl} alt={m.name} className="w-12 h-12 rounded-full object-cover"/>
-                                <div className="flex-grow overflow-hidden">
-                                    <p className="font-bold text-white text-sm truncate">{m.name}</p>
-                                    <p className="text-xs text-yellow-400">★ {m.rating} ({m.reviews} jobs)</p>
-                                    {m.isAvailable ? <p className="text-xs text-green-400 font-semibold">Available Today</p> : <p className="text-xs text-gray-500">Unavailable</p>}
+                 <div className="mt-4">
+                    <div className="flex overflow-x-auto scrollbar-hide gap-3 pb-3 -mx-6 px-6">
+                        {mechanicsWithAvailability.length > 0 ? (
+                            mechanicsWithAvailability.map(mechanic => (
+                                <div
+                                    key={mechanic.id}
+                                    onClick={() => setSelectedMechanicId(mechanic.id === selectedMechanicId ? null : mechanic.id)}
+                                    className={`flex-shrink-0 w-80 bg-dark-gray p-3 rounded-lg cursor-pointer border-2 transition-all duration-300 ${selectedMechanicId === mechanic.id ? 'border-primary' : 'border-transparent hover:border-field'}`}
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <img src={mechanic.imageUrl} alt={mechanic.name} className="w-16 h-16 rounded-full object-cover flex-shrink-0"/>
+                                        <div className="flex-grow overflow-hidden">
+                                            <p className="font-bold text-white truncate text-lg">{mechanic.name}</p>
+                                            <p className="text-sm text-yellow-400">★ {mechanic.rating.toFixed(1)} ({mechanic.reviews} jobs)</p>
+                                            {mechanic.isAvailable ? (
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                                                    <p className="text-xs text-green-400 font-semibold">Available Today</p>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <span className="h-2 w-2 rounded-full bg-gray-500"></span>
+                                                    <p className="text-xs text-gray-500">Unavailable Today</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-light-gray mt-2 pt-2 border-t border-field truncate">
+                                        Specializes in: {mechanic.specializations.join(', ')}
+                                    </p>
                                 </div>
+                            ))
+                        ) : (
+                            <div className="w-full text-center text-light-gray py-4 bg-dark-gray rounded-lg">
+                                <p>No mechanics found matching your filters.</p>
                             </div>
-                        </div>
-                    ))}
+                        )}
+                    </div>
                 </div>
             </div>
 

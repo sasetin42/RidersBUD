@@ -1,4 +1,5 @@
 
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { Booking, Mechanic } from '../../types';
 import LiveMap from '../../components/admin/LiveMap';
@@ -38,6 +39,7 @@ const UnassignedBookingRow: React.FC<{ booking: Booking }> = ({ booking }) => (
 
 const DynamicActivityFeed: React.FC = () => {
     const { db } = useDatabase();
+    const navigate = useNavigate();
 
     const activities = useMemo(() => {
         if (!db) return [];
@@ -86,14 +88,37 @@ const DynamicActivityFeed: React.FC = () => {
     const getActivityText = (activity: any) => {
         if (activity.type === 'booking') {
             const booking = activity.data as Booking;
-            if (booking.status === 'Completed') return `${booking.mechanic?.name} completed a job for ${booking.customerName}.`;
-            return `${booking.customerName} booked a ${booking.service.name}.`;
+            if (booking.status === 'Completed' && booking.mechanic) {
+                return (
+                    <>
+                        <button
+                            onClick={() => navigate('/admin/mechanics', { state: { viewMechanicId: booking.mechanic!.id } })}
+                            className="font-semibold text-admin-accent hover:underline focus:outline-none"
+                        >
+                            {booking.mechanic.name}
+                        </button>
+                        <span> completed a job for {booking.customerName}.</span>
+                    </>
+                );
+            }
+            return <span>{booking.customerName} booked a {booking.service.name}.</span>;
         }
         if (activity.type === 'mechanic') {
              const mechanic = activity.data as Mechanic;
-             return `New mechanic application from ${mechanic.name}.`;
+             return (
+                 <>
+                    <span>New mechanic application from </span>
+                    <button
+                        onClick={() => navigate('/admin/mechanics', { state: { viewMechanicId: mechanic.id } })}
+                        className="font-semibold text-admin-accent hover:underline focus:outline-none"
+                    >
+                        {mechanic.name}
+                    </button>
+                    <span>.</span>
+                 </>
+             );
         }
-        return 'An unknown activity occurred.';
+        return <span>An unknown activity occurred.</span>;
     };
     
      const getActivityIcon = (activity: any) => {

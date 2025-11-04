@@ -6,6 +6,13 @@ import { Part } from '../types';
 import { useWishlist } from '../context/WishlistContext';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
+import { useAuth } from '../context/AuthContext';
+import { getAIPartSuggestions } from '../services/geminiService';
+
+interface AISuggestion {
+    partName: string;
+    reason: string;
+}
 
 const ComparisonModal: React.FC<{ items: Part[]; onClose: () => void }> = ({ items, onClose }) => {
     const features = ['price', 'category', 'description'];
@@ -132,6 +139,7 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
 
 const PartsStoreScreen: React.FC = () => {
     const { db, loading } = useDatabase();
+    const { user } = useAuth();
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
     const [sortOption, setSortOption] = useState('name-asc');
@@ -141,6 +149,10 @@ const PartsStoreScreen: React.FC = () => {
     const [showInStock, setShowInStock] = useState(false);
     const [comparisonItems, setComparisonItems] = useState<Part[]>([]);
     const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
+
+    const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
+    const [isLoadingAI, setIsLoadingAI] = useState(false);
+    const [aiError, setAiError] = useState<string | null>(null);
 
     const parts = db?.parts || [];
 
@@ -235,6 +247,38 @@ const PartsStoreScreen: React.FC = () => {
         setShowInStock(false);
     };
 
+    const handleGetSuggestions = async () => {
+        if (!user || user.vehicles.length === 0 || !db) {
+            setAiError("Please add a vehicle to your profile to get AI suggestions.");
+            return;
+        }
+        setIsLoadingAI(true);
+        setAiSuggestions([]);
+        setAiError(null);
+        try {
+            const primaryVehicle = user.vehicles.find(v => v.isPrimary) || user.vehicles[0];
+            const serviceHistory = db.bookings
+                .filter(b => b.customerName === user.name && b.status === 'Completed' && b.vehicle.plateNumber === primaryVehicle.plateNumber)
+                .map(b => b.service.name) || [];
+            const suggestions = await getAIPartSuggestions(primaryVehicle, serviceHistory, db.parts);
+            setAiSuggestions(suggestions);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred. Please try again.";
+            setAiError(errorMessage);
+        } finally {
+            setIsLoadingAI(false);
+        }
+    };
+    
+    const handleViewPart = (partName: string) => {
+        const part = db?.parts.find(p => p.name.trim().toLowerCase() === partName.trim().toLowerCase());
+        if (part) {
+            navigate(`/part/${part.id}`);
+        } else {
+            alert(`Could not find the part "${partName}".`);
+        }
+    };
+
     const areFiltersActive = searchQuery || filterCategory !== 'all' || brandFilter !== 'all' || priceRange !== 'all' || showInStock;
 
     return (
@@ -287,12 +331,47 @@ const PartsStoreScreen: React.FC = () => {
                     </button>
                 )}
             </div>
+            
+            <div className="flex-grow overflow-y-auto">
+                <div className="p-4">
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="text-lg font-bold text-primary mb-2">AI Part Recommendations</h3>
+                        {isLoadingAI ? <div className="flex justify-center items-center py-8"><Spinner size="md" color="text-white" /></div>
+                        : aiError ? (
+                            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm text-center">
+                                <p className="font-semibold">Oops! Something went wrong.</p>
+                                <p className="mt-1">{aiError}</p>
+                                <button onClick={handleGetSuggestions} className="mt-3 bg-primary/20 text-primary font-semibold py-1 px-4 rounded-md text-xs hover:bg-primary/30">Try Again</button>
+                            </div>
+                        ) : aiSuggestions.length > 0 ? (
+                            <div className="space-y-3">
+                                {aiSuggestions.map((suggestion, index) => (
+                                    <div key={index} className="bg-field p-3 rounded-lg shadow-md">
+                                        <h4 className="font-bold text-white">{suggestion.partName}</h4>
+                                        <p className="text-sm text-light-gray mt-1 mb-3">{suggestion.reason}</p>
+                                        <div className="flex justify-end">
+                                            <button onClick={() => handleViewPart(suggestion.partName)} className="bg-primary text-white font-bold py-1.5 px-4 rounded-lg hover:bg-orange-600 transition text-sm">View Part</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-4">
+                                <p className="text-light-gray mb-4 text-sm">Get personalized part recommendations for your primary vehicle.</p>
+                                <button onClick={handleGetSuggestions} disabled={!user?.vehicles || user.vehicles.length === 0} className="bg-primary text-white font-bold py-2 px-6 rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                    Get Suggestions
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-            {loading ? <div className="flex-grow flex items-center justify-center"><Spinner size="lg" /></div>
-            : <div className="flex-grow p-4 grid grid-cols-2 gap-4 overflow-y-auto">
-                {displayedParts.length > 0 ? displayedParts.map(part => <PartCard key={part.id} part={part} onToggleCompare={handleToggleCompare} isComparing={comparisonItems.some(p => p.id === part.id)} />)
-                : <div className="col-span-2 flex flex-col items-center justify-center text-center h-full text-light-gray p-8"><svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg><h3 className="text-xl font-semibold text-white">No Parts Found</h3><p className="mt-2 text-sm">Try checking your spelling or adjusting your filters.</p></div>}
-              </div>}
+                <div className="p-4 grid grid-cols-2 gap-4">
+                    {loading ? <div className="col-span-2 flex justify-center pt-10"><Spinner size="lg" /></div>
+                    : displayedParts.length > 0 ? displayedParts.map(part => <PartCard key={part.id} part={part} onToggleCompare={handleToggleCompare} isComparing={comparisonItems.some(p => p.id === part.id)} />)
+                    : <div className="col-span-2 flex flex-col items-center justify-center text-center h-full text-light-gray p-8"><svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg><h3 className="text-xl font-semibold text-white">No Parts Found</h3><p className="mt-2 text-sm">Try checking your spelling or adjusting your filters.</p></div>}
+                </div>
+            </div>
 
             {comparisonItems.length > 0 && (
                 <button 

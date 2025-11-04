@@ -1,5 +1,4 @@
-
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mechanic } from '../types';
 
@@ -24,7 +23,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
     const markersRef = useRef<{ [key: string]: any }>({}); // To hold individual markers for updates
     const navigate = useNavigate();
 
-    // Use refs for callbacks to avoid stale closures in Leaflet event handlers
+    // Use refs for props and callbacks to prevent stale closures in Leaflet event handlers
     const onMarkerClickRef = useRef(onMarkerClick);
     onMarkerClickRef.current = onMarkerClick;
     const onMapClickToBookRef = useRef(onMapClickToBook);
@@ -59,7 +58,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
         });
         mapInstanceRef.current.addLayer(markersLayerRef.current);
         
-        mapInstanceRef.current.on('click', (e: any) => {
+        const mapClickHandler = (e: any) => {
              // Ignore clicks on markers as they have their own handlers
             if (e.originalEvent.target.closest('.leaflet-marker-pane')) {
                 return;
@@ -69,9 +68,10 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
 
             // Directly call the booking handler from props using a ref
             onMapClickToBookRef.current(e.latlng);
-        });
+        };
+        mapInstanceRef.current.on('click', mapClickHandler);
 
-        mapInstanceRef.current.on('popupopen', (e: any) => {
+        const popupOpenHandler = (e: any) => {
             const popupNode = e.popup.getElement();
             const viewProfileBtn = popupNode.querySelector('.view-profile-btn');
             if (viewProfileBtn) {
@@ -93,13 +93,26 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
                     }
                 });
             }
-        });
+        };
+        mapInstanceRef.current.on('popupopen', popupOpenHandler);
 
         return () => {
             if (mapInstanceRef.current) {
+                // Remove event listeners before destroying the map
+                mapInstanceRef.current.off('click', mapClickHandler);
+                mapInstanceRef.current.off('popupopen', popupOpenHandler);
+
+                // Explicitly clear layers and remove the map instance
+                if (markersLayerRef.current) {
+                    markersLayerRef.current.clearLayers();
+                    mapInstanceRef.current.removeLayer(markersLayerRef.current);
+                }
                 mapInstanceRef.current.remove();
                 mapInstanceRef.current = null;
             }
+            // Clear refs
+            markersLayerRef.current = null;
+            markersRef.current = {};
         };
     }, [navigate]); // navigate is stable, so this effect runs only once.
 
@@ -110,7 +123,9 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
 
         Object.keys(markersRef.current).forEach(markerId => {
             if (!mechanicIds.has(markerId)) {
-                markersLayerRef.current.removeLayer(markersRef.current[markerId]);
+                if(markersRef.current[markerId]) {
+                    markersLayerRef.current.removeLayer(markersRef.current[markerId]);
+                }
                 delete markersRef.current[markerId];
             }
         });
@@ -170,13 +185,15 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
             }
         });
 
-        if (selectedMechanicId && markersRef.current[selectedMechanicId] && mapInstanceRef.current) {
+        if (selectedMechanicId && markersRef.current[selectedMechanicId] && mapInstanceRef.current && markersLayerRef.current) {
             const marker = markersRef.current[selectedMechanicId];
             const latLng = marker.getLatLng();
             markersLayerRef.current.zoomToShowLayer(marker, () => {
-                mapInstanceRef.current.setView(latLng, 15, { animate: true, pan: { duration: 0.5 }});
-                if (!marker.isPopupOpen()) {
-                    marker.openPopup();
+                if (mapInstanceRef.current) { // Add check for map instance inside callback
+                    mapInstanceRef.current.setView(latLng, 15, { animate: true, pan: { duration: 0.5 }});
+                    if (!marker.isPopupOpen()) {
+                        marker.openPopup();
+                    }
                 }
             });
         }

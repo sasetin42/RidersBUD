@@ -7,6 +7,7 @@ import { BookingStatus, Customer, Vehicle, Booking } from '../../types';
 import MechanicCustomerChatModal from '../../components/mechanic/MechanicCustomerChatModal';
 import DirectionsModal from '../../components/mechanic/DirectionsModal';
 import { fileToBase64 } from '../../utils/fileUtils';
+import MapComponent from '../../components/MapComponent';
 
 declare const L: any;
 
@@ -127,9 +128,7 @@ const MechanicJobProgressModal: React.FC<{
     onClose: () => void;
 }> = ({ booking, customer, onClose }) => {
     const { updateBookingNotes, updateBookingImages } = useDatabase();
-    const mapRef = useRef<HTMLDivElement>(null);
-    const mapInstanceRef = useRef<any>(null);
-
+    
     const [notes, setNotes] = useState(booking?.notes || '');
     const [isSavingNotes, setIsSavingNotes] = useState(false);
     const [notesSuccess, setNotesSuccess] = useState(false);
@@ -138,20 +137,6 @@ const MechanicJobProgressModal: React.FC<{
     const [afterImages, setAfterImages] = useState<string[]>(booking?.afterImages || []);
     const [isSavingImages, setIsSavingImages] = useState(false);
     const [imagesSuccess, setImagesSuccess] = useState(false);
-
-    useEffect(() => {
-        if (!mapRef.current || !customer.lat || !customer.lng || mapInstanceRef.current || typeof L === 'undefined') return;
-
-        mapInstanceRef.current = L.map(mapRef.current).setView([customer.lat, customer.lng], 15);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
-        const workIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734-2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
-            className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 16]
-        });
-        L.marker([customer.lat, customer.lng], { icon: workIcon }).addTo(mapInstanceRef.current).bindPopup("Service Location");
-        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 100);
-        return () => { mapInstanceRef.current?.remove(); mapInstanceRef.current = null; };
-    }, [customer]);
 
     const handleSaveNotes = async () => {
         setIsSavingNotes(true);
@@ -214,12 +199,6 @@ const MechanicJobProgressModal: React.FC<{
                             {isSavingNotes ? <Spinner size="sm" /> : notesSuccess ? '✓ Notes Saved' : 'Save Notes'}
                         </button>
                     </div>
-                    
-                     {/* Service Location */}
-                     <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold text-white mb-2">Service Location</h3>
-                        <div ref={mapRef} className="h-40 w-full rounded-lg" />
-                    </div>
                 </main>
             </div>
         </div>
@@ -239,16 +218,15 @@ const MechanicJobDetailScreen: React.FC = () => {
     const customer = db?.customers.find(c => c.name === booking?.customerName);
     const vehicle = booking?.vehicle;
     
-    // Cleanup GPS tracking on unmount or when job is no longer active
     useEffect(() => {
-        const isJobActive = booking?.status === 'En Route' || booking?.status === 'In Progress';
-        
-        if (!isJobActive && watchIdRef.current !== null) {
+        // This effect's only job is to CLEAN UP the watcher when status is no longer 'En Route'
+        if (booking?.status !== 'En Route' && watchIdRef.current !== null) {
             navigator.geolocation.clearWatch(watchIdRef.current);
             watchIdRef.current = null;
-            console.log("Geolocation tracking stopped.");
+            console.log("Geolocation tracking stopped because status changed.");
         }
 
+        // Cleanup on unmount
         return () => {
             if (watchIdRef.current !== null) {
                 navigator.geolocation.clearWatch(watchIdRef.current);
@@ -294,10 +272,8 @@ const MechanicJobDetailScreen: React.FC = () => {
 
         const mechanicId = booking.mechanic.id;
 
-        // First, get current position to check for permissions
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                // Permission granted, now start watching.
                 updateBookingStatus(booking.id, 'En Route');
                 
                 const { latitude, longitude } = position.coords;
@@ -308,11 +284,10 @@ const MechanicJobDetailScreen: React.FC = () => {
                         console.log("Updating mechanic location:", pos.coords.latitude, pos.coords.longitude);
                         updateMechanicLocation(mechanicId, { lat: pos.coords.latitude, lng: pos.coords.longitude });
                     },
-                    (err) => {
-                        console.warn(`Geolocation watch error (${err.code}): ${err.message}`);
-                    },
+                    (err) => console.warn(`Geolocation watch error (${err.code}): ${err.message}`),
                     { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
                 );
+                 console.log("Geolocation tracking started.");
             },
             () => {
                 alert("Location access denied. You must enable location services to start this job.");
@@ -320,8 +295,8 @@ const MechanicJobDetailScreen: React.FC = () => {
         );
     };
 
-    const handleStatusChange = (newStatus: string) => {
-        updateBookingStatus(booking.id, newStatus as BookingStatus);
+    const handleUpdateStatus = (newStatus: BookingStatus) => {
+        updateBookingStatus(booking.id, newStatus);
         if (newStatus === 'Completed') {
             setShowAwaitingPaymentModal(true);
         }
@@ -331,7 +306,51 @@ const MechanicJobDetailScreen: React.FC = () => {
         respondToReschedule(booking.id, response);
     };
 
-    const statusOptions: BookingStatus[] = ['En Route', 'In Progress', 'Completed'];
+    const locationMarkers = (customer.lat && customer.lng && typeof L !== 'undefined') ? [{
+        position: [customer.lat, customer.lng] as [number, number],
+        popupContent: 'Service Location',
+        icon: L.divIcon({
+            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary animate-pulse" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>`,
+            className: 'bg-transparent border-0',
+            iconSize: [32, 32],
+            iconAnchor: [16, 32]
+        })
+    }] : [];
+
+    const PrimaryActionButton: React.FC = () => {
+        switch (booking.status) {
+            case 'Upcoming':
+            case 'Mechanic Assigned':
+                return (
+                    <button 
+                        onClick={handleAcceptJob}
+                        className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition"
+                    >
+                        Accept Job & Start Travel
+                    </button>
+                );
+            case 'En Route':
+                return (
+                    <button 
+                        onClick={() => handleUpdateStatus('In Progress')}
+                        className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition"
+                    >
+                        Arrived & Begin Service
+                    </button>
+                );
+            case 'In Progress':
+                 return (
+                    <button 
+                        onClick={() => handleUpdateStatus('Completed')}
+                        className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition"
+                    >
+                        Mark as Complete
+                    </button>
+                );
+            default:
+                return null;
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-secondary">
@@ -372,68 +391,43 @@ const MechanicJobDetailScreen: React.FC = () => {
                 </div>
 
                 <JobTimeline booking={booking} />
-                
-                 {(booking.status === 'In Progress' || booking.status === 'Completed') && (
+
+                 {/* Service Location */}
+                 {customer.lat && customer.lng && (
                     <div className="bg-dark-gray p-4 rounded-lg">
-                        <button 
-                            onClick={() => setIsProgressModalOpen(true)}
-                            className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition flex items-center justify-center gap-2"
+                        <h3 className="text-lg font-semibold text-white mb-2">Service Location</h3>
+                        <div className="h-48 w-full rounded-lg overflow-hidden">
+                            <MapComponent 
+                                center={[customer.lat, customer.lng]}
+                                zoom={15}
+                                markers={locationMarkers}
+                                disableScrollZoom={true}
+                            />
+                        </div>
+                         <a 
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${customer.lat},${customer.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition text-center mt-3"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg>
-                            View / Edit Job Progress
-                        </button>
-                    </div>
-                )}
-
-
-                {/* Actions */}
-                <div className="bg-dark-gray p-4 rounded-lg">
-                     <div className="flex gap-3">
-                         <button onClick={() => setIsChatOpen(true)} className="flex-1 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">
-                            Chat
-                         </button>
-                         <a href={`tel:${customer.phone}`} className="flex-1 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-center flex items-center justify-center">
-                            Call
+                            Navigate with Google Maps
                         </a>
-                         <button onClick={handleGetDirections} className="flex-1 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">
-                            Directions
-                         </button>
-                     </div>
+                    </div>
+                 )}
+            </div>
+
+             <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex-shrink-0 space-y-3">
+                <h3 className="text-lg font-semibold text-white text-center">Actions</h3>
+                <div className="grid grid-cols-2 gap-3">
+                    <button onClick={() => setIsChatOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Chat</button>
+                    <a href={`tel:${customer.phone}`} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm text-center flex items-center justify-center">Call</a>
+                    <button onClick={handleGetDirections} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Directions</button>
+                    <button onClick={() => setIsProgressModalOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Edit Progress</button>
                 </div>
                 
-                {/* Status Management */}
-                {['Upcoming', 'Mechanic Assigned'].includes(booking.status) ? (
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <button 
-                            onClick={handleAcceptJob}
-                            className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition"
-                        >
-                            Accept Job & Start Travel
-                        </button>
-                         <p className="text-xs text-light-gray mt-2 text-center">This will notify the customer and start sharing your live location.</p>
-                    </div>
-                ) : booking.status !== 'Completed' && booking.status !== 'Cancelled' && booking.status !== 'Reschedule Requested' && (
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold text-white mb-2">Manage Status</h3>
-                        <select
-                            value={booking.status}
-                            onChange={(e) => handleStatusChange(e.target.value)}
-                            className="w-full p-3 bg-field border border-secondary rounded-md"
-                        >
-                            {statusOptions.map(status => (
-                                <option key={status} value={status}>{status}</option>
-                            ))}
-                        </select>
-                        {booking.status === 'In Progress' && (
-                            <button 
-                                onClick={() => handleStatusChange('Completed')}
-                                className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition mt-3"
-                            >
-                                Mark as Complete
-                            </button>
-                        )}
-                    </div>
-                )}
+                <div className="pt-3 border-t border-field">
+                    <PrimaryActionButton />
+                </div>
             </div>
 
             {isProgressModalOpen && (

@@ -56,6 +56,11 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
     const [routeInfo, setRouteInfo] = useState({ distance: '...', eta: '...' });
     const mechanic = booking.mechanic;
     const destination = customerLocation;
+    const dbRef = useRef(db);
+
+    useEffect(() => {
+        dbRef.current = db;
+    }, [db]);
 
      const timelineSteps: BookingStatus[] = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'];
     const currentStatusIndex = useMemo(() => {
@@ -109,10 +114,13 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
     }, [mechanic, destination]);
 
     useEffect(() => {
-        if (!mechanic || !destination || !db) return;
+        if (!mechanic || !destination) return;
 
         const updatePosition = () => {
-            const liveMechanic = db.mechanics.find(m => m.id === mechanic.id);
+            const currentDb = dbRef.current;
+            if (!currentDb) return;
+            
+            const liveMechanic = currentDb.mechanics.find(m => m.id === mechanic.id);
             if (!liveMechanic || !mechanicMarkerRef.current) return;
 
             const { lat, lng } = liveMechanic;
@@ -131,10 +139,11 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
             }
         };
 
+        updatePosition(); // Initial update
         const intervalId = setInterval(updatePosition, 3000); // Poll every 3 seconds for live location
 
         return () => clearInterval(intervalId);
-    }, [db, mechanic, destination]);
+    }, [mechanic, destination]);
 
     if (!mechanic) return null;
 
