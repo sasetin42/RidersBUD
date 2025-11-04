@@ -5,11 +5,56 @@ import Spinner from '../../components/Spinner';
 import { useDatabase } from '../../context/DatabaseContext';
 import { BookingStatus, Customer, Vehicle, Booking } from '../../types';
 import MechanicCustomerChatModal from '../../components/mechanic/MechanicCustomerChatModal';
-import DirectionsModal from '../../components/mechanic/DirectionsModal';
 import { fileToBase64 } from '../../utils/fileUtils';
-import MapComponent from '../../components/MapComponent';
+import MapComponent, { MapMarker } from '../../components/MapComponent';
+import Modal from '../../components/admin/Modal';
 
 declare const L: any;
+
+const UpdateEtaModal: React.FC<{
+    booking: Booking;
+    onClose: () => void;
+    onSave: (eta: number) => void;
+}> = ({ booking, onClose, onSave }) => {
+    const [eta, setEta] = useState(booking.eta || '');
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleSave = async () => {
+        const newEta = Number(eta);
+        if (!isNaN(newEta) && newEta > 0) {
+            setIsSaving(true);
+            await onSave(newEta);
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <Modal title="Update ETA" isOpen={true} onClose={onClose}>
+            <div className="space-y-4">
+                <p className="text-sm text-light-gray">
+                    Enter your new estimated time of arrival in minutes. The customer will be notified.
+                </p>
+                <div>
+                    <label className="text-xs text-light-gray">ETA (in minutes)</label>
+                    <input
+                        type="number"
+                        value={eta}
+                        onChange={e => setEta(e.target.value)}
+                        placeholder="e.g., 25"
+                        className="w-full p-2 bg-field border border-secondary rounded-md"
+                    />
+                </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-4">
+                <button onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition">Cancel</button>
+                <button onClick={handleSave} disabled={isSaving || !eta} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition flex items-center justify-center min-w-[100px] disabled:opacity-50">
+                    {isSaving ? <Spinner size="sm" /> : 'Save ETA'}
+                </button>
+            </div>
+        </Modal>
+    );
+};
+
 
 const DetailRow: React.FC<{ label: string, value: string, icon?: React.ReactNode }> = ({ label, value, icon }) => (
     <div className="flex items-start justify-between py-2">
@@ -207,31 +252,28 @@ const MechanicJobProgressModal: React.FC<{
 
 const MechanicJobDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
-    const { db, updateBookingStatus, updateMechanicLocation, respondToReschedule, loading } = useDatabase();
+    const { db, updateBooking, updateBookingStatus, updateMechanicLocation, respondToReschedule, loading } = useDatabase();
     const [isChatOpen, setIsChatOpen] = useState(false);
-    const [isDirectionsOpen, setIsDirectionsOpen] = useState(false);
+    const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
     const [showAwaitingPaymentModal, setShowAwaitingPaymentModal] = useState(false);
     const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
+    const [isEtaModalOpen, setIsEtaModalOpen] = useState(false);
     const watchIdRef = useRef<number | null>(null);
     
     const booking = db?.bookings.find(b => b.id === bookingId);
     const customer = db?.customers.find(c => c.name === booking?.customerName);
     const vehicle = booking?.vehicle;
+    const mechanic = booking?.mechanic;
     
     useEffect(() => {
-        // This effect's only job is to CLEAN UP the watcher when status is no longer 'En Route'
         if (booking?.status !== 'En Route' && watchIdRef.current !== null) {
             navigator.geolocation.clearWatch(watchIdRef.current);
             watchIdRef.current = null;
-            console.log("Geolocation tracking stopped because status changed.");
         }
-
-        // Cleanup on unmount
         return () => {
             if (watchIdRef.current !== null) {
                 navigator.geolocation.clearWatch(watchIdRef.current);
                 watchIdRef.current = null;
-                console.log("Geolocation tracking stopped on unmount.");
             }
         };
     }, [booking?.status]);
@@ -251,47 +293,30 @@ const MechanicJobDetailScreen: React.FC = () => {
         );
     }
     
-    const handleGetDirections = () => {
-        if (customer?.lat && customer?.lng) {
-            setIsDirectionsOpen(true);
-        } else {
-            alert("Customer location data is not available for navigation.");
-        }
-    };
-    
     const handleAcceptJob = () => {
         if (!navigator.geolocation) {
             alert("Geolocation is not supported by your browser.");
             return;
         }
 
-        if (!booking.mechanic) {
+        if (!mechanic) {
             alert("Cannot start job: mechanic data is missing.");
             return;
         }
 
-        const mechanicId = booking.mechanic.id;
-
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 updateBookingStatus(booking.id, 'En Route');
-                
                 const { latitude, longitude } = position.coords;
-                updateMechanicLocation(mechanicId, { lat: latitude, lng: longitude });
+                updateMechanicLocation(mechanic.id, { lat: latitude, lng: longitude });
 
                 watchIdRef.current = navigator.geolocation.watchPosition(
-                    (pos) => {
-                        console.log("Updating mechanic location:", pos.coords.latitude, pos.coords.longitude);
-                        updateMechanicLocation(mechanicId, { lat: pos.coords.latitude, lng: pos.coords.longitude });
-                    },
-                    (err) => console.warn(`Geolocation watch error (${err.code}): ${err.message}`),
+                    (pos) => updateMechanicLocation(mechanic.id, { lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    (err) => console.warn(`Geolocation watch error: ${err.message}`),
                     { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
                 );
-                 console.log("Geolocation tracking started.");
             },
-            () => {
-                alert("Location access denied. You must enable location services to start this job.");
-            }
+            () => alert("Location access denied. You must enable location services to start this job.")
         );
     };
 
@@ -302,53 +327,51 @@ const MechanicJobDetailScreen: React.FC = () => {
         }
     };
 
+    const handleSaveEta = async (eta: number) => {
+        await updateBooking(booking.id, { eta });
+        setIsEtaModalOpen(false);
+    };
+
     const handleRescheduleResponse = (response: 'accepted' | 'rejected') => {
         respondToReschedule(booking.id, response);
     };
+    
+    const mapMarkers = useMemo((): MapMarker[] => {
+        const markers: MapMarker[] = [];
+        if (mechanic?.lat && mechanic.lng) {
+            markers.push({
+                id: 'mechanic',
+                position: [mechanic.lat, mechanic.lng],
+                popupContent: 'Your Location',
+                icon: L.divIcon({ html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 24 24" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>`, className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 32] })
+            });
+        }
+        if (customer?.lat && customer.lng) {
+            markers.push({
+                id: 'customer',
+                position: [customer.lat, customer.lng],
+                popupContent: 'Customer Location',
+                icon: L.divIcon({ html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-400 animate-pulse" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>`, className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 32] })
+            });
+        }
+        return markers;
+    }, [mechanic?.lat, mechanic?.lng, customer?.lat, customer?.lng]);
 
-    const locationMarkers = (customer.lat && customer.lng && typeof L !== 'undefined') ? [{
-        position: [customer.lat, customer.lng] as [number, number],
-        popupContent: 'Service Location',
-        icon: L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary animate-pulse" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>`,
-            className: 'bg-transparent border-0',
-            iconSize: [32, 32],
-            iconAnchor: [16, 32]
-        })
-    }] : [];
+    const mapBounds = useMemo(() => {
+        if (mapMarkers.length < 2 || typeof L === 'undefined') return undefined;
+        return L.latLngBounds(mapMarkers.map(m => m.position));
+    }, [mapMarkers]);
 
     const PrimaryActionButton: React.FC = () => {
         switch (booking.status) {
             case 'Upcoming':
             case 'Mechanic Assigned':
-                return (
-                    <button 
-                        onClick={handleAcceptJob}
-                        className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition"
-                    >
-                        Accept Job & Start Travel
-                    </button>
-                );
+                return <button onClick={handleAcceptJob} className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition">Accept Job & Start Travel</button>;
             case 'En Route':
-                return (
-                    <button 
-                        onClick={() => handleUpdateStatus('In Progress')}
-                        className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition"
-                    >
-                        Arrived & Begin Service
-                    </button>
-                );
+                return <button onClick={() => handleUpdateStatus('In Progress')} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Arrived & Begin Service</button>;
             case 'In Progress':
-                 return (
-                    <button 
-                        onClick={() => handleUpdateStatus('Completed')}
-                        className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition"
-                    >
-                        Mark as Complete
-                    </button>
-                );
-            default:
-                return null;
+                 return <button onClick={() => handleUpdateStatus('Completed')} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">Mark as Complete</button>;
+            default: return null;
         }
     };
 
@@ -356,24 +379,22 @@ const MechanicJobDetailScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-secondary">
             <Header title={`Job #${booking.id.toUpperCase().slice(-6)}`} showBackButton />
             <div className="flex-grow p-4 space-y-4 overflow-y-auto">
-                {/* Service Info */}
                 <div className="bg-dark-gray p-4 rounded-lg">
                     <h2 className="text-xl font-bold text-primary mb-2">{booking.service.name}</h2>
                     <DetailRow label="Date" value={new Date(booking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} />
                     <DetailRow label="Time" value={booking.time} />
+                     {booking.eta && booking.status === 'En Route' && (<DetailRow label="Current ETA" value={`${booking.eta} minutes`} />)}
                 </div>
 
-                {/* Reschedule Request */}
                 {booking.status === 'Reschedule Requested' && booking.rescheduleDetails && (
                     <div className="bg-orange-900/50 border border-orange-500/50 p-4 rounded-lg animate-pulse">
                         <h3 className="text-lg font-bold text-orange-300">Reschedule Requested</h3>
-                        <p className="text-sm text-white mt-2">The customer has requested to move this appointment to:</p>
+                        <p className="text-sm text-white mt-2">The customer requested to move this appointment to:</p>
                         <div className="bg-field p-3 rounded-md my-2">
                             <p><span className="font-semibold">New Date:</span> {new Date(booking.rescheduleDetails.newDate.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
                             <p><span className="font-semibold">New Time:</span> {booking.rescheduleDetails.newTime}</p>
                         </div>
-                        <p className="text-sm text-white">Reason:</p>
-                        <p className="text-sm italic text-light-gray bg-field p-2 rounded-md">"{booking.rescheduleDetails.reason}"</p>
+                        <p className="text-sm text-white">Reason: <span className="italic text-light-gray">"{booking.rescheduleDetails.reason}"</span></p>
                         <div className="flex gap-3 mt-4">
                             <button onClick={() => handleRescheduleResponse('rejected')} className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg hover:bg-red-700">Reject</button>
                             <button onClick={() => handleRescheduleResponse('accepted')} className="flex-1 bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700">Accept</button>
@@ -381,7 +402,6 @@ const MechanicJobDetailScreen: React.FC = () => {
                     </div>
                 )}
 
-                {/* Customer & Vehicle Info */}
                 <div className="bg-dark-gray p-4 rounded-lg">
                     <h3 className="text-lg font-semibold text-white mb-2">Customer & Vehicle</h3>
                     <DetailRow label="Customer" value={customer.name} />
@@ -389,70 +409,39 @@ const MechanicJobDetailScreen: React.FC = () => {
                     <DetailRow label="Vehicle" value={`${vehicle.year} ${vehicle.make} ${vehicle.model}`} />
                     <DetailRow label="Plate No." value={vehicle.plateNumber} />
                 </div>
-
                 <JobTimeline booking={booking} />
-
-                 {/* Service Location */}
-                 {customer.lat && customer.lng && (
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold text-white mb-2">Service Location</h3>
-                        <div className="h-48 w-full rounded-lg overflow-hidden">
-                            <MapComponent 
-                                center={[customer.lat, customer.lng]}
-                                zoom={15}
-                                markers={locationMarkers}
-                                disableScrollZoom={true}
-                            />
-                        </div>
-                         <a 
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${customer.lat},${customer.lng}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition text-center mt-3"
-                        >
-                            Navigate with Google Maps
-                        </a>
-                    </div>
-                 )}
             </div>
 
              <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex-shrink-0 space-y-3">
                 <h3 className="text-lg font-semibold text-white text-center">Actions</h3>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                     <button onClick={() => setIsChatOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Chat</button>
                     <a href={`tel:${customer.phone}`} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm text-center flex items-center justify-center">Call</a>
-                    <button onClick={handleGetDirections} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Directions</button>
+                    <button onClick={() => setIsLocationModalOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">View Location</button>
                     <button onClick={() => setIsProgressModalOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Edit Progress</button>
+                    <button onClick={() => setIsEtaModalOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm disabled:opacity-50" disabled={booking.status !== 'En Route'}>Update ETA</button>
                 </div>
-                
-                <div className="pt-3 border-t border-field">
-                    <PrimaryActionButton />
-                </div>
+                <div className="pt-3 border-t border-field"><PrimaryActionButton /></div>
             </div>
 
-            {isProgressModalOpen && (
-                <MechanicJobProgressModal
-                    booking={booking}
-                    customer={customer}
-                    onClose={() => setIsProgressModalOpen(false)}
-                />
-            )}
-            {isChatOpen && booking.mechanic && (
-                <MechanicCustomerChatModal
-                    booking={booking}
-                    customer={customer}
-                    mechanic={booking.mechanic}
-                    onClose={() => setIsChatOpen(false)}
-                />
-            )}
-             {isDirectionsOpen && customer && (
-                <DirectionsModal 
-                    booking={booking}
-                    customer={customer}
-                    onClose={() => setIsDirectionsOpen(false)}
-                />
+            {isProgressModalOpen && (<MechanicJobProgressModal booking={booking} customer={customer} onClose={() => setIsProgressModalOpen(false)} />)}
+            {isChatOpen && mechanic && (<MechanicCustomerChatModal booking={booking} customer={customer} mechanic={mechanic} onClose={() => setIsChatOpen(false)} />)}
+            {isLocationModalOpen && (
+                <Modal title="Live Service Location" isOpen={true} onClose={() => setIsLocationModalOpen(false)}>
+                    <div className="space-y-4">
+                        <div className="h-72 w-full rounded-lg overflow-hidden">
+                             {mapMarkers.length > 0 ? (
+                                <MapComponent center={mapMarkers[0].position} zoom={14} markers={mapMarkers} bounds={mapBounds} disableScrollZoom={false} />
+                            ) : (
+                                <div className="flex items-center justify-center h-full bg-field text-light-gray">Location data not available.</div>
+                            )}
+                        </div>
+                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${customer.lat},${customer.lng}`} target="_blank" rel="noopener noreferrer" className="block w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition text-center">Navigate with Google Maps</a>
+                    </div>
+                </Modal>
             )}
             {showAwaitingPaymentModal && <AwaitingPaymentModal onClose={() => setShowAwaitingPaymentModal(false)} />}
+            {isEtaModalOpen && (<UpdateEtaModal booking={booking} onClose={() => setIsEtaModalOpen(false)} onSave={handleSaveEta} />)}
         </div>
     );
 };

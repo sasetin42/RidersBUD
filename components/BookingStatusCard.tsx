@@ -158,6 +158,12 @@ const BookingStatusCard: React.FC<{
     useEffect(() => {
         let interval: any;
         if (booking.status === 'En Route' && booking.mechanic && booking.location && db?.mechanics) {
+            // Prioritize mechanic-set ETA
+            if (booking.eta) {
+                setEta(booking.eta);
+                return; // Stop here if we have a manual ETA
+            }
+
             const calculateEta = () => {
                 const liveMechanic = db.mechanics.find(m => m.id === booking.mechanic!.id);
                 if (liveMechanic) {

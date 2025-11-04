@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Reminder, Customer } from '../types';
 import Spinner from '../components/Spinner';
-import { fileToBase64 } from '../utils/fileUtils';
+import { compressAndEncodeImage } from '../utils/fileUtils';
 
 const EditProfileModal: React.FC<{
     user: Customer;
@@ -24,12 +24,12 @@ const EditProfileModal: React.FC<{
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            if (file.size > 2 * 1024 * 1024) { // 2MB limit
+            if (file.size > 2 * 1024 * 1024) { // 2MB limit before compression
                 setErrors(prev => ({...prev, picture: 'Image size cannot exceed 2MB.'}));
                 return;
             }
             try {
-                const base64 = await fileToBase64(file);
+                const base64 = await compressAndEncodeImage(file);
                 setFormData(prev => ({ ...prev, picture: base64 as string }));
                 if (errors.picture) {
                     setErrors(prev => {

@@ -33,6 +33,7 @@ const BookingConfirmationScreen: React.FC = () => {
 
     // Prepare marker for the map
     const mapMarkers = serviceLocation && typeof L !== 'undefined' ? [{
+        id: 'service-location', // Add a unique ID for the marker
         position: [serviceLocation.lat, serviceLocation.lng] as [number, number],
         popupContent: 'Service Location',
         icon: L.divIcon({

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Vehicle } from '../types';
 import Spinner from '../components/Spinner';
-import { fileToBase64 } from '../utils/fileUtils';
+import { compressAndEncodeImage } from '../utils/fileUtils';
 import { useDatabase } from '../context/DatabaseContext';
 
 const VehicleFormModal: React.FC<{
@@ -35,8 +35,7 @@ const VehicleFormModal: React.FC<{
         }
         
         try {
-            // Fix: Explicitly type 'file' as File to prevent TypeScript from inferring it as 'unknown'.
-            const base64Images = await Promise.all(files.map((file: File) => fileToBase64(file)));
+            const base64Images = await Promise.all(files.map((file: File) => compressAndEncodeImage(file)));
             setFormData(prev => ({
                 ...prev,
                 imageUrls: [...prev.imageUrls, ...base64Images as string[]]

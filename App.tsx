@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import SplashScreen from './pages/SplashScreen';
@@ -18,8 +19,9 @@ import BookingHistoryScreen from './pages/BookingHistoryScreen';
 import PartsStoreScreen from './pages/PartsStoreScreen';
 import PartDetailScreen from './pages/PartDetailScreen';
 import WarrantyScreen from './pages/WarrantyScreen';
-import { WishlistProvider } from './context/WishlistContext';
+// FIX: Import WishlistScreen to resolve reference error.
 import WishlistScreen from './pages/WishlistScreen';
+import { WishlistProvider } from './context/WishlistContext';
 import BookingConfirmationScreen from './pages/BookingConfirmationScreen';
 import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
 import AdminLoginScreen from './pages/admin/AdminLoginScreen';
@@ -118,12 +120,13 @@ const AppContent: React.FC = () => {
     const { isAuthenticated, user } = useAuth();
     const { isAdminAuthenticated } = useAdminAuth();
     const { isMechanicAuthenticated, mechanic } = useMechanicAuth();
-    const { db } = useDatabase();
+    const { db, updateCustomerLocation } = useDatabase();
     const { addNotification } = useNotification();
     const { openChatIds } = useChatNotification();
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
     
     const prevDb = usePrevious<Database | null>(db);
+    const watchIdRef = useRef<number | null>(null);
     
     // Effect to generate notifications based on database changes
     useEffect(() => {
@@ -138,6 +141,7 @@ const AppContent: React.FC = () => {
                 if (oldBooking && oldBooking.status !== currentBooking.status) {
                      let title = ''; let message = '';
                      switch (currentBooking.status) {
+                         case 'Mechanic Assigned': title = 'Mechanic Assigned!'; message = `${currentBooking.mechanic?.name} has been assigned to your job.`; break;
                          case 'En Route': title = 'Mechanic En Route!'; message = `${currentBooking.mechanic?.name} is on the way.`; break;
                          case 'In Progress': title = 'Work has Begun!'; message = `${currentBooking.mechanic?.name} has started the ${currentBooking.service.name} service.`; break;
                          case 'Completed': title = 'Service Complete!'; message = `Your ${currentBooking.service.name} is now complete.`; break;
@@ -195,6 +199,46 @@ const AppContent: React.FC = () => {
         }
 
     }, [db, prevDb, isAuthenticated, user, isMechanicAuthenticated, mechanic, addNotification]);
+    
+     // Effect for Live Customer Location Tracking
+    useEffect(() => {
+        if (!isAuthenticated || !user || !db || !updateCustomerLocation) {
+            return;
+        }
+
+        const activeBooking = db.bookings.find(b => 
+            b.customerName === user.name && 
+            b.mechanic && 
+            b.status === 'En Route'
+        );
+
+        if (activeBooking) {
+            if (watchIdRef.current === null) {
+                watchIdRef.current = navigator.geolocation.watchPosition(
+                    (position) => {
+                        updateCustomerLocation(user.id, { 
+                            lat: position.coords.latitude, 
+                            lng: position.coords.longitude 
+                        });
+                    },
+                    (err) => console.warn(`Customer location watch error: ${err.message}`),
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            }
+        } else {
+            if (watchIdRef.current !== null) {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+            }
+        }
+
+        return () => {
+            if (watchIdRef.current !== null) {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+            }
+        };
+    }, [db, user, isAuthenticated, updateCustomerLocation]);
 
      // Effect for Time-based and Chat Notifications
     useEffect(() => {

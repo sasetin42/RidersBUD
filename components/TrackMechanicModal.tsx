@@ -121,13 +121,16 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
             if (!currentDb) return;
             
             const liveMechanic = currentDb.mechanics.find(m => m.id === mechanic.id);
-            if (!liveMechanic || !mechanicMarkerRef.current) return;
+            const liveBooking = currentDb.bookings.find(b => b.id === booking.id);
+
+            if (!liveMechanic || !mechanicMarkerRef.current || !liveBooking) return;
 
             const { lat, lng } = liveMechanic;
             mechanicMarkerRef.current.setLatLng([lat, lng]);
 
             const distKm = getDistanceInKm(lat, lng, destination.lat, destination.lng);
-            const etaMins = Math.ceil((distKm / 40) * 60); // 40 km/h average speed
+            // Use mechanic-set ETA if available, otherwise calculate it.
+            const etaMins = liveBooking.eta ? liveBooking.eta : Math.ceil((distKm / 40) * 60);
 
             if (distKm < 0.1) {
                 setRouteInfo({ distance: '0 km', eta: 'Arrived' });
@@ -143,7 +146,7 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
         const intervalId = setInterval(updatePosition, 3000); // Poll every 3 seconds for live location
 
         return () => clearInterval(intervalId);
-    }, [mechanic, destination]);
+    }, [booking.id, mechanic, destination]);
 
     if (!mechanic) return null;
 

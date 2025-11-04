@@ -401,6 +401,12 @@ const HomeScreen: React.FC = () => {
                                 <span className="font-medium text-light-gray">Status:</span>
                                 <span className="font-bold text-orange-400">{upcomingAppointment.status}</span>
                             </div>
+                            {upcomingAppointment.status === 'En Route' && upcomingAppointment.eta && (
+                                <div className="flex justify-between items-center text-sm mb-1 mt-1">
+                                    <span className="font-medium text-light-gray">ETA:</span>
+                                    <span className="font-bold text-yellow-300 animate-pulse">~{upcomingAppointment.eta} min</span>
+                                </div>
+                            )}
                             <div className="w-full bg-black/30 rounded-full h-2.5"><div className="bg-primary h-2.5 rounded-full transition-all duration-500 ease-in-out" style={{width: getStatusWidth()}}></div></div>
                         </div>
                         <div className="mt-4 flex gap-2">

@@ -10,8 +10,8 @@ const ServiceCard: React.FC<{
     service: Service;
     rating: number;
     reviewCount: number;
-}> = React.memo(({ service, rating, reviewCount }) => {
-    const navigate = useNavigate();
+    onBook: (service: Service) => void;
+}> = React.memo(({ service, rating, reviewCount, onBook }) => {
     const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
     const isWishlisted = isInWishlist(service.id);
 
@@ -24,19 +24,14 @@ const ServiceCard: React.FC<{
         }
     };
 
-    const handleDetails = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        navigate(`/service/${service.id}`);
-    };
-
     const handleBookNow = (e: React.MouseEvent) => {
         e.stopPropagation();
-        navigate(`/booking/${service.id}`);
+        onBook(service);
     };
 
     return (
         <div 
-            onClick={handleDetails}
+            onClick={() => onBook(service)}
             className="bg-dark-gray rounded-lg overflow-hidden flex flex-col group shadow-lg transition-all duration-300 hover:shadow-primary/20 hover:-translate-y-1 cursor-pointer"
             aria-label={`Service card for ${service.name}`}
         >
@@ -55,7 +50,7 @@ const ServiceCard: React.FC<{
                 </button>
                 <div className="absolute bottom-3 left-3">
                      <span className="bg-black/50 text-white text-[10px] leading-[14px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm flex items-center gap-1.5">
-                        <div className="w-4 h-4 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: service.icon }} />
+                        <div className="w-4 h-4 flex items-center justify-center transition-transform duration-300 group-hover:scale-110" dangerouslySetInnerHTML={{ __html: service.icon }} />
                         {service.category}
                     </span>
                 </div>
@@ -88,20 +83,12 @@ const ServiceCard: React.FC<{
                         <p className="text-[8px] leading-[12px] text-light-gray">Est. {service.estimatedTime}</p>
                     </div>
                     
-                    <div className="flex gap-2">
-                        <button 
-                            onClick={handleDetails}
-                            className="flex-1 bg-field text-white font-medium py-2 px-3 rounded-lg text-sm hover:bg-gray-600 transition duration-200"
-                        >
-                            Details
-                        </button>
-                        <button 
-                            onClick={handleBookNow}
-                            className="flex-1 bg-primary text-white font-medium py-2 px-3 rounded-lg text-sm hover:bg-orange-600 transition duration-200"
-                        >
-                            {service.price > 0 ? 'Book Now' : 'Get Quote'}
-                        </button>
-                    </div>
+                    <button 
+                        onClick={handleBookNow}
+                        className="w-full bg-primary text-white font-medium py-2 px-3 rounded-lg text-sm hover:bg-orange-600 transition duration-200"
+                    >
+                        {service.price > 0 ? 'Book Now' : 'Get Quote'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -218,6 +205,10 @@ const ServicesScreen: React.FC = () => {
         
         return filtered;
     }, [searchQuery, filterCategory, priceRange, services, availabilityFilter, availableMechanicSpecializations]);
+    
+    const handleBook = (service: Service) => {
+        navigate(`/booking/${service.id}`);
+    };
 
     return (
         <div className="flex flex-col bg-secondary">
@@ -301,7 +292,7 @@ const ServicesScreen: React.FC = () => {
                     {displayedServices.length > 0 ? (
                         displayedServices.map(service => {
                             const ratings = serviceRatings.get(service.id) || { avgRating: 0, totalReviews: 0 };
-                            return <ServiceCard key={service.id} service={service} rating={ratings.avgRating} reviewCount={ratings.totalReviews} />;
+                            return <ServiceCard key={service.id} service={service} rating={ratings.avgRating} reviewCount={ratings.totalReviews} onBook={handleBook} />;
                         })
                     ) : (
                         <div className="col-span-2 flex flex-col items-center justify-center text-center text-light-gray p-8">

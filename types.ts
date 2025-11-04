@@ -134,6 +134,7 @@ export interface Booking {
     rescheduleDetails?: { newDate: string; newTime: string; reason: string };
     isReviewed?: boolean;
     isPaid?: boolean;
+    eta?: number; // Estimated time of arrival in minutes
 }
 
 export interface Customer {

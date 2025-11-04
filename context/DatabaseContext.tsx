@@ -32,6 +32,7 @@ interface DatabaseContextType {
     respondToReschedule: (bookingId: string, response: 'accepted' | 'rejected') => Promise<void>;
     addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
     updateCustomer: (updatedCustomer: Customer) => Promise<void>;
+    updateCustomerLocation: (customerId: string, location: { lat: number; lng: number }) => Promise<void>;
     deleteCustomer: (customerId: string) => Promise<void>;
     deleteVehicleFromCustomer: (customerId: string, plateNumber: string) => Promise<void>;
     addOrder: (customerName: string, items: CartItem[], total: number, paymentMethod: string) => Promise<Order | null>;
@@ -350,6 +351,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, customers: prevDb.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c) } : null);
     };
+     const updateCustomerLocation = async (customerId: string, location: { lat: number; lng: number }) => {
+        // No delay for real-time updates
+        setDb(prevDb => {
+            if (!prevDb) return null;
+            const newCustomers = prevDb.customers.map(c => 
+                c.id === customerId ? { ...c, lat: location.lat, lng: location.lng } : c
+            );
+            return { ...prevDb, customers: newCustomers };
+        });
+    };
     const deleteCustomer = async (customerId: string) => {
         await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, customers: prevDb.customers.filter(c => c.id !== customerId) } : null);
@@ -617,6 +628,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         respondToReschedule,
         addCustomer,
         updateCustomer,
+        updateCustomerLocation,
         deleteCustomer,
         deleteVehicleFromCustomer,
         addOrder,

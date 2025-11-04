@@ -11,7 +11,7 @@ declare const L: any;
 const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, onSelect: (serviceId: string) => void }> = ({ service, isSelected, onSelect }) => (
     <div
         onClick={() => onSelect(service.id)}
-        className={`bg-dark-gray p-4 rounded-lg flex items-center gap-4 cursor-pointer transition-all duration-200 border-2 ${isSelected ? 'border-primary' : 'border-transparent hover:border-primary/50'}`}
+        className={`bg-dark-gray p-4 rounded-lg flex items-center gap-4 cursor-pointer transition-all duration-200 border-2 ${isSelected ? 'border-primary ring-2 ring-primary/30' : 'border-transparent hover:border-primary/50 hover:-translate-y-1'}`}
     >
         <div className="text-primary flex-shrink-0" dangerouslySetInnerHTML={{ __html: service.icon }} />
         <div className="flex-grow text-left">
@@ -527,19 +527,7 @@ const BookingScreen: React.FC = () => {
                         </div>
                     )}
                 </div>
-                {isQuoteRequest && (
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="font-bold text-primary mb-2">Notes for Mechanic</h3>
-                        <p className="text-xs text-light-gray mb-2">Please describe the issue in detail to help us provide an accurate quote.</p>
-                        <textarea
-                            value={notes}
-                            onChange={(e) => setNotes(e.target.value)}
-                            placeholder="e.g., There's a rattling noise from the front-right wheel when driving over bumps."
-                            rows={4}
-                            className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
-                        />
-                    </div>
-                )}
+                
                 <div className="space-y-3">
                     {services.map(service => (
                         <ServiceSelectionCard key={service.id} service={service} isSelected={selectedServiceIds.has(service.id)} onSelect={handleServiceSelect} />
@@ -780,18 +768,17 @@ const BookingScreen: React.FC = () => {
                         <p className="font-semibold text-white">{selectedMechanic.name}</p>
                         <p className="text-sm text-yellow-400">⭐ {selectedMechanic.rating.toFixed(1)} ({selectedMechanic.reviews} jobs)</p>
                     </div>
-                    {!isQuoteRequest && (
-                        <div className="bg-dark-gray p-4 rounded-lg">
-                            <h3 className="font-bold text-primary mb-2">Additional Notes</h3>
-                            <textarea
-                                value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
-                                placeholder="e.g., The doorbell is broken, please call upon arrival."
-                                rows={3}
-                                className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
-                            />
-                        </div>
-                    )}
+                    <div className="bg-dark-gray p-4 rounded-lg">
+                        <h3 className="font-bold text-primary mb-2">Notes for Mechanic</h3>
+                        <p className="text-xs text-light-gray mb-2">Please provide any specific details about the issue or instructions for the mechanic.</p>
+                        <textarea
+                            value={notes}
+                            onChange={(e) => setNotes(e.target.value)}
+                            placeholder="e.g., 'There's a rattling noise...' or 'Doorbell is broken, please call.'"
+                            rows={3}
+                            className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
+                        />
+                    </div>
                 </div>
                 <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
                      {error && <p className="text-red-400 text-center text-sm mb-2">{error}</p>}
