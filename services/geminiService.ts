@@ -16,12 +16,12 @@ export const getAIServiceSuggestions = async (vehicle: Vehicle, serviceHistory: 
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-pro",
+            model: "gemini-2.5-flash",
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
                 thinkingConfig: {
-                    thinkingBudget: 32768,
+                    thinkingBudget: 24576,
                 },
                 responseSchema: {
                     type: Type.OBJECT,
@@ -83,12 +83,12 @@ export const getAIPartSuggestions = async (vehicle: Vehicle, serviceHistory: str
     
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-pro",
+            model: "gemini-2.5-flash",
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
                 thinkingConfig: {
-                    thinkingBudget: 32768,
+                    thinkingBudget: 24576,
                 },
                 responseSchema: {
                     type: Type.OBJECT,

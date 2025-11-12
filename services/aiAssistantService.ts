@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Chat } from "@google/genai";
 import { Service, Part, Mechanic, Settings, Customer, Database } from '../types';
 
@@ -56,13 +55,13 @@ When the conversation starts, greet the user and ask how you can help them with 
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     const chat = ai.chats.create({
-        // As per the request, using gemini-2.5-pro for complex user queries.
-        model: 'gemini-2.5-pro',
+        // As requested, using gemini-2.5-flash with Maps Grounding.
+        model: 'gemini-2.5-flash',
         config: {
             systemInstruction: systemInstruction,
-            // Thinking mode is enabled with the maximum budget to handle complex planning and reasoning.
+            // Thinking mode is enabled for Gemini 2.5 series.
             thinkingConfig: {
-                thinkingBudget: 32768,
+                thinkingBudget: 24576,
             },
             // Grounding tools are enabled to answer real-world and location-based questions.
             tools: [{ googleSearch: {} }, { googleMaps: {} }],
