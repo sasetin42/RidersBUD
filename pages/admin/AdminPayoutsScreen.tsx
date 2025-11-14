@@ -184,10 +184,12 @@ const AdminPayoutsScreen: React.FC = () => {
     const handleProcessRequest = async (payoutId: string, status: 'Approved' | 'Rejected', reason?: string) => {
         try {
             await processPayoutRequest(payoutId, status, reason);
-            addNotification({ type: 'success', title: 'Payout Processed', message: `Request #${payoutId.slice(-6)} has been ${status.toLowerCase()}.` });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'success', title: 'Payout Processed', message: `Request #${payoutId.slice(-6)} has been ${status.toLowerCase()}.`, recipientId: 'all' });
             setViewingRequest(null);
         } catch (e) {
-            addNotification({ type: 'error', title: 'Processing Failed', message: (e as Error).message });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'error', title: 'Processing Failed', message: (e as Error).message, recipientId: 'all' });
         }
     };
     

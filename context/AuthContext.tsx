@@ -90,7 +90,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const newCustomer = await addCustomer({ name, email, phone, password, vehicles: [] });
         if(newCustomer) {
             loginUser(newCustomer);
-            addNotification({ type: 'success', title: 'Welcome!', message: 'Your account has been created successfully.' });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'success', title: 'Welcome!', message: 'Your account has been created successfully.', recipientId: `customer-${newCustomer.id}` });
         } else {
             throw new Error("Failed to create account.");
         }
@@ -253,7 +254,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         await updateCustomer(updatedUser);
         setUser(updatedUser);
-        addNotification({ type: 'success', title: 'Favorite Added', message: 'Mechanic saved to your favorites.' });
+        // FIX: Add missing `recipientId` property.
+        addNotification({ type: 'success', title: 'Favorite Added', message: 'Mechanic saved to your favorites.', recipientId: `customer-${user.id}` });
     };
 
     const removeFavoriteMechanic = async (mechanicId: string) => {
@@ -264,7 +266,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         await updateCustomer(updatedUser);
         setUser(updatedUser);
-        addNotification({ type: 'success', title: 'Favorite Removed', message: 'Mechanic removed from your favorites.' });
+        // FIX: Add missing `recipientId` property.
+        addNotification({ type: 'success', title: 'Favorite Removed', message: 'Mechanic removed from your favorites.', recipientId: `customer-${user.id}` });
     };
 
     const subscribeToMechanic = async (mechanicId: string) => {
@@ -275,7 +278,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         await updateCustomer(updatedUser);
         setUser(updatedUser);
-        addNotification({ type: 'success', title: 'Subscribed!', message: 'You will now receive updates from this mechanic.' });
+        // FIX: Add missing `recipientId` property.
+        addNotification({ type: 'success', title: 'Subscribed!', message: 'You will now receive updates from this mechanic.', recipientId: `customer-${user.id}` });
     };
 
     const unsubscribeFromMechanic = async (mechanicId: string) => {
@@ -286,7 +290,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         await updateCustomer(updatedUser);
         setUser(updatedUser);
-        addNotification({ type: 'success', title: 'Unsubscribed', message: 'You will no longer receive updates.' });
+        // FIX: Add missing `recipientId` property.
+        addNotification({ type: 'success', title: 'Unsubscribed', message: 'You will no longer receive updates.', recipientId: `customer-${user.id}` });
     };
 
 

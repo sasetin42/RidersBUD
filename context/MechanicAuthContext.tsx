@@ -97,7 +97,8 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     const updateMechanicProfile = async (updatedMechanic: Mechanic) => {
         await dbUpdateMechanic(updatedMechanic);
         setMechanic(updatedMechanic);
-        addNotification({ type: 'success', title: 'Profile Updated', message: 'Your changes have been saved.' });
+        // FIX: Add missing `recipientId` property.
+        addNotification({ type: 'success', title: 'Profile Updated', message: 'Your changes have been saved.', recipientId: `mechanic-${updatedMechanic.id}` });
     };
 
     const isLoadingAuth = loading || dbLoading;

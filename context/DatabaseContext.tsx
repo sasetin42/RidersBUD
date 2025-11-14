@@ -132,6 +132,75 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         };
     }, []);
 
+     // Effect for simulating mechanic movement and calculating ETA
+    useEffect(() => {
+        const simulationInterval = setInterval(() => {
+            setDb(prevDb => {
+                if (!prevDb) return null;
+
+                let dbChanged = false;
+                const newMechanics = [...prevDb.mechanics];
+                const newBookings = [...prevDb.bookings];
+
+                const enRouteBookings = newBookings.filter(b => b.status === 'En Route' && b.mechanic && b.location);
+
+                if (enRouteBookings.length === 0) {
+                    return prevDb; 
+                }
+                
+                const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+                    const R = 6371; // Radius of the Earth in km
+                    const dLat = (lat2 - lat1) * Math.PI / 180;
+                    const dLon = (lon2 - lon1) * Math.PI / 180;
+                    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                    return R * c;
+                };
+
+                enRouteBookings.forEach(booking => {
+                    const mechanicIndex = newMechanics.findIndex(m => m.id === booking.mechanic!.id);
+                    if (mechanicIndex === -1) return;
+
+                    const mechanic = newMechanics[mechanicIndex];
+                    const customerLocation = booking.location!;
+                    const currentDistance = getDistanceInKm(mechanic.lat, mechanic.lng, customerLocation.lat, customerLocation.lng);
+
+                    if (currentDistance < 0.1) {
+                        const bookingIndex = newBookings.findIndex(b => b.id === booking.id);
+                        if (bookingIndex !== -1 && newBookings[bookingIndex].eta) {
+                            newBookings[bookingIndex] = { ...newBookings[bookingIndex], eta: undefined };
+                            dbChanged = true;
+                        }
+                        return;
+                    }
+
+                    const step = 0.1;
+                    const newLat = mechanic.lat + (customerLocation.lat - mechanic.lat) * step;
+                    const newLng = mechanic.lng + (customerLocation.lng - mechanic.lng) * step;
+
+                    newMechanics[mechanicIndex] = { ...mechanic, lat: newLat, lng: newLng };
+
+                    const newDistance = getDistanceInKm(newLat, newLng, customerLocation.lat, customerLocation.lng);
+                    const etaMins = Math.ceil((newDistance / 40) * 60);
+
+                    const bookingIndex = newBookings.findIndex(b => b.id === booking.id);
+                    if (bookingIndex !== -1) {
+                        newBookings[bookingIndex] = { ...newBookings[bookingIndex], eta: etaMins > 0 ? etaMins : 1 };
+                    }
+                    dbChanged = true;
+                });
+
+                if (dbChanged) {
+                    return { ...prevDb, mechanics: newMechanics, bookings: newBookings };
+                }
+
+                return prevDb;
+            });
+        }, 5000);
+
+        return () => clearInterval(simulationInterval);
+    }, []);
+
     // --- Service Operations ---
     const addService = async (service: Omit<Service, 'id'>) => {
         await delay(300);

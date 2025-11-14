@@ -141,24 +141,29 @@ const AdminCustomersScreen: React.FC = () => {
         try {
             if ('id' in customerData) {
                 await updateCustomer(customerData);
-                addNotification({ type: 'success', title: 'Customer Updated', message: `${customerData.name}'s profile has been saved.` });
+                // FIX: Add missing `recipientId` property.
+                addNotification({ type: 'success', title: 'Customer Updated', message: `${customerData.name}'s profile has been saved.`, recipientId: 'all' });
             } else {
                 await addCustomer(customerData);
-                addNotification({ type: 'success', title: 'Customer Added', message: `${customerData.name} has been added.` });
+                // FIX: Add missing `recipientId` property.
+                addNotification({ type: 'success', title: 'Customer Added', message: `${customerData.name} has been added.`, recipientId: 'all' });
             }
             setViewingCustomer(null);
         } catch (e) {
-            addNotification({ type: 'error', title: 'Save Failed', message: (e as Error).message });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'error', title: 'Save Failed', message: (e as Error).message, recipientId: 'all' });
         }
     };
 
     const handleDeleteCustomer = async (id: string) => {
         try {
             await deleteCustomer(id);
-            addNotification({ type: 'success', title: 'Customer Deleted', message: 'The customer profile has been removed.' });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'success', title: 'Customer Deleted', message: 'The customer profile has been removed.', recipientId: 'all' });
             setViewingCustomer(null);
         } catch (e) {
-            addNotification({ type: 'error', title: 'Deletion Failed', message: (e as Error).message });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'error', title: 'Deletion Failed', message: (e as Error).message, recipientId: 'all' });
         }
     };
     

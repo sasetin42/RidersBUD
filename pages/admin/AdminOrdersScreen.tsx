@@ -154,9 +154,11 @@ const AdminOrdersScreen: React.FC = () => {
     const handleUpdateStatus = async (orderId: string, status: OrderStatus) => {
         try {
             await updateOrderStatus(orderId, status);
-            addNotification({ type: 'success', title: 'Order Updated', message: `Order #${orderId.slice(-6)} status set to ${status}.` });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'success', title: 'Order Updated', message: `Order #${orderId.slice(-6)} status set to ${status}.`, recipientId: 'all' });
         } catch (e) {
-            addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message });
+            // FIX: Add missing `recipientId` property.
+            addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'all' });
         }
     };
     

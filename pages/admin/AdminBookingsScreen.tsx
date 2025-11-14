@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { Booking, BookingStatus, Customer } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -141,9 +142,11 @@ const AdminBookingsScreen: React.FC = () => {
         } else {
             try {
                 await updateBookingStatus(booking.id, newStatus);
-                addNotification({ type: 'success', title: 'Status Updated', message: `Booking #${booking.id.slice(-6)} is now ${newStatus}.` });
+                // FIX: Add missing `recipientId` property.
+                addNotification({ type: 'success', title: 'Status Updated', message: `Booking #${booking.id.slice(-6)} is now ${newStatus}.`, recipientId: 'all' });
             } catch (e) {
-                addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message });
+                // FIX: Add missing `recipientId` property.
+                addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'all' });
             }
         }
     };
@@ -152,10 +155,12 @@ const AdminBookingsScreen: React.FC = () => {
         if (cancellingBooking) {
             try {
                 await cancelBooking(cancellingBooking.id, reason);
-                addNotification({ type: 'success', title: 'Booking Cancelled', message: `Booking #${cancellingBooking.id.slice(-6)} has been cancelled.` });
+                // FIX: Add missing `recipientId` property.
+                addNotification({ type: 'success', title: 'Booking Cancelled', message: `Booking #${cancellingBooking.id.slice(-6)} has been cancelled.`, recipientId: 'all' });
                 setCancellingBooking(null);
             } catch (e) {
-                addNotification({ type: 'error', title: 'Cancellation Failed', message: (e as Error).message });
+                // FIX: Add missing `recipientId` property.
+                addNotification({ type: 'error', title: 'Cancellation Failed', message: (e as Error).message, recipientId: 'all' });
             }
         }
     };

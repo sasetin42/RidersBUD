@@ -401,7 +401,7 @@ const HomeScreen: React.FC = () => {
                                 <span className="font-medium text-light-gray">Status:</span>
                                 <span className="font-bold text-orange-400">{upcomingAppointment.status}</span>
                             </div>
-                            {upcomingAppointment.status === 'En Route' && upcomingAppointment.eta && (
+                            {upcomingAppointment.status === 'En Route' && upcomingAppointment.eta != null && (
                                 <div className="flex justify-between items-center text-sm mb-1 mt-1">
                                     <span className="font-medium text-light-gray">ETA:</span>
                                     <span className="font-bold text-yellow-300 animate-pulse">~{upcomingAppointment.eta} min</span>
