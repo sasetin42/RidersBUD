@@ -3,9 +3,17 @@ import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import Spinner from '../components/Spinner';
-import { Order } from '../types';
+import { Order, OrderStatus } from '../types';
 
 const OrderCard: React.FC<{ order: Order; isExpanded: boolean; onToggle: () => void; }> = ({ order, isExpanded, onToggle }) => {
+    
+    const statusColors: Record<OrderStatus, string> = { 
+        Processing: 'bg-blue-500/20 text-blue-300', 
+        Shipped: 'bg-yellow-500/20 text-yellow-300', 
+        Delivered: 'bg-green-500/20 text-green-300', 
+        Cancelled: 'bg-red-500/20 text-red-300' 
+    };
+    
     return (
         <div className="bg-dark-gray rounded-lg overflow-hidden">
             <div onClick={onToggle} className="p-4 cursor-pointer flex justify-between items-center">
@@ -14,10 +22,13 @@ const OrderCard: React.FC<{ order: Order; isExpanded: boolean; onToggle: () => v
                     <p className="text-sm text-light-gray">
                         {new Date(order.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </p>
+                     <span className={`mt-2 inline-block px-2 py-0.5 text-xs font-semibold rounded-full ${statusColors[order.status]}`}>
+                        {order.status}
+                    </span>
                 </div>
                 <div className="text-right">
                     <p className="font-bold text-lg text-primary">₱{order.total.toFixed(2)}</p>
-                    <div className="flex items-center gap-2 text-sm text-light-gray">
+                    <div className="flex items-center gap-2 text-sm text-light-gray mt-2">
                         <span>{isExpanded ? 'Hide Details' : 'Show Details'}</span>
                         <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

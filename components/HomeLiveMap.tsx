@@ -98,11 +98,8 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
 
         return () => {
             if (mapInstanceRef.current) {
-                // Remove event listeners before destroying the map
                 mapInstanceRef.current.off('click', mapClickHandler);
                 mapInstanceRef.current.off('popupopen', popupOpenHandler);
-
-                // Explicitly clear layers and remove the map instance
                 if (markersLayerRef.current) {
                     markersLayerRef.current.clearLayers();
                     mapInstanceRef.current.removeLayer(markersLayerRef.current);
@@ -110,11 +107,10 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
                 mapInstanceRef.current.remove();
                 mapInstanceRef.current = null;
             }
-            // Clear refs
             markersLayerRef.current = null;
             markersRef.current = {};
         };
-    }, [navigate]); // navigate is stable, so this effect runs only once.
+    }, [navigate]);
 
     useEffect(() => {
         if (!markersLayerRef.current || !mechanics) return;
@@ -189,7 +185,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
             const marker = markersRef.current[selectedMechanicId];
             const latLng = marker.getLatLng();
             markersLayerRef.current.zoomToShowLayer(marker, () => {
-                if (mapInstanceRef.current) { // Add check for map instance inside callback
+                if (mapInstanceRef.current) {
                     mapInstanceRef.current.setView(latLng, 15, { animate: true, pan: { duration: 0.5 }});
                     if (!marker.isPopupOpen()) {
                         marker.openPopup();
