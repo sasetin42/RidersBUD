@@ -9,11 +9,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import { getAIPartSuggestions } from '../services/geminiService';
 
-interface AISuggestion {
-    partName: string;
-    reason: string;
-}
-
+// FIX: Changed 'interface' to 'const' to define a functional component.
 const ComparisonModal: React.FC<{ items: Part[]; onClose: () => void }> = ({ items, onClose }) => {
     const features = ['price', 'category', 'description'];
     return (
@@ -139,28 +135,14 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
 
 const PartsStoreScreen: React.FC = () => {
     const { db, loading } = useDatabase();
-    const { user } = useAuth();
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
-    const [sortOption, setSortOption] = useState('name-asc');
     const [filterCategory, setFilterCategory] = useState('all');
     const [brandFilter, setBrandFilter] = useState('all');
-    const [priceRange, setPriceRange] = useState('all');
-    const [showInStock, setShowInStock] = useState(false);
     const [comparisonItems, setComparisonItems] = useState<Part[]>([]);
     const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
 
-    const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
-    const [isLoadingAI, setIsLoadingAI] = useState(false);
-    const [aiError, setAiError] = useState<string | null>(null);
-
     const parts = db?.parts || [];
-
-    useEffect(() => {
-        if (!searchQuery && sortOption === 'relevance') {
-            setSortOption('name-asc');
-        }
-    }, [searchQuery, sortOption]);
 
     const handleToggleCompare = useCallback((part: Part) => {
         setComparisonItems(prev => {
@@ -181,21 +163,6 @@ const PartsStoreScreen: React.FC = () => {
     const displayedParts = useMemo(() => {
         let filteredParts = [...parts];
         
-        if (showInStock) {
-            filteredParts = filteredParts.filter(p => p.stock > 0);
-        }
-
-        if (priceRange !== 'all') {
-            const [min, max] = priceRange.split('-').map(Number);
-            filteredParts = filteredParts.filter(p => {
-                const price = p.salesPrice || p.price;
-                if (max) {
-                    return price >= min && price <= max;
-                }
-                return price >= min;
-            });
-        }
-        
         const lowercasedQuery = searchQuery.toLowerCase();
         if (searchQuery) {
             filteredParts = filteredParts.filter(p => 
@@ -212,74 +179,18 @@ const PartsStoreScreen: React.FC = () => {
             filteredParts = filteredParts.filter(p => p.brand === brandFilter);
         }
 
-        filteredParts.sort((a, b) => {
-            switch (sortOption) {
-                case 'relevance':
-                    const getScore = (part: Part) => {
-                        let score = 0;
-                        if (part.name.toLowerCase().startsWith(lowercasedQuery)) score += 5;
-                        else if (part.name.toLowerCase().includes(lowercasedQuery)) score += 3;
-                        if (part.sku.toLowerCase().includes(lowercasedQuery)) score += 2;
-                        if (part.brand.toLowerCase().includes(lowercasedQuery)) score += 2;
-                        if (part.category.toLowerCase().includes(lowercasedQuery)) score += 1;
-                        if (part.description.toLowerCase().includes(lowercasedQuery)) score += 1;
-                        return score;
-                    };
-                    return getScore(b) - getScore(a);
-                case 'price-asc': return (a.salesPrice || a.price) - (b.salesPrice || b.price);
-                case 'price-desc': return (b.salesPrice || b.price) - (a.salesPrice || a.price);
-                case 'stock-desc': return b.stock - a.stock;
-                case 'name-asc':
-                default:
-                    return a.name.localeCompare(b.name);
-            }
-        });
+        filteredParts.sort((a, b) => a.name.localeCompare(b.name));
 
         return filteredParts;
-    }, [parts, searchQuery, sortOption, filterCategory, brandFilter, priceRange, showInStock]);
+    }, [parts, searchQuery, filterCategory, brandFilter]);
 
     const resetFilters = () => {
         setSearchQuery('');
-        setSortOption('name-asc');
         setFilterCategory('all');
         setBrandFilter('all');
-        setPriceRange('all');
-        setShowInStock(false);
     };
 
-    const handleGetSuggestions = async () => {
-        if (!user || user.vehicles.length === 0 || !db) {
-            setAiError("Please add a vehicle to your profile to get AI suggestions.");
-            return;
-        }
-        setIsLoadingAI(true);
-        setAiSuggestions([]);
-        setAiError(null);
-        try {
-            const primaryVehicle = user.vehicles.find(v => v.isPrimary) || user.vehicles[0];
-            const serviceHistory = db.bookings
-                .filter(b => b.customerName === user.name && b.status === 'Completed' && b.vehicle.plateNumber === primaryVehicle.plateNumber)
-                .map(b => b.service.name) || [];
-            const suggestions = await getAIPartSuggestions(primaryVehicle, serviceHistory, db.parts);
-            setAiSuggestions(suggestions);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred. Please try again.";
-            setAiError(errorMessage);
-        } finally {
-            setIsLoadingAI(false);
-        }
-    };
-    
-    const handleViewPart = (partName: string) => {
-        const part = db?.parts.find(p => p.name.trim().toLowerCase() === partName.trim().toLowerCase());
-        if (part) {
-            navigate(`/part/${part.id}`);
-        } else {
-            alert(`Could not find the part "${partName}".`);
-        }
-    };
-
-    const areFiltersActive = searchQuery || filterCategory !== 'all' || brandFilter !== 'all' || priceRange !== 'all' || showInStock;
+    const areFiltersActive = searchQuery || filterCategory !== 'all' || brandFilter !== 'all';
 
     return (
         <div className="flex flex-col h-full bg-secondary">
@@ -299,32 +210,6 @@ const PartsStoreScreen: React.FC = () => {
                         <select id="brand-filter" value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary h-[42px] text-sm">{partBrands.map(b => <option key={b} value={b}>{b === 'all' ? 'All Brands' : b}</option>)}</select>
                     </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                     <div>
-                        <label htmlFor="sort-order" className="block text-xs font-medium text-light-gray mb-1">Sort by</label>
-                        <select id="sort-order" value={sortOption} onChange={(e) => setSortOption(e.target.value)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary h-[42px] text-sm">
-                            {searchQuery && <option value="relevance">Relevance</option>}
-                            <option value="name-asc">Name (A-Z)</option>
-                            <option value="price-asc">Price: Low to High</option>
-                            <option value="price-desc">Price: High to Low</option>
-                            <option value="stock-desc">Stock: High to Low</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label htmlFor="price-range-filter" className="block text-xs font-medium text-light-gray mb-1">Price Range</label>
-                        <select id="price-range-filter" value={priceRange} onChange={e => setPriceRange(e.target.value)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary h-[42px] text-sm">
-                            <option value="all">All Prices</option>
-                            <option value="0-500">Under ₱500</option>
-                            <option value="500-1500">₱500 - ₱1,500</option>
-                            <option value="1500-3000">₱1,500 - ₱3,000</option>
-                            <option value="3000">Over ₱3,000</option>
-                        </select>
-                    </div>
-                </div>
-                 <div className="flex items-center bg-field rounded-lg px-4 py-2 w-full h-[42px] border border-dark-gray">
-                    <input id="availability-filter" type="checkbox" checked={showInStock} onChange={e => setShowInStock(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                    <label htmlFor="availability-filter" className="ml-2 text-sm font-medium text-white">In Stock Only</label>
-                </div>
                 {areFiltersActive && (
                     <button onClick={resetFilters} className="w-full text-center text-xs text-primary hover:underline">
                         Reset All Filters
@@ -333,39 +218,6 @@ const PartsStoreScreen: React.FC = () => {
             </div>
             
             <div className="flex-grow overflow-y-auto">
-                <div className="p-4">
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="text-lg font-bold text-primary mb-2">AI Part Recommendations</h3>
-                        {isLoadingAI ? <div className="flex justify-center items-center py-8"><Spinner size="md" color="text-white" /></div>
-                        : aiError ? (
-                            <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm text-center">
-                                <p className="font-semibold">Oops! Something went wrong.</p>
-                                <p className="mt-1">{aiError}</p>
-                                <button onClick={handleGetSuggestions} className="mt-3 bg-primary/20 text-primary font-semibold py-1 px-4 rounded-md text-xs hover:bg-primary/30">Try Again</button>
-                            </div>
-                        ) : aiSuggestions.length > 0 ? (
-                            <div className="space-y-3">
-                                {aiSuggestions.map((suggestion, index) => (
-                                    <div key={index} className="bg-field p-3 rounded-lg shadow-md">
-                                        <h4 className="font-bold text-white">{suggestion.partName}</h4>
-                                        <p className="text-sm text-light-gray mt-1 mb-3">{suggestion.reason}</p>
-                                        <div className="flex justify-end">
-                                            <button onClick={() => handleViewPart(suggestion.partName)} className="bg-primary text-white font-bold py-1.5 px-4 rounded-lg hover:bg-orange-600 transition text-sm">View Part</button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-4">
-                                <p className="text-light-gray mb-4 text-sm">Get personalized part recommendations for your primary vehicle.</p>
-                                <button onClick={handleGetSuggestions} disabled={!user?.vehicles || user.vehicles.length === 0} className="bg-primary text-white font-bold py-2 px-6 rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                                    Get Suggestions
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
                 <div className="p-4 grid grid-cols-2 gap-4">
                     {loading ? <div className="col-span-2 flex justify-center pt-10"><Spinner size="lg" /></div>
                     : displayedParts.length > 0 ? displayedParts.map(part => <PartCard key={part.id} part={part} onToggleCompare={handleToggleCompare} isComparing={comparisonItems.some(p => p.id === part.id)} />)

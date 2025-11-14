@@ -25,7 +25,7 @@ const BottomNav: React.FC = () => {
     const { itemCount: wishlistItemCount } = useWishlist();
 
     return (
-        <div className="flex justify-around items-center bg-[#1D1D1D] border-t border-dark-gray shadow-lg">
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50 flex justify-around items-center bg-[#1D1D1D] border-t border-dark-gray shadow-lg">
             <NavIcon 
                 to="/" 
                 label="Home" 

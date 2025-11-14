@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import AdminSidebar from './AdminSidebar';
 import AdminHeader from './AdminHeader';
@@ -16,7 +17,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             
             <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
                 <AdminHeader onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-admin-bg p-4 sm:p-6">
+                <main className="flex-1 overflow-x-hidden bg-admin-bg p-4 sm:p-6">
                     <div className="max-w-full mx-auto">
                         {children}
                     </div>

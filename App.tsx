@@ -355,8 +355,8 @@ const AppContent: React.FC = () => {
                     path="/mechanic/*"
                     element={
                         isMechanicAuthenticated ? (
-                            <div className="max-w-md mx-auto h-screen bg-secondary text-white font-sans flex flex-col overflow-hidden">
-                                <div className="flex-grow overflow-y-auto">
+                            <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
+                                <div>
                                     <Routes>
                                         <Route path="dashboard" element={<MechanicDashboardScreen />} />
                                         <Route path="jobs" element={<MechanicJobsScreen />} />
@@ -380,8 +380,8 @@ const AppContent: React.FC = () => {
                 <Route
                     path="/*"
                     element={
-                        <div className="max-w-md mx-auto h-screen bg-secondary text-white font-sans flex flex-col overflow-hidden">
-                            <div className="flex-grow overflow-y-auto">
+                        <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
+                            <div>
                                 <Routes>
                                     {isAuthenticated ? (
                                         <>
@@ -424,10 +424,10 @@ const AppContent: React.FC = () => {
                                 <>
                                     <button
                                         onClick={() => setIsAssistantOpen(true)}
-                                        className="absolute bottom-20 right-5 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition-transform transform hover:scale-110 active:scale-100 z-[5]"
+                                        className="fixed bottom-20 right-5 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition-transform transform hover:scale-110 active:scale-100 z-[5]"
                                         aria-label="Open AI Assistant"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
+                                        <svg xmlns="http://www.w.org/2000/svg" className="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
                                           <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
                                           <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
                                         </svg>
