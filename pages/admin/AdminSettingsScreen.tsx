@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Settings, Role, AdminModule, PermissionLevel } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -327,6 +326,9 @@ const AdminSettingsScreen: React.FC = () => {
                                     {errors.maxBookingsPerSlot && <p className="text-red-400 text-xs mt-1">{errors.maxBookingsPerSlot}</p>}
                                 </div>
                             </div>
+                            <div className="mt-6 border-t border-admin-border pt-6">
+                                <ToggleSwitch label="Email on New Booking" enabled={settings.emailOnNewBooking} onChange={(val) => handleLocalSettingsChange({ emailOnNewBooking: val })} />
+                            </div>
                         </div>
 
                          {/* Role Management Card */}
@@ -423,7 +425,6 @@ const AdminSettingsScreen: React.FC = () => {
                         <div className="bg-admin-card p-6 rounded-lg shadow border border-admin-border">
                             <h2 className="text-xl font-bold mb-4">Notification Settings</h2>
                             <div className="space-y-4">
-                                <ToggleSwitch label="Email on New Booking" enabled={settings.emailOnNewBooking} onChange={(val) => handleLocalSettingsChange({ emailOnNewBooking: val })} />
                                 <ToggleSwitch label="Email on Cancellation" enabled={settings.emailOnCancellation} onChange={(val) => handleLocalSettingsChange({ emailOnCancellation: val })} />
                             </div>
                         </div>

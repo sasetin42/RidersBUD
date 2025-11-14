@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
 import { Booking, BookingStatus } from '../../types';
@@ -50,73 +50,42 @@ const JobHistoryCard: React.FC<{ booking: Booking }> = ({ booking }) => {
 const MechanicJobsScreen: React.FC = () => {
     const { db, loading } = useDatabase();
     const { mechanic } = useMechanicAuth();
-    const [activeTab, setActiveTab] = useState<'upcoming' | 'inProgress' | 'past'>('upcoming');
     
-    const { upcomingJobs, inProgressJobs, pastJobs } = useMemo(() => {
+    const inProgressJobs = useMemo(() => {
         if (!mechanic || !db) {
-            return { upcomingJobs: [], inProgressJobs: [], pastJobs: [] };
+            return [];
         }
 
-        const myJobs = db.bookings
-            .filter(b => b.mechanic?.id === mechanic.id)
+        return db.bookings
+            .filter(b => b.mechanic?.id === mechanic.id && b.status === 'In Progress')
             .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             
-        const upcoming = myJobs.filter(j => ['Upcoming', 'En Route', 'Booking Confirmed', 'Mechanic Assigned', 'Reschedule Requested'].includes(j.status));
-        const inProgress = myJobs.filter(j => j.status === 'In Progress');
-        const past = myJobs.filter(j => j.status === 'Completed' || j.status === 'Cancelled');
-        
-        return { upcomingJobs: upcoming, inProgressJobs: inProgress, pastJobs: past };
     }, [db, mechanic]);
 
 
     if (loading || !db || !mechanic) {
         return (
             <div className="flex flex-col h-full bg-secondary">
-                <Header title="Job History" />
+                <Header title="In Progress Jobs" />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
                 </div>
             </div>
         );
     }
-    
-    const jobsToDisplay = activeTab === 'upcoming' ? upcomingJobs : activeTab === 'inProgress' ? inProgressJobs : pastJobs;
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title="Job History" />
-
-            <div className="border-b border-dark-gray flex-shrink-0 px-4">
-                <nav className="flex space-x-4" aria-label="Tabs">
-                     <button
-                        onClick={() => setActiveTab('upcoming')}
-                        className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'upcoming' ? 'border-primary text-primary' : 'border-transparent text-light-gray hover:text-white'}`}
-                    >
-                        Upcoming ({upcomingJobs.length})
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('inProgress')}
-                        className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'inProgress' ? 'border-primary text-primary' : 'border-transparent text-light-gray hover:text-white'}`}
-                    >
-                        In Progress ({inProgressJobs.length})
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('past')}
-                        className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${activeTab === 'past' ? 'border-primary text-primary' : 'border-transparent text-light-gray hover:text-white'}`}
-                    >
-                        Past Jobs ({pastJobs.length})
-                    </button>
-                </nav>
-            </div>
+            <Header title="In Progress Jobs" />
             
             <main className="flex-grow overflow-y-auto p-4">
-                {jobsToDisplay.length > 0 ? (
+                {inProgressJobs.length > 0 ? (
                     <div className="space-y-4">
-                        {jobsToDisplay.map(job => <JobHistoryCard key={job.id} booking={job} />)}
+                        {inProgressJobs.map(job => <JobHistoryCard key={job.id} booking={job} />)}
                     </div>
                 ) : (
                     <div className="text-center py-16 text-light-gray">
-                        <p>No jobs in this category.</p>
+                        <p>No jobs are currently in progress.</p>
                     </div>
                 )}
             </main>
