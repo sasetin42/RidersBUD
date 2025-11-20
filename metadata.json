@@ -1,0 +1,8 @@
+{
+  "name": "RidersBUD",
+  "description": "A user-friendly platform for vehicle owners to book repair services, track job progress, and connect with mechanics. Includes e-commerce for parts and AI-driven service suggestions.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
