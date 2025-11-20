@@ -4,6 +4,7 @@ import Modal from '../../components/admin/Modal';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import LocationMap from '../../components/admin/LocationMap';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
     <div className="bg-admin-card p-5 rounded-xl shadow-lg flex items-center gap-4 border border-admin-border">
@@ -43,7 +44,6 @@ const MechanicFormModal: React.FC<{
                 password: formData.password || mechanic.password // Keep old password if new one is not provided
             });
         } else {
-            // Fix: Added missing registrationDate and birthday properties to satisfy the type constraints of the onSave function parameter.
              onSave({
                 ...formData,
                 password: formData.password || 'password123', // Default password for new mechanics
@@ -54,6 +54,7 @@ const MechanicFormModal: React.FC<{
             });
         }
         setIsSaving(false);
+        onClose();
     };
     
     return (
@@ -79,10 +80,27 @@ const MechanicFormModal: React.FC<{
 
 const AdminMechanicsScreen: React.FC = () => {
     const { db, updateMechanicStatus, deleteMechanic, updateMechanic, addMechanic, loading } = useDatabase();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [editingMechanic, setEditingMechanic] = useState<Mechanic | undefined>(undefined);
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive' | 'Pending'>('all');
+
+    useEffect(() => {
+        const state = location.state as { viewMechanicId?: string };
+        const mechanicIdToView = state?.viewMechanicId;
+
+        if (mechanicIdToView && db) {
+            const mechanicToView = db.mechanics.find(m => m.id === mechanicIdToView);
+            if (mechanicToView) {
+                setEditingMechanic(mechanicToView);
+                setIsFormModalOpen(true);
+                // Clear state from location to prevent modal re-opening on navigation
+                navigate(location.pathname, { replace: true, state: {} });
+            }
+        }
+    }, [location.state, db, navigate, location.pathname]);
 
     const filteredMechanics = useMemo(() => {
         if (!db) return [];
@@ -101,14 +119,11 @@ const AdminMechanicsScreen: React.FC = () => {
         if ('id' in mechanicData) {
             updateMechanic(mechanicData);
         } else {
-            // Fix: Add missing properties for new mechanics.
             addMechanic({
                 ...mechanicData,
                 status: 'Pending',
                 rating: 0,
                 reviews: 0,
-                registrationDate: new Date().toISOString().split('T')[0],
-                birthday: ''
             });
         }
         setIsFormModalOpen(false);
@@ -132,7 +147,7 @@ const AdminMechanicsScreen: React.FC = () => {
     
     return (
         <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-shrink-0 px-6 lg:px-8 pt-6">
+            <div className="flex-shrink-0">
                 <h1 className="text-3xl font-bold">Manage Mechanics</h1>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 my-6">
                     <StatCard title="Total Mechanics" value={stats.total} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21V9a4 4 0 00-4-4H9" /></svg>} />
@@ -153,39 +168,41 @@ const AdminMechanicsScreen: React.FC = () => {
                     </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-auto px-6 lg:px-8 mt-4">
-                <table className="w-full text-left border-collapse">
-                    <thead className="sticky top-0 bg-admin-bg z-10">
-                        <tr>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Name</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Contact</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Rating</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Joined</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Status</th>
-                            <th className="py-3 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-admin-border">
-                        {filteredMechanics.map((mechanic) => (
-                             <tr key={mechanic.id} className="hover:bg-admin-card">
-                                <td className="py-3 px-2 text-sm">
-                                    <div className="flex items-center gap-3"><img src={mechanic.imageUrl} alt={mechanic.name} className="w-10 h-10 rounded-full object-cover" /><span>{mechanic.name}</span></div>
-                                </td>
-                                <td className="py-3 px-2 text-xs"><div>{mechanic.email}</div><div className="text-admin-text-secondary">{mechanic.phone}</div></td>
-                                <td className="py-3 px-2 text-sm">⭐ {mechanic.rating.toFixed(1)}</td>
-                                <td className="py-3 px-2 text-xs">{mechanic.registrationDate ? new Date(mechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString() : 'N/A'}</td>
-                                <td className="py-3 px-2"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[mechanic.status]}`}>{mechanic.status}</span></td>
-                                <td className="py-3 px-2 text-sm whitespace-nowrap">
-                                    <div className="flex items-center gap-4">
-                                        <button onClick={() => { setEditingMechanic(mechanic); setIsFormModalOpen(true); }} className="font-semibold text-blue-400 hover:text-blue-300">Edit</button>
-                                        <button onClick={() => handleDeleteMechanic(mechanic)} className="font-semibold text-red-400 hover:text-red-300">Delete</button>
-                                         {mechanic.status === 'Pending' && <button onClick={() => updateMechanicStatus(mechanic.id, 'Active')} className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded-md">Approve</button>}
-                                    </div>
-                                </td>
+            <div className="flex-1 overflow-auto mt-4">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[800px]">
+                        <thead className="sticky top-0 bg-admin-bg z-10">
+                            <tr>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Name</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Contact</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Rating</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Joined</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Status</th>
+                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="divide-y divide-admin-border">
+                            {filteredMechanics.map((mechanic) => (
+                                <tr key={mechanic.id} className="hover:bg-admin-card">
+                                    <td className="py-3 px-2 text-sm">
+                                        <div className="flex items-center gap-3"><img src={mechanic.imageUrl} alt={mechanic.name} className="w-10 h-10 rounded-full object-cover" /><span>{mechanic.name}</span></div>
+                                    </td>
+                                    <td className="py-3 px-2 text-xs"><div>{mechanic.email}</div><div className="text-admin-text-secondary">{mechanic.phone}</div></td>
+                                    <td className="py-3 px-2 text-sm">⭐ {mechanic.rating.toFixed(1)}</td>
+                                    <td className="py-3 px-2 text-xs">{mechanic.registrationDate ? new Date(mechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString() : 'N/A'}</td>
+                                    <td className="py-3 px-2"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[mechanic.status]}`}>{mechanic.status}</span></td>
+                                    <td className="py-3 px-2 text-sm whitespace-nowrap">
+                                        <div className="flex items-center gap-4">
+                                            <button onClick={() => { setEditingMechanic(mechanic); setIsFormModalOpen(true); }} className="font-semibold text-blue-400 hover:text-blue-300">Edit</button>
+                                            <button onClick={() => handleDeleteMechanic(mechanic)} className="font-semibold text-red-400 hover:text-red-300">Delete</button>
+                                            {mechanic.status === 'Pending' && <button onClick={() => updateMechanicStatus(mechanic.id, 'Active')} className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded-md">Approve</button>}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
             {isFormModalOpen && <MechanicFormModal mechanic={editingMechanic} onClose={() => setIsFormModalOpen(false)} onSave={handleSaveMechanic} />}
         </div>

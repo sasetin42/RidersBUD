@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-secondary text-white font-sans;
+  }
+}
+
+/* Modern, beautiful scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #171617; /* secondary */
+}
+::-webkit-scrollbar-thumb {
+    background-color: #2A2A2A; /* dark-gray */
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background-color: #FE7803; /* primary */
+}
+
+/* Custom styles for Leaflet marker clusters */
+.marker-cluster-ridersbud {
+    background-color: rgba(254, 120, 3, 0.7);
+    border: 2px solid #FE7803;
+    border-radius: 50%;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 0 8px rgba(254, 120, 3, 0.5);
+}
+.marker-cluster-ridersbud div {
+    width: 36px;
+    height: 36px;
+    margin-left: 2px;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.marker-cluster-ridersbud span {
+    font-size: 14px;
+}
+/* Custom styles for Admin LiveMap logo markers */
+.custom-marker-div-icon {
+    background: transparent;
+    border: none;
+}
+.custom-marker-container {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    transition: transform 0.2s ease-out;
+}
+.custom-marker-image {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #28a745; /* Green for available */
+    box-shadow: 0 0 8px rgba(40, 167, 69, 0.7);
+    transition: all 0.2s ease-out;
+}
+.custom-marker-image.unavailable {
+    border-color: #dc3545; /* Red for unavailable */
+    box-shadow: 0 0 8px rgba(220, 53, 69, 0.7);
+    filter: grayscale(80%);
+}
+.custom-marker-container.selected .custom-marker-image {
+    transform: scale(1.25);
+    box-shadow: 0 0 12px rgba(254, 120, 3, 0.9);
+    border-color: #FE7803;
+}
+
+
+.pulse-green {
+    animation: pulse-green 2s infinite;
+}
+
+/* Custom Popup Styles for Home Screen Map */
+.ridersbud-popup .leaflet-popup-content-wrapper {
+    background: #2A2A2A; /* dark-gray */
+    color: #fff;
+    border: 1px solid #4a4a4a;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    padding: 0;
+}
+.ridersbud-popup .leaflet-popup-content {
+    margin: 0;
+    width: 180px !important; /* Override Leaflet's auto width */
+}
+.ridersbud-popup .leaflet-popup-tip {
+    background: #2A2A2A;
+}
+.ridersbud-popup-inner {
+    font-family: 'Poppins', sans-serif;
+    padding: 8px;
+}
+.ridersbud-popup-img {
+    width: 100%;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+.ridersbud-popup-name {
+    font-weight: 700;
+    font-size: 1rem;
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
+}
+.ridersbud-popup-spec {
+    font-size: 0.75rem;
+    color: #A0A0A0; /* light-gray */
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ridersbud-popup-rating {
+    font-size: 0.8rem;
+    color: #facc15; /* yellow-400 */
+    font-weight: 600;
+    margin: 0;
+}
+.ridersbud-popup-btn {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    background-color: #FE7803; /* primary */
+    color: white;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    width: 100%;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+.ridersbud-popup-btn:hover {
+    background-color: #d96802;
+}
+
+/* Move leaflet attribution to bottom left to avoid overlapping with AI chat button */
+.leaflet-control-container .leaflet-bottom.leaflet-right {
+    right: auto;
+    left: 10px;
+}

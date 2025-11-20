@@ -2,6 +2,17 @@
 
 // This file contains all the type definitions for the application.
 
+export interface Notification {
+    id: string;
+    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job' | 'success' | 'error';
+    title: string;
+    message: string;
+    timestamp: number;
+    read: boolean;
+    link?: string;
+    recipientId: 'all' | `customer-${string}` | `mechanic-${string}`;
+}
+
 export interface Service {
     id: string;
     name: string;
@@ -19,10 +30,11 @@ export interface Part {
     description: string;
     price: number;
     salesPrice?: number;
-    imageUrl: string;
+    imageUrls: string[];
     category: string;
     sku: string;
     stock: number;
+    brand: string;
 }
 
 export type Product = Service | Part;
@@ -64,6 +76,7 @@ export interface Mechanic {
     reviews: number;
     specializations: string[];
     status: 'Active' | 'Inactive' | 'Pending';
+    isOnline?: boolean;
     imageUrl: string;
     lat: number;
     lng: number;
@@ -93,7 +106,7 @@ export interface Vehicle {
     model: string;
     year: number;
     plateNumber: string;
-    imageUrl: string;
+    imageUrls: string[];
     isPrimary?: boolean;
     vin?: string;
     mileage?: number;
@@ -101,7 +114,7 @@ export interface Vehicle {
     insurancePolicyNumber?: string;
 }
 
-export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Completed' | 'Cancelled';
+export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Completed' | 'Cancelled' | 'Reschedule Requested';
 
 export interface Booking {
     id: string;
@@ -112,12 +125,16 @@ export interface Booking {
     time: string;
     status: BookingStatus;
     vehicle: Vehicle;
+    location?: { lat: number, lng: number };
     statusHistory?: { status: string, timestamp: string }[];
     beforeImages?: string[];
     afterImages?: string[];
     notes?: string;
     cancellationReason?: string;
+    rescheduleDetails?: { newDate: string; newTime: string; reason: string };
     isReviewed?: boolean;
+    isPaid?: boolean;
+    eta?: number; // Estimated time of arrival in minutes
 }
 
 export interface Customer {
@@ -131,6 +148,7 @@ export interface Customer {
     lat?: number;
     lng?: number;
     favoriteMechanicIds?: string[];
+    subscribedMechanicIds?: string[];
 }
 
 export type OrderStatus = 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
@@ -155,6 +173,17 @@ export interface Banner {
     category: 'Services' | 'Store' | 'Reminders' | 'Booking';
     startDate: string;
     endDate: string;
+}
+
+export interface PayoutRequest {
+    id: string;
+    mechanicId: string;
+    mechanicName: string;
+    amount: number;
+    requestDate: string;
+    status: 'Pending' | 'Approved' | 'Rejected';
+    processDate?: string;
+    rejectionReason?: string;
 }
 
 export interface FAQItem {
@@ -188,6 +217,9 @@ export interface Settings {
     adminSidebarLogoUrl: string;
     serviceCategories: string[];
     partCategories: string[];
+    minimumPayout: number;
+    maximumPayout: number;
+    payoutSchedule: 'Manual' | 'Weekly' | 'Bi-weekly';
 }
 
 export type PermissionLevel = 'none' | 'view' | 'edit';
@@ -220,6 +252,7 @@ export interface Task {
     dueDate: string;
     isComplete: boolean;
     priority: TaskPriority;
+    completionDate?: string;
 }
 
 export interface Reminder {
@@ -237,6 +270,27 @@ export interface Warranty {
     expiryDate: string;
 }
 
+export interface RentalCar {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    type: 'Sedan' | 'SUV' | 'Van' | 'Luxury';
+    pricePerDay: number;
+    seats: number;
+    imageUrl: string;
+    isAvailable: boolean;
+}
+
+export interface RentalBooking {
+    id: string;
+    carId: string;
+    customerName: string;
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+    totalPrice: number;
+}
+
 export interface Database {
     services: Service[];
     parts: Part[];
@@ -250,4 +304,7 @@ export interface Database {
     adminUsers: AdminUser[];
     roles: Role[];
     tasks: Task[];
+    payouts: PayoutRequest[];
+    rentalCars: RentalCar[];
+    rentalBookings: RentalBooking[];
 }
