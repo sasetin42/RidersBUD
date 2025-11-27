@@ -4,7 +4,7 @@
 
 export interface Notification {
     id: string;
-    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job';
+    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job' | 'success' | 'error';
     title: string;
     message: string;
     timestamp: number;
@@ -34,6 +34,7 @@ export interface Part {
     category: string;
     sku: string;
     stock: number;
+    brand: string;
 }
 
 export type Product = Service | Part;
@@ -105,7 +106,7 @@ export interface Vehicle {
     model: string;
     year: number;
     plateNumber: string;
-    imageUrl: string;
+    imageUrls: string[];
     isPrimary?: boolean;
     vin?: string;
     mileage?: number;
@@ -133,6 +134,7 @@ export interface Booking {
     rescheduleDetails?: { newDate: string; newTime: string; reason: string };
     isReviewed?: boolean;
     isPaid?: boolean;
+    eta?: number; // Estimated time of arrival in minutes
 }
 
 export interface Customer {
@@ -146,6 +148,7 @@ export interface Customer {
     lat?: number;
     lng?: number;
     favoriteMechanicIds?: string[];
+    subscribedMechanicIds?: string[];
 }
 
 export type OrderStatus = 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
@@ -214,6 +217,9 @@ export interface Settings {
     adminSidebarLogoUrl: string;
     serviceCategories: string[];
     partCategories: string[];
+    minimumPayout: number;
+    maximumPayout: number;
+    payoutSchedule: 'Manual' | 'Weekly' | 'Bi-weekly';
 }
 
 export type PermissionLevel = 'none' | 'view' | 'edit';
@@ -246,6 +252,7 @@ export interface Task {
     dueDate: string;
     isComplete: boolean;
     priority: TaskPriority;
+    completionDate?: string;
 }
 
 export interface Reminder {
@@ -263,6 +270,27 @@ export interface Warranty {
     expiryDate: string;
 }
 
+export interface RentalCar {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    type: 'Sedan' | 'SUV' | 'Van' | 'Luxury';
+    pricePerDay: number;
+    seats: number;
+    imageUrl: string;
+    isAvailable: boolean;
+}
+
+export interface RentalBooking {
+    id: string;
+    carId: string;
+    customerName: string;
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+    totalPrice: number;
+}
+
 export interface Database {
     services: Service[];
     parts: Part[];
@@ -277,4 +305,6 @@ export interface Database {
     roles: Role[];
     tasks: Task[];
     payouts: PayoutRequest[];
+    rentalCars: RentalCar[];
+    rentalBookings: RentalBooking[];
 }

@@ -4,6 +4,7 @@ import Modal from '../../components/admin/Modal';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import LocationMap from '../../components/admin/LocationMap';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
     <div className="bg-admin-card p-5 rounded-xl shadow-lg flex items-center gap-4 border border-admin-border">
@@ -53,6 +54,7 @@ const MechanicFormModal: React.FC<{
             });
         }
         setIsSaving(false);
+        onClose();
     };
     
     return (
@@ -78,10 +80,27 @@ const MechanicFormModal: React.FC<{
 
 const AdminMechanicsScreen: React.FC = () => {
     const { db, updateMechanicStatus, deleteMechanic, updateMechanic, addMechanic, loading } = useDatabase();
+    const location = useLocation();
+    const navigate = useNavigate();
     const [editingMechanic, setEditingMechanic] = useState<Mechanic | undefined>(undefined);
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive' | 'Pending'>('all');
+
+    useEffect(() => {
+        const state = location.state as { viewMechanicId?: string };
+        const mechanicIdToView = state?.viewMechanicId;
+
+        if (mechanicIdToView && db) {
+            const mechanicToView = db.mechanics.find(m => m.id === mechanicIdToView);
+            if (mechanicToView) {
+                setEditingMechanic(mechanicToView);
+                setIsFormModalOpen(true);
+                // Clear state from location to prevent modal re-opening on navigation
+                navigate(location.pathname, { replace: true, state: {} });
+            }
+        }
+    }, [location.state, db, navigate, location.pathname]);
 
     const filteredMechanics = useMemo(() => {
         if (!db) return [];
@@ -105,8 +124,6 @@ const AdminMechanicsScreen: React.FC = () => {
                 status: 'Pending',
                 rating: 0,
                 reviews: 0,
-                registrationDate: new Date().toISOString().split('T')[0],
-                birthday: ''
             });
         }
         setIsFormModalOpen(false);
