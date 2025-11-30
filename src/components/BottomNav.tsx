@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
@@ -18,17 +17,29 @@ const NavIcon = ({ icon, label, to, itemCount }: { icon: React.ReactNode; label:
         {({ isActive }) => (
             <>
                 {isActive && (
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-gradient-primary rounded-b-full shadow-glow-sm animate-scaleUp" />
+                    <>
+                        {/* Active indicator bar with glow */}
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 gradient-primary rounded-b-full shadow-glow animate-scale-in" />
+                        {/* Subtle background glow */}
+                        <div className="absolute inset-0 bg-gradient-radial opacity-20 pointer-events-none" />
+                    </>
                 )}
+
                 <div className="relative group-hover:scale-110 transition-transform duration-300 flex items-center justify-center">
-                    {icon}
+                    <div className={`${isActive ? 'drop-shadow-glow' : ''}`}>
+                        {icon}
+                    </div>
+
                     {itemCount !== undefined && itemCount > 0 && (
-                        <span className="absolute -top-1 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-gradient-primary text-white text-[10px] font-bold shadow-glow-sm animate-scaleUp border border-white/20">
+                        <span className="absolute -top-1 -right-2 flex h-5 w-5 items-center justify-center rounded-full gradient-primary text-white text-[10px] font-bold shadow-glow border border-white/30 animate-scale-in">
                             {itemCount}
                         </span>
                     )}
                 </div>
-                <span className="mt-1.5 font-medium leading-tight">{label}</span>
+
+                <span className={`mt-1.5 font-medium leading-tight transition-all duration-300 ${isActive ? 'drop-shadow-glow' : ''}`}>
+                    {label}
+                </span>
             </>
         )}
     </NavLink>
@@ -41,7 +52,11 @@ const BottomNav: React.FC = () => {
 
     return (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50">
-            <div className="flex justify-around items-center glass-dark border-t border-white/10 shadow-2xl shadow-primary/5 animate-slideInUp">
+            {/* Glass navigation bar with enhanced effects */}
+            <div className="relative flex justify-around items-center glass-dark border-t border-glass-light shadow-glass backdrop-blur-xl animate-slide-up">
+                {/* Top highlight line */}
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+
                 <NavIcon
                     to="/"
                     label="Home"

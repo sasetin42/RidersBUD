@@ -87,23 +87,24 @@ const JobProgressModal: React.FC<{
     );
 
     return (
-        <div className="fixed inset-0 bg-secondary/90 backdrop-blur-md flex flex-col z-50 p-0 sm:p-4 animate-fadeIn" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xl flex flex-col z-50 p-0 sm:p-4 animate-fade-in" role="dialog" aria-modal="true">
             {fullScreenImage && (
-                <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4 animate-fadeIn" onClick={() => setFullScreenImage(null)}>
-                    <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+                <div className="fixed inset-0 bg-black/95 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in" onClick={() => setFullScreenImage(null)}>
+                    <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-2xl shadow-glass" />
                 </div>
             )}
-            <div className="relative glass border border-white/10 rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full shadow-2xl shadow-primary/10 overflow-hidden animate-slideInUp">
-                <header className="flex-shrink-0 p-4 border-b border-white/10 flex items-center justify-center bg-gradient-to-r from-secondary/50 to-dark-gray/50">
-                    <h2 className="text-xl font-bold text-white">Job Progress</h2>
-                    <button onClick={onClose} className="absolute right-4 text-white/70 hover:text-white transition-colors"><X className="w-6 h-6" /></button>
+            <div className="relative glass-modal rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full shadow-glass overflow-hidden animate-slide-up">
+                <header className="flex-shrink-0 p-4 border-b border-glass-light flex items-center justify-center relative">
+                    <div className="absolute inset-0 gradient-radial opacity-20 pointer-events-none" />
+                    <h2 className="text-xl font-bold gradient-text relative z-10">Job Progress</h2>
+                    <button onClick={onClose} className="absolute right-4 z-10 btn-glass p-2 rounded-xl hover:scale-110 transition-all"><X className="w-6 h-6" /></button>
                 </header>
                 <main className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
-                    <div className="glass-light p-4 rounded-xl flex items-center gap-4 border border-white/10 hover:border-primary/20 transition-all duration-300">
-                        <img src={booking.mechanic?.imageUrl} alt={booking.mechanic?.name} className="w-16 h-16 rounded-full object-cover border-2 border-primary shadow-lg" />
+                    <div className="glass-card p-4 flex items-center gap-4 glass-hover">
+                        <img src={booking.mechanic?.imageUrl} alt={booking.mechanic?.name} className="w-16 h-16 rounded-full object-cover border-2 border-primary shadow-glow" />
                         <div>
-                            <p className="font-bold text-lg text-white">{booking.mechanic?.name}</p>
-                            <p className="font-semibold text-primary">{booking.service.name}</p>
+                            <p className="font-bold text-lg gradient-text">{booking.mechanic?.name}</p>
+                            <p className="font-semibold text-primary drop-shadow-glow">{booking.service.name}</p>
                             <p className="text-sm text-light-gray">{booking.vehicle.make} {booking.vehicle.model}</p>
                         </div>
                     </div>
@@ -410,32 +411,34 @@ const HomeScreen: React.FC = () => {
                 </div>
 
                 {!user?.vehicles || user.vehicles.length === 0 ? (
-                    <div className="px-6 mb-8 animate-slideInUp delay-100">
-                        <div className="glass border border-primary/30 p-6 rounded-2xl flex flex-col items-center text-center shadow-xl hover:border-primary/60 hover:shadow-glow-sm transition-all duration-300 group">
-                            <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mb-4">
-                                <Plus className="h-8 w-8 text-primary" />
+                    <div className="px-6 mb-8 animate-slide-up delay-100">
+                        <div className="glass-card border-primary-glow p-6 flex flex-col items-center text-center shadow-glass glass-hover group">
+                            <div className="w-16 h-16 gradient-radial rounded-full flex items-center justify-center mb-4 animate-glow-pulse">
+                                <Plus className="h-8 w-8 text-primary drop-shadow-glow" />
                             </div>
-                            <h3 className="font-bold text-white text-xl">Add a Vehicle</h3>
+                            <h3 className="font-bold gradient-text text-xl">Add a Vehicle</h3>
                             <p className="text-sm text-light-gray mt-2 mb-6 max-w-xs">Add a vehicle to your garage to get personalized AI suggestions and faster bookings.</p>
-                            <button onClick={() => navigate('/my-garage')} className="bg-gradient-to-r from-primary to-orange-600 text-white font-bold py-3 px-8 rounded-xl hover:shadow-lg hover:scale-105 transition-all duration-300">
+                            <button onClick={() => navigate('/my-garage')} className="gradient-primary text-white font-bold py-3 px-8 rounded-xl shadow-glow hover:shadow-glow-lg hover:scale-105 transition-all duration-300">
                                 Go to My Garage
                             </button>
                         </div>
                     </div>
                 ) : (
-                    <div className="px-6 mb-8 animate-slideInUp delay-100">
-                        <div className="glass-hover border border-white/10 p-4 rounded-2xl flex items-center justify-between shadow-lg cursor-pointer group" onClick={() => navigate('/my-garage')}>
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                                    <Car className="h-7 w-7 text-primary" />
+                    <div className="px-6 mb-8 animate-slide-up delay-100">
+                        <div className="glass-card glass-hover cursor-pointer group" onClick={() => navigate('/my-garage')}>
+                            <div className="flex items-center justify-between p-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 gradient-radial rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                        <Car className="h-7 w-7 text-primary drop-shadow-glow" />
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-white text-lg group-hover:text-primary transition-colors">{(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).year} {(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).make} {(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).model}</p>
+                                        <p className="text-sm text-light-gray font-mono opacity-80">{(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).plateNumber}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="font-bold text-white text-lg">{(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).year} {(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).make} {(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).model}</p>
-                                    <p className="text-sm text-light-gray font-mono opacity-80">{(user.vehicles.find(v => v.isPrimary) || user.vehicles[0]).plateNumber}</p>
+                                <div className="w-8 h-8 rounded-full btn-glass flex items-center justify-center">
+                                    <ChevronRight className="h-5 w-5 text-light-gray group-hover:text-primary transition-colors" />
                                 </div>
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">
-                                <ChevronRight className="h-5 w-5 text-light-gray group-hover:text-white" />
                             </div>
                         </div>
                     </div>
@@ -532,37 +535,39 @@ const HomeScreen: React.FC = () => {
                         <span className="w-1.5 h-6 bg-primary rounded-full"></span>
                         AI Service Suggestions
                     </h2>
-                    <div className="glass border border-white/10 p-5 rounded-2xl shadow-lg">
-                        {isLoadingAI ? <div className="flex justify-center items-center py-8"><Spinner size="md" color="text-primary" /></div>
+                    <div className="glass-card shadow-glass">
+                        {isLoadingAI ? <div className="flex justify-center items-center py-8"><Spinner size="md" /></div>
                             : aiError ? (
-                                <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm text-center">
+                                <div className="p-4 glass-card border-red-500/50 text-red-400 text-sm text-center shadow-[0_0_20px_rgba(239,68,68,0.3)]">
                                     <p className="font-semibold">Oops! Something went wrong.</p>
                                     <p className="mt-1 opacity-80">{aiError}</p>
-                                    <button onClick={handleGetSuggestions} className="mt-3 bg-red-500/20 text-red-400 font-semibold py-1.5 px-4 rounded-lg text-xs hover:bg-red-500/30 transition-colors">Try Again</button>
+                                    <button onClick={handleGetSuggestions} className="mt-3 btn-glass text-red-400 font-semibold py-1.5 px-4 rounded-lg text-xs">Try Again</button>
                                 </div>
                             ) : aiSuggestions.length > 0 ? (
                                 <div className="space-y-4">
                                     {aiSuggestions.map((suggestion, index) => (
-                                        <div key={index} className="glass-light p-4 rounded-xl flex flex-col items-start border border-white/10 hover:border-primary/30 hover:shadow-glow-sm transition-all duration-300 group">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <Sparkles className="h-5 w-5 text-primary" />
-                                                <h4 className="font-bold text-white">{suggestion.serviceName}</h4>
-                                            </div>
-                                            <p className="text-sm text-light-gray mb-4 leading-relaxed">{suggestion.reason}</p>
-                                            <div className="flex gap-3 w-full">
-                                                <button onClick={() => handleLearnMore(suggestion.serviceName)} className="flex-1 bg-white/5 text-white font-semibold py-2 px-4 rounded-lg hover:bg-white/10 transition text-sm border border-white/5">Learn More</button>
-                                                <button onClick={() => handleBookNow(suggestion.serviceName)} className="flex-1 bg-primary/90 text-white font-semibold py-2 px-4 rounded-lg hover:bg-primary transition text-sm shadow-lg shadow-primary/20">Book Now</button>
+                                        <div key={index} className="glass-card glass-hover group animate-scale-in" style={{ animationDelay: `${index * 100}ms` }}>
+                                            <div className="p-4">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <Sparkles className="h-5 w-5 text-primary drop-shadow-glow" />
+                                                    <h4 className="font-bold gradient-text">{suggestion.serviceName}</h4>
+                                                </div>
+                                                <p className="text-sm text-light-gray mb-4 leading-relaxed">{suggestion.reason}</p>
+                                                <div className="flex gap-3 w-full">
+                                                    <button onClick={() => handleLearnMore(suggestion.serviceName)} className="flex-1 btn-glass text-white font-semibold py-2 px-4 rounded-lg text-sm">Learn More</button>
+                                                    <button onClick={() => handleBookNow(suggestion.serviceName)} className="flex-1 gradient-primary text-white font-semibold py-2 px-4 rounded-lg shadow-glow hover:shadow-glow-lg transition-all text-sm">Book Now</button>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
                                 <div className="text-center py-6">
-                                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                                        <Sparkles className="h-6 w-6 text-primary" />
+                                    <div className="w-12 h-12 gradient-radial rounded-full flex items-center justify-center mx-auto mb-3 animate-glow-pulse">
+                                        <Sparkles className="h-6 w-6 text-primary drop-shadow-glow" />
                                     </div>
                                     <p className="text-light-gray mb-5 max-w-xs mx-auto">Get personalized service recommendations for your vehicle powered by AI.</p>
-                                    <button onClick={handleGetSuggestions} className="bg-white/10 text-white font-bold py-2.5 px-6 rounded-xl hover:bg-white/20 transition border border-white/5">Get Suggestions</button>
+                                    <button onClick={handleGetSuggestions} className="btn-glass text-white font-bold py-2.5 px-6 rounded-xl">Get Suggestions</button>
                                 </div>
                             )}
                     </div>
