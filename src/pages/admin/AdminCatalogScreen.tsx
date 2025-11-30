@@ -733,9 +733,9 @@ const AdminCatalogScreen: React.FC = () => {
                 await addService(service);
             }
             handleCloseServiceModal();
-        } catch (error: any) {
+        } catch (error) {
             console.error("Failed to save service:", error);
-            alert(`Failed to save service: ${error.message || JSON.stringify(error)}`);
+            alert("Failed to save service. Please try again.");
         }
     };
 
@@ -747,9 +747,9 @@ const AdminCatalogScreen: React.FC = () => {
                 await addPart(part);
             }
             handleClosePartModal();
-        } catch (error: any) {
+        } catch (error) {
             console.error("Failed to save part:", error);
-            alert(`Failed to save part: ${error.message || JSON.stringify(error)}`);
+            alert("Failed to save part. Please try again.");
         }
     };
 

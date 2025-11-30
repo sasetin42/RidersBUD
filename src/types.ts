@@ -187,7 +187,37 @@ export interface FAQItem {
     answer: string;
 }
 
+export interface FAQCategory {
+    category: string;
+    items: FAQItem[];
+}
+
+<<<<<<< HEAD
+export interface Settings {
+    appName: string;
+    contactEmail: string;
+    contactPhone: string;
+    address: string;
+    bookingStartTime: string;
+    bookingEndTime: string;
+    bookingSlotDuration: number;
+    maxBookingsPerSlot: number;
+    emailOnNewBooking: boolean;
+    emailOnCancellation: boolean;
+    appLogoUrl: string;
+    appTagline: string;
+    virtualMechanicName: string;
+    virtualMechanicImageUrl: string;
+    virtualMechanicSystemInstruction?: string;
+    mechanicMarkerUrl: string;
+    adminPanelTitle: string;
+    adminSidebarLogoUrl: string;
+    serviceCategories: string[];
+    partCategories: string[];
+}
+=======
 export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'services' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings';
+>>>>>>> f51b410 (feat: Implement real-time Admin Panel Settings with database persistence)
 
 export type PermissionLevel = 'none' | 'view' | 'edit';
 
@@ -214,7 +244,6 @@ export interface Settings {
     contactEmail: string;
     contactPhone: string;
     address: string;
-    adminPanelTitle: string; // From HEAD
 
     // Branding
     appLogoUrl?: string;
@@ -244,10 +273,6 @@ export interface Settings {
     // Roles & Permissions
     role?: RoleName | string;
     permissions?: Partial<Record<AdminModule, PermissionLevel>>;
-
-    // Categories (From HEAD)
-    serviceCategories: string[];
-    partCategories: string[];
 }
 
 export type TaskPriority = 'High' | 'Medium' | 'Low';
@@ -260,7 +285,6 @@ export interface Task {
     dueDate: string;
     isComplete: boolean;
     priority: TaskPriority;
-    completionDate?: string;
 }
 
 export interface Reminder {
@@ -278,27 +302,6 @@ export interface Warranty {
     expiryDate: string;
 }
 
-export interface RentalCar {
-    id: string;
-    make: string;
-    model: string;
-    year: number;
-    type: 'Sedan' | 'SUV' | 'Van' | 'Luxury';
-    pricePerDay: number;
-    seats: number;
-    imageUrl: string;
-    isAvailable: boolean;
-}
-
-export interface RentalBooking {
-    id: string;
-    carId: string;
-    customerName: string;
-    startDate: string; // YYYY-MM-DD
-    endDate: string; // YYYY-MM-DD
-    totalPrice: number;
-}
-
 export interface Database {
     services: Service[];
     parts: Part[];
@@ -313,7 +316,11 @@ export interface Database {
     roles: Role[];
     tasks: Task[];
     payouts: PayoutRequest[];
+<<<<<<< HEAD
+}
+=======
     rentalCars: RentalCar[];
     rentalBookings: RentalBooking[];
     notifications: Notification[];
 }
+>>>>>>> f51b410 (feat: Implement real-time Admin Panel Settings with database persistence)

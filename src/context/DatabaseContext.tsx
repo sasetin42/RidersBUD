@@ -83,45 +83,12 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 // Fetch data from Supabase tables
                 const { data: services } = await supabase.from('services').select('*');
                 const { data: products } = await supabase.from('products').select('*');
-                const { data: settingsData } = await supabase.from('settings').select('*').single();
-                const { data: rolesData } = await supabase.from('roles').select('*');
-                const { data: adminUsersData } = await supabase.from('admin_users').select('*');
+                // Note: Mechanics, Bookings, Customers, etc. would also be fetched here in a real app
+                // For now, we might mix Supabase data with some mock data if tables are empty or not fully migrated
 
                 // Construct the Database object
+                // This is a simplified view; in a full migration, all entities would come from Supabase
                 const seedData = getSeedData(); // Fallback/Base
-
-                // Map settings from DB to Settings type
-                let settings: Settings = seedData.settings;
-                if (settingsData) {
-                    settings = {
-                        ...seedData.settings,
-                        appName: settingsData.app_name || seedData.settings.appName,
-                        contactEmail: settingsData.contact_email || seedData.settings.contactEmail,
-                        contactPhone: settingsData.contact_phone || seedData.settings.contactPhone,
-                        address: settingsData.address || seedData.settings.address,
-                        appLogoUrl: settingsData.app_logo_url,
-                        adminSidebarLogoUrl: settingsData.admin_sidebar_logo_url,
-                        appTagline: settingsData.app_tagline,
-                        bookingStartTime: settingsData.booking_start_time || seedData.settings.bookingStartTime,
-                        bookingEndTime: settingsData.booking_end_time,
-                        bookingSlotDuration: settingsData.booking_slot_duration,
-                        maxBookingsPerSlot: settingsData.max_bookings_per_slot,
-                        emailOnNewBooking: settingsData.email_on_new_booking,
-                        emailOnCancellation: settingsData.email_on_cancellation,
-                        bookingBufferTime: settingsData.booking_buffer_time,
-                        advanceBookingDays: settingsData.advance_booking_days,
-                        cancellationPolicy: settingsData.cancellation_policy,
-                        virtualMechanicName: settingsData.virtual_mechanic_name,
-                        virtualMechanicImageUrl: settingsData.virtual_mechanic_image_url,
-                        virtualMechanicSystemInstruction: settingsData.virtual_mechanic_system_instruction,
-                        mechanicMarkerUrl: settingsData.mechanic_marker_url,
-                        googleMapsApiKey: settingsData.google_maps_api_key,
-                        // @ts-ignore - serviceCategories might not be in Settings type but used in app
-                        serviceCategories: settingsData.service_categories || seedData.settings.serviceCategories || [],
-                        // @ts-ignore
-                        partCategories: settingsData.part_categories || seedData.settings.partCategories || []
-                    };
-                }
 
                 const newDb: Database = {
                     ...seedData,
@@ -138,27 +105,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         brand: p.brand || '',
                         stock: p.stock || 0
                     })) : seedData.parts,
-                    settings: settings,
-                    roles: rolesData ? rolesData.map((r: any) => ({
-                        name: r.name,
-                        description: r.description,
-                        isEditable: r.is_editable,
-                        defaultPermissions: r.default_permissions
-                    })) : seedData.roles,
-                    adminUsers: adminUsersData ? adminUsersData.map((u: any) => ({
-                        id: u.id,
-                        name: u.name,
-                        email: u.email,
-                        role: u.role,
-                        avatar: u.avatar,
-                        lastLogin: u.last_login
-                    })) : seedData.adminUsers,
-                    notifications: [],
+                    notifications: [], // Initialize empty notifications
                 };
 
                 setDb(newDb);
             } catch (error) {
                 console.error("Failed to load data from Supabase:", error);
+                // Fallback to seed data on error
                 setDb(getSeedData());
             } finally {
                 setLoading(false);
@@ -337,113 +290,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     });
                 }
             )
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'settings' },
-                (payload) => {
-                    setDb(prevDb => {
-                        if (!prevDb) return null;
-                        const { new: newRecord } = payload;
-                        if (!newRecord) return prevDb;
-
-                        return {
-                            ...prevDb,
-                            settings: {
-                                ...prevDb.settings,
-                                appName: newRecord.app_name || prevDb.settings.appName,
-                                contactEmail: newRecord.contact_email || prevDb.settings.contactEmail,
-                                contactPhone: newRecord.contact_phone || prevDb.settings.contactPhone,
-                                address: newRecord.address || prevDb.settings.address,
-                                appLogoUrl: newRecord.app_logo_url,
-                                adminSidebarLogoUrl: newRecord.admin_sidebar_logo_url,
-                                appTagline: newRecord.app_tagline,
-                                bookingStartTime: newRecord.booking_start_time || prevDb.settings.bookingStartTime,
-                                bookingEndTime: newRecord.booking_end_time,
-                                bookingSlotDuration: newRecord.booking_slot_duration,
-                                maxBookingsPerSlot: newRecord.max_bookings_per_slot,
-                                emailOnNewBooking: newRecord.email_on_new_booking,
-                                emailOnCancellation: newRecord.email_on_cancellation,
-                                bookingBufferTime: newRecord.booking_buffer_time,
-                                advanceBookingDays: newRecord.advance_booking_days,
-                                cancellationPolicy: newRecord.cancellation_policy,
-                                virtualMechanicName: newRecord.virtual_mechanic_name,
-                                virtualMechanicImageUrl: newRecord.virtual_mechanic_image_url,
-                                virtualMechanicSystemInstruction: newRecord.virtual_mechanic_system_instruction,
-                                mechanicMarkerUrl: newRecord.mechanic_marker_url,
-                                googleMapsApiKey: newRecord.google_maps_api_key,
-                                // @ts-ignore
-                                serviceCategories: newRecord.service_categories || prevDb.settings.serviceCategories || [],
-                                // @ts-ignore
-                                partCategories: newRecord.part_categories || prevDb.settings.partCategories || []
-                            }
-                        };
-                    });
-                }
-            )
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'roles' },
-                (payload) => {
-                    setDb(prevDb => {
-                        if (!prevDb) return null;
-                        const { eventType, new: newRecord, old: oldRecord } = payload;
-                        let updatedRoles = [...prevDb.roles];
-
-                        if (eventType === 'INSERT') {
-                            updatedRoles.push({
-                                name: newRecord.name,
-                                description: newRecord.description,
-                                isEditable: newRecord.is_editable,
-                                defaultPermissions: newRecord.default_permissions
-                            });
-                        } else if (eventType === 'UPDATE') {
-                            updatedRoles = updatedRoles.map(r => r.name === newRecord.name ? {
-                                name: newRecord.name,
-                                description: newRecord.description,
-                                isEditable: newRecord.is_editable,
-                                defaultPermissions: newRecord.default_permissions
-                            } : r);
-                        } else if (eventType === 'DELETE') {
-                            updatedRoles = updatedRoles.filter(r => r.name !== oldRecord.name);
-                        }
-                        return { ...prevDb, roles: updatedRoles };
-                    });
-                }
-            )
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'admin_users' },
-                (payload) => {
-                    setDb(prevDb => {
-                        if (!prevDb) return null;
-                        const { eventType, new: newRecord, old: oldRecord } = payload;
-                        let updatedUsers = [...prevDb.adminUsers];
-
-                        if (eventType === 'INSERT') {
-                            updatedUsers.push({
-                                id: newRecord.id,
-                                name: newRecord.name,
-                                email: newRecord.email,
-                                role: newRecord.role,
-                                avatar: newRecord.avatar,
-                                lastLogin: newRecord.last_login
-                            });
-                        } else if (eventType === 'UPDATE') {
-                            updatedUsers = updatedUsers.map(u => u.id === newRecord.id ? {
-                                id: newRecord.id,
-                                name: newRecord.name,
-                                email: newRecord.email,
-                                role: newRecord.role,
-                                avatar: newRecord.avatar,
-                                lastLogin: newRecord.last_login
-                            } : u);
-                        } else if (eventType === 'DELETE') {
-                            updatedUsers = updatedUsers.filter(u => u.id !== oldRecord.id);
-                        }
-                        return { ...prevDb, adminUsers: updatedUsers };
-                    });
-                }
-            )
+            .subscribe()
             .on(
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'mechanics' },
@@ -482,8 +329,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         return { ...prevDb, mechanics: updatedMechanics, bookings: updatedBookings };
                     });
                 }
-            )
-            .subscribe();
+            );
 
         return () => {
             supabase.removeChannel(channel);
@@ -1174,46 +1020,14 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     // --- Settings Operations ---
-    // --- Settings Operations ---
     const updateSettings = async (newSettings: Partial<Settings>) => {
         try {
-            // Map frontend Settings keys to DB columns
-            const dbSettings: any = {};
-            if (newSettings.appName !== undefined) dbSettings.app_name = newSettings.appName;
-            if (newSettings.contactEmail !== undefined) dbSettings.contact_email = newSettings.contactEmail;
-            if (newSettings.contactPhone !== undefined) dbSettings.contact_phone = newSettings.contactPhone;
-            if (newSettings.address !== undefined) dbSettings.address = newSettings.address;
-            if (newSettings.appLogoUrl !== undefined) dbSettings.app_logo_url = newSettings.appLogoUrl;
-            if (newSettings.adminSidebarLogoUrl !== undefined) dbSettings.admin_sidebar_logo_url = newSettings.adminSidebarLogoUrl;
-            if (newSettings.appTagline !== undefined) dbSettings.app_tagline = newSettings.appTagline;
-            if (newSettings.bookingStartTime !== undefined) dbSettings.booking_start_time = newSettings.bookingStartTime;
-            if (newSettings.bookingEndTime !== undefined) dbSettings.booking_end_time = newSettings.bookingEndTime;
-            if (newSettings.bookingSlotDuration !== undefined) dbSettings.booking_slot_duration = newSettings.bookingSlotDuration;
-            if (newSettings.maxBookingsPerSlot !== undefined) dbSettings.max_bookings_per_slot = newSettings.maxBookingsPerSlot;
-            if (newSettings.emailOnNewBooking !== undefined) dbSettings.email_on_new_booking = newSettings.emailOnNewBooking;
-            if (newSettings.emailOnCancellation !== undefined) dbSettings.email_on_cancellation = newSettings.emailOnCancellation;
-            if (newSettings.bookingBufferTime !== undefined) dbSettings.booking_buffer_time = newSettings.bookingBufferTime;
-            if (newSettings.advanceBookingDays !== undefined) dbSettings.advance_booking_days = newSettings.advanceBookingDays;
-            if (newSettings.cancellationPolicy !== undefined) dbSettings.cancellation_policy = newSettings.cancellationPolicy;
-            if (newSettings.virtualMechanicName !== undefined) dbSettings.virtual_mechanic_name = newSettings.virtualMechanicName;
-            if (newSettings.virtualMechanicImageUrl !== undefined) dbSettings.virtual_mechanic_image_url = newSettings.virtualMechanicImageUrl;
-            if (newSettings.virtualMechanicSystemInstruction !== undefined) dbSettings.virtual_mechanic_system_instruction = newSettings.virtualMechanicSystemInstruction;
-            if (newSettings.mechanicMarkerUrl !== undefined) dbSettings.mechanic_marker_url = newSettings.mechanicMarkerUrl;
-            if (newSettings.googleMapsApiKey !== undefined) dbSettings.google_maps_api_key = newSettings.googleMapsApiKey;
-            // @ts-ignore
-            if (newSettings.serviceCategories !== undefined) dbSettings.service_categories = newSettings.serviceCategories;
-            // @ts-ignore
-            if (newSettings.partCategories !== undefined) dbSettings.part_categories = newSettings.partCategories;
-
-            // Upsert settings (assuming ID 1)
-            const { error } = await supabase.from('settings').update(dbSettings).eq('id', 1);
-
-            if (error) throw error;
-
+            // Assuming a single row for settings or a specific ID
+            // For simplicity, let's assume we update a 'global_settings' table or similar
+            // Or just update local state if no backend table yet
             setDb(prevDb => prevDb ? { ...prevDb, settings: { ...prevDb.settings, ...newSettings } } : null);
         } catch (error) {
             console.error("Error updating settings:", error);
-            throw error;
         }
     };
 
@@ -1298,117 +1112,68 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     // --- Admin User & Role Operations ---
-    // --- Admin User & Role Operations ---
     const addAdminUser = async (user: Omit<AdminUser, 'id'>) => {
         try {
-            const { data, error } = await supabase.from('admin_users').insert([{
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                avatar: user.avatar,
-                last_login: user.lastLogin
-            }]).select().single();
-
-            if (error) throw error;
-
-            if (data) {
-                const newUser: AdminUser = {
-                    id: data.id,
-                    name: data.name,
-                    email: data.email,
-                    role: data.role,
-                    avatar: data.avatar,
-                    lastLogin: data.last_login
-                };
-                setDb(prevDb => prevDb ? { ...prevDb, adminUsers: [...prevDb.adminUsers, newUser] } : null);
-            }
+            // Creating an admin user would typically involve creating an auth user with metadata
+            // For now, we update local state
+            const newUser = { ...user, id: `au-${Date.now()}` };
+            setDb(prevDb => prevDb ? { ...prevDb, adminUsers: [...prevDb.adminUsers, newUser] } : null);
         } catch (error) {
             console.error("Error adding admin user:", error);
-            throw error;
         }
     };
 
     const updateAdminUser = async (updatedUser: AdminUser) => {
         try {
-            const { error } = await supabase.from('admin_users').update({
-                name: updatedUser.name,
-                email: updatedUser.email,
-                role: updatedUser.role,
-                avatar: updatedUser.avatar,
-                last_login: updatedUser.lastLogin
-            }).eq('id', updatedUser.id);
-
-            if (error) throw error;
-
+            // Update logic here
             setDb(prevDb => prevDb ? { ...prevDb, adminUsers: prevDb.adminUsers.map(u => u.id === updatedUser.id ? updatedUser : u) } : null);
         } catch (error) {
             console.error("Error updating admin user:", error);
-            throw error;
         }
     };
 
     const deleteAdminUser = async (userId: string) => {
         try {
-            const { error } = await supabase.from('admin_users').delete().eq('id', userId);
-            if (error) throw error;
+            // Delete logic here
             setDb(prevDb => prevDb ? { ...prevDb, adminUsers: prevDb.adminUsers.filter(u => u.id !== userId) } : null);
         } catch (error) {
             console.error("Error deleting admin user:", error);
-            throw error;
         }
     };
 
     const addRole = async (role: Omit<Role, 'isEditable'>) => {
         try {
-            const { error } = await supabase.from('roles').insert([{
-                name: role.name,
-                description: role.description,
-                is_editable: true,
-                default_permissions: role.defaultPermissions
-            }]);
-
-            if (error) throw error;
-
-            const newRole = { ...role, isEditable: true };
+            // Role management logic
+            const newRole = { ...role, isEditable: true }; // Custom roles are always editable
             setDb(prevDb => prevDb ? { ...prevDb, roles: [...prevDb.roles, newRole] } : null);
         } catch (error) {
             console.error("Error adding role:", error);
-            throw error;
         }
     };
 
     const updateRole = async (updatedRole: Role) => {
         try {
-            const { error } = await supabase.from('roles').update({
-                description: updatedRole.description,
-                default_permissions: updatedRole.defaultPermissions
-            }).eq('name', updatedRole.name);
-
-            if (error) throw error;
-
+            // Role update logic
             setDb(prevDb => prevDb ? { ...prevDb, roles: prevDb.roles.map(r => r.name === updatedRole.name ? updatedRole : r) } : null);
         } catch (error) {
             console.error("Error updating role:", error);
-            throw error;
         }
     };
 
     const deleteRole = async (roleName: string) => {
         try {
-            // Check if role is in use
-            const { count, error: countError } = await supabase.from('admin_users').select('*', { count: 'exact', head: true }).eq('role', roleName);
-            if (countError) throw countError;
-            if (count && count > 0) {
-                throw new Error("Cannot delete role: it is currently assigned to one or more users.");
-            }
-
-            const { error } = await supabase.from('roles').delete().eq('name', roleName);
-            if (error) throw error;
-
-            setDb(prevDb => prevDb ? { ...prevDb, roles: prevDb.roles.filter(r => r.name !== roleName) } : null);
+            setDb(prevDb => {
+                if (!prevDb) return null;
+                // Prevent deleting the role if it's in use
+                const isRoleInUse = prevDb.adminUsers.some(u => u.role === roleName);
+                if (isRoleInUse) {
+                    throw new Error("Cannot delete role: it is currently assigned to one or more users.");
+                }
+                return { ...prevDb, roles: prevDb.roles.filter(r => r.name !== roleName) };
+            });
         } catch (error) {
             console.error("Error deleting role:", error);
-            throw error;
+            alert(error instanceof Error ? error.message : "Failed to delete role");
         }
     };
 
