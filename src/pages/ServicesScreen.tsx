@@ -33,7 +33,7 @@ const ServiceCard: React.FC<{
     return (
         <div
             onClick={() => onBook(service)}
-            className="bg-dark-gray rounded-lg overflow-hidden flex flex-col group shadow-lg transition-all duration-300 hover:shadow-primary/20 hover:-translate-y-1 cursor-pointer"
+            className="glass border border-white/10 rounded-xl overflow-hidden flex flex-col group shadow-lg hover:shadow-glow-sm transition-all duration-300 hover:-translate-y-2 cursor-pointer"
             aria-label={`Service card for ${service.name}`}
         >
             {/* Image Section */}
@@ -42,13 +42,13 @@ const ServiceCard: React.FC<{
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
                 <button
                     onClick={handleToggleWishlist}
-                    className="absolute top-3 right-3 bg-black/40 backdrop-blur-sm rounded-full p-2 transition-all duration-200 hover:scale-110 hover:bg-black/60 active:scale-95 z-10"
+                    className="absolute top-3 right-3 glass-light rounded-full p-2 transition-all duration-300 hover:scale-110 hover:shadow-glow-sm active:scale-95 z-10"
                     aria-label="Toggle Wishlist"
                 >
                     <Heart className={`h-5 w-5 transition-colors ${isWishlisted ? 'text-red-500 fill-current' : 'text-white'}`} />
                 </button>
                 <div className="absolute bottom-3 left-3">
-                    <span className="bg-black/50 text-white text-[10px] leading-[14px] font-semibold px-2.5 py-1 rounded-full backdrop-blur-sm flex items-center gap-1.5">
+                    <span className="glass-light text-white text-[10px] leading-[14px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/20">
                         <div className="w-4 h-4 flex items-center justify-center transition-transform duration-300 group-hover:scale-110" dangerouslySetInnerHTML={{ __html: service.icon }} />
                         {service.category}
                     </span>
@@ -74,7 +74,7 @@ const ServiceCard: React.FC<{
                     </p>
                 </div>
 
-                <div className="mt-auto pt-4 border-t border-field">
+                <div className="mt-auto pt-4 border-t border-white/10">
                     <div className="flex justify-between items-baseline mb-3">
                         <p className="font-bold text-primary text-[15px]">
                             {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Get Quote'}
@@ -84,7 +84,7 @@ const ServiceCard: React.FC<{
 
                     <button
                         onClick={handleBookNow}
-                        className="w-full bg-primary text-white font-medium py-2 px-3 rounded-lg text-sm hover:bg-orange-600 transition duration-200"
+                        className="w-full gradient-primary text-white font-medium py-2 px-3 rounded-lg text-sm hover:shadow-glow transition-all duration-300 hover:scale-[1.02] active:scale-95"
                     >
                         {service.price > 0 ? 'Book Now' : 'Get Quote'}
                     </button>
@@ -223,7 +223,7 @@ const ServicesScreen: React.FC = () => {
                         placeholder="Search for any service..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-10 py-2 bg-field border border-dark-gray rounded-full text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="w-full pl-10 pr-10 py-2 glass border border-white/10 rounded-full text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 transition-all duration-300"
                         aria-label="Search services"
                     />
                     {searchQuery && (
@@ -241,7 +241,7 @@ const ServicesScreen: React.FC = () => {
                     <select
                         value={priceRange}
                         onChange={e => setPriceRange(e.target.value)}
-                        className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary h-[42px]"
+                        className="w-full px-4 py-2 glass border border-white/10 rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 h-[42px] transition-all duration-300"
                     >
                         <option value="all">All Prices</option>
                         <option value="0-1000">Under ₱1,000</option>
@@ -249,7 +249,7 @@ const ServicesScreen: React.FC = () => {
                         <option value="2500-5000">₱2,500 - ₱5,000</option>
                         <option value="5000">Over ₱5,000</option>
                     </select>
-                    <div className="flex items-center bg-field rounded-lg px-4 h-[42px] border border-dark-gray">
+                    <div className="flex items-center glass rounded-lg px-4 h-[42px] border border-white/10 hover:border-primary/30 transition-all duration-300">
                         <input
                             id="availability-filter"
                             type="checkbox"
@@ -266,9 +266,9 @@ const ServicesScreen: React.FC = () => {
                         <button
                             key={category}
                             onClick={() => setFilterCategory(category)}
-                            className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-colors duration-200 ${filterCategory === category
-                                    ? 'bg-primary text-white shadow-md shadow-primary/30'
-                                    : 'bg-dark-gray text-light-gray hover:bg-field'
+                            className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${filterCategory === category
+                                ? 'gradient-primary text-white shadow-glow-sm scale-105'
+                                : 'glass-light text-light-gray hover:text-white hover:border-primary/30 hover:shadow-glow-sm'
                                 }`}
                         >
                             {category === 'all' ? 'All' : category}

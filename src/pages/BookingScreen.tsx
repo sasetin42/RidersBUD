@@ -12,7 +12,7 @@ declare const L: any;
 const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, onSelect: (serviceId: string) => void }> = ({ service, isSelected, onSelect }) => (
     <div
         onClick={() => onSelect(service.id)}
-        className={`bg-dark-gray p-4 rounded-lg flex items-center gap-4 cursor-pointer transition-all duration-200 border-2 ${isSelected ? 'border-primary ring-2 ring-primary/30' : 'border-transparent hover:border-primary/50 hover:-translate-y-1'}`}
+        className={`glass p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all duration-300 border-2 ${isSelected ? 'border-primary ring-2 ring-primary/30 shadow-glow-sm' : 'border-white/10 hover:border-primary/50 hover:-translate-y-1'}`}
     >
         <div className="text-primary flex-shrink-0" dangerouslySetInnerHTML={{ __html: service.icon }} />
         <div className="flex-grow text-left">
@@ -70,7 +70,7 @@ const MechanicAvailabilityCard: React.FC<{
     }, [bookings, mechanic.id, selectedDate]);
 
     return (
-        <div className="bg-dark-gray rounded-xl overflow-hidden border border-transparent hover:border-primary/30 transition-all duration-300 shadow-lg animate-fadeIn">
+        <div className="glass border border-white/10 rounded-xl overflow-hidden hover:border-primary/30 transition-all duration-300 shadow-lg animate-fadeIn">
             {/* Top Section: Profile Info */}
             <div className="p-4 flex items-center gap-4">
                 <img src={mechanic.imageUrl} alt={mechanic.name} className="w-24 h-24 rounded-full object-cover border-4 border-primary/20" />
@@ -109,8 +109,8 @@ const MechanicAvailabilityCard: React.FC<{
                                     disabled={isBooked}
                                     onClick={() => onSelectTimeSlot(mechanic, time)}
                                     className={`py-3 px-2 rounded-lg text-sm font-semibold transition-all duration-200 transform focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-dark-gray ${isBooked
-                                            ? 'bg-black/40 text-gray-600 cursor-not-allowed line-through'
-                                            : 'bg-field text-white hover:bg-primary hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/30'
+                                        ? 'bg-black/40 text-gray-600 cursor-not-allowed line-through'
+                                        : 'bg-field text-white hover:bg-primary hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/30'
                                         }`}
                                 >
                                     {time}
@@ -501,7 +501,7 @@ const BookingScreen: React.FC = () => {
             <div className="p-6 space-y-6 flex-grow overflow-y-auto">
                 <div>
                     {user?.vehicles && user.vehicles.length > 0 ? (
-                        <div className="bg-dark-gray p-3 rounded-lg">
+                        <div className="glass border border-white/10 p-3 rounded-xl">
                             <label className="text-xs text-light-gray block mb-1">Your Vehicle</label>
                             <select value={selectedVehiclePlate} onChange={e => setSelectedVehiclePlate(e.target.value)} className="w-full bg-transparent font-semibold text-white focus:outline-none">
                                 {user.vehicles.map(v => <option key={v.plateNumber} value={v.plateNumber}>{v.year} {v.make} {v.model}</option>)}
@@ -577,10 +577,10 @@ const BookingScreen: React.FC = () => {
                                                 onClick={() => !isPast && setSelectedDate(date)}
                                                 disabled={isPast}
                                                 className={`w-8 h-8 rounded-full transition-colors ${isPast
-                                                        ? 'text-gray-600 cursor-not-allowed'
-                                                        : isSelected
-                                                            ? 'bg-primary text-white ring-2 ring-primary ring-offset-2 ring-offset-dark-gray'
-                                                            : 'hover:bg-primary/20'
+                                                    ? 'text-gray-600 cursor-not-allowed'
+                                                    : isSelected
+                                                        ? 'bg-primary text-white ring-2 ring-primary ring-offset-2 ring-offset-dark-gray'
+                                                        : 'hover:bg-primary/20'
                                                     }`}
                                             >
                                                 {day}
@@ -674,14 +674,14 @@ const BookingScreen: React.FC = () => {
                                 placeholder="Search by name..."
                                 value={mechanicSearch}
                                 onChange={(e) => setMechanicSearch(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-dark-gray border border-secondary rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary"
+                                className="w-full pl-10 pr-4 py-2 glass border border-white/10 rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 transition-all duration-300"
                             />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                             <select
                                 value={specializationFilter}
                                 onChange={e => setSpecializationFilter(e.target.value)}
-                                className="w-full px-3 py-2 bg-dark-gray border border-secondary rounded-lg text-white text-sm"
+                                className="w-full px-3 py-2 glass border border-white/10 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary/30 transition-all duration-300"
                             >
                                 {allSpecializations.map(spec => (
                                     <option key={spec} value={spec} className="capitalize">

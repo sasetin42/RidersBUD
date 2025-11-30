@@ -13,7 +13,7 @@ const CartScreen: React.FC = () => {
     const [promoCode, setPromoCode] = useState('');
     const [discount, setDiscount] = useState(0);
     const [promoError, setPromoError] = useState('');
-    
+
     const subtotal = cartItems.reduce((acc, item) => acc + (item.salesPrice || item.price) * item.quantity, 0);
     const shippingFee = subtotal > 0 ? 150.00 : 0;
     const total = subtotal - discount + shippingFee;
@@ -52,7 +52,7 @@ const CartScreen: React.FC = () => {
                     <div className="space-y-4">
                         <button onClick={() => navigate('/order-history')} className="w-full text-sm text-primary text-right font-semibold hover:underline">View Order History</button>
                         {cartItems.map(item => (
-                            <div key={item.id} className="flex items-start bg-dark-gray p-3 rounded-lg animate-fadeIn">
+                            <div key={item.id} className="flex items-start glass border border-white/10 p-3 rounded-xl animate-fadeIn hover:border-primary/20 transition-all duration-300">
                                 <img src={item.imageUrls[0]} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
                                 <div className="flex-grow">
                                     <h4 className="font-bold text-white text-sm leading-tight">{item.name}</h4>
@@ -81,9 +81,9 @@ const CartScreen: React.FC = () => {
                 )}
             </div>
             {cartItems.length > 0 && (
-                 <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray space-y-4">
+                <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray space-y-4">
                     <div className="flex gap-2">
-                        <input 
+                        <input
                             type="text"
                             value={promoCode}
                             onChange={(e) => { setPromoCode(e.target.value); setPromoError(''); }}
@@ -93,7 +93,7 @@ const CartScreen: React.FC = () => {
                         <button onClick={handleApplyPromo} className="bg-primary text-white font-bold py-2 px-4 rounded-lg text-sm">Apply</button>
                     </div>
                     {promoError && <p className="text-red-400 text-xs text-center -mt-2">{promoError}</p>}
-                    
+
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between text-light-gray"><span>Subtotal</span><span>₱{subtotal.toFixed(2)}</span></div>
                         {discount > 0 && <div className="flex justify-between text-green-400"><span>Discount (10%)</span><span>- ₱{discount.toFixed(2)}</span></div>}
@@ -103,14 +103,14 @@ const CartScreen: React.FC = () => {
                             <span className="text-primary">₱{total.toFixed(2)}</span>
                         </div>
                     </div>
-                     <button 
-                        onClick={() => navigate('/payment', { state: { total } })} 
+                    <button
+                        onClick={() => navigate('/payment', { state: { total } })}
                         className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition"
                     >
-                         Proceed to Checkout ({itemCount} {itemCount > 1 ? 'items' : 'item'})
-                     </button>
-                     <button onClick={clearCart} className="w-full text-center text-sm text-light-gray hover:text-red-400">Clear Cart</button>
-                 </div>
+                        Proceed to Checkout ({itemCount} {itemCount > 1 ? 'items' : 'item'})
+                    </button>
+                    <button onClick={clearCart} className="w-full text-center text-sm text-light-gray hover:text-red-400">Clear Cart</button>
+                </div>
             )}
         </div>
     );

@@ -53,10 +53,10 @@ const ReviewModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true">
-            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp">
+            <div className="glass border border-white/10 rounded-xl p-6 w-full max-w-sm animate-scaleUp shadow-2xl shadow-primary/10">
                 <h2 className="text-xl font-bold mb-2">Rate Your Service</h2>
                 <p className="text-light-gray mb-4">How was your experience with <span className="font-semibold text-primary">{booking.mechanic?.name}</span> for the {booking.service.name} service?</p>
-                
+
                 <StarRatingInput rating={rating} setRating={setRating} />
                 {error && <p className="text-red-400 text-xs mt-2 text-center">{error}</p>}
 
@@ -89,7 +89,7 @@ const JobProgressModal: React.FC<{
     const currentStatusIndex = useMemo(() => {
         const historyStatuses = booking.statusHistory?.map(h => h.status) || [];
         const allStatuses = [...historyStatuses, booking.status];
-        
+
         let highestIndex = -1;
         allStatuses.forEach(status => {
             const indexInTimeline = timelineSteps.indexOf(status as BookingStatus);
@@ -134,7 +134,7 @@ const JobProgressModal: React.FC<{
                     <button onClick={onClose} className="absolute right-4 text-white text-3xl">&times;</button>
                 </header>
                 <main className="flex-grow overflow-y-auto p-4 space-y-4">
-                    <div className="bg-dark-gray p-4 rounded-lg flex items-center gap-4">
+                    <div className="glass border border-white/10 p-4 rounded-xl flex items-center gap-4">
                         <img src={booking.mechanic?.imageUrl} alt={booking.mechanic?.name} className="w-16 h-16 rounded-full object-cover border-2 border-primary" />
                         <div>
                             <p className="font-bold text-lg text-white">{booking.mechanic?.name}</p>
@@ -177,12 +177,12 @@ const JobProgressModal: React.FC<{
                             <div>
                                 <h4 className="text-sm font-medium text-light-gray mb-2">After Service</h4>
                                 <div className="grid grid-cols-2 gap-2">
-                                     {(booking.afterImages && booking.afterImages.length > 0) ? booking.afterImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`After ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
+                                    {(booking.afterImages && booking.afterImages.length > 0) ? booking.afterImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`After ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div className="bg-dark-gray p-4 rounded-lg">
                         <h3 className="font-semibold text-white mb-2">Mechanic's Notes</h3>
                         <p className="text-sm text-light-gray bg-field p-3 rounded-md min-h-[50px]">{booking.notes || 'No notes were added by the mechanic.'}</p>
@@ -209,8 +209,8 @@ const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking)
 
     const handleBookAgain = (e: React.MouseEvent) => {
         e.stopPropagation();
-        navigate(`/booking/${booking.service.id}`, { 
-            state: { vehiclePlateNumber: booking.vehicle.plateNumber } 
+        navigate(`/booking/${booking.service.id}`, {
+            state: { vehiclePlateNumber: booking.vehicle.plateNumber }
         });
     };
 
@@ -222,7 +222,7 @@ const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking)
     );
 
     return (
-        <div className="bg-dark-gray p-4 rounded-lg flex flex-col gap-3">
+        <div className="glass border border-white/10 p-4 rounded-xl flex flex-col gap-3 hover:border-primary/20 transition-all duration-300">
             {/* Header */}
             <div className="flex justify-between items-start">
                 <div>
@@ -233,10 +233,10 @@ const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking)
                     {booking.status}
                 </span>
             </div>
-            
+
             {/* Details */}
             <div className="border-t border-field pt-3 space-y-2 text-sm">
-                 <div className="flex items-center gap-2 text-light-gray">
+                <div className="flex items-center gap-2 text-light-gray">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clipRule="evenodd" /></svg>
                     <span>Mechanic:</span>
                     <span className="font-medium text-white ml-auto">{booking.mechanic?.name || 'N/A'}</span>
@@ -269,7 +269,7 @@ const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking)
                 </div>
             )}
             {booking.status === 'Cancelled' && booking.cancellationReason && (
-                 <div className="border-t border-field pt-3">
+                <div className="border-t border-field pt-3">
                     <p className="text-sm text-red-400">
                         <span className="font-semibold">Cancellation Reason:</span> {booking.cancellationReason}
                     </p>
@@ -284,7 +284,7 @@ const BookingHistoryScreen: React.FC = () => {
     const { plateNumber } = useParams<{ plateNumber?: string }>();
     const { db, addReviewToMechanic, loading } = useDatabase();
     const { user } = useAuth();
-    
+
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const [reviewingBooking, setReviewingBooking] = useState<Booking | null>(null);
     const [progressBooking, setProgressBooking] = useState<Booking | null>(null);
@@ -293,7 +293,7 @@ const BookingHistoryScreen: React.FC = () => {
     const [mechanicFilter, setMechanicFilter] = useState<string>('all');
     const [vehicleFilter, setVehicleFilter] = useState<string>(plateNumber || 'all');
     const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
-    
+
     const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
 
     useEffect(() => {
@@ -304,7 +304,7 @@ const BookingHistoryScreen: React.FC = () => {
                     const serviceHistory = db.bookings
                         .filter(b => b.customerName === user.name && b.status === 'Completed' && b.vehicle.plateNumber === vehicle.plateNumber)
                         .map(b => b.service.name) || [];
-                    
+
                     try {
                         const suggestions = await getAIServiceSuggestions(vehicle, serviceHistory);
                         sessionStorage.setItem('ai_suggestions', JSON.stringify(suggestions));
@@ -326,8 +326,8 @@ const BookingHistoryScreen: React.FC = () => {
 
         const upcoming = bookingsToFilter
             .filter(b => ['Upcoming', 'En Route', 'In Progress', 'Mechanic Assigned', 'Booking Confirmed', 'Reschedule Requested'].includes(b.status))
-            .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-            
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
         let past = bookingsToFilter.filter(b => b.status === 'Completed' || b.status === 'Cancelled');
 
         // Apply filters to past bookings
@@ -351,8 +351,8 @@ const BookingHistoryScreen: React.FC = () => {
                 return bookingDate >= startDate && bookingDate < endDate;
             });
         }
-        
-        past.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        past.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         return { upcomingBookings: upcoming, pastBookings: past };
     }, [db, user, statusFilter, mechanicFilter, vehicleFilter, dateFilter]);
@@ -405,11 +405,11 @@ const BookingHistoryScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary">
             <Header title={plateNumber ? `History for ${plateNumber}` : "Booking History"} showBackButton />
-            
-             <div className="p-4 border-b border-dark-gray space-y-3">
+
+            <div className="p-4 border-b border-dark-gray space-y-3">
                 <h3 className="text-sm font-semibold text-light-gray">Filter Past Bookings</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
-                     <select
+                    <select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value as any)}
                         className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm"
@@ -418,7 +418,7 @@ const BookingHistoryScreen: React.FC = () => {
                         <option value="Completed">Completed</option>
                         <option value="Cancelled">Cancelled</option>
                     </select>
-                     <select
+                    <select
                         value={vehicleFilter}
                         onChange={(e) => setVehicleFilter(e.target.value)}
                         className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm"
@@ -426,7 +426,7 @@ const BookingHistoryScreen: React.FC = () => {
                         <option value="all">All Vehicles</option>
                         {user.vehicles.map(v => <option key={v.plateNumber} value={v.plateNumber}>{v.make} {v.model}</option>)}
                     </select>
-                     <select
+                    <select
                         value={mechanicFilter}
                         onChange={(e) => setMechanicFilter(e.target.value)}
                         className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm col-span-2"
@@ -462,26 +462,26 @@ const BookingHistoryScreen: React.FC = () => {
                             {upcomingBookings.map(booking => <BookingStatusCard key={booking.id} booking={booking} onTrack={setTrackingBooking} onProgressView={setProgressBooking} />)}
                         </div>
                     ) : (
-                        <div className="text-center py-8 px-4 bg-dark-gray rounded-lg">
+                        <div className="text-center py-8 px-4 glass border border-white/10 rounded-xl">
                             <p className="text-light-gray">You have no upcoming bookings.</p>
                         </div>
                     )}
                 </section>
                 <section>
                     <h2 className="text-xl font-semibold mb-3 text-white px-2">Past</h2>
-                     {pastBookings.length > 0 ? (
+                    {pastBookings.length > 0 ? (
                         <div className="space-y-4">
                             {pastBookings.map(booking => <PastBookingCard key={booking.id} booking={booking} onReview={handleOpenReviewModal} onViewProgress={setProgressBooking} />)}
                         </div>
                     ) : (
-                         <div className="text-center py-8 px-4 bg-dark-gray rounded-lg">
+                        <div className="text-center py-8 px-4 bg-dark-gray rounded-lg">
                             <p className="text-light-gray">No past bookings match the current filters.</p>
                         </div>
                     )}
                 </section>
             </div>
             {isReviewModalOpen && reviewingBooking && (
-                <ReviewModal 
+                <ReviewModal
                     booking={reviewingBooking}
                     onClose={handleCloseReviewModal}
                     onSubmit={handleSubmitReview}

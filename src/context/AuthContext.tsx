@@ -1,9 +1,10 @@
 
-
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Customer, Vehicle } from '../types';
 import { useDatabase } from './DatabaseContext';
 import { useNotification } from './NotificationContext';
+import { supabase } from '../lib/supabase';
+import { uploadAvatar, deleteOldAvatar } from '../utils/imageUpload';
 
 interface AuthContextType {
     isAuthenticated: boolean;
@@ -35,278 +36,347 @@ export const useAuth = () => {
     return context;
 };
 
-const SESSION_KEY = 'ridersbud_session';
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const { db, addCustomer, updateCustomer, loading: dbLoading } = useDatabase();
     const { addNotification } = useNotification();
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [user, setUser] = useState<Customer | null>(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        // Check for an existing session when the app loads
-        if (!dbLoading && db) {
-            const storedUserId = sessionStorage.getItem(SESSION_KEY);
-            if (storedUserId) {
-                const sessionUser = db.customers.find(c => c.id === storedUserId);
-                if (sessionUser) {
-                    setUser(sessionUser);
-                    setIsAuthenticated(true);
-                } else {
-                    // Clean up invalid session key
-                    sessionStorage.removeItem(SESSION_KEY);
-                }
-            }
-            setLoading(false);
-        }
-    }, [db, dbLoading]);
+    // Fetch user profile and vehicles from Supabase
+    const fetchUserProfile = async (userId: string, email: string) => {
+        try {
+            // Fetch profile
+            const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .single();
 
-    const loginUser = (customer: Customer) => {
-        setUser(customer);
-        setIsAuthenticated(true);
-        sessionStorage.setItem(SESSION_KEY, customer.id); // Save session
+            if (profileError) throw profileError;
+
+            // Fetch vehicles
+            const { data: vehicles, error: vehiclesError } = await supabase
+                .from('vehicles')
+                .select('*')
+                .eq('owner_id', userId);
+
+            if (vehiclesError) throw vehiclesError;
+
+            // Map to Customer type
+            const customer: Customer = {
+                id: profile.id,
+                name: profile.full_name || email.split('@')[0],
+                email: profile.email,
+                password: '', // Password not stored in client
+                phone: profile.phone || '',
+                picture: profile.avatar_url,
+                vehicles: vehicles.map((v: any) => ({
+                    make: v.make,
+                    model: v.model,
+                    year: v.year,
+                    plateNumber: v.plate_number,
+                    imageUrls: v.image_urls || [],
+                    isPrimary: v.is_primary,
+                    vin: v.vin,
+                    mileage: v.mileage,
+                    insuranceProvider: v.insurance_provider,
+                    insurancePolicyNumber: v.insurance_policy_number
+                })),
+                favoriteMechanicIds: profile.favorite_mechanic_ids || [],
+                subscribedMechanicIds: profile.subscribed_mechanic_ids || []
+            };
+
+            setUser(customer);
+            setIsAuthenticated(true);
+        } catch (error) {
+            console.error('Error fetching user profile:', error);
+            // Fallback or error handling
+        }
     };
+
+    useEffect(() => {
+        // Check active session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                fetchUserProfile(session.user.id, session.user.email!);
+            } else {
+                setLoading(false);
+            }
+        });
+
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session?.user) {
+                fetchUserProfile(session.user.id, session.user.email!);
+            } else {
+                setUser(null);
+                setIsAuthenticated(false);
+                setLoading(false);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    // When user is set, loading is done
+    useEffect(() => {
+        if (user) setLoading(false);
+    }, [user]);
 
     const loginWithCredentials = async (email: string, pass: string) => {
-        if (!db) throw new Error("Database not ready");
-        
-        const customer = db.customers.find(c => c.email.toLowerCase() === email.toLowerCase());
-        if (customer && pass === customer.password) {
-            loginUser(customer);
-        } else {
-            throw new Error("Invalid email or password");
-        }
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password: pass,
+        });
+
+        if (error) throw new Error(error.message);
     };
-    
+
     const registerWithCredentials = async (name: string, email: string, phone: string, password: string) => {
-        if (!db) throw new Error("Database not ready");
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    full_name: name,
+                    phone: phone,
+                    role: 'customer'
+                }
+            }
+        });
 
-        const existingCustomer = db.customers.find(c => c.email.toLowerCase() === email.toLowerCase());
-        if (existingCustomer) {
-            throw new Error("An account with this email already exists.");
-        }
+        if (error) throw new Error(error.message);
 
-        const newCustomer = await addCustomer({ name, email, phone, password, vehicles: [] });
-        if(newCustomer) {
-            loginUser(newCustomer);
-            // FIX: Add missing `recipientId` property.
-            addNotification({ type: 'success', title: 'Welcome!', message: 'Your account has been created successfully.', recipientId: `customer-${newCustomer.id}` });
-        } else {
-            throw new Error("Failed to create account.");
+        if (data.user) {
+            addNotification({
+                type: 'success',
+                title: 'Welcome!',
+                message: 'Your account has been created successfully.',
+                recipientId: `customer-${data.user.id}`
+            });
         }
     };
 
-    // Implements the simulated Google social login flow.
     const loginWithGoogle = async () => {
-        if (!db) throw new Error("Database not ready");
-
-        // --- SIMULATED GOOGLE AUTH RESPONSE ---
-        const googleProfile = {
-            name: 'Casey Becker',
-            email: 'casey.becker@googlesim.com',
-            picture: 'https://picsum.photos/seed/casey/200/200'
-        };
-        // --- END SIMULATION ---
-        
-        // Check if a user with the Google email already exists.
-        let customer = db.customers.find(c => c.email === googleProfile.email);
-
-        if (customer) {
-            // If user exists, log them in.
-            loginUser(customer);
-        } else {
-            // If user does not exist, create a new account with their Google profile information.
-            const newCustomer = await addCustomer({
-                name: googleProfile.name,
-                email: googleProfile.email,
-                password: 'password', // Assign a default password for social logins
-                phone: '555-000-0000', // Placeholder phone for Google sign-ups
-                vehicles: [],
-                picture: googleProfile.picture,
-            });
-            if (newCustomer) {
-                loginUser(newCustomer);
-            } else {
-                throw new Error("Failed to create Google account.");
-            }
-        }
+        // Placeholder for Google Auth
+        console.log("Google login not yet implemented with Supabase");
     };
-    
-    // Implements the simulated Facebook social login flow.
+
     const loginWithFacebook = async () => {
-        if (!db) throw new Error("Database not ready");
-
-        // --- SIMULATED FACEBOOK AUTH RESPONSE ---
-        const facebookProfile = {
-            name: 'Drew Barrymore',
-            email: 'drew.barrymore@facebooksim.com',
-            picture: 'https://picsum.photos/seed/drew/200/200'
-        };
-        // --- END SIMULATION ---
-        
-        // Check if a user with the Facebook email already exists.
-        let customer = db.customers.find(c => c.email === facebookProfile.email);
-
-        if (customer) {
-            // If user exists, log them in.
-            loginUser(customer);
-        } else {
-            // If user does not exist, create a new account with their Facebook profile information.
-            const newCustomer = await addCustomer({
-                name: facebookProfile.name,
-                email: facebookProfile.email,
-                password: 'password', 
-                phone: '555-111-1111', 
-                vehicles: [],
-                picture: facebookProfile.picture,
-            });
-            if (newCustomer) {
-                loginUser(newCustomer);
-            } else {
-                throw new Error("Failed to create Facebook account.");
-            }
-        }
+        // Placeholder for Facebook Auth
+        console.log("Facebook login not yet implemented with Supabase");
     };
 
-    const logout = () => {
+    const logout = async () => {
+        await supabase.auth.signOut();
         setIsAuthenticated(false);
         setUser(null);
-        sessionStorage.removeItem(SESSION_KEY); // Clear session
     };
+
+    // --- Vehicle Operations (Synced with Supabase) ---
 
     const addUserVehicle = async (vehicle: Vehicle) => {
         if (!user) return;
-        const isFirstVehicle = user.vehicles.length === 0;
-        const newVehicleWithPrimary = { ...vehicle, isPrimary: isFirstVehicle };
 
-        const updatedUser: Customer = {
-            ...user,
-            vehicles: [...user.vehicles, newVehicleWithPrimary],
+        const isFirstVehicle = user.vehicles.length === 0;
+        const newVehicle = {
+            owner_id: user.id,
+            make: vehicle.make,
+            model: vehicle.model,
+            year: vehicle.year,
+            plate_number: vehicle.plateNumber,
+            image_urls: vehicle.imageUrls,
+            is_primary: isFirstVehicle,
+            vin: vehicle.vin,
+            mileage: vehicle.mileage,
+            insurance_provider: vehicle.insuranceProvider,
+            insurance_policy_number: vehicle.insurancePolicyNumber
         };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser); // Update local state immediately for responsiveness
+
+        const { error } = await supabase.from('vehicles').insert(newVehicle);
+        if (error) {
+            console.error("Error adding vehicle:", error);
+            return;
+        }
+
+        // Refresh profile to get updated vehicles
+        fetchUserProfile(user.id, user.email);
     };
-    
+
     const deleteUserVehicle = async (plateNumber: string) => {
         if (!user) return;
 
-        const vehicleToDelete = user.vehicles.find(v => v.plateNumber === plateNumber);
-        if (!vehicleToDelete) return;
+        const { error } = await supabase
+            .from('vehicles')
+            .delete()
+            .eq('owner_id', user.id)
+            .eq('plate_number', plateNumber);
 
-        let updatedVehicles = user.vehicles.filter(v => v.plateNumber !== plateNumber);
-
-        // If the deleted vehicle was primary and there are other vehicles left, make the first remaining one the new primary.
-        if (vehicleToDelete.isPrimary && updatedVehicles.length > 0) {
-            updatedVehicles[0] = { ...updatedVehicles[0], isPrimary: true };
+        if (error) {
+            console.error("Error deleting vehicle:", error);
+            return;
         }
 
-        const updatedUser: Customer = {
-            ...user,
-            vehicles: updatedVehicles,
-        };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
+        fetchUserProfile(user.id, user.email);
     };
 
     const setPrimaryVehicle = async (plateNumber: string) => {
         if (!user) return;
-        const updatedVehicles = user.vehicles.map(v => ({
-            ...v,
-            isPrimary: v.plateNumber === plateNumber,
-        }));
-        const updatedUser: Customer = {
-            ...user,
-            vehicles: updatedVehicles,
-        };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
+
+        // 1. Set all user's vehicles to is_primary = false
+        await supabase
+            .from('vehicles')
+            .update({ is_primary: false })
+            .eq('owner_id', user.id);
+
+        // 2. Set the selected vehicle to is_primary = true
+        await supabase
+            .from('vehicles')
+            .update({ is_primary: true })
+            .eq('owner_id', user.id)
+            .eq('plate_number', plateNumber);
+
+        fetchUserProfile(user.id, user.email);
     };
 
-    const updateUserProfile = async (updatedData: { name: string; email: string; phone: string; picture?: string; }) => {
+    const updateUserProfile = async (updatedData: { name: string; email: string; phone: string; picture?: string | File; }) => {
         if (!user) return;
-        const updatedUser: Customer = {
-            ...user,
-            ...updatedData
+
+        let avatarUrl = user.picture;
+
+        // If picture is a File object, upload it to Supabase Storage
+        if (updatedData.picture && updatedData.picture instanceof File) {
+            try {
+                // Delete old avatar if exists
+                if (user.picture) {
+                    await deleteOldAvatar(user.picture, user.id);
+                }
+
+                // Upload new avatar
+                avatarUrl = await uploadAvatar(updatedData.picture, user.id);
+            } catch (error) {
+                console.error('Avatar upload failed:', error);
+                throw new Error(error instanceof Error ? error.message : 'Failed to upload avatar');
+            }
+        } else if (typeof updatedData.picture === 'string') {
+            // If picture is already a URL string, use it directly
+            avatarUrl = updatedData.picture;
+        }
+
+        const updates = {
+            full_name: updatedData.name,
+            phone: updatedData.phone,
+            avatar_url: avatarUrl,
+            updated_at: new Date().toISOString(),
         };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
+
+        const { error } = await supabase
+            .from('profiles')
+            .update(updates)
+            .eq('id', user.id);
+
+        if (error) throw error;
+
+        fetchUserProfile(user.id, user.email);
     };
 
     const updateUserVehicle = async (vehicle: Vehicle) => {
         if (!user) return;
-        const updatedVehicles = user.vehicles.map(v =>
-            v.plateNumber === vehicle.plateNumber ? { ...vehicle, isPrimary: v.isPrimary } : v // Preserve isPrimary status on edit
-        );
-        const updatedUser: Customer = {
-            ...user,
-            vehicles: updatedVehicles,
+
+        const updates = {
+            make: vehicle.make,
+            model: vehicle.model,
+            year: vehicle.year,
+            image_urls: vehicle.imageUrls,
+            vin: vehicle.vin,
+            mileage: vehicle.mileage,
+            insurance_provider: vehicle.insuranceProvider,
+            insurance_policy_number: vehicle.insurancePolicyNumber
         };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
+
+        const { error } = await supabase
+            .from('vehicles')
+            .update(updates)
+            .eq('owner_id', user.id)
+            .eq('plate_number', vehicle.plateNumber);
+
+        if (error) console.error("Error updating vehicle:", error);
+
+        fetchUserProfile(user.id, user.email);
     };
-    
+
     const addFavoriteMechanic = async (mechanicId: string) => {
         if (!user) return;
-        const updatedUser: Customer = {
-            ...user,
-            favoriteMechanicIds: [...new Set([...(user.favoriteMechanicIds || []), mechanicId])],
-        };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
-        // FIX: Add missing `recipientId` property.
-        addNotification({ type: 'success', title: 'Favorite Added', message: 'Mechanic saved to your favorites.', recipientId: `customer-${user.id}` });
+        const newFavorites = [...new Set([...(user.favoriteMechanicIds || []), mechanicId])];
+
+        const { error } = await supabase
+            .from('profiles')
+            .update({ favorite_mechanic_ids: newFavorites })
+            .eq('id', user.id);
+
+        if (!error) {
+            setUser({ ...user, favoriteMechanicIds: newFavorites });
+            addNotification({ type: 'success', title: 'Favorite Added', message: 'Mechanic saved to your favorites.', recipientId: `customer-${user.id}` });
+        }
     };
 
     const removeFavoriteMechanic = async (mechanicId: string) => {
         if (!user) return;
-        const updatedUser: Customer = {
-            ...user,
-            favoriteMechanicIds: (user.favoriteMechanicIds || []).filter(id => id !== mechanicId),
-        };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
-        // FIX: Add missing `recipientId` property.
-        addNotification({ type: 'success', title: 'Favorite Removed', message: 'Mechanic removed from your favorites.', recipientId: `customer-${user.id}` });
+        const newFavorites = (user.favoriteMechanicIds || []).filter(id => id !== mechanicId);
+
+        const { error } = await supabase
+            .from('profiles')
+            .update({ favorite_mechanic_ids: newFavorites })
+            .eq('id', user.id);
+
+        if (!error) {
+            setUser({ ...user, favoriteMechanicIds: newFavorites });
+            addNotification({ type: 'success', title: 'Favorite Removed', message: 'Mechanic removed from your favorites.', recipientId: `customer-${user.id}` });
+        }
     };
 
     const subscribeToMechanic = async (mechanicId: string) => {
         if (!user) return;
-        const updatedUser: Customer = {
-            ...user,
-            subscribedMechanicIds: [...new Set([...(user.subscribedMechanicIds || []), mechanicId])],
-        };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
-        // FIX: Add missing `recipientId` property.
-        addNotification({ type: 'success', title: 'Subscribed!', message: 'You will now receive updates from this mechanic.', recipientId: `customer-${user.id}` });
+        const newSubscriptions = [...new Set([...(user.subscribedMechanicIds || []), mechanicId])];
+
+        const { error } = await supabase
+            .from('profiles')
+            .update({ subscribed_mechanic_ids: newSubscriptions })
+            .eq('id', user.id);
+
+        if (!error) {
+            setUser({ ...user, subscribedMechanicIds: newSubscriptions });
+            addNotification({ type: 'success', title: 'Subscribed!', message: 'You will now receive updates from this mechanic.', recipientId: `customer-${user.id}` });
+        }
     };
 
     const unsubscribeFromMechanic = async (mechanicId: string) => {
         if (!user) return;
-        const updatedUser: Customer = {
-            ...user,
-            subscribedMechanicIds: (user.subscribedMechanicIds || []).filter(id => id !== mechanicId),
-        };
-        await updateCustomer(updatedUser);
-        setUser(updatedUser);
-        // FIX: Add missing `recipientId` property.
-        addNotification({ type: 'success', title: 'Unsubscribed', message: 'You will no longer receive updates.', recipientId: `customer-${user.id}` });
+        const newSubscriptions = (user.subscribedMechanicIds || []).filter(id => id !== mechanicId);
+
+        const { error } = await supabase
+            .from('profiles')
+            .update({ subscribed_mechanic_ids: newSubscriptions })
+            .eq('id', user.id);
+
+        if (!error) {
+            setUser({ ...user, subscribedMechanicIds: newSubscriptions });
+            addNotification({ type: 'success', title: 'Unsubscribed', message: 'You will no longer receive updates.', recipientId: `customer-${user.id}` });
+        }
     };
 
-
-    const isLoadingAuth = loading || dbLoading;
+    const isLoadingAuth = loading;
 
     return (
-        <AuthContext.Provider value={{ 
-            isAuthenticated, 
-            user, 
-            loading: isLoadingAuth, 
+        <AuthContext.Provider value={{
+            isAuthenticated,
+            user,
+            loading: isLoadingAuth,
             loginWithCredentials,
             registerWithCredentials,
             loginWithGoogle,
             loginWithFacebook,
-            logout, 
+            logout,
             addUserVehicle,
             deleteUserVehicle,
             updateUserProfile,

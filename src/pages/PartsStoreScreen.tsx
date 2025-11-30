@@ -15,7 +15,7 @@ const ComparisonModal: React.FC<{ items: Part[]; onClose: () => void }> = ({ ite
     const features = ['price', 'category', 'description'];
     return (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 animate-fadeIn" onClick={onClose}>
-            <div className="bg-dark-gray rounded-xl w-full max-w-3xl animate-scaleUp" onClick={e => e.stopPropagation()}>
+            <div className="glass border border-white/10 rounded-xl w-full max-w-3xl animate-scaleUp shadow-2xl shadow-primary/10" onClick={e => e.stopPropagation()}>
                 <header className="p-4 border-b border-field flex justify-between items-center">
                     <h2 className="text-xl font-bold text-white">Compare Products</h2>
                     <button onClick={onClose} className="text-2xl text-light-gray">&times;</button>
@@ -79,18 +79,18 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
     };
 
     return (
-        <div 
+        <div
             onClick={() => navigate(`/part/${part.id}`)}
-            className="bg-dark-gray rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-1 cursor-pointer border border-transparent hover:border-primary/30"
+            className="glass border border-white/10 rounded-xl overflow-hidden flex flex-col relative group transition-all duration-300 hover:shadow-glow-sm hover:-translate-y-2 cursor-pointer hover:border-primary/30"
         >
             <div className="relative">
                 <img src={part.imageUrls[0]} alt={part.name} className="w-full h-32 object-cover" />
-                
+
                 {hasSale && (
                     <div className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full animate-pulse">SALE</div>
                 )}
-                 
-                 <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+
+                <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                     <button onClick={(e) => { e.stopPropagation(); onToggleCompare(part); }} className={`bg-black/40 backdrop-blur-sm rounded-full p-2 z-10 transition-all duration-200 hover:scale-110 ${isComparing ? 'bg-primary/80 text-white' : 'text-white'}`} aria-label="Compare">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
                     </button>
@@ -98,7 +98,7 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
             </div>
             <div className="p-3 flex-grow flex flex-col">
                 <h3 className="text-sm font-semibold text-white leading-tight flex-grow group-hover:text-primary transition-colors">{part.name}</h3>
-                
+
                 <div className="mt-2">
                     {hasSale ? (
                         <div className="flex items-baseline gap-2">
@@ -108,7 +108,7 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
                     ) : (
                         <p className="text-primary font-bold text-lg">₱{part.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                     )}
-                    
+
                     <div className="mt-1">
                         {stockStatus === 'in-stock' && <p className="text-[10px] text-green-400 font-semibold">In Stock</p>}
                         {stockStatus === 'low-stock' && <p className="text-[10px] text-orange-400 font-semibold">Low Stock ({part.stock} left)</p>}
@@ -117,8 +117,8 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
                 </div>
 
                 <div className="mt-3 pt-2 border-t border-field flex items-center gap-2">
-                    <button onClick={handleToggleWishlist} className="flex-shrink-0 bg-field rounded-md p-2 transition-transform duration-200 hover:scale-110" aria-label="Toggle Wishlist">
-                            <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
+                    <button onClick={handleToggleWishlist} className="flex-shrink-0 glass-light rounded-md p-2 transition-all duration-300 hover:scale-110 hover:shadow-glow-sm" aria-label="Toggle Wishlist">
+                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isWishlisted ? 'text-red-500' : 'text-white'}`} fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
                     </button>
                     <button
                         onClick={handleAddToCart}
@@ -159,14 +159,14 @@ const PartsStoreScreen: React.FC = () => {
 
     const partCategories = useMemo(() => ['all', ...Array.from(new Set(parts.map(p => p.category)))], [parts]);
     const partBrands = useMemo(() => ['all', ...Array.from(new Set(parts.map(p => p.brand)))], [parts]);
-    
+
     const displayedParts = useMemo(() => {
         let filteredParts = [...parts];
-        
+
         const lowercasedQuery = searchQuery.toLowerCase();
         if (searchQuery) {
-            filteredParts = filteredParts.filter(p => 
-                p.name.toLowerCase().includes(lowercasedQuery) || 
+            filteredParts = filteredParts.filter(p =>
+                p.name.toLowerCase().includes(lowercasedQuery) ||
                 p.sku.toLowerCase().includes(lowercasedQuery) ||
                 p.category.toLowerCase().includes(lowercasedQuery) ||
                 p.brand.toLowerCase().includes(lowercasedQuery)
@@ -196,14 +196,14 @@ const PartsStoreScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-secondary">
             <Header title="Parts & Tools" />
             <div className="p-4 border-b border-dark-gray space-y-4">
-                 <div className="relative">
+                <div className="relative">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></span>
-                    <input type="text" placeholder="Search name, SKU, brand..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <input type="text" placeholder="Search name, SKU, brand..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 glass border border-white/10 rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 transition-all duration-300" />
                 </div>
-                 <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label htmlFor="category-filter" className="block text-xs font-medium text-light-gray mb-1">Category</label>
-                        <select id="category-filter" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-1 focus:ring-primary h-[42px] text-sm">{partCategories.map(c => <option key={c} value={c} className="capitalize">{c === 'all' ? 'All Categories' : c}</option>)}</select>
+                        <select id="category-filter" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full px-4 py-2 glass border border-white/10 rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 h-[42px] text-sm transition-all duration-300">{partCategories.map(c => <option key={c} value={c} className="capitalize">{c === 'all' ? 'All Categories' : c}</option>)}</select>
                     </div>
                     <div>
                         <label htmlFor="brand-filter" className="block text-xs font-medium text-light-gray mb-1">Brand</label>
@@ -216,19 +216,19 @@ const PartsStoreScreen: React.FC = () => {
                     </button>
                 )}
             </div>
-            
+
             <div className="flex-grow overflow-y-auto">
                 <div className="p-4 grid grid-cols-2 gap-4">
                     {loading ? <div className="col-span-2 flex justify-center pt-10"><Spinner size="lg" /></div>
-                    : displayedParts.length > 0 ? displayedParts.map(part => <PartCard key={part.id} part={part} onToggleCompare={handleToggleCompare} isComparing={comparisonItems.some(p => p.id === part.id)} />)
-                    : <div className="col-span-2 flex flex-col items-center justify-center text-center h-full text-light-gray p-8"><svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg><h3 className="text-xl font-semibold text-white">No Parts Found</h3><p className="mt-2 text-sm">Try checking your spelling or adjusting your filters.</p></div>}
+                        : displayedParts.length > 0 ? displayedParts.map(part => <PartCard key={part.id} part={part} onToggleCompare={handleToggleCompare} isComparing={comparisonItems.some(p => p.id === part.id)} />)
+                            : <div className="col-span-2 flex flex-col items-center justify-center text-center h-full text-light-gray p-8"><svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg><h3 className="text-xl font-semibold text-white">No Parts Found</h3><p className="mt-2 text-sm">Try checking your spelling or adjusting your filters.</p></div>}
                 </div>
             </div>
 
             {comparisonItems.length > 0 && (
-                <button 
+                <button
                     onClick={() => setIsCompareModalOpen(true)}
-                    className="fixed bottom-20 left-5 bg-field/80 backdrop-blur-md text-white w-16 h-16 rounded-full flex flex-col items-center justify-center shadow-lg hover:bg-field transition-transform transform hover:scale-110 active:scale-100 z-40 animate-scaleUp"
+                    className="fixed bottom-20 left-5 glass text-white w-16 h-16 rounded-full flex flex-col items-center justify-center shadow-glow hover:shadow-glow-lg transition-all duration-300 hover:scale-110 active:scale-95 z-40 animate-scaleUp border border-white/20"
                     aria-label={`Compare ${comparisonItems.length} items`}
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

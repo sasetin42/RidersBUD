@@ -1,5 +1,4 @@
 
-
 // This file contains all the type definitions for the application.
 
 export interface Notification {
@@ -188,9 +187,26 @@ export interface FAQItem {
     answer: string;
 }
 
-export interface FAQCategory {
-    category: string;
-    items: FAQItem[];
+export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'services' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings';
+
+export type PermissionLevel = 'none' | 'view' | 'edit';
+
+export type RoleName = 'Super Admin' | 'Admin' | 'Manager' | 'Support';
+
+export interface Role {
+    name: string;
+    description: string;
+    isEditable: boolean;
+    defaultPermissions: Partial<Record<AdminModule, PermissionLevel>>;
+}
+
+export interface AdminUser {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    avatar?: string;
+    lastLogin?: string;
 }
 
 export interface Settings {
@@ -198,42 +214,40 @@ export interface Settings {
     contactEmail: string;
     contactPhone: string;
     address: string;
+    adminPanelTitle: string; // From HEAD
+
+    // Branding
+    appLogoUrl?: string;
+    adminSidebarLogoUrl?: string;
+    appTagline?: string;
+
+    // Booking
     bookingStartTime: string;
-    bookingEndTime: string;
-    bookingSlotDuration: number;
-    maxBookingsPerSlot: number;
-    emailOnNewBooking: boolean;
-    emailOnCancellation: boolean;
-    appLogoUrl: string;
-    appTagline: string;
-    virtualMechanicName: string;
-    virtualMechanicImageUrl: string;
+    bookingEndTime?: string;
+    bookingSlotDuration?: number;
+    maxBookingsPerSlot?: number;
+    emailOnNewBooking?: boolean;
+    emailOnCancellation?: boolean;
+    bookingBufferTime?: number; // New
+    advanceBookingDays?: number; // New
+    cancellationPolicy?: string; // New
+
+    // AI Assistant
+    virtualMechanicName?: string;
+    virtualMechanicImageUrl?: string;
     virtualMechanicSystemInstruction?: string;
-    mechanicMarkerUrl: string;
-    adminPanelTitle: string;
-    adminSidebarLogoUrl: string;
+
+    // Map
+    mechanicMarkerUrl?: string;
+    googleMapsApiKey?: string; // New
+
+    // Roles & Permissions
+    role?: RoleName | string;
+    permissions?: Partial<Record<AdminModule, PermissionLevel>>;
+
+    // Categories (From HEAD)
     serviceCategories: string[];
     partCategories: string[];
-}
-
-export type PermissionLevel = 'none' | 'view' | 'edit';
-export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'catalog' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings' | 'orders';
-
-export type RoleName = 'Super Admin' | 'Content Manager' | 'Viewer';
-
-export interface Role {
-    name: RoleName | string; // Allow string for custom roles
-    isEditable: boolean;
-    description: string;
-    defaultPermissions: Partial<Record<AdminModule, PermissionLevel>>;
-}
-
-export interface AdminUser {
-    id: string;
-    email: string;
-    password: string;
-    role: RoleName | string;
-    permissions: Partial<Record<AdminModule, PermissionLevel>>;
 }
 
 export type TaskPriority = 'High' | 'Medium' | 'Low';
@@ -246,6 +260,7 @@ export interface Task {
     dueDate: string;
     isComplete: boolean;
     priority: TaskPriority;
+    completionDate?: string;
 }
 
 export interface Reminder {
@@ -263,6 +278,27 @@ export interface Warranty {
     expiryDate: string;
 }
 
+export interface RentalCar {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    type: 'Sedan' | 'SUV' | 'Van' | 'Luxury';
+    pricePerDay: number;
+    seats: number;
+    imageUrl: string;
+    isAvailable: boolean;
+}
+
+export interface RentalBooking {
+    id: string;
+    carId: string;
+    customerName: string;
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+    totalPrice: number;
+}
+
 export interface Database {
     services: Service[];
     parts: Part[];
@@ -277,4 +313,7 @@ export interface Database {
     roles: Role[];
     tasks: Task[];
     payouts: PayoutRequest[];
+    rentalCars: RentalCar[];
+    rentalBookings: RentalBooking[];
+    notifications: Notification[];
 }

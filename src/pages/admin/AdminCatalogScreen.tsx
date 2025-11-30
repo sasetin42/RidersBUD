@@ -5,14 +5,21 @@ import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { fileToBase64 } from '../../utils/fileUtils';
 import { Banner } from '../../types';
+import { SERVICE_ICONS } from '../../utils/serviceIcons';
 
-const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <div className="bg-admin-card p-5 rounded-xl shadow-lg flex items-center gap-4 border border-admin-border">
-        <div className="bg-admin-bg p-3 rounded-full text-admin-accent">{icon}</div>
-        <div>
-            <p className="text-2xl font-bold text-admin-text-primary">{value}</p>
-            <p className="text-sm text-admin-text-secondary">{title}</p>
+const StatCard: React.FC<{ title: string; value: number | string; change?: number; icon: React.ReactNode; prefix?: string; subtitle?: string }> = ({ title, value, change, icon, prefix, subtitle }) => (
+    <div className="bg-white/5 p-5 rounded-xl shadow-lg border border-white/10 backdrop-blur-sm hover:bg-white/10 transition-all duration-300">
+        <div className="flex items-center justify-between mb-2">
+            <div className="bg-admin-accent/20 p-3 rounded-full text-admin-accent">{icon}</div>
+            {change !== undefined && !isNaN(change) && (
+                <span className={`text-xs font-bold px-2 py-1 rounded-full ${change >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+                </span>
+            )}
         </div>
+        <p className="text-3xl font-extrabold text-white tracking-tight">{prefix}{value}</p>
+        <p className="text-sm text-gray-400 mt-1 uppercase tracking-wider">{title}</p>
+        {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
     </div>
 );
 
@@ -39,7 +46,7 @@ const CategoryManagerModal: React.FC<{
             setNewPartCategory('');
         }
     };
-    
+
     const handleDelete = (type: 'service' | 'part', categoryToDelete: string) => {
         if (type === 'service') {
             setServiceCategories(prev => prev.filter(c => c !== categoryToDelete));
@@ -50,49 +57,139 @@ const CategoryManagerModal: React.FC<{
 
     return (
         <Modal title="Manage Categories" isOpen={true} onClose={onClose}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[60vh] overflow-y-auto pr-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                 <div>
-                    <h3 className="text-lg font-bold text-admin-text-primary mb-3">Service Categories</h3>
-                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg p-2 rounded-md">
+                    <h3 className="text-lg font-bold text-white mb-3">Service Categories</h3>
+                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto glass-light border border-white/10 p-2 rounded-xl custom-scrollbar">
                         {serviceCategories.map(cat => (
-                            <div key={cat} className="flex items-center justify-between bg-admin-card p-2 rounded">
-                                <span className="text-sm">{cat}</span>
-                                <button onClick={() => handleDelete('service', cat)} className="text-red-400 hover:text-red-300">&times;</button>
+                            <div key={cat} className="flex items-center justify-between glass-dark p-3 rounded-lg border border-white/5">
+                                <span className="text-sm text-gray-200">{cat}</span>
+                                <button onClick={() => handleDelete('service', cat)} className="text-red-400 hover:text-red-300 transition-colors">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
                             </div>
                         ))}
                     </div>
                     <div className="flex gap-2">
-                        <input type="text" value={newServiceCategory} onChange={e => setNewServiceCategory(e.target.value)} placeholder="New category..." className="flex-grow p-2 bg-admin-bg border border-admin-border rounded" />
-                        <button onClick={() => handleAdd('service')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded">Add</button>
+                        <input
+                            type="text"
+                            value={newServiceCategory}
+                            onChange={e => setNewServiceCategory(e.target.value)}
+                            placeholder="New category..."
+                            className="flex-grow p-3 glass-light border border-white/10 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all"
+                        />
+                        <button onClick={() => handleAdd('service')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-xl hover:bg-orange-600 transition-all shadow-glow">Add</button>
                     </div>
                 </div>
                 <div>
-                     <h3 className="text-lg font-bold text-admin-text-primary mb-3">Part Categories</h3>
-                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg p-2 rounded-md">
+                    <h3 className="text-lg font-bold text-white mb-3">Part Categories</h3>
+                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto glass-light border border-white/10 p-2 rounded-xl custom-scrollbar">
                         {partCategories.map(cat => (
-                            <div key={cat} className="flex items-center justify-between bg-admin-card p-2 rounded">
-                                <span className="text-sm">{cat}</span>
-                                <button onClick={() => handleDelete('part', cat)} className="text-red-400 hover:text-red-300">&times;</button>
+                            <div key={cat} className="flex items-center justify-between glass-dark p-3 rounded-lg border border-white/5">
+                                <span className="text-sm text-gray-200">{cat}</span>
+                                <button onClick={() => handleDelete('part', cat)} className="text-red-400 hover:text-red-300 transition-colors">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
                             </div>
                         ))}
                     </div>
                     <div className="flex gap-2">
-                        <input type="text" value={newPartCategory} onChange={e => setNewPartCategory(e.target.value)} placeholder="New category..." className="flex-grow p-2 bg-admin-bg border border-admin-border rounded" />
-                        <button onClick={() => handleAdd('part')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded">Add</button>
+                        <input
+                            type="text"
+                            value={newPartCategory}
+                            onChange={e => setNewPartCategory(e.target.value)}
+                            placeholder="New category..."
+                            className="flex-grow p-3 glass-light border border-white/10 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all"
+                        />
+                        <button onClick={() => handleAdd('part')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-xl hover:bg-orange-600 transition-all shadow-glow">Add</button>
                     </div>
                 </div>
             </div>
-            <div className="flex justify-end gap-4 mt-6 border-t border-admin-border pt-4">
-                <button onClick={onClose} className="bg-admin-border font-bold py-2 px-4 rounded-lg">Cancel</button>
-                <button onClick={handleSave} className="bg-admin-accent font-bold py-2 px-4 rounded-lg">Save Categories</button>
+            <div className="flex justify-end gap-4 mt-6 border-t border-white/10 pt-4">
+                <button onClick={onClose} className="px-6 py-2.5 glass-light border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium">Cancel</button>
+                <button onClick={handleSave} className="px-6 py-2.5 bg-gradient-to-r from-admin-accent to-orange-600 text-white rounded-xl hover:shadow-glow transition-all font-medium">Save Categories</button>
+            </div>
+        </Modal>
+    );
+};
+
+const DeleteConfirmationModal: React.FC<{
+    itemName: string;
+    itemType: 'service' | 'part';
+    onClose: () => void;
+    onConfirm: () => void;
+    impactCount?: number;
+}> = ({ itemName, itemType, onClose, onConfirm, impactCount }) => {
+    return (
+        <Modal title={`Delete ${itemType === 'service' ? 'Service' : 'Part'}`} isOpen={true} onClose={onClose}>
+            <div className="space-y-6 text-white">
+                <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl flex items-start gap-3">
+                    <span className="text-2xl">⚠️</span>
+                    <div>
+                        <h4 className="font-bold text-red-400">Warning</h4>
+                        <p className="text-sm text-gray-300 mt-1">
+                            You are about to delete <span className="font-bold text-white">"{itemName}"</span>.
+                            {impactCount !== undefined && impactCount > 0 && (
+                                <span className="block mt-2 text-yellow-400">
+                                    ⚠️ This {itemType} is currently used in {impactCount} active booking{impactCount > 1 ? 's' : ''}. Deleting it may affect these bookings.
+                                </span>
+                            )}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                    <h4 className="font-semibold text-white mb-2">This action will:</h4>
+                    <ul className="space-y-2 text-sm text-gray-300">
+                        <li className="flex items-start gap-2">
+                            <span className="text-red-400 mt-0.5">•</span>
+                            <span>Permanently remove "{itemName}" from the catalog</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="text-red-400 mt-0.5">•</span>
+                            <span>Make it unavailable for new bookings</span>
+                        </li>
+                        {impactCount !== undefined && impactCount > 0 && (
+                            <li className="flex items-start gap-2">
+                                <span className="text-yellow-400 mt-0.5">•</span>
+                                <span>Affect {impactCount} existing booking{impactCount > 1 ? 's' : ''}</span>
+                            </li>
+                        )}
+                    </ul>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                    <button onClick={onClose} className="px-6 py-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition-all font-medium">
+                        Cancel
+                    </button>
+                    <button onClick={onConfirm} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg shadow-red-900/20 transform hover:scale-105 transition-all">
+                        Delete {itemType === 'service' ? 'Service' : 'Part'}
+                    </button>
+                </div>
             </div>
         </Modal>
     );
 };
 
 const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void; onCancel: () => void; categories: string[] }> = ({ service, onSave, onCancel, categories }) => {
-    const [formData, setFormData] = useState({ id: service?.id || '', name: service?.name || '', description: service?.description || '', price: service?.price ?? '', estimatedTime: service?.estimatedTime || '', category: service?.category || (categories[0] || ''), imageUrl: service?.imageUrl || '', icon: service?.icon || '', });
+    const [formData, setFormData] = useState({
+        id: service?.id || '',
+        name: service?.name || '',
+        description: service?.description || '',
+        price: service?.price ?? '',
+        estimatedTime: service?.estimatedTime || '',
+        category: service?.category || (categories[0] || ''),
+        imageUrl: service?.imageUrl || '',
+        icon: service?.icon || ''
+    });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
+    const [isUploading, setIsUploading] = useState(false);
+    const [showIconPicker, setShowIconPicker] = useState(false);
+
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
         if (!data.name.trim()) newErrors.name = "Service name is required.";
@@ -104,39 +201,242 @@ const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void;
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => { const { name, value } = e.target; const newData = { ...formData, [name]: value }; setFormData(newData); validate(newData); };
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        const newData = { ...formData, [name]: value };
+        setFormData(newData);
+        if (errors[name]) validate(newData);
+    };
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            try { const base64 = await fileToBase64(file); const newData = { ...formData, imageUrl: base64 }; setFormData(newData); validate(newData); } 
-            catch (err) { setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.'})); }
+            setIsUploading(true);
+            try {
+                const base64 = await fileToBase64(file);
+                const newData = { ...formData, imageUrl: base64 };
+                setFormData(newData);
+                validate(newData);
+            } catch (err) {
+                setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.' }));
+            } finally {
+                setIsUploading(false);
+            }
         }
     };
-    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (validate()) { onSave({ ...formData, price: Number(formData.price) }); } };
-    const isSaveDisabled = Object.keys(errors).length > 0 || !formData.name || !formData.description || formData.price === '' || !formData.estimatedTime || !formData.category || !formData.imageUrl;
+
+    const handleIconSelect = (iconSvg: string) => {
+        const newData = { ...formData, icon: iconSvg };
+        setFormData(newData);
+        setShowIconPicker(false);
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (validate()) {
+            const serviceData: any = {
+                name: formData.name,
+                description: formData.description,
+                price: Number(formData.price),
+                estimatedTime: formData.estimatedTime,
+                category: formData.category,
+                imageUrl: formData.imageUrl,
+                icon: formData.icon
+            };
+
+            if (service?.id) {
+                serviceData.id = service.id;
+            }
+
+            console.log('Saving service:', serviceData);
+            onSave(serviceData);
+        }
+    };
+
+    const isSaveDisabled = isUploading;
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Service Name" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.name ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-            <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Description" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.description ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-            <input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="Price" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.price ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-            <input type="text" name="estimatedTime" value={formData.estimatedTime} onChange={handleChange} placeholder="Estimated Time" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.estimatedTime ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-            <select name="category" value={formData.category} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded ${errors.category ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`}><option value="" disabled>Select a category</option>{categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
+            {/* Service Image - MOVED TO TOP */}
             <div>
-                <label className="block text-sm font-medium text-admin-text-secondary mb-1">Service Image</label>
-                <input type="file" onChange={handleFileChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
-                {formData.imageUrl && <img src={formData.imageUrl} alt="Service preview" className="mt-4 rounded-lg max-h-40 w-auto" />}
-                {errors.imageUrl && <p className="text-red-400 text-xs mt-1">{errors.imageUrl}</p>}
+                <label className="block text-sm font-semibold text-white mb-2">Service Image *</label>
+                <div className="glass-light border border-white/10 rounded-xl p-4">
+                    <input
+                        type="file"
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        disabled={isUploading}
+                        className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent file:text-white hover:file:bg-orange-600 file:transition-all file:cursor-pointer disabled:opacity-50"
+                    />
+                    {isUploading && <p className="text-admin-accent text-sm mt-2">Uploading...</p>}
+                    {formData.imageUrl && (
+                        <div className="mt-4 flex justify-center">
+                            <img src={formData.imageUrl} alt="Service preview" className="rounded-lg max-h-40 w-auto border border-white/10" />
+                        </div>
+                    )}
+                    {errors.imageUrl && <p className="text-red-400 text-xs mt-2">{errors.imageUrl}</p>}
+                </div>
             </div>
-            <textarea name="icon" value={formData.icon} onChange={handleChange} placeholder="SVG Icon Code" rows={3} className="w-full p-3 bg-admin-bg border rounded border-admin-border placeholder-admin-text-secondary font-mono text-sm" />
-            <div className="flex justify-end gap-4 mt-6"><button type="button" onClick={onCancel} className="bg-admin-border text-white py-2 px-4 rounded-lg hover:bg-gray-600">Cancel</button><button type="submit" className="bg-admin-accent text-white py-2 px-4 rounded-lg hover:bg-orange-600 disabled:opacity-50" disabled={isSaveDisabled}>Save</button></div>
+
+            {/* Service Name */}
+            <div>
+                <label className="block text-sm font-semibold text-white mb-2">Service Name *</label>
+                <input
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="e.g., Oil Change, Brake Repair"
+                    className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.name ? 'border-red-500' : 'border-white/10'}`}
+                />
+                {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+            </div>
+
+            {/* Description */}
+            <div>
+                <label className="block text-sm font-semibold text-white mb-2">Description *</label>
+                <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    placeholder="Describe the service in detail..."
+                    rows={3}
+                    className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all resize-none ${errors.description ? 'border-red-500' : 'border-white/10'}`}
+                />
+                {errors.description && <p className="text-red-400 text-xs mt-1">{errors.description}</p>}
+            </div>
+
+            {/* Price and Estimated Time */}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">Price (₱) *</label>
+                    <input
+                        type="number"
+                        name="price"
+                        value={formData.price}
+                        onChange={handleChange}
+                        placeholder="0.00"
+                        step="0.01"
+                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.price ? 'border-red-500' : 'border-white/10'}`}
+                    />
+                    {errors.price && <p className="text-red-400 text-xs mt-1">{errors.price}</p>}
+                </div>
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">Estimated Time *</label>
+                    <input
+                        type="text"
+                        name="estimatedTime"
+                        value={formData.estimatedTime}
+                        onChange={handleChange}
+                        placeholder="e.g., 30 mins, 1-2 hours"
+                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.estimatedTime ? 'border-red-500' : 'border-white/10'}`}
+                    />
+                    {errors.estimatedTime && <p className="text-red-400 text-xs mt-1">{errors.estimatedTime}</p>}
+                </div>
+            </div>
+
+            {/* Category - ENHANCED DROPDOWN */}
+            <div>
+                <label className="block text-sm font-semibold text-white mb-2">Category *</label>
+                <div className="relative">
+                    <select
+                        name="category"
+                        value={formData.category}
+                        onChange={handleChange}
+                        className={`w-full p-3 glass-light border rounded-xl text-white bg-transparent focus:ring-2 focus:ring-admin-accent transition-all appearance-none cursor-pointer pr-10 ${errors.category ? 'border-red-500' : 'border-white/10'}`}
+                    >
+                        <option value="" disabled className="bg-gray-800 text-gray-400">Select a category</option>
+                        {categories.map(cat => (
+                            <option key={cat} value={cat} className="bg-gray-800 text-white py-2">
+                                {cat}
+                            </option>
+                        ))}
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                </div>
+                {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
+            </div>
+
+
+            {/* SVG Icon Selector - ENHANCED */}
+            <div>
+                <label className="block text-sm font-semibold text-white mb-2">Service Icon</label>
+                <div className="glass-light border border-white/10 rounded-xl p-4">
+                    {formData.icon && (
+                        <div className="mb-3 flex items-center gap-3">
+                            <div className="w-12 h-12 flex items-center justify-center glass-dark rounded-lg border border-white/10" dangerouslySetInnerHTML={{ __html: formData.icon }} />
+                            <span className="text-sm text-gray-300">Selected Icon</span>
+                        </div>
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => setShowIconPicker(!showIconPicker)}
+                        className="w-full px-4 py-2 glass-light border border-white/10 rounded-lg text-white hover:bg-white/10 transition-all text-sm font-medium"
+                    >
+                        {showIconPicker ? 'Hide Icon Library' : 'Choose Icon from Library'}
+                    </button>
+
+                    {showIconPicker && (
+                        <div className="mt-4 grid grid-cols-4 gap-3 max-h-64 overflow-y-auto custom-scrollbar p-2">
+                            {SERVICE_ICONS.map((item, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => handleIconSelect(item.icon)}
+                                    className={`p-3 glass-light border rounded-lg hover:border-admin-accent hover:bg-admin-accent/10 transition-all group ${formData.icon === item.icon ? 'border-admin-accent bg-admin-accent/20' : 'border-white/10'}`}
+                                    title={item.name}
+                                >
+                                    <div className="w-8 h-8 mx-auto text-white group-hover:text-admin-accent transition-colors" dangerouslySetInnerHTML={{ __html: item.icon }} />
+                                    <p className="text-xs text-gray-400 mt-1 truncate">{item.name}</p>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-white/10">
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    className="px-6 py-2.5 glass-light border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-gradient-to-r from-admin-accent to-orange-600 text-white rounded-xl hover:shadow-glow transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isSaveDisabled || isUploading}
+                >
+                    {service ? 'Update Service' : 'Create Service'}
+                </button>
+            </div>
         </form>
     );
 };
 
 const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: () => void; categories: string[] }> = ({ part, onSave, onCancel, categories }) => {
-    const [formData, setFormData] = useState({ id: part?.id || '', name: part?.name || '', description: part?.description || '', price: part?.price ?? '', salesPrice: part?.salesPrice ?? '', category: part?.category || (categories[0] || ''), sku: part?.sku || '', imageUrl: part?.imageUrls?.[0] || '', stock: part?.stock ?? 0, brand: part?.brand || '' });
+    const [formData, setFormData] = useState({
+        id: part?.id || '',
+        name: part?.name || '',
+        description: part?.description || '',
+        price: part?.price ?? '',
+        salesPrice: part?.salesPrice ?? '',
+        category: part?.category || (categories[0] || ''),
+        sku: part?.sku || '',
+        imageUrl: part?.imageUrls?.[0] || '',
+        stock: part?.stock ?? 0,
+        brand: part?.brand || ''
+    });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
+    const [isUploading, setIsUploading] = useState(false);
+
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
         if (!data.name.trim()) newErrors.name = "Part name is required.";
@@ -151,47 +451,211 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => { const { name, value } = e.target; const newData = { ...formData, [name]: value }; setFormData(newData); validate(newData); };
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        const newData = { ...formData, [name]: value };
+        setFormData(newData);
+        if (errors[name]) validate(newData);
+    };
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            try { const base64 = await fileToBase64(file); const newData = { ...formData, imageUrl: base64 }; setFormData(newData); validate(newData); } 
-            catch (err) { setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.'})); }
+            setIsUploading(true);
+            try {
+                const base64 = await fileToBase64(file);
+                const newData = { ...formData, imageUrl: base64 };
+                setFormData(newData);
+                validate(newData);
+            } catch (err) {
+                setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.' }));
+            } finally {
+                setIsUploading(false);
+            }
         }
     };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (validate()) {
             const { imageUrl, ...rest } = formData;
-            onSave({ ...rest, price: Number(formData.price), salesPrice: formData.salesPrice ? Number(formData.salesPrice) : undefined, stock: Number(formData.stock), imageUrls: [imageUrl] });
+            const partData: any = {
+                ...rest,
+                price: Number(formData.price),
+                salesPrice: formData.salesPrice ? Number(formData.salesPrice) : undefined,
+                stock: Number(formData.stock),
+                imageUrls: [imageUrl]
+            };
+
+            if (part?.id) {
+                partData.id = part.id;
+            }
+
+            console.log('Saving part:', partData);
+            onSave(partData);
         }
     };
-    const isSaveDisabled = Object.keys(errors).length > 0 || !formData.name || formData.price === '' || formData.stock === null || !formData.category || !formData.sku || !formData.imageUrl;
+
+    const isSaveDisabled = isUploading;
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Part Name" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.name ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-            <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Description" className="w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary border-admin-border focus:ring-admin-accent focus:border-admin-accent" />
-            <div className="grid grid-cols-2 gap-4">
-                <input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="Price" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.price ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-                <input type="number" name="salesPrice" value={formData.salesPrice} onChange={handleChange} placeholder="Sales Price (optional)" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.salesPrice ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-            </div>
-            {errors.salesPrice && <p className="text-red-400 text-xs -mt-3 pl-1">{errors.salesPrice}</p>}
-             <div className="grid grid-cols-2 gap-4">
-                <select name="category" value={formData.category} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded ${errors.category ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`}><option value="" disabled>Select a category</option>{categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
-                <input type="number" name="stock" value={formData.stock} onChange={handleChange} placeholder="Stock Quantity" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.stock ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-                <input type="text" name="sku" value={formData.sku} onChange={handleChange} placeholder="SKU" className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.sku ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-                 <input type="text" name="brand" value={formData.brand} onChange={handleChange} placeholder="Brand" className="w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary border-admin-border focus:ring-admin-accent focus:border-admin-accent" />
-            </div>
+            {/* Part Image - Top */}
             <div>
-                <label className="block text-sm font-medium text-admin-text-secondary mb-1">Part Image</label>
-                <input type="file" onChange={handleFileChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
-                {formData.imageUrl && <img src={formData.imageUrl} alt="Part preview" className="mt-4 rounded-lg max-h-40 w-auto" />}
-                {errors.imageUrl && <p className="text-red-400 text-xs mt-1">{errors.imageUrl}</p>}
+                <label className="block text-sm font-semibold text-white mb-2">Part Image *</label>
+                <div className="glass-light border border-white/10 rounded-xl p-4">
+                    <input
+                        type="file"
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        disabled={isUploading}
+                        className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent file:text-white hover:file:bg-orange-600 file:transition-all file:cursor-pointer disabled:opacity-50"
+                    />
+                    {isUploading && <p className="text-admin-accent text-sm mt-2">Uploading...</p>}
+                    {formData.imageUrl && (
+                        <div className="mt-4 flex justify-center">
+                            <img src={formData.imageUrl} alt="Part preview" className="rounded-lg max-h-40 w-auto border border-white/10" />
+                        </div>
+                    )}
+                    {errors.imageUrl && <p className="text-red-400 text-xs mt-2">{errors.imageUrl}</p>}
+                </div>
             </div>
-            <div className="flex justify-end gap-4 mt-6"><button type="button" onClick={onCancel} className="bg-admin-border text-white py-2 px-4 rounded-lg hover:bg-gray-600">Cancel</button><button type="submit" className="bg-admin-accent text-white py-2 px-4 rounded-lg hover:bg-orange-600 disabled:opacity-50" disabled={isSaveDisabled}>Save</button></div>
+
+            {/* Name */}
+            <div>
+                <label className="block text-sm font-semibold text-white mb-2">Part Name *</label>
+                <input
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="Part Name"
+                    className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.name ? 'border-red-500' : 'border-white/10'}`}
+                />
+                {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+            </div>
+
+            {/* Description */}
+            <div>
+                <label className="block text-sm font-semibold text-white mb-2">Description</label>
+                <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    placeholder="Description"
+                    rows={3}
+                    className="w-full p-3 glass-light border border-white/10 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all resize-none"
+                />
+            </div>
+
+            {/* Price & Sales Price */}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">Price (₱) *</label>
+                    <input
+                        type="number"
+                        name="price"
+                        value={formData.price}
+                        onChange={handleChange}
+                        placeholder="0.00"
+                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.price ? 'border-red-500' : 'border-white/10'}`}
+                    />
+                    {errors.price && <p className="text-red-400 text-xs mt-1">{errors.price}</p>}
+                </div>
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">Sales Price (Optional)</label>
+                    <input
+                        type="number"
+                        name="salesPrice"
+                        value={formData.salesPrice}
+                        onChange={handleChange}
+                        placeholder="0.00"
+                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.salesPrice ? 'border-red-500' : 'border-white/10'}`}
+                    />
+                    {errors.salesPrice && <p className="text-red-400 text-xs mt-1">{errors.salesPrice}</p>}
+                </div>
+            </div>
+
+            {/* Category & Stock */}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">Category *</label>
+                    <div className="relative">
+                        <select
+                            name="category"
+                            value={formData.category}
+                            onChange={handleChange}
+                            className={`w-full p-3 glass-light border rounded-xl text-white bg-transparent focus:ring-2 focus:ring-admin-accent transition-all appearance-none cursor-pointer pr-10 ${errors.category ? 'border-red-500' : 'border-white/10'}`}
+                        >
+                            <option value="" disabled className="bg-gray-800 text-gray-400">Select a category</option>
+                            {categories.map(cat => <option key={cat} value={cat} className="bg-gray-800 text-white py-2">{cat}</option>)}
+                        </select>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </div>
+                    </div>
+                    {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
+                </div>
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">Stock *</label>
+                    <input
+                        type="number"
+                        name="stock"
+                        value={formData.stock}
+                        onChange={handleChange}
+                        placeholder="0"
+                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.stock ? 'border-red-500' : 'border-white/10'}`}
+                    />
+                    {errors.stock && <p className="text-red-400 text-xs mt-1">{errors.stock}</p>}
+                </div>
+            </div>
+
+            {/* SKU & Brand */}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">SKU *</label>
+                    <input
+                        type="text"
+                        name="sku"
+                        value={formData.sku}
+                        onChange={handleChange}
+                        placeholder="SKU"
+                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.sku ? 'border-red-500' : 'border-white/10'}`}
+                    />
+                    {errors.sku && <p className="text-red-400 text-xs mt-1">{errors.sku}</p>}
+                </div>
+                <div>
+                    <label className="block text-sm font-semibold text-white mb-2">Brand</label>
+                    <input
+                        type="text"
+                        name="brand"
+                        value={formData.brand}
+                        onChange={handleChange}
+                        placeholder="Brand"
+                        className="w-full p-3 glass-light border border-white/10 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all"
+                    />
+                </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-white/10">
+                <button
+                    type="button"
+                    onClick={onCancel}
+                    className="px-6 py-2.5 glass-light border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-gradient-to-r from-admin-accent to-orange-600 text-white rounded-xl hover:shadow-glow transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isSaveDisabled || isUploading}
+                >
+                    {part ? 'Update Part' : 'Create Part'}
+                </button>
+            </div>
         </form>
     );
 };
@@ -199,7 +663,7 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
 const ItemCard: React.FC<{ item: Service | Part, onEdit: () => void, onDelete: () => void }> = ({ item, onEdit, onDelete }) => {
     const hasSalesPrice = 'salesPrice' in item && item.salesPrice && item.salesPrice > 0;
     const imageUrl = 'sku' in item ? item.imageUrls[0] : item.imageUrl;
-    
+
     return (
         <div className="bg-admin-card rounded-lg overflow-hidden group relative flex flex-col border border-admin-border">
             <img src={imageUrl} alt={item.name} className="h-40 w-full object-cover" />
@@ -235,6 +699,9 @@ const AdminCatalogScreen: React.FC = () => {
     const [isPartModalOpen, setIsPartModalOpen] = useState(false);
     const [editingPart, setEditingPart] = useState<Part | undefined>(undefined);
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+    const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [itemTypeToDelete, setItemTypeToDelete] = useState<'service' | 'part'>('service');
 
     const serviceCategories = useMemo(() => ['all', ...(db?.settings.serviceCategories || [])], [db]);
     const partCategories = useMemo(() => ['all', ...(db?.settings.partCategories || [])], [db]);
@@ -255,24 +722,122 @@ const AdminCatalogScreen: React.FC = () => {
 
     const handleOpenServiceModal = (service?: Service) => { setEditingService(service); setIsServiceModalOpen(true); };
     const handleCloseServiceModal = () => { setEditingService(undefined); setIsServiceModalOpen(false); };
-    const handleSaveService = (service: Service) => { service.id ? updateService(service) : addService(service); handleCloseServiceModal(); };
-    const handleDeleteService = (id: string) => { if (window.confirm('Are you sure?')) deleteService(id); };
 
     const handleOpenPartModal = (part?: Part) => { setEditingPart(part); setIsPartModalOpen(true); };
     const handleClosePartModal = () => { setEditingPart(undefined); setIsPartModalOpen(false); };
-    const handleSavePart = (part: Part) => { part.id ? updatePart(part) : addPart(part); handleClosePartModal(); };
-    const handleDeletePart = (id: string) => { if (window.confirm('Are you sure?')) deletePart(id); };
+    const handleSaveService = async (service: Service) => {
+        try {
+            if (service.id) {
+                await updateService(service);
+            } else {
+                await addService(service);
+            }
+            handleCloseServiceModal();
+        } catch (error: any) {
+            console.error("Failed to save service:", error);
+            alert(`Failed to save service: ${error.message || JSON.stringify(error)}`);
+        }
+    };
+
+    const handleSavePart = async (part: Part) => {
+        try {
+            if (part.id) {
+                await updatePart(part);
+            } else {
+                await addPart(part);
+            }
+            handleClosePartModal();
+        } catch (error: any) {
+            console.error("Failed to save part:", error);
+            alert(`Failed to save part: ${error.message || JSON.stringify(error)}`);
+        }
+    };
+
+    const handleDeleteService = async () => {
+        if (itemToDelete) {
+            try {
+                await deleteService(itemToDelete);
+                setItemToDelete(null);
+                setDeleteModalOpen(false);
+            } catch (error) {
+                console.error("Failed to delete service:", error);
+                alert("Failed to delete service. Please try again.");
+            }
+        }
+    };
+
+    const handleDeletePart = async () => {
+        if (itemToDelete) {
+            try {
+                await deletePart(itemToDelete);
+                setItemToDelete(null);
+                setDeleteModalOpen(false);
+            } catch (error) {
+                console.error("Failed to delete part:", error);
+                alert("Failed to delete part. Please try again.");
+            }
+        }
+    };
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="flex-shrink-0">
-                <h1 className="text-3xl font-bold">Catalog Management</h1>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-6">
-                    <StatCard title="Total Services" value={db.services.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>} />
-                    <StatCard title="Total Parts & Tools" value={db.parts.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>} />
+                <div>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">Services & Catalog Management</h1>
+                    <p className="mt-2 text-gray-400">Manage your services and parts inventory with real-time insights.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 my-6">
+                    {activeTab === 'services' ? (
+                        <>
+                            <StatCard title="Total Services" value={db.services.length} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>} />
+                            <StatCard
+                                title="Most Popular"
+                                value={(() => {
+                                    const counts = db.bookings.reduce((acc, b) => { acc[b.service.id] = (acc[b.service.id] || 0) + 1; return acc; }, {} as Record<string, number>);
+                                    const entries = Object.entries(counts);
+                                    if (entries.length === 0) return 'N/A';
+                                    const topServiceId = entries.sort((a, b) => (b[1] as number) - (a[1] as number))[0]?.[0];
+                                    return db.services.find(s => s.id === topServiceId)?.name.slice(0, 15) || 'N/A';
+                                })()}
+                                subtitle={`${(() => {
+                                    const counts = db.bookings.reduce((acc, b) => { acc[b.service.id] = (acc[b.service.id] || 0) + 1; return acc; }, {} as Record<string, number>);
+                                    const values = Object.values(counts);
+                                    if (values.length === 0) return 0;
+                                    return values.sort((a, b) => (b as number) - (a as number))[0] || 0;
+                                })()} bookings`}
+                                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
+                            />
+                            <StatCard
+                                title="Total Revenue"
+                                value={(db.bookings.filter(b => b.status === 'Completed').reduce((sum, b) => sum + b.service.price, 0) / 1000).toFixed(1)}
+                                prefix="₱"
+                                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                            />
+                            <StatCard
+                                title="Avg Service Price"
+                                value={(db.services.reduce((sum, s) => sum + s.price, 0) / db.services.length || 0).toFixed(0)}
+                                prefix="₱"
+                                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>}
+                            />
+                            <StatCard
+                                title="Categories"
+                                value={db.settings.serviceCategories.length}
+                                subtitle={`${db.settings.serviceCategories[0] || 'None'}`}
+                                icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>}
+                            />
+                        </>
+                    ) : (
+                        <>
+                            <StatCard title="Total Parts" value={db.parts.length} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>} />
+                            <StatCard title="In Stock" value={db.parts.filter(p => p.stock > 0).length} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
+                            <StatCard title="Low Stock" value={db.parts.filter(p => p.stock > 0 && p.stock < 10).length} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>} />
+                            <StatCard title="Out of Stock" value={db.parts.filter(p => p.stock === 0).length} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
+                            <StatCard title="Categories" value={db.settings.partCategories.length} subtitle={`${db.settings.partCategories[0] || 'None'}`} icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>} />
+                        </>
+                    )}
                 </div>
                 <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
-                     <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                    <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
                         <input type="text" placeholder={activeTab === 'services' ? "Search name or category..." : "Search name or SKU..."} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full sm:w-64 p-2 bg-admin-card border border-admin-border rounded-lg" />
                         <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="w-full sm:w-auto p-2 bg-admin-card border border-admin-border rounded-lg">{(activeTab === 'services' ? serviceCategories : partCategories).map(cat => <option key={cat} value={cat}>{cat === 'all' ? 'All Categories' : cat}</option>)}</select>
                     </div>

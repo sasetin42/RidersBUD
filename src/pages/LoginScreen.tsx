@@ -6,6 +6,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 
+import { motion } from 'framer-motion';
+
 const LoginScreen: React.FC = () => {
     const { loginWithCredentials, loginWithGoogle, loginWithFacebook, loading: authLoading } = useAuth();
     const { login: mechanicLogin, loading: mechanicAuthLoading } = useMechanicAuth();
@@ -119,16 +121,41 @@ const LoginScreen: React.FC = () => {
 
     const anyLoading = isLoading || authLoading || mechanicAuthLoading;
 
+
+
     return (
-        <div className="relative flex flex-col items-center justify-center min-h-screen bg-secondary overflow-hidden p-4">
+        <motion.div
+            className="relative flex flex-col items-center justify-center min-h-screen bg-secondary overflow-hidden p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+        >
             {/* Background Decorative Elements */}
             <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-primary/20 rounded-full blur-[100px] animate-pulse"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-600/10 rounded-full blur-[100px] animate-pulse delay-1000"></div>
 
-            <div className="relative w-full max-w-md bg-dark-gray/40 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-2xl animate-slideInUp">
+            <motion.div
+                className="relative w-full max-w-md bg-dark-gray/40 backdrop-blur-xl border border-white/10 p-8 rounded-3xl shadow-2xl"
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{
+                    type: "spring",
+                    stiffness: 100,
+                    damping: 20,
+                    delay: 0.2
+                }}
+            >
                 <div className="text-center mb-8">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="Logo" className="w-48 mb-6 max-h-24 object-contain mx-auto drop-shadow-lg" />
+                        <motion.img
+                            src={logoUrl}
+                            alt="Logo"
+                            className="w-48 mb-6 max-h-24 object-contain mx-auto drop-shadow-lg"
+                            initial={{ scale: 0.8 }}
+                            animate={{ scale: 1 }}
+                            transition={{ duration: 0.5 }}
+                        />
                     ) : (
                         <h1 className="text-5xl font-bold text-primary mb-4 tracking-tight">{settings.appName || 'RidersBUD'}</h1>
                     )}
@@ -136,9 +163,15 @@ const LoginScreen: React.FC = () => {
                 </div>
 
                 <div className="mb-8 p-1 bg-field/50 rounded-xl flex relative overflow-hidden">
-                    <div
-                        className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-primary rounded-lg transition-all duration-300 ease-out shadow-lg ${activeTab === 'customer' ? 'left-1' : 'left-[calc(50%+4px)]'}`}
-                    ></div>
+                    <motion.div
+                        className="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-primary rounded-lg shadow-lg"
+                        layoutId="activeTab"
+                        initial={false}
+                        animate={{
+                            left: activeTab === 'customer' ? '4px' : 'calc(50% + 4px)'
+                        }}
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    ></motion.div>
                     <button
                         onClick={() => setActiveTab('customer')}
                         className={`flex-1 py-2.5 text-center text-sm font-semibold rounded-lg transition-colors relative z-10 ${activeTab === 'customer' ? 'text-white' : 'text-light-gray hover:text-white'}`}
@@ -154,8 +187,15 @@ const LoginScreen: React.FC = () => {
                 </div>
 
                 {activeTab === 'customer' ? (
-                    <div className="animate-fadeIn">
+                    <motion.div
+                        key="customer"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        transition={{ duration: 0.3 }}
+                    >
                         <form onSubmit={handleCustomerLogin} noValidate className="space-y-5">
+                            {/* ... existing form fields ... */}
                             <div className="space-y-1">
                                 <label className="text-xs font-medium text-light-gray ml-1">Email Address</label>
                                 <input
@@ -183,13 +223,15 @@ const LoginScreen: React.FC = () => {
 
                             {error && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-center text-sm">{error}</div>}
 
-                            <button
+                            <motion.button
                                 type="submit"
                                 disabled={anyLoading}
-                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-bold py-3.5 rounded-xl hover:shadow-lg hover:shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed"
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-bold py-3.5 rounded-xl hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {anyLoading ? <Spinner size="sm" color="text-white" /> : 'Sign In'}
-                            </button>
+                            </motion.button>
                         </form>
 
                         <div className="relative flex py-6 items-center">
@@ -208,10 +250,17 @@ const LoginScreen: React.FC = () => {
                                 Facebook
                             </button>
                         </div>
-                    </div>
+                    </motion.div>
                 ) : (
-                    <div className="animate-fadeIn">
+                    <motion.div
+                        key="mechanic"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ duration: 0.3 }}
+                    >
                         <form onSubmit={handleMechanicLogin} className="space-y-5">
+                            {/* ... existing mechanic form fields ... */}
                             <div className="space-y-1">
                                 <label className="text-xs font-medium text-light-gray ml-1">Mechanic Email</label>
                                 <input
@@ -235,15 +284,17 @@ const LoginScreen: React.FC = () => {
 
                             {mechanicError && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-center text-sm">{mechanicError}</div>}
 
-                            <button
+                            <motion.button
                                 type="submit"
                                 disabled={anyLoading}
-                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-bold py-3.5 rounded-xl hover:shadow-lg hover:shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center disabled:opacity-70"
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-bold py-3.5 rounded-xl hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 flex items-center justify-center disabled:opacity-70"
                             >
                                 {anyLoading ? <Spinner size="sm" color="text-white" /> : 'Login as Mechanic'}
-                            </button>
+                            </motion.button>
                         </form>
-                    </div>
+                    </motion.div>
                 )}
 
                 <div className="mt-8 text-center">
@@ -254,8 +305,8 @@ const LoginScreen: React.FC = () => {
                         </button>
                     </p>
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     );
 };
 

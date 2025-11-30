@@ -15,7 +15,7 @@ const StatCard: React.FC<{ title: string; value: number | string; icon: React.Re
     </div>
 );
 
-const modules: AdminModule[] = ['dashboard', 'analytics', 'bookings', 'catalog', 'mechanics', 'customers', 'marketing', 'users', 'settings'];
+const modules: AdminModule[] = ['dashboard', 'analytics', 'bookings', 'services', 'mechanics', 'customers', 'marketing', 'users', 'settings'];
 
 const UserFormModal: React.FC<{
     user?: AdminUser;
@@ -29,7 +29,7 @@ const UserFormModal: React.FC<{
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) newErrors.email = "Invalid email format.";
-        if (!user && (!data.password || data.password.length < 6)) { newErrors.password = "Password must be at least 6 characters for new users."; } 
+        if (!user && (!data.password || data.password.length < 6)) { newErrors.password = "Password must be at least 6 characters for new users."; }
         else if (user && data.password && data.password.length < 6) { newErrors.password = "New password must be at least 6 characters."; }
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -46,7 +46,7 @@ const UserFormModal: React.FC<{
             validate(newData);
         } else { const newData = { ...formData, [name]: value }; setFormData(newData); validate(newData); }
     };
-    
+
     const handlePermissionChange = (module: AdminModule, level: PermissionLevel) => {
         setFormData(prev => ({ ...prev, permissions: { ...prev.permissions, [module]: level } }));
     };
@@ -60,7 +60,7 @@ const UserFormModal: React.FC<{
             else onSave(finalData as Omit<AdminUser, 'id'>);
         }
     };
-    
+
     const isSaveDisabled = !formData.email || (!user && !formData.password) || Object.keys(errors).length > 0;
 
     return (
@@ -130,12 +130,12 @@ const AdminUsersScreen: React.FC = () => {
                     <h1 className="text-3xl font-bold">Users & Roles</h1>
                     <button onClick={() => handleOpenModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">+ Add User</button>
                 </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-6">
                     <StatCard title="Total Admin Users" value={db.adminUsers.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>} />
                     <StatCard title="Configured Roles" value={db.roles.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4z" /></svg>} />
                 </div>
             </div>
-             <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead className="sticky top-0 bg-admin-bg z-10">

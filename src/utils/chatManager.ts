@@ -1,59 +1,73 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 export interface ChatMessage {
-    sender: 'customer' | 'mechanic';
-    text: string;
-    timestamp: number;
+    id: string;
+    sender_id: string;
+    content: string;
+    created_at: string;
+    sender?: 'customer' | 'mechanic'; // For backward compatibility / UI helper
 }
 
-const getChatHistory = (bookingId: string): ChatMessage[] => {
-    try {
-        const stored = localStorage.getItem(`chat_${bookingId}`);
-        return stored ? JSON.parse(stored) : [];
-    } catch (e) {
-        console.error("Failed to parse chat history", e);
-        return [];
-    }
-};
-
-const saveChatHistory = (bookingId: string, messages: ChatMessage[]) => {
-    try {
-        localStorage.setItem(`chat_${bookingId}`, JSON.stringify(messages));
-    } catch (e) {
-        console.error("Failed to save chat history", e);
-    }
-};
-
-export const useChat = (bookingId: string) => {
-    const [messages, setMessages] = useState<ChatMessage[]>(() => getChatHistory(bookingId));
-
-    const handleStorageChange = useCallback((event: StorageEvent) => {
-        if (event.key === `chat_${bookingId}`) {
-            setMessages(getChatHistory(bookingId));
-        }
-    }, [bookingId]);
+export const useChat = (bookingId: string, currentUserId: string | undefined) => {
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
 
     useEffect(() => {
-        // Listen for changes from other tabs/windows
-        window.addEventListener('storage', handleStorageChange);
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
+        if (!bookingId) return;
+
+        // Fetch initial messages
+        const fetchMessages = async () => {
+            const { data, error } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('booking_id', bookingId)
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.error("Error fetching messages:", error);
+            } else {
+                setMessages(data || []);
+            }
         };
-    }, [handleStorageChange]);
 
-    const sendMessage = (message: ChatMessage) => {
-        const newMessages = [...getChatHistory(bookingId), message];
-        saveChatHistory(bookingId, newMessages);
-        setMessages(newMessages);
+        fetchMessages();
 
-        // Dispatch a storage event to notify the current window/tab of the change,
-        // as the native 'storage' event only fires for other tabs.
-        window.dispatchEvent(
-            new StorageEvent('storage', {
-                key: `chat_${bookingId}`,
-                newValue: JSON.stringify(newMessages),
-            })
-        );
+        // Subscribe to new messages
+        const channel = supabase.channel(`chat:${bookingId}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
+                (payload) => {
+                    const newMessage = payload.new as ChatMessage;
+                    setMessages(prev => [...prev, newMessage]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [bookingId]);
+
+    const sendMessage = async (text: string) => {
+        if (!currentUserId || !text.trim()) return;
+
+        try {
+            const { error } = await supabase.from('messages').insert([{
+                booking_id: bookingId,
+                sender_id: currentUserId,
+                content: text
+            }]);
+
+            if (error) throw error;
+
+            // Optimistic update is optional since we have real-time subscription, 
+            // but can be added for instant feedback if network is slow.
+            // For now, we rely on the subscription to add the message to the list.
+        } catch (error) {
+            console.error("Error sending message:", error);
+            alert("Failed to send message");
+        }
     };
 
     return { messages, sendMessage };

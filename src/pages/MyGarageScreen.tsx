@@ -92,7 +92,7 @@ const VehicleFormModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true">
-            <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div className="glass border border-white/10 rounded-xl p-6 w-full max-w-sm animate-scaleUp max-h-[90vh] overflow-y-auto scrollbar-thin shadow-2xl shadow-primary/10">
                 <h2 className="text-xl font-bold mb-4">{vehicle ? 'Edit Vehicle' : 'Add New Vehicle'}</h2>
                 <form onSubmit={handleSave} noValidate className="space-y-4">
                     <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1">Vehicle Images</h3>
@@ -293,7 +293,7 @@ const MyGarageScreen: React.FC = () => {
             <div className="flex-grow p-4 space-y-4 overflow-y-auto">
                 {user.vehicles.length > 0 ? (
                     user.vehicles.map(v => (
-                        <div key={v.plateNumber} className={`bg-dark-gray rounded-lg shadow-sm relative transition-all duration-300 ${v.isPrimary ? 'border-2 border-primary' : 'border-2 border-transparent'}`}>
+                        <div key={v.plateNumber} className={`glass rounded-xl shadow-lg relative transition-all duration-300 hover:-translate-y-1 ${v.isPrimary ? 'border-2 border-primary shadow-glow-sm' : 'border-2 border-white/10 hover:border-white/20'}`}>
                             <div className="p-4">
                                 {v.isPrimary && (
                                     <span className="absolute top-3 right-3 bg-primary text-white text-xs font-bold px-2 py-1 rounded-full z-10">

@@ -20,48 +20,50 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.Re
 const OrderDetailsModal: React.FC<{ order: Order; onClose: () => void; }> = ({ order, onClose }) => {
     return (
         <Modal title={`Order Details #${order.id.toUpperCase().slice(-6)}`} isOpen={true} onClose={onClose}>
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+            <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar text-white">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-admin-bg p-3 rounded-lg">
-                        <p className="text-xs text-admin-text-secondary">Customer</p>
-                        <p className="font-semibold text-admin-text-primary">{order.customerName}</p>
+                    <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Customer</p>
+                        <p className="font-semibold text-lg">{order.customerName}</p>
                     </div>
-                    <div className="bg-admin-bg p-3 rounded-lg">
-                        <p className="text-xs text-admin-text-secondary">Order Date</p>
-                        <p className="font-semibold text-admin-text-primary">{new Date(order.date).toLocaleString()}</p>
+                    <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Order Date</p>
+                        <p className="font-semibold text-lg">{new Date(order.date).toLocaleString()}</p>
                     </div>
                 </div>
-                
-                <div className="bg-admin-bg p-3 rounded-lg">
-                    <h3 className="font-bold text-admin-accent mb-2">Items Ordered ({order.items.reduce((acc, item) => acc + item.quantity, 0)})</h3>
-                    <div className="space-y-3">
+
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                    <h3 className="font-bold text-admin-accent mb-4 text-sm uppercase tracking-wider">Items Ordered ({order.items.reduce((acc, item) => acc + item.quantity, 0)})</h3>
+                    <div className="space-y-4">
                         {order.items.map(item => (
-                            <div key={item.id} className="flex items-center gap-3 border-b border-admin-border pb-3 last:pb-0 last:border-b-0">
-                                <img src={item.imageUrls[0]} alt={item.name} className="w-14 h-14 rounded-md object-cover" />
+                            <div key={item.id} className="flex items-center gap-4 border-b border-white/5 pb-4 last:pb-0 last:border-b-0">
+                                <div className="h-16 w-16 rounded-lg overflow-hidden bg-black/20 flex-shrink-0">
+                                    <img src={item.imageUrls[0]} alt={item.name} className="h-full w-full object-cover" />
+                                </div>
                                 <div className="flex-grow">
                                     <p className="font-semibold text-sm">{item.name}</p>
-                                    <p className="text-xs text-admin-text-secondary">
-                                        {item.quantity} x ₱{item.price.toFixed(2)}
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        <span className="text-white font-mono">{item.quantity}</span> x ₱{item.price.toFixed(2)}
                                     </p>
                                 </div>
-                                <p className="font-semibold text-sm">₱{(item.quantity * item.price).toFixed(2)}</p>
+                                <p className="font-bold text-admin-accent">₱{(item.quantity * item.price).toFixed(2)}</p>
                             </div>
                         ))}
                     </div>
                 </div>
 
                 {order.statusHistory && order.statusHistory.length > 0 && (
-                     <div className="bg-admin-bg p-4 rounded-lg">
-                        <h3 className="font-bold text-admin-accent mb-4">Status History</h3>
+                    <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                        <h3 className="font-bold text-admin-accent mb-4 text-sm uppercase tracking-wider">Status History</h3>
                         <div className="relative pl-5">
-                            <div className="absolute left-7 top-2 bottom-2 w-0.5 bg-admin-border"></div>
-                            <ul className="space-y-4">
-                                {[...(order.statusHistory || [])].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map((s, i) => (
-                                    <li key={i} className="text-sm flex items-start relative">
-                                        <div className={`absolute left-[-1.1rem] top-1 w-4 h-4 rounded-full flex items-center justify-center ${i === 0 ? 'bg-admin-accent ring-4 ring-admin-accent/20' : 'bg-admin-border'}`}></div>
-                                        <div className="flex justify-between w-full">
-                                            <span className={`font-semibold ${i === 0 ? 'text-white' : 'text-admin-text-secondary'}`}>{s.status}</span>
-                                            <span className={`text-xs ${i === 0 ? 'text-gray-300' : 'text-gray-500'}`}>{new Date(s.timestamp).toLocaleString()}</span>
+                            <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-white/10"></div>
+                            <ul className="space-y-6">
+                                {[...(order.statusHistory || [])].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map((s, i) => (
+                                    <li key={i} className="text-sm flex items-start relative pl-6">
+                                        <div className={`absolute left-0 top-1.5 w-4 h-4 rounded-full border-2 ${i === 0 ? 'bg-admin-accent border-admin-accent shadow-[0_0_10px_rgba(249,115,22,0.5)]' : 'bg-admin-bg border-gray-600'}`}></div>
+                                        <div className="flex justify-between w-full items-center">
+                                            <span className={`font-semibold ${i === 0 ? 'text-white' : 'text-gray-400'}`}>{s.status}</span>
+                                            <span className="text-xs text-gray-500 font-mono">{new Date(s.timestamp).toLocaleString()}</span>
                                         </div>
                                     </li>
                                 ))}
@@ -70,16 +72,20 @@ const OrderDetailsModal: React.FC<{ order: Order; onClose: () => void; }> = ({ o
                     </div>
                 )}
 
-                <div className="bg-admin-bg p-4 rounded-lg text-right">
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-admin-text-secondary">Payment Method:</span>
-                        <span className="font-semibold text-admin-text-primary">{order.paymentMethod}</span>
+                <div className="bg-gradient-to-r from-white/5 to-white/10 p-6 rounded-xl border border-white/10">
+                    <div className="flex justify-between items-center text-sm mb-2">
+                        <span className="text-gray-400">Payment Method</span>
+                        <span className="font-semibold text-white">{order.paymentMethod}</span>
                     </div>
-                    <div className="flex justify-between items-center text-xl mt-2">
-                        <span className="text-admin-text-secondary">Grand Total:</span>
-                        <span className="font-bold text-admin-accent">₱{order.total.toFixed(2)}</span>
+                    <div className="h-px bg-white/10 my-3"></div>
+                    <div className="flex justify-between items-center text-xl">
+                        <span className="text-gray-300">Grand Total</span>
+                        <span className="font-bold text-admin-accent text-2xl">₱{order.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                 </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+                <button onClick={onClose} className="bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-6 rounded-xl transition-colors">Close</button>
             </div>
         </Modal>
     )
@@ -93,7 +99,7 @@ const AdminOrdersScreen: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'date', direction: 'descending' });
     const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
-    
+
     const orderStats = useMemo(() => {
         if (!db) return { total: 0, revenue: 0, avgValue: 0 };
         const revenue = db.orders.reduce((sum, o) => sum + o.total, 0);
@@ -154,14 +160,12 @@ const AdminOrdersScreen: React.FC = () => {
     const handleUpdateStatus = async (orderId: string, status: OrderStatus) => {
         try {
             await updateOrderStatus(orderId, status);
-            // FIX: Add missing `recipientId` property.
             addNotification({ type: 'success', title: 'Order Updated', message: `Order #${orderId.slice(-6)} status set to ${status}.`, recipientId: 'all' });
         } catch (e) {
-            // FIX: Add missing `recipientId` property.
             addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'all' });
         }
     };
-    
+
     const orderStatuses: Array<OrderStatus | 'all'> = ['all', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
     const statusColors: Record<OrderStatus, string> = { Processing: 'bg-blue-500/20 text-blue-300', Shipped: 'bg-yellow-500/20 text-yellow-300', Delivered: 'bg-green-500/20 text-green-300', Cancelled: 'bg-red-500/20 text-red-300' };
 
@@ -172,7 +176,7 @@ const AdminOrdersScreen: React.FC = () => {
                 <h1 className="text-3xl font-bold">Parts Orders</h1>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 my-6">
                     <StatCard title="Total Orders" value={orderStats.total.toLocaleString()} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>} />
-                    <StatCard title="Total Revenue" value={`₱${(orderStats.revenue/1000).toFixed(1)}k`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>} />
+                    <StatCard title="Total Revenue" value={`₱${(orderStats.revenue / 1000).toFixed(1)}k`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>} />
                     <StatCard title="Avg. Order Value" value={`₱${orderStats.avgValue.toFixed(2)}`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 2v.01" /></svg>} />
                 </div>
                 <div className="flex flex-wrap gap-4 mb-4">
@@ -209,9 +213,9 @@ const AdminOrdersScreen: React.FC = () => {
                                     <td className="py-3 px-2 text-center">
                                         <div className="flex items-center justify-center gap-2">
                                             <button onClick={() => setViewingOrder(order)} className="font-semibold text-blue-400 hover:text-blue-300 text-sm">View</button>
-                                            <select 
-                                                value={order.status} 
-                                                onChange={(e) => handleUpdateStatus(order.id, e.target.value as OrderStatus)} 
+                                            <select
+                                                value={order.status}
+                                                onChange={(e) => handleUpdateStatus(order.id, e.target.value as OrderStatus)}
                                                 className="bg-admin-card border border-admin-border p-1 rounded text-xs"
                                                 onClick={(e) => e.stopPropagation()} // Prevent row click
                                             >
@@ -225,7 +229,7 @@ const AdminOrdersScreen: React.FC = () => {
                             )}
                         </tbody>
                     </table>
-                     {viewingOrder && (<OrderDetailsModal order={viewingOrder} onClose={() => setViewingOrder(null)} />)}
+                    {viewingOrder && (<OrderDetailsModal order={viewingOrder} onClose={() => setViewingOrder(null)} />)}
                 </div>
             </div>
         </div>

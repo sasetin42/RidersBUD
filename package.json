@@ -9,14 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^1.21.0",
+    "@supabase/supabase-js": "^2.86.0",
+    "framer-motion": "^12.23.24",
+    "lucide-react": "^0.554.0",
+    "path": "^0.12.7",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "react-router-dom": "6.23.1",
-    "@google/genai": "^1.21.0",
-    "path": "^0.12.7",
-    "vite": "^7.2.4",
-    "@vitejs/plugin-react": "^5.1.1",
-    "lucide-react": "^0.554.0"
+    "react-router-dom": "6.23.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

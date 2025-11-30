@@ -93,13 +93,13 @@ const JobProgressModal: React.FC<{
                     <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
                 </div>
             )}
-            <div className="relative bg-dark-gray/80 backdrop-blur-xl border border-white/10 rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full shadow-2xl overflow-hidden animate-slideInUp">
+            <div className="relative glass border border-white/10 rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full shadow-2xl shadow-primary/10 overflow-hidden animate-slideInUp">
                 <header className="flex-shrink-0 p-4 border-b border-white/10 flex items-center justify-center bg-gradient-to-r from-secondary/50 to-dark-gray/50">
                     <h2 className="text-xl font-bold text-white">Job Progress</h2>
                     <button onClick={onClose} className="absolute right-4 text-white/70 hover:text-white transition-colors"><X className="w-6 h-6" /></button>
                 </header>
                 <main className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
-                    <div className="bg-field/30 p-4 rounded-xl flex items-center gap-4 border border-white/5">
+                    <div className="glass-light p-4 rounded-xl flex items-center gap-4 border border-white/10 hover:border-primary/20 transition-all duration-300">
                         <img src={booking.mechanic?.imageUrl} alt={booking.mechanic?.name} className="w-16 h-16 rounded-full object-cover border-2 border-primary shadow-lg" />
                         <div>
                             <p className="font-bold text-lg text-white">{booking.mechanic?.name}</p>
@@ -108,7 +108,7 @@ const JobProgressModal: React.FC<{
                         </div>
                     </div>
 
-                    <div className="bg-field/30 p-4 rounded-xl border border-white/5">
+                    <div className="glass-light p-4 rounded-xl border border-white/10">
                         <h3 className="font-semibold text-white mb-4">Timeline</h3>
                         <div className="relative pl-5">
                             {timelineSteps.map((step, index) => {
@@ -411,7 +411,7 @@ const HomeScreen: React.FC = () => {
 
                 {!user?.vehicles || user.vehicles.length === 0 ? (
                     <div className="px-6 mb-8 animate-slideInUp delay-100">
-                        <div className="bg-dark-gray/40 backdrop-blur-xl border border-primary/30 p-6 rounded-2xl flex flex-col items-center text-center shadow-xl hover:border-primary/60 transition-all duration-300">
+                        <div className="glass border border-primary/30 p-6 rounded-2xl flex flex-col items-center text-center shadow-xl hover:border-primary/60 hover:shadow-glow-sm transition-all duration-300 group">
                             <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mb-4">
                                 <Plus className="h-8 w-8 text-primary" />
                             </div>
@@ -424,7 +424,7 @@ const HomeScreen: React.FC = () => {
                     </div>
                 ) : (
                     <div className="px-6 mb-8 animate-slideInUp delay-100">
-                        <div className="bg-dark-gray/40 backdrop-blur-xl border border-white/10 p-4 rounded-2xl flex items-center justify-between shadow-lg hover:bg-white/5 transition-colors cursor-pointer group" onClick={() => navigate('/my-garage')}>
+                        <div className="glass-hover border border-white/10 p-4 rounded-2xl flex items-center justify-between shadow-lg cursor-pointer group" onClick={() => navigate('/my-garage')}>
                             <div className="flex items-center gap-4">
                                 <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
                                     <Car className="h-7 w-7 text-primary" />
@@ -447,10 +447,22 @@ const HomeScreen: React.FC = () => {
                             <span className="w-1.5 h-6 bg-primary rounded-full"></span>
                             Upcoming Appointment
                         </h2>
-                        <div className="bg-dark-gray/60 backdrop-blur-xl border border-white/10 p-5 rounded-2xl shadow-xl relative overflow-hidden">
+                        <div className="glass border border-white/10 p-5 rounded-2xl shadow-xl shadow-primary/5 relative overflow-hidden group hover:border-white/20 transition-all duration-300">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
 
-                            <div className="flex items-center gap-4 cursor-pointer group relative z-10" onClick={() => upcomingAppointment?.mechanic && navigate(`/mechanic-profile/${upcomingAppointment.mechanic.id}`)} role="button" tabIndex={0}>
+                            <div
+                                className="flex items-center gap-4 cursor-pointer group relative z-10"
+                                onClick={() => upcomingAppointment?.mechanic && navigate(`/mechanic-profile/${upcomingAppointment.mechanic.id}`)}
+                                onKeyDown={(e) => {
+                                    if ((e.key === 'Enter' || e.key === ' ') && upcomingAppointment?.mechanic) {
+                                        e.preventDefault();
+                                        navigate(`/mechanic-profile/${upcomingAppointment.mechanic.id}`);
+                                    }
+                                }}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`View profile for ${upcomingAppointment.mechanic?.name}`}
+                            >
                                 <div className="w-14 h-14 bg-gradient-to-br from-primary to-orange-600 rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0 shadow-lg group-hover:scale-105 transition-transform duration-300 border-2 border-white/10">
                                     {upcomingAppointment.mechanic?.name.split(' ').map(n => n[0]).join('')}
                                 </div>
@@ -520,7 +532,7 @@ const HomeScreen: React.FC = () => {
                         <span className="w-1.5 h-6 bg-primary rounded-full"></span>
                         AI Service Suggestions
                     </h2>
-                    <div className="bg-dark-gray/40 backdrop-blur-xl border border-white/10 p-5 rounded-2xl shadow-lg">
+                    <div className="glass border border-white/10 p-5 rounded-2xl shadow-lg">
                         {isLoadingAI ? <div className="flex justify-center items-center py-8"><Spinner size="md" color="text-primary" /></div>
                             : aiError ? (
                                 <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm text-center">
@@ -531,7 +543,7 @@ const HomeScreen: React.FC = () => {
                             ) : aiSuggestions.length > 0 ? (
                                 <div className="space-y-4">
                                     {aiSuggestions.map((suggestion, index) => (
-                                        <div key={index} className="bg-field/50 p-4 rounded-xl flex flex-col items-start border border-white/5 hover:border-primary/30 transition-colors">
+                                        <div key={index} className="glass-light p-4 rounded-xl flex flex-col items-start border border-white/10 hover:border-primary/30 hover:shadow-glow-sm transition-all duration-300 group">
                                             <div className="flex items-center gap-2 mb-2">
                                                 <Sparkles className="h-5 w-5 text-primary" />
                                                 <h4 className="font-bold text-white">{suggestion.serviceName}</h4>
@@ -563,12 +575,12 @@ const HomeScreen: React.FC = () => {
                     </h2>
                     <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="relative z-20">
-                            <button onClick={() => setSpecFilterOpen(!specFilterOpen)} className="w-full px-4 py-3 bg-dark-gray/60 backdrop-blur-md border border-white/10 rounded-xl text-white text-left flex justify-between items-center hover:bg-white/5 transition-colors">
+                            <button onClick={() => setSpecFilterOpen(!specFilterOpen)} className="w-full px-4 py-3 glass border border-white/10 rounded-xl text-white text-left flex justify-between items-center hover:border-primary/30 hover:shadow-glow-sm transition-all duration-300">
                                 <span className="truncate text-sm font-medium">{selectedSpecs.length > 0 ? `${selectedSpecs.length} spec${selectedSpecs.length > 1 ? 's' : ''} selected` : 'All Specializations'}</span>
                                 <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${specFilterOpen ? 'rotate-180' : ''}`} />
                             </button>
                             {specFilterOpen && (
-                                <div className="absolute top-full left-0 w-full mt-2 bg-dark-gray border border-white/10 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-30 animate-fadeIn">
+                                <div className="absolute top-full left-0 w-full mt-2 glass-dark border border-white/10 rounded-xl shadow-2xl shadow-primary/10 max-h-60 overflow-y-auto z-30 animate-scaleUp scrollbar-thin">
                                     {allSpecializations.map(spec => (
                                         <label key={spec} className="flex items-center gap-3 p-3 hover:bg-white/5 cursor-pointer border-b border-white/5 last:border-0 transition-colors">
                                             <div className="relative flex items-center">
@@ -585,7 +597,7 @@ const HomeScreen: React.FC = () => {
                             <select
                                 value={ratingFilter}
                                 onChange={(e) => setRatingFilter(Number(e.target.value))}
-                                className="w-full px-4 py-3 bg-dark-gray/60 backdrop-blur-md border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer text-sm font-medium"
+                                className="w-full px-4 py-3 glass border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 appearance-none cursor-pointer text-sm font-medium transition-all duration-300"
                             >
                                 <option value={0}>All Ratings</option>
                                 <option value={4}>4 ★ & Up</option>
@@ -594,7 +606,7 @@ const HomeScreen: React.FC = () => {
                             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                         </div>
 
-                        <div className="flex items-center bg-dark-gray/60 backdrop-blur-md rounded-xl px-4 py-3 border border-white/10 col-span-1 sm:col-span-2 cursor-pointer hover:bg-white/5 transition-colors" onClick={() => setAvailableNowFilter(!availableNowFilter)}>
+                        <div className="flex items-center glass rounded-xl px-4 py-3 border border-white/10 col-span-1 sm:col-span-2 cursor-pointer hover:border-primary/30 hover:shadow-glow-sm transition-all duration-300" onClick={() => setAvailableNowFilter(!availableNowFilter)}>
                             <div className="relative flex items-center">
                                 <input
                                     id="availability-filter"
@@ -627,7 +639,7 @@ const HomeScreen: React.FC = () => {
                                     <div
                                         key={mechanic.id}
                                         onClick={() => setSelectedMechanicId(mechanic.id === selectedMechanicId ? null : mechanic.id)}
-                                        className={`snap-center flex-shrink-0 w-80 bg-dark-gray/80 backdrop-blur-xl p-4 rounded-2xl cursor-pointer border-2 transition-all duration-300 shadow-lg group ${selectedMechanicId === mechanic.id ? 'border-primary scale-[1.02]' : 'border-white/5 hover:border-white/20 hover:bg-dark-gray'}`}
+                                        className={`snap-center flex-shrink-0 w-80 glass p-4 rounded-2xl cursor-pointer border-2 transition-all duration-300 shadow-lg group ${selectedMechanicId === mechanic.id ? 'border-primary scale-[1.02] shadow-glow' : 'border-white/10 hover:border-white/20 hover:shadow-glow-sm hover:-translate-y-1'}`}
                                     >
                                         <div className="flex items-center gap-4">
                                             <div className="relative">
@@ -655,7 +667,7 @@ const HomeScreen: React.FC = () => {
                                     </div>
                                 ))
                             ) : (
-                                <div className="w-full text-center text-light-gray py-8 bg-dark-gray/40 border border-dashed border-white/10 rounded-2xl">
+                                <div className="w-full text-center text-light-gray py-8 glass-light border border-dashed border-white/10 rounded-2xl">
                                     <p>No mechanics found matching your filters.</p>
                                     <button onClick={() => { setSelectedSpecs([]); setRatingFilter(0); setAvailableNowFilter(false); }} className="mt-2 text-primary text-sm font-semibold hover:underline">Clear Filters</button>
                                 </div>
