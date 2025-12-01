@@ -1,10 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @layer base {
   body {
-    @apply bg-secondary text-white font-sans;
+    font-family: 'Poppins', sans-serif;
+    color: white;
     background: linear-gradient(135deg, #0a0a0a 0%, #171617 50%, #1a1a1a 100%);
     background-attachment: fixed;
   }
