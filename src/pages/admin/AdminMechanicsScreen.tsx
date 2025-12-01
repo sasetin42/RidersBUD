@@ -1,18 +1,18 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Mechanic } from '../../types';
 import Modal from '../../components/admin/Modal';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
-import LocationMap from '../../components/admin/LocationMap';
-
 import { useNotification } from '../../context/NotificationContext';
 
 const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <div className="bg-admin-card p-5 rounded-xl shadow-lg flex items-center gap-4 border border-admin-border">
-        <div className="bg-admin-bg p-3 rounded-full text-admin-accent">{icon}</div>
+    <div className="glass-card p-6 flex items-center gap-4 group hover:scale-[1.02] transition-all duration-300">
+        <div className="w-12 h-12 rounded-xl bg-admin-accent/20 flex items-center justify-center text-admin-accent group-hover:scale-110 transition-transform duration-300 shadow-glow-sm">
+            {icon}
+        </div>
         <div>
-            <p className="text-2xl font-bold text-admin-text-primary">{value}</p>
-            <p className="text-sm text-admin-text-secondary">{title}</p>
+            <p className="text-3xl font-bold text-white mb-1 tracking-tight">{value}</p>
+            <p className="text-sm font-medium text-gray-400 uppercase tracking-wider">{title}</p>
         </div>
     </div>
 );
@@ -58,46 +58,87 @@ const MechanicFormModal: React.FC<{
         } finally {
             setIsSaving(false);
         }
-<<<<<<< HEAD
-        setIsSaving(false);
-=======
->>>>>>> f51b410 (feat: Implement real-time Admin Panel Settings with database persistence)
     };
 
     return (
         <Modal title={mechanic ? "Edit Mechanic" : "Add New Mechanic"} isOpen={true} onClose={onClose}>
-            <div className="text-white space-y-6 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
+            <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
                 <div className="grid grid-cols-1 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Full Name</label>
-                        <input type="text" value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-admin-accent focus:border-transparent transition-all outline-none" placeholder="Jane Smith" />
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Full Name</label>
+                        <input
+                            type="text"
+                            value={formData.name}
+                            onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                            className="w-full p-3 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all"
+                            placeholder="Jane Smith"
+                        />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Email Address</label>
-                        <input type="email" value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-admin-accent focus:border-transparent transition-all outline-none" placeholder="jane@example.com" />
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Email Address</label>
+                        <input
+                            type="email"
+                            value={formData.email}
+                            onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
+                            className="w-full p-3 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all"
+                            placeholder="jane@example.com"
+                        />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">{mechanic ? "New Password (optional)" : "Password"}</label>
-                        <input type="password" value={formData.password} onChange={e => setFormData(p => ({ ...p, password: e.target.value }))} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-admin-accent focus:border-transparent transition-all outline-none" placeholder="••••••••" />
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{mechanic ? "New Password (optional)" : "Password"}</label>
+                        <input
+                            type="password"
+                            value={formData.password}
+                            onChange={e => setFormData(p => ({ ...p, password: e.target.value }))}
+                            className="w-full p-3 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all"
+                            placeholder="••••••••"
+                        />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Phone Number</label>
-                        <input type="tel" value={formData.phone} onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-admin-accent focus:border-transparent transition-all outline-none" placeholder="+1 234 567 890" />
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Phone Number</label>
+                        <input
+                            type="tel"
+                            value={formData.phone}
+                            onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))}
+                            className="w-full p-3 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all"
+                            placeholder="+1 234 567 890"
+                        />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Bio</label>
-                        <textarea value={formData.bio} onChange={e => setFormData(p => ({ ...p, bio: e.target.value }))} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-admin-accent focus:border-transparent transition-all outline-none min-h-[100px]" placeholder="Experienced mechanic..." />
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Bio</label>
+                        <textarea
+                            value={formData.bio}
+                            onChange={e => setFormData(p => ({ ...p, bio: e.target.value }))}
+                            className="w-full p-3 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all min-h-[100px] resize-none"
+                            placeholder="Experienced mechanic..."
+                        />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-1">Specializations (comma-separated)</label>
-                        <input type="text" value={formData.specializations.join(', ')} onChange={e => setFormData(p => ({ ...p, specializations: e.target.value.split(',').map(s => s.trim()) }))} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-admin-accent focus:border-transparent transition-all outline-none" placeholder="Engine, Brakes, Transmission" />
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Specializations (comma-separated)</label>
+                        <input
+                            type="text"
+                            value={formData.specializations.join(', ')}
+                            onChange={e => setFormData(p => ({ ...p, specializations: e.target.value.split(',').map(s => s.trim()) }))}
+                            className="w-full p-3 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all"
+                            placeholder="Engine, Brakes, Transmission"
+                        />
                     </div>
                 </div>
 
                 <div className="border-t border-white/10 pt-6 flex justify-end gap-3">
-                    <button onClick={onClose} disabled={isSaving} className="px-4 py-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition-all font-medium">Cancel</button>
-                    <button onClick={handleSave} disabled={isSaving} className="bg-gradient-to-r from-admin-accent to-orange-600 hover:from-orange-600 hover:to-admin-accent text-white font-bold py-2 px-6 rounded-xl shadow-lg shadow-orange-900/20 transform hover:scale-105 transition-all flex items-center justify-center min-w-[100px]">
-                        {isSaving ? <Spinner size="sm" /> : 'Save Changes'}
+                    <button
+                        onClick={onClose}
+                        disabled={isSaving}
+                        className="px-4 py-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all font-bold"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        className="bg-gradient-to-r from-admin-accent to-orange-600 hover:from-orange-600 hover:to-admin-accent text-white font-bold py-2 px-6 rounded-xl shadow-lg hover:shadow-glow transform hover:scale-105 transition-all flex items-center justify-center min-w-[120px]"
+                    >
+                        {isSaving ? <Spinner size="sm" color="text-white" /> : 'Save Changes'}
                     </button>
                 </div>
             </div>
@@ -112,6 +153,7 @@ const AdminMechanicsScreen: React.FC = () => {
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive' | 'Pending'>('all');
+    const { addNotification } = useNotification();
 
     const filteredMechanics = useMemo(() => {
         if (!db) return [];
@@ -125,23 +167,6 @@ const AdminMechanicsScreen: React.FC = () => {
     if (loading || !db) {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>
     }
-<<<<<<< HEAD
-
-    const handleSaveMechanic = (mechanicData: Mechanic | Omit<Mechanic, 'id' | 'status' | 'rating' | 'reviews'>) => {
-        if ('id' in mechanicData) {
-            updateMechanic(mechanicData);
-        } else {
-            addMechanic({
-                ...mechanicData,
-                status: 'Pending',
-                rating: 0,
-                reviews: 0,
-                registrationDate: new Date().toISOString().split('T')[0],
-                birthday: ''
-            });
-=======
-
-    const { addNotification } = useNotification();
 
     const handleSaveMechanic = async (mechanicData: Mechanic | Omit<Mechanic, 'id' | 'status' | 'rating' | 'reviews'>) => {
         try {
@@ -161,7 +186,6 @@ const AdminMechanicsScreen: React.FC = () => {
             setEditingMechanic(undefined);
         } catch (e) {
             addNotification({ type: 'error', title: 'Save Failed', message: (e as Error).message, recipientId: 'all' });
->>>>>>> f51b410 (feat: Implement real-time Admin Panel Settings with database persistence)
         }
     };
 
@@ -197,62 +221,123 @@ const AdminMechanicsScreen: React.FC = () => {
         inactive: db.mechanics.filter(m => m.status === 'Inactive').length,
     }), [db.mechanics]);
 
-    const statusColors: { [key: string]: string } = { Active: 'bg-green-500/20 text-green-300', Pending: 'bg-yellow-500/20 text-yellow-300', Inactive: 'bg-red-500/20 text-red-300' };
+    const statusColors: { [key: string]: string } = { Active: 'bg-green-500/20 text-green-300 border-green-500/30', Pending: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', Inactive: 'bg-red-500/20 text-red-300 border-red-500/30' };
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
             <div className="flex-shrink-0">
-                <h1 className="text-3xl font-bold">Manage Mechanics</h1>
+                <div>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">Manage Mechanics</h1>
+                    <p className="mt-2 text-gray-400">Oversee mechanic profiles, approvals, and performance.</p>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 my-6">
                     <StatCard title="Total Mechanics" value={stats.total} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21V9a4 4 0 00-4-4H9" /></svg>} />
                     <StatCard title="Active" value={stats.active} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
                     <StatCard title="Pending Approval" value={stats.pending} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
                     <StatCard title="Inactive" value={stats.inactive} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
                 </div>
-                <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+
+                <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6">
                     <div className="relative w-full md:w-1/2">
-                        <input type="text" placeholder="Search by name or email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-admin-card border border-admin-border rounded-lg placeholder-admin-text-secondary" />
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-admin-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></span>
+                        <input
+                            type="text"
+                            placeholder="Search by name or email..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all"
+                        />
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </span>
                     </div>
                     <div className="w-full md:w-auto flex gap-4">
-                        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="w-full md:w-auto p-2 bg-admin-card border border-admin-border rounded-lg">
-                            <option value="all">All Statuses</option> <option value="Active">Active</option> <option value="Inactive">Inactive</option> <option value="Pending">Pending</option>
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value as any)}
+                            className="w-full md:w-auto p-2.5 bg-black/20 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all cursor-pointer"
+                        >
+                            <option value="all" className="bg-gray-900">All Statuses</option>
+                            <option value="Active" className="bg-gray-900">Active</option>
+                            <option value="Inactive" className="bg-gray-900">Inactive</option>
+                            <option value="Pending" className="bg-gray-900">Pending</option>
                         </select>
-                        <button onClick={() => { setEditingMechanic(undefined); setIsFormModalOpen(true); }} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition whitespace-nowrap">+ Add Mechanic</button>
+                        <button
+                            onClick={() => { setEditingMechanic(undefined); setIsFormModalOpen(true); }}
+                            className="bg-gradient-to-r from-admin-accent to-orange-600 text-white font-bold py-2.5 px-6 rounded-xl hover:shadow-glow hover:scale-105 transition-all whitespace-nowrap flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            Add Mechanic
+                        </button>
                     </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-auto mt-4">
-                <div className="overflow-x-auto">
+
+            <div className="glass-card rounded-2xl overflow-hidden border border-white/5 flex-1 flex flex-col shadow-xl">
+                <div className="overflow-x-auto flex-1 custom-scrollbar">
                     <table className="w-full text-left border-collapse min-w-[800px]">
-                        <thead className="sticky top-0 bg-admin-bg z-10">
+                        <thead className="bg-black/20 backdrop-blur-md sticky top-0 z-10">
                             <tr>
-                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Name</th>
-                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Contact</th>
-                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Rating</th>
-                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Joined</th>
-                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Status</th>
-                                <th className="py-3 px-2 font-semibold text-admin-text-secondary uppercase text-xs border-b border-admin-border">Actions</th>
+                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10">Name</th>
+                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10">Contact</th>
+                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10">Rating</th>
+                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10">Joined</th>
+                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10">Status</th>
+                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10 text-right">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-admin-border">
+                        <tbody className="divide-y divide-white/5">
                             {filteredMechanics.map((mechanic) => (
-                                <tr key={mechanic.id} className="hover:bg-admin-card">
-                                    <td className="py-3 px-2 text-sm">
-                                        <div className="flex items-center gap-3"><img src={mechanic.imageUrl} alt={mechanic.name} className="w-10 h-10 rounded-full object-cover" /><span>{mechanic.name}</span></div>
+                                <tr key={mechanic.id} className="hover:bg-white/5 transition-colors group">
+                                    <td className="py-4 px-6 text-sm font-medium text-white">
+                                        <div className="flex items-center gap-3">
+                                            <img src={mechanic.imageUrl} alt={mechanic.name} className="w-10 h-10 rounded-full object-cover border border-white/10" />
+                                            <span>{mechanic.name}</span>
+                                        </div>
                                     </td>
-                                    <td className="py-3 px-2 text-xs"><div>{mechanic.email}</div><div className="text-admin-text-secondary">{mechanic.phone}</div></td>
-                                    <td className="py-3 px-2 text-sm">⭐ {mechanic.rating.toFixed(1)}</td>
-                                    <td className="py-3 px-2 text-xs">{mechanic.registrationDate ? new Date(mechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString() : 'N/A'}</td>
-                                    <td className="py-3 px-2"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[mechanic.status]}`}>{mechanic.status}</span></td>
-                                    <td className="py-3 px-2 text-sm whitespace-nowrap">
-                                        <div className="flex items-center gap-4">
-                                            <button onClick={() => { setEditingMechanic(mechanic); setIsFormModalOpen(true); }} className="font-semibold text-blue-400 hover:text-blue-300">Edit</button>
-                                            <button onClick={() => handleDeleteMechanic(mechanic)} className="font-semibold text-red-400 hover:text-red-300">Delete</button>
+                                    <td className="py-4 px-6 text-sm">
+                                        <div className="text-white">{mechanic.email}</div>
+                                        <div className="text-gray-500 text-xs mt-0.5">{mechanic.phone}</div>
+                                    </td>
+                                    <td className="py-4 px-6 text-sm text-yellow-400 font-bold">
+                                        ⭐ {mechanic.rating.toFixed(1)}
+                                    </td>
+                                    <td className="py-4 px-6 text-sm text-gray-400">
+                                        {mechanic.registrationDate ? new Date(mechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString() : 'N/A'}
+                                    </td>
+                                    <td className="py-4 px-6">
+                                        <span className={`px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-full border ${statusColors[mechanic.status]}`}>
+                                            {mechanic.status}
+                                        </span>
+                                    </td>
+                                    <td className="py-4 px-6 text-sm whitespace-nowrap text-right">
+                                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={() => { setEditingMechanic(mechanic); setIsFormModalOpen(true); }}
+                                                className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white transition-all"
+                                                title="Edit"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteMechanic(mechanic)}
+                                                className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"
+                                                title="Delete"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            </button>
                                             {mechanic.status === 'Pending' && (
                                                 <>
-                                                    <button onClick={() => handleStatusUpdate(mechanic.id, 'Active')} className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded-md hover:bg-green-500/30">Approve</button>
-                                                    <button onClick={() => handleStatusUpdate(mechanic.id, 'Inactive')} className="text-xs bg-red-500/20 text-red-300 px-2 py-1 rounded-md hover:bg-red-500/30">Reject</button>
+                                                    <button onClick={() => handleStatusUpdate(mechanic.id, 'Active')} className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-white transition-all" title="Approve">
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                    </button>
+                                                    <button onClick={() => handleStatusUpdate(mechanic.id, 'Inactive')} className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all" title="Reject">
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                    </button>
                                                 </>
                                             )}
                                         </div>
