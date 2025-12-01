@@ -192,32 +192,7 @@ export interface FAQCategory {
     items: FAQItem[];
 }
 
-<<<<<<< HEAD
-export interface Settings {
-    appName: string;
-    contactEmail: string;
-    contactPhone: string;
-    address: string;
-    bookingStartTime: string;
-    bookingEndTime: string;
-    bookingSlotDuration: number;
-    maxBookingsPerSlot: number;
-    emailOnNewBooking: boolean;
-    emailOnCancellation: boolean;
-    appLogoUrl: string;
-    appTagline: string;
-    virtualMechanicName: string;
-    virtualMechanicImageUrl: string;
-    virtualMechanicSystemInstruction?: string;
-    mechanicMarkerUrl: string;
-    adminPanelTitle: string;
-    adminSidebarLogoUrl: string;
-    serviceCategories: string[];
-    partCategories: string[];
-}
-=======
 export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'services' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings';
->>>>>>> f51b410 (feat: Implement real-time Admin Panel Settings with database persistence)
 
 export type PermissionLevel = 'none' | 'view' | 'edit';
 
@@ -249,6 +224,7 @@ export interface Settings {
     appLogoUrl?: string;
     adminSidebarLogoUrl?: string;
     appTagline?: string;
+    adminPanelTitle?: string; // Added to match previous interface
 
     // Booking
     bookingStartTime: string;
@@ -257,9 +233,9 @@ export interface Settings {
     maxBookingsPerSlot?: number;
     emailOnNewBooking?: boolean;
     emailOnCancellation?: boolean;
-    bookingBufferTime?: number; // New
-    advanceBookingDays?: number; // New
-    cancellationPolicy?: string; // New
+    bookingBufferTime?: number;
+    advanceBookingDays?: number;
+    cancellationPolicy?: string;
 
     // AI Assistant
     virtualMechanicName?: string;
@@ -268,11 +244,15 @@ export interface Settings {
 
     // Map
     mechanicMarkerUrl?: string;
-    googleMapsApiKey?: string; // New
+    googleMapsApiKey?: string;
 
     // Roles & Permissions
     role?: RoleName | string;
     permissions?: Partial<Record<AdminModule, PermissionLevel>>;
+
+    // Categories
+    serviceCategories?: string[];
+    partCategories?: string[];
 }
 
 export type TaskPriority = 'High' | 'Medium' | 'Low';
@@ -302,6 +282,27 @@ export interface Warranty {
     expiryDate: string;
 }
 
+// Placeholder interfaces for Rental feature if not yet defined, to resolve potential errors
+export interface RentalCar {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    pricePerDay: number;
+    imageUrl: string;
+    isAvailable: boolean;
+}
+
+export interface RentalBooking {
+    id: string;
+    carId: string;
+    customerId: string;
+    startDate: string;
+    endDate: string;
+    totalPrice: number;
+    status: 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled';
+}
+
 export interface Database {
     services: Service[];
     parts: Part[];
@@ -316,11 +317,7 @@ export interface Database {
     roles: Role[];
     tasks: Task[];
     payouts: PayoutRequest[];
-<<<<<<< HEAD
-}
-=======
     rentalCars: RentalCar[];
     rentalBookings: RentalBooking[];
     notifications: Notification[];
 }
->>>>>>> f51b410 (feat: Implement real-time Admin Panel Settings with database persistence)

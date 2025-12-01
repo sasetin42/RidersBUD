@@ -1,424 +1,247 @@
 import React, { useState, useMemo } from 'react';
 import { Service, Part } from '../../types';
 import Modal from '../../components/admin/Modal';
-import { useDatabase } from '../../context/DatabaseContext';
-import Spinner from '../../components/Spinner';
-import { fileToBase64 } from '../../utils/fileUtils';
-import { Banner } from '../../types';
-import { SERVICE_ICONS } from '../../utils/serviceIcons';
-
-const StatCard: React.FC<{ title: string; value: number | string; change?: number; icon: React.ReactNode; prefix?: string; subtitle?: string }> = ({ title, value, change, icon, prefix, subtitle }) => (
-    <div className="bg-white/5 p-5 rounded-xl shadow-lg border border-white/10 backdrop-blur-sm hover:bg-white/10 transition-all duration-300">
-        <div className="flex items-center justify-between mb-2">
-            <div className="bg-admin-accent/20 p-3 rounded-full text-admin-accent">{icon}</div>
-            {change !== undefined && !isNaN(change) && (
-                <span className={`text-xs font-bold px-2 py-1 rounded-full ${change >= 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                    {change >= 0 ? '+' : ''}{change.toFixed(1)}%
-                </span>
-            )}
-        </div>
-        <p className="text-3xl font-extrabold text-white tracking-tight">{prefix}{value}</p>
-        <p className="text-sm text-gray-400 mt-1 uppercase tracking-wider">{title}</p>
-        {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
-    </div>
-);
-
-const CategoryManagerModal: React.FC<{
-    onClose: () => void;
-}> = ({ onClose }) => {
-    const { db, updateSettings } = useDatabase();
-    const [serviceCategories, setServiceCategories] = useState(db?.settings.serviceCategories || []);
-    const [partCategories, setPartCategories] = useState(db?.settings.partCategories || []);
-    const [newServiceCategory, setNewServiceCategory] = useState('');
-    const [newPartCategory, setNewPartCategory] = useState('');
-
-    const handleSave = () => {
-        updateSettings({ serviceCategories, partCategories });
-        onClose();
-    };
-
-    const handleAdd = (type: 'service' | 'part') => {
-        if (type === 'service' && newServiceCategory.trim()) {
-            setServiceCategories(prev => [...prev, newServiceCategory.trim()]);
-            setNewServiceCategory('');
-        } else if (type === 'part' && newPartCategory.trim()) {
-            setPartCategories(prev => [...prev, newPartCategory.trim()]);
-            setNewPartCategory('');
-        }
-    };
-
-    const handleDelete = (type: 'service' | 'part', categoryToDelete: string) => {
-        if (type === 'service') {
-            setServiceCategories(prev => prev.filter(c => c !== categoryToDelete));
-        } else {
-            setPartCategories(prev => prev.filter(c => c !== categoryToDelete));
-        }
-    };
-
-    return (
-        <Modal title="Manage Categories" isOpen={true} onClose={onClose}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                <div>
-                    <h3 className="text-lg font-bold text-white mb-3">Service Categories</h3>
-                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto glass-light border border-white/10 p-2 rounded-xl custom-scrollbar">
-                        {serviceCategories.map(cat => (
-                            <div key={cat} className="flex items-center justify-between glass-dark p-3 rounded-lg border border-white/5">
-                                <span className="text-sm text-gray-200">{cat}</span>
-                                <button onClick={() => handleDelete('service', cat)} className="text-red-400 hover:text-red-300 transition-colors">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={newServiceCategory}
-                            onChange={e => setNewServiceCategory(e.target.value)}
-                            placeholder="New category..."
-                            className="flex-grow p-3 glass-light border border-white/10 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all"
-                        />
-                        <button onClick={() => handleAdd('service')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-xl hover:bg-orange-600 transition-all shadow-glow">Add</button>
-                    </div>
-                </div>
-                <div>
-                    <h3 className="text-lg font-bold text-white mb-3">Part Categories</h3>
-                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto glass-light border border-white/10 p-2 rounded-xl custom-scrollbar">
-                        {partCategories.map(cat => (
-                            <div key={cat} className="flex items-center justify-between glass-dark p-3 rounded-lg border border-white/5">
-                                <span className="text-sm text-gray-200">{cat}</span>
-                                <button onClick={() => handleDelete('part', cat)} className="text-red-400 hover:text-red-300 transition-colors">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={newPartCategory}
-                            onChange={e => setNewPartCategory(e.target.value)}
-                            placeholder="New category..."
-                            className="flex-grow p-3 glass-light border border-white/10 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all"
-                        />
-                        <button onClick={() => handleAdd('part')} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-xl hover:bg-orange-600 transition-all shadow-glow">Add</button>
-                    </div>
-                </div>
-            </div>
-            <div className="flex justify-end gap-4 mt-6 border-t border-white/10 pt-4">
-                <button onClick={onClose} className="px-6 py-2.5 glass-light border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium">Cancel</button>
-                <button onClick={handleSave} className="px-6 py-2.5 bg-gradient-to-r from-admin-accent to-orange-600 text-white rounded-xl hover:shadow-glow transition-all font-medium">Save Categories</button>
-            </div>
-        </Modal>
-    );
-};
-
-const DeleteConfirmationModal: React.FC<{
-    itemName: string;
-    itemType: 'service' | 'part';
-    onClose: () => void;
-    onConfirm: () => void;
-    impactCount?: number;
-}> = ({ itemName, itemType, onClose, onConfirm, impactCount }) => {
-    return (
-        <Modal title={`Delete ${itemType === 'service' ? 'Service' : 'Part'}`} isOpen={true} onClose={onClose}>
-            <div className="space-y-6 text-white">
-                <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl flex items-start gap-3">
-                    <span className="text-2xl">⚠️</span>
-                    <div>
-                        <h4 className="font-bold text-red-400">Warning</h4>
-                        <p className="text-sm text-gray-300 mt-1">
-                            You are about to delete <span className="font-bold text-white">"{itemName}"</span>.
-                            {impactCount !== undefined && impactCount > 0 && (
-                                <span className="block mt-2 text-yellow-400">
-                                    ⚠️ This {itemType} is currently used in {impactCount} active booking{impactCount > 1 ? 's' : ''}. Deleting it may affect these bookings.
-                                </span>
-                            )}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <h4 className="font-semibold text-white mb-2">This action will:</h4>
-                    <ul className="space-y-2 text-sm text-gray-300">
-                        <li className="flex items-start gap-2">
-                            <span className="text-red-400 mt-0.5">•</span>
-                            <span>Permanently remove "{itemName}" from the catalog</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                            <span className="text-red-400 mt-0.5">•</span>
-                            <span>Make it unavailable for new bookings</span>
-                        </li>
-                        {impactCount !== undefined && impactCount > 0 && (
-                            <li className="flex items-start gap-2">
-                                <span className="text-yellow-400 mt-0.5">•</span>
-                                <span>Affect {impactCount} existing booking{impactCount > 1 ? 's' : ''}</span>
-                            </li>
-                        )}
-                    </ul>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-                    <button onClick={onClose} className="px-6 py-2 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition-all font-medium">
-                        Cancel
-                    </button>
-                    <button onClick={onConfirm} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg shadow-red-900/20 transform hover:scale-105 transition-all">
-                        Delete {itemType === 'service' ? 'Service' : 'Part'}
-                    </button>
-                </div>
-            </div>
-        </Modal>
-    );
-};
-
-const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void; onCancel: () => void; categories: string[] }> = ({ service, onSave, onCancel, categories }) => {
-    const [formData, setFormData] = useState({
-        id: service?.id || '',
-        name: service?.name || '',
-        description: service?.description || '',
+name: service?.name || '',
+    description: service?.description || '',
         price: service?.price ?? '',
-        estimatedTime: service?.estimatedTime || '',
-        category: service?.category || (categories[0] || ''),
-        imageUrl: service?.imageUrl || '',
-        icon: service?.icon || ''
+            estimatedTime: service?.estimatedTime || '',
+                category: service?.category || (categories[0] || ''),
+                    imageUrl: service?.imageUrl || '',
+                        icon: service?.icon || ''
     });
-    const [errors, setErrors] = useState<{ [key: string]: string }>({});
-    const [isUploading, setIsUploading] = useState(false);
-    const [showIconPicker, setShowIconPicker] = useState(false);
+const [errors, setErrors] = useState<{ [key: string]: string }>({});
+const [isUploading, setIsUploading] = useState(false);
+const [showIconPicker, setShowIconPicker] = useState(false);
 
-    const validate = (data = formData) => {
-        const newErrors: { [key: string]: string } = {};
-        if (!data.name.trim()) newErrors.name = "Service name is required.";
-        if (!data.description.trim()) newErrors.description = "Description is required.";
-        if (data.price === '' || Number(data.price) < 0) newErrors.price = "Price must be a positive number.";
-        if (!data.estimatedTime.trim()) newErrors.estimatedTime = "Estimated time is required.";
-        if (!data.category.trim()) newErrors.category = "Category is required.";
-        if (!data.imageUrl) newErrors.imageUrl = "Please upload an image for the service.";
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
+const validate = (data = formData) => {
+    const newErrors: { [key: string]: string } = {};
+    if (!data.name.trim()) newErrors.name = "Service name is required.";
+    if (!data.description.trim()) newErrors.description = "Description is required.";
+    if (data.price === '' || Number(data.price) < 0) newErrors.price = "Price must be a positive number.";
+    if (!data.estimatedTime.trim()) newErrors.estimatedTime = "Estimated time is required.";
+    if (!data.category.trim()) newErrors.category = "Category is required.";
+    if (!data.imageUrl) newErrors.imageUrl = "Please upload an image for the service.";
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+};
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        const newData = { ...formData, [name]: value };
-        setFormData(newData);
-        if (errors[name]) validate(newData);
-    };
+const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    const newData = { ...formData, [name]: value };
+    setFormData(newData);
+    if (errors[name]) validate(newData);
+};
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setIsUploading(true);
-            try {
-                const base64 = await fileToBase64(file);
-                const newData = { ...formData, imageUrl: base64 };
-                setFormData(newData);
-                validate(newData);
-            } catch (err) {
-                setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.' }));
-            } finally {
-                setIsUploading(false);
-            }
+const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        setIsUploading(true);
+        try {
+            const base64 = await fileToBase64(file);
+            const newData = { ...formData, imageUrl: base64 };
+            setFormData(newData);
+            validate(newData);
+        } catch (err) {
+            setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.' }));
+        } finally {
+            setIsUploading(false);
         }
-    };
+    }
+};
 
-    const handleIconSelect = (iconSvg: string) => {
-        const newData = { ...formData, icon: iconSvg };
-        setFormData(newData);
-        setShowIconPicker(false);
-    };
+const handleIconSelect = (iconSvg: string) => {
+    const newData = { ...formData, icon: iconSvg };
+    setFormData(newData);
+    setShowIconPicker(false);
+};
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (validate()) {
-            const serviceData: any = {
-                name: formData.name,
-                description: formData.description,
-                price: Number(formData.price),
-                estimatedTime: formData.estimatedTime,
-                category: formData.category,
-                imageUrl: formData.imageUrl,
-                icon: formData.icon
-            };
+const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (validate()) {
+        const serviceData: any = {
+            name: formData.name,
+            description: formData.description,
+            price: Number(formData.price),
+            estimatedTime: formData.estimatedTime,
+            category: formData.category,
+            imageUrl: formData.imageUrl,
+            icon: formData.icon
+        };
 
-            if (service?.id) {
-                serviceData.id = service.id;
-            }
-
-            console.log('Saving service:', serviceData);
-            onSave(serviceData);
+        if (service?.id) {
+            serviceData.id = service.id;
         }
-    };
 
-    const isSaveDisabled = isUploading;
+        console.log('Saving service:', serviceData);
+        onSave(serviceData);
+    }
+};
 
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            {/* Service Image - MOVED TO TOP */}
-            <div>
-                <label className="block text-sm font-semibold text-white mb-2">Service Image *</label>
-                <div className="glass-light border border-white/10 rounded-xl p-4">
-                    <input
-                        type="file"
-                        onChange={handleFileChange}
-                        accept="image/*"
-                        disabled={isUploading}
-                        className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent file:text-white hover:file:bg-orange-600 file:transition-all file:cursor-pointer disabled:opacity-50"
-                    />
-                    {isUploading && <p className="text-admin-accent text-sm mt-2">Uploading...</p>}
-                    {formData.imageUrl && (
-                        <div className="mt-4 flex justify-center">
-                            <img src={formData.imageUrl} alt="Service preview" className="rounded-lg max-h-40 w-auto border border-white/10" />
-                        </div>
-                    )}
-                    {errors.imageUrl && <p className="text-red-400 text-xs mt-2">{errors.imageUrl}</p>}
-                </div>
+const isSaveDisabled = isUploading;
+
+return (
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        {/* Service Image - MOVED TO TOP */}
+        <div>
+            <label className="block text-sm font-semibold text-white mb-2">Service Image *</label>
+            <div className="glass-light border border-white/10 rounded-xl p-4">
+                <input
+                    type="file"
+                    onChange={handleFileChange}
+                    accept="image/*"
+                    disabled={isUploading}
+                    className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent file:text-white hover:file:bg-orange-600 file:transition-all file:cursor-pointer disabled:opacity-50"
+                />
+                {isUploading && <p className="text-admin-accent text-sm mt-2">Uploading...</p>}
+                {formData.imageUrl && (
+                    <div className="mt-4 flex justify-center">
+                        <img src={formData.imageUrl} alt="Service preview" className="rounded-lg max-h-40 w-auto border border-white/10" />
+                    </div>
+                )}
+                {errors.imageUrl && <p className="text-red-400 text-xs mt-2">{errors.imageUrl}</p>}
             </div>
+        </div>
 
-            {/* Service Name */}
+        {/* Service Name */}
+        <div>
+            <label className="block text-sm font-semibold text-white mb-2">Service Name *</label>
+            <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                placeholder="e.g., Oil Change, Brake Repair"
+                className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.name ? 'border-red-500' : 'border-white/10'}`}
+            />
+            {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+        </div>
+
+        {/* Description */}
+        <div>
+            <label className="block text-sm font-semibold text-white mb-2">Description *</label>
+            <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleChange}
+                placeholder="Describe the service in detail..."
+                rows={3}
+                className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all resize-none ${errors.description ? 'border-red-500' : 'border-white/10'}`}
+            />
+            {errors.description && <p className="text-red-400 text-xs mt-1">{errors.description}</p>}
+        </div>
+
+        {/* Price and Estimated Time */}
+        <div className="grid grid-cols-2 gap-4">
             <div>
-                <label className="block text-sm font-semibold text-white mb-2">Service Name *</label>
+                <label className="block text-sm font-semibold text-white mb-2">Price (₱) *</label>
+                <input
+                    type="number"
+                    name="price"
+                    value={formData.price}
+                    onChange={handleChange}
+                    placeholder="0.00"
+                    step="0.01"
+                    className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.price ? 'border-red-500' : 'border-white/10'}`}
+                />
+                {errors.price && <p className="text-red-400 text-xs mt-1">{errors.price}</p>}
+            </div>
+            <div>
+                <label className="block text-sm font-semibold text-white mb-2">Estimated Time *</label>
                 <input
                     type="text"
-                    name="name"
-                    value={formData.name}
+                    name="estimatedTime"
+                    value={formData.estimatedTime}
                     onChange={handleChange}
-                    placeholder="e.g., Oil Change, Brake Repair"
-                    className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.name ? 'border-red-500' : 'border-white/10'}`}
+                    placeholder="e.g., 30 mins, 1-2 hours"
+                    className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.estimatedTime ? 'border-red-500' : 'border-white/10'}`}
                 />
-                {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+                {errors.estimatedTime && <p className="text-red-400 text-xs mt-1">{errors.estimatedTime}</p>}
             </div>
+        </div>
 
-            {/* Description */}
-            <div>
-                <label className="block text-sm font-semibold text-white mb-2">Description *</label>
-                <textarea
-                    name="description"
-                    value={formData.description}
+        {/* Category - ENHANCED DROPDOWN */}
+        <div>
+            <label className="block text-sm font-semibold text-white mb-2">Category *</label>
+            <div className="relative">
+                <select
+                    name="category"
+                    value={formData.category}
                     onChange={handleChange}
-                    placeholder="Describe the service in detail..."
-                    rows={3}
-                    className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all resize-none ${errors.description ? 'border-red-500' : 'border-white/10'}`}
-                />
-                {errors.description && <p className="text-red-400 text-xs mt-1">{errors.description}</p>}
-            </div>
-
-            {/* Price and Estimated Time */}
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-semibold text-white mb-2">Price (₱) *</label>
-                    <input
-                        type="number"
-                        name="price"
-                        value={formData.price}
-                        onChange={handleChange}
-                        placeholder="0.00"
-                        step="0.01"
-                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.price ? 'border-red-500' : 'border-white/10'}`}
-                    />
-                    {errors.price && <p className="text-red-400 text-xs mt-1">{errors.price}</p>}
-                </div>
-                <div>
-                    <label className="block text-sm font-semibold text-white mb-2">Estimated Time *</label>
-                    <input
-                        type="text"
-                        name="estimatedTime"
-                        value={formData.estimatedTime}
-                        onChange={handleChange}
-                        placeholder="e.g., 30 mins, 1-2 hours"
-                        className={`w-full p-3 glass-light border rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-admin-accent transition-all ${errors.estimatedTime ? 'border-red-500' : 'border-white/10'}`}
-                    />
-                    {errors.estimatedTime && <p className="text-red-400 text-xs mt-1">{errors.estimatedTime}</p>}
+                    className={`w-full p-3 glass-light border rounded-xl text-white bg-transparent focus:ring-2 focus:ring-admin-accent transition-all appearance-none cursor-pointer pr-10 ${errors.category ? 'border-red-500' : 'border-white/10'}`}
+                >
+                    <option value="" disabled className="bg-gray-800 text-gray-400">Select a category</option>
+                    {categories.map(cat => (
+                        <option key={cat} value={cat} className="bg-gray-800 text-white py-2">
+                            {cat}
+                        </option>
+                    ))}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                 </div>
             </div>
+            {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
+        </div>
 
-            {/* Category - ENHANCED DROPDOWN */}
-            <div>
-                <label className="block text-sm font-semibold text-white mb-2">Category *</label>
-                <div className="relative">
-                    <select
-                        name="category"
-                        value={formData.category}
-                        onChange={handleChange}
-                        className={`w-full p-3 glass-light border rounded-xl text-white bg-transparent focus:ring-2 focus:ring-admin-accent transition-all appearance-none cursor-pointer pr-10 ${errors.category ? 'border-red-500' : 'border-white/10'}`}
-                    >
-                        <option value="" disabled className="bg-gray-800 text-gray-400">Select a category</option>
-                        {categories.map(cat => (
-                            <option key={cat} value={cat} className="bg-gray-800 text-white py-2">
-                                {cat}
-                            </option>
-                        ))}
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
+
+        {/* SVG Icon Selector - ENHANCED */}
+        <div>
+            <label className="block text-sm font-semibold text-white mb-2">Service Icon</label>
+            <div className="glass-light border border-white/10 rounded-xl p-4">
+                {formData.icon && (
+                    <div className="mb-3 flex items-center gap-3">
+                        <div className="w-12 h-12 flex items-center justify-center glass-dark rounded-lg border border-white/10" dangerouslySetInnerHTML={{ __html: formData.icon }} />
+                        <span className="text-sm text-gray-300">Selected Icon</span>
                     </div>
-                </div>
-                {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
-            </div>
-
-
-            {/* SVG Icon Selector - ENHANCED */}
-            <div>
-                <label className="block text-sm font-semibold text-white mb-2">Service Icon</label>
-                <div className="glass-light border border-white/10 rounded-xl p-4">
-                    {formData.icon && (
-                        <div className="mb-3 flex items-center gap-3">
-                            <div className="w-12 h-12 flex items-center justify-center glass-dark rounded-lg border border-white/10" dangerouslySetInnerHTML={{ __html: formData.icon }} />
-                            <span className="text-sm text-gray-300">Selected Icon</span>
-                        </div>
-                    )}
-                    <button
-                        type="button"
-                        onClick={() => setShowIconPicker(!showIconPicker)}
-                        className="w-full px-4 py-2 glass-light border border-white/10 rounded-lg text-white hover:bg-white/10 transition-all text-sm font-medium"
-                    >
-                        {showIconPicker ? 'Hide Icon Library' : 'Choose Icon from Library'}
-                    </button>
-
-                    {showIconPicker && (
-                        <div className="mt-4 grid grid-cols-4 gap-3 max-h-64 overflow-y-auto custom-scrollbar p-2">
-                            {SERVICE_ICONS.map((item, idx) => (
-                                <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => handleIconSelect(item.icon)}
-                                    className={`p-3 glass-light border rounded-lg hover:border-admin-accent hover:bg-admin-accent/10 transition-all group ${formData.icon === item.icon ? 'border-admin-accent bg-admin-accent/20' : 'border-white/10'}`}
-                                    title={item.name}
-                                >
-                                    <div className="w-8 h-8 mx-auto text-white group-hover:text-admin-accent transition-colors" dangerouslySetInnerHTML={{ __html: item.icon }} />
-                                    <p className="text-xs text-gray-400 mt-1 truncate">{item.name}</p>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-white/10">
+                )}
                 <button
                     type="button"
-                    onClick={onCancel}
-                    className="px-6 py-2.5 glass-light border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium"
+                    onClick={() => setShowIconPicker(!showIconPicker)}
+                    className="w-full px-4 py-2 glass-light border border-white/10 rounded-lg text-white hover:bg-white/10 transition-all text-sm font-medium"
                 >
-                    Cancel
+                    {showIconPicker ? 'Hide Icon Library' : 'Choose Icon from Library'}
                 </button>
-                <button
-                    type="submit"
-                    className="px-6 py-2.5 bg-gradient-to-r from-admin-accent to-orange-600 text-white rounded-xl hover:shadow-glow transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isSaveDisabled || isUploading}
-                >
-                    {service ? 'Update Service' : 'Create Service'}
-                </button>
+
+                {showIconPicker && (
+                    <div className="mt-4 grid grid-cols-4 gap-3 max-h-64 overflow-y-auto custom-scrollbar p-2">
+                        {SERVICE_ICONS.map((item, idx) => (
+                            <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleIconSelect(item.icon)}
+                                className={`p-3 glass-light border rounded-lg hover:border-admin-accent hover:bg-admin-accent/10 transition-all group ${formData.icon === item.icon ? 'border-admin-accent bg-admin-accent/20' : 'border-white/10'}`}
+                                title={item.name}
+                            >
+                                <div className="w-8 h-8 mx-auto text-white group-hover:text-admin-accent transition-colors" dangerouslySetInnerHTML={{ __html: item.icon }} />
+                                <p className="text-xs text-gray-400 mt-1 truncate">{item.name}</p>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
-        </form>
-    );
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-white/10">
+            <button
+                type="button"
+                onClick={onCancel}
+                className="px-6 py-2.5 glass-light border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium"
+            >
+                Cancel
+            </button>
+            <button
+                type="submit"
+                className="px-6 py-2.5 bg-gradient-to-r from-admin-accent to-orange-600 text-white rounded-xl hover:shadow-glow transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSaveDisabled || isUploading}
+            >
+                {service ? 'Update Service' : 'Create Service'}
+            </button>
+        </div>
+    </form>
+);
 };
 
 const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: () => void; categories: string[] }> = ({ part, onSave, onCancel, categories }) => {
