@@ -1,4 +1,3 @@
-```
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAdminAuth } from '../../context/AdminAuthContext';
@@ -9,15 +8,14 @@ const NavItem: React.FC<{ to: string; icon: React.ReactNode; label: string; isCo
     return (
         <div className="relative group mb-2 px-2">
             <NavLink to={to} className={({ isActive }) => `
-                relative flex items - center p - 3 rounded - xl transition - all duration - 300 overflow - hidden group / item
-                ${
-    isActive
-        ? 'bg-gradient-to-r from-admin-accent to-orange-600 text-white shadow-lg shadow-admin-accent/20'
-        : 'text-gray-400 hover:text-white hover:bg-white/5'
-}
-                ${ isCollapsed ? 'justify-center' : '' }
+                relative flex items-center p-3 rounded-xl transition-all duration-300 overflow-hidden group/item
+                ${isActive
+                    ? 'bg-gradient-to-r from-admin-accent to-orange-600 text-white shadow-lg shadow-admin-accent/20'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }
+                ${isCollapsed ? 'justify-center' : ''}
 `}>
-                <div className={`relative z - 10 transition - transform duration - 300 group - hover / item: scale - 110`}>
+                <div className={`relative z-10 transition-transform duration-300 group-hover/item:scale-110`}>
                     {icon}
                 </div>
                 {!isCollapsed && (
@@ -52,7 +50,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isSidebarOpen, onClose }) =
 
     if (!db) {
         return (
-            <aside className={`fixed lg:relative bg - black / 40 backdrop - blur - xl flex - shrink - 0 transition - all duration - 300 ease -in -out w - 64 lg: w - auto ${ isCollapsed ? 'lg:w-20' : 'lg:w-64' } flex items - center justify - center border - r border - white / 5`}>
+            <aside className={`fixed lg:relative bg-black/40 backdrop-blur-xl flex-shrink-0 transition-all duration-300 ease-in-out w-64 lg:w-auto ${isCollapsed ? 'lg:w-20' : 'lg:w-64'} flex items-center justify-center border-r border-white/5`}>
                 <Spinner />
             </aside>
         );
@@ -65,19 +63,19 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isSidebarOpen, onClose }) =
         <>
             {/* Backdrop for mobile overlay */}
             <div
-                className={`fixed inset - 0 bg - black / 80 backdrop - blur - sm z - 30 lg:hidden transition - opacity duration - 300 ${ isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none' } `}
+                className={`fixed inset-0 bg-black/80 backdrop-blur-sm z-30 lg:hidden transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'} `}
                 onClick={onClose}
                 aria-hidden="true"
             ></div>
 
-            <aside className={`fixed top - 0 left - 0 h - full bg - black / 40 backdrop - blur - xl flex - shrink - 0 flex flex - col z - 40 transition - all duration - 300 ease -in -out border - r border - white / 5
-lg: w - 64 
-                ${ isSidebarOpen ? 'w-64 translate-x-0' : 'w-64 -translate-x-full lg:w-20 lg:translate-x-0' }
+            <aside className={`fixed top-0 left-0 h-full bg-black/40 backdrop-blur-xl flex-shrink-0 flex flex-col z-40 transition-all duration-300 ease-in-out border-r border-white/5
+lg:w-64 
+                ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-64 -translate-x-full lg:w-20 lg:translate-x-0'}
 `}>
                 {/* Logo Section */}
-                <div className={`flex items - center justify - center h - 24 flex - shrink - 0 ${ isCollapsed ? 'px-2' : 'px-6' } `}>
-                    <div className={`flex items - center gap - 3 ${ isCollapsed ? 'justify-center' : '' } `}>
-                        <img src={logoUrl} alt="Logo" className={`transition - all duration - 300 object - contain ${ isCollapsed ? 'w-10 h-10' : 'w-10 h-10' } `} />
+                <div className={`flex items-center justify-center h-24 flex-shrink-0 ${isCollapsed ? 'px-2' : 'px-6'} `}>
+                    <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''} `}>
+                        <img src={logoUrl} alt="Logo" className={`transition-all duration-300 object-contain ${isCollapsed ? 'w-10 h-10' : 'w-10 h-10'} `} />
                         {!isCollapsed && <span className="text-xl font-bold text-white tracking-tight whitespace-nowrap">{settings.appName}</span>}
                     </div>
                 </div>
@@ -120,4 +118,3 @@ lg: w - 64
 };
 
 export default AdminSidebar;
-```

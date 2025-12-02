@@ -1,7 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest, RentalCar, RentalBooking, Notification } from '../types';
 import { supabase } from '../lib/supabase';
-import { getSeedData } from '../data/mockData';
 import { uploadMultipleBookingImages } from '../utils/imageUpload';
 
 // This interface defines the functions that the context will provide
@@ -81,38 +80,54 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             setLoading(true);
             try {
                 // Fetch data from Supabase tables
-                const { data: services } = await supabase.from('services').select('*');
-                const { data: products } = await supabase.from('products').select('*');
-                // Note: Mechanics, Bookings, Customers, etc. would also be fetched here in a real app
-                // For now, we might mix Supabase data with some mock data if tables are empty or not fully migrated
+                const { data: services, error: servicesError } = await supabase.from('services').select('*');
+                if (servicesError) throw servicesError;
 
-                // Construct the Database object
-                // This is a simplified view; in a full migration, all entities would come from Supabase
-                const seedData = getSeedData(); // Fallback/Base
+                const { data: products, error: productsError } = await supabase.from('products').select('*');
+                if (productsError) throw productsError;
 
+                // Initialize empty database structure
                 const newDb: Database = {
-                    ...seedData,
                     services: services ? services.map((s: any) => ({
                         ...s,
                         estimatedTime: s.estimated_time,
                         imageUrl: s.image_url
-                    })) : seedData.services,
+                    })) : [],
                     parts: products ? products.map((p: any) => ({
                         ...p,
                         salesPrice: p.sales_price,
                         imageUrls: p.image_urls,
                         sku: p.sku || '',
-                        brand: p.brand || '',
                         stock: p.stock || 0
-                    })) : seedData.parts,
-                    notifications: [], // Initialize empty notifications
+                    })) : [],
+                    mechanics: [], // Should be fetched from profiles/mechanics table
+                    bookings: [], // Should be fetched from bookings table
+                    customers: [], // Should be fetched from profiles/customers table
+                    notifications: [],
+                    settings: {
+                        appName: 'RidersBUD',
+                        contactEmail: '',
+                        contactPhone: '',
+                        address: '',
+                        bookingStartTime: '09:00',
+                        bookingEndTime: '17:00'
+                    }, // Default settings
+                    adminUsers: [],
+                    roles: [],
+                    tasks: [],
+                    payouts: [],
+                    rentalCars: [],
+                    rentalBookings: [],
+                    orders: [],
+                    banners: [],
+                    faqs: []
                 };
 
                 setDb(newDb);
             } catch (error) {
                 console.error("Failed to load data from Supabase:", error);
-                // Fallback to seed data on error
-                setDb(getSeedData());
+                // Do not fallback to seed data
+                setDb(null);
             } finally {
                 setLoading(false);
             }
@@ -173,7 +188,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                         sunday: { isAvailable: false, startTime: '09:00', endTime: '17:00' }
                                     }
                                 } : undefined,
-                                vehicle: { id: booking.vehicle_id, make: 'Loading...', model: '', year: 0, plateNumber: '', imageUrls: [] }, // Placeholder
+                                vehicle: { id: booking.vehicle_id, make: 'Loading...', model: '', year: 0, plateNumber: '', imageUrl: '', imageUrls: [] }, // Placeholder
                                 date: booking.booking_date,
                                 time: booking.booking_time,
                                 status: booking.status,
@@ -414,7 +429,6 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 image_urls: part.imageUrls,
                 category: part.category,
                 sku: part.sku,
-                brand: part.brand,
                 stock: part.stock
             }]).select().single();
 
@@ -445,7 +459,6 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 image_urls: updatedPart.imageUrls,
                 category: updatedPart.category,
                 sku: updatedPart.sku,
-                brand: updatedPart.brand,
                 stock: updatedPart.stock
             }).eq('id', updatedPart.id);
 
