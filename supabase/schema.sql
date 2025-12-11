@@ -197,12 +197,21 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Roles Table
+CREATE TABLE IF NOT EXISTS roles (
+    name TEXT PRIMARY KEY,
+    is_editable BOOLEAN DEFAULT true,
+    description TEXT,
+    default_permissions JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Admin Users Table
 CREATE TABLE IF NOT EXISTS admin_users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL,
+    role TEXT REFERENCES roles(name),
     permissions JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -230,6 +239,40 @@ CREATE TABLE IF NOT EXISTS payout_requests (
     status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected')),
     process_date TIMESTAMPTZ,
     rejection_reason TEXT
+);
+
+-- FAQs Table
+CREATE TABLE IF NOT EXISTS faqs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    category TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Rental Cars Table
+CREATE TABLE IF NOT EXISTS rental_cars (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    make TEXT NOT NULL,
+    model TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    type TEXTToCheck (type IN ('Sedan', 'SUV', 'Van', 'Luxury')),
+    price_per_day DECIMAL(10,2) NOT NULL,
+    seats INTEGER NOT NULL,
+    image_url TEXT,
+    is_available BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Rental Bookings Table
+CREATE TABLE IF NOT EXISTS rental_bookings (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    car_id UUID REFERENCES rental_cars(id),
+    customer_name TEXT NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    total_price DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================================
@@ -310,21 +353,30 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE banners ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payout_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE faqs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rental_cars ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rental_bookings ENABLE ROW LEVEL SECURITY;
 
--- Public read access for services, parts, and banners
+-- Public read access for data that should be public
 CREATE POLICY "Public can view services" ON services FOR SELECT USING (true);
 CREATE POLICY "Public can view parts" ON parts FOR SELECT USING (true);
 CREATE POLICY "Public can view banners" ON banners FOR SELECT USING (true);
 CREATE POLICY "Public can view mechanics" ON mechanics FOR SELECT USING (true);
+CREATE POLICY "Public can view faqs" ON faqs FOR SELECT USING (true);
+CREATE POLICY "Public can view rental_cars" ON rental_cars FOR SELECT USING (true);
 
--- Customers can view and update their own data
+-- Customers policies
 CREATE POLICY "Customers can view own profile" ON customers 
     FOR SELECT USING (auth.uid()::text = id::text);
 
 CREATE POLICY "Customers can update own profile" ON customers 
     FOR UPDATE USING (auth.uid()::text = id::text);
 
--- Mechanics can view and update their own data
+-- Mechanics policies
 CREATE POLICY "Mechanics can view own profile" ON mechanics 
     FOR SELECT USING (auth.uid()::text = id::text);
 
@@ -372,8 +424,12 @@ ALTER PUBLICATION supabase_realtime ADD TABLE banners;
 ALTER PUBLICATION supabase_realtime ADD TABLE settings;
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
 ALTER PUBLICATION supabase_realtime ADD TABLE admin_users;
+ALTER PUBLICATION supabase_realtime ADD TABLE roles;
 ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
 ALTER PUBLICATION supabase_realtime ADD TABLE payout_requests;
+ALTER PUBLICATION supabase_realtime ADD TABLE faqs;
+ALTER PUBLICATION supabase_realtime ADD TABLE rental_cars;
+ALTER PUBLICATION supabase_realtime ADD TABLE rental_bookings;
 
 -- ============================================================================
 -- STORAGE BUCKETS
@@ -406,8 +462,4 @@ ON CONFLICT (key) DO NOTHING;
 DO $$
 BEGIN
     RAISE NOTICE 'RidersBUD database schema created successfully!';
-    RAISE NOTICE 'Next steps:';
-    RAISE NOTICE '1. Create storage buckets in Supabase Dashboard';
-    RAISE NOTICE '2. Configure authentication providers';
-    RAISE NOTICE '3. Test realtime subscriptions';
 END $$;

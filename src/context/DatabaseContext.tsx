@@ -1,6 +1,8 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest, RentalCar, RentalBooking } from '../types';
 import { getSeedData } from '../data/mockData';
+import { SupabaseDatabaseService } from '../services/supabaseDatabaseService';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -75,9 +77,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     const [loading, setLoading] = useState(true);
 
     // Effect for initial data loading from localStorage or seed
+    // Effect for initial data loading from localStorage, seed, or Supabase
     useEffect(() => {
-        const loadData = () => {
+        const loadData = async () => {
             try {
+                if (isSupabaseConfigured()) {
+                    console.log("Loading database from Supabase...");
+                    const supabaseData = await SupabaseDatabaseService.getDatabase();
+                    if (supabaseData) {
+                        setDb(supabaseData as Database);
+                        setLoading(false);
+                        return;
+                    } else {
+                        console.warn("Supabase returned empty data, falling back to local storage/seed.");
+                    }
+                }
+
                 const storedData = localStorage.getItem(DB_STORAGE_KEY);
                 if (storedData) {
                     console.log("Loading database from localStorage...");
@@ -98,15 +113,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     setDb(seedData);
                 }
             } catch (error) {
-                console.error("Failed to load data from localStorage, falling back to seed data.", error);
+                console.error("Failed to load data, falling back to seed data.", error);
                 const seedData = getSeedData();
                 setDb(seedData);
             } finally {
                 setLoading(false);
             }
         };
-        const timer = setTimeout(loadData, 500); // Simulate a short loading delay
-        return () => clearTimeout(timer);
+        // No delay needed if fetching
+        loadData();
     }, []); // Runs only once on mount
 
     // Effect for persisting any changes to the DB state into localStorage
