@@ -304,12 +304,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // --- Booking Operations ---
     const addBooking = async (booking: Omit<Booking, 'id'>): Promise<Booking | null> => {
+        if (isSupabaseConfigured()) {
+            const newBooking = await SupabaseDatabaseService.addBooking(booking);
+            if (newBooking) {
+                setDb(prevDb => prevDb ? { ...prevDb, bookings: [newBooking, ...prevDb.bookings] } : null);
+                return newBooking;
+            }
+            return null;
+        }
         await delay(500);
         const newBooking = { ...booking, id: `b-${Date.now()}` } as Booking;
         setDb(prevDb => prevDb ? { ...prevDb, bookings: [...prevDb.bookings, newBooking] } : null);
         return newBooking;
     };
     const updateBooking = async (bookingId: string, updates: Partial<Booking>) => {
+        // ... updateBooking logic not critical for MVP flow, skipping for now or adding later ...
+        // Keeping local for now to keep diff small, focusing on addBooking and Status
         await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
@@ -320,6 +330,27 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
     const updateBookingStatus = async (bookingId: string, status: BookingStatus) => {
+        if (isSupabaseConfigured()) {
+            const success = await SupabaseDatabaseService.updateBookingStatus(bookingId, status);
+            if (success) {
+                // Optimistic update
+                setDb(prevDb => {
+                    if (!prevDb) return null;
+                    return {
+                        ...prevDb,
+                        bookings: prevDb.bookings.map(b => {
+                            if (b.id === bookingId && b.status !== status) {
+                                const newHistoryEntry = { status, timestamp: new Date().toISOString() };
+                                const updatedHistory = [...(b.statusHistory || []), newHistoryEntry];
+                                return { ...b, status, statusHistory: updatedHistory };
+                            }
+                            return b;
+                        })
+                    };
+                });
+            }
+            return;
+        }
         await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
@@ -449,12 +480,28 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // --- Customer Operations ---
     const addCustomer = async (customer: Omit<Customer, 'id'>): Promise<Customer | null> => {
+        if (isSupabaseConfigured()) {
+            const newCustomer = await SupabaseDatabaseService.addCustomer(customer);
+            if (newCustomer) {
+                // Manually update local state to ensure immediate UI feedback (useful if Realtime lag exists)
+                setDb(prevDb => prevDb ? { ...prevDb, customers: [newCustomer, ...prevDb.customers] } : null);
+                return newCustomer;
+            }
+            return null;
+        }
         await delay(500);
         const newCustomer = { ...customer, id: `c-${Date.now()}` };
         setDb(prevDb => prevDb ? { ...prevDb, customers: [...prevDb.customers, newCustomer] } : null);
         return newCustomer;
     };
     const updateCustomer = async (updatedCustomer: Customer) => {
+        if (isSupabaseConfigured()) {
+            const success = await SupabaseDatabaseService.updateCustomer(updatedCustomer.id, updatedCustomer);
+            if (success) {
+                setDb(prevDb => prevDb ? { ...prevDb, customers: prevDb.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c) } : null);
+            }
+            return;
+        }
         await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, customers: prevDb.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c) } : null);
     };
