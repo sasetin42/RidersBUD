@@ -510,11 +510,11 @@ const AdminMechanicsScreen: React.FC = () => {
     }
 
     return (
-        <div className="space-y-8 animate-slideInUp">
+        <div className="space-y-8 animate-slideInUp" role="main" aria-label="Mechanics Management">
             {/* Header & Stats */}
             <div>
                 <h1 className="text-3xl font-bold text-white mb-6">Manage Mechanics</h1>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" role="region" aria-label="Statistics Overview">
                     <StatCard title="Total Mechanics" value={stats.total} icon={<Wrench size={24} />} color="bg-blue-500" />
                     <StatCard title="Active Now" value={stats.active} icon={<CheckCircle size={24} />} color="bg-green-500" />
                     <StatCard title="Pending Approval" value={stats.pending} icon={<AlertCircle size={24} />} color="bg-yellow-500" />
@@ -527,13 +527,15 @@ const AdminMechanicsScreen: React.FC = () => {
                 {/* Toolbar */}
                 <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/5">
                     <div className="relative w-full md:w-1/3 group">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-primary transition-colors" size={18} />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-primary transition-colors" size={18} aria-hidden="true" />
                         <input
                             type="text"
                             placeholder="Search mechanics..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-white focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all placeholder-gray-600"
+                            aria-label="Search mechanics by name or email"
+                            role="searchbox"
                         />
                     </div>
                     <div className="flex gap-3 w-full md:w-auto">
@@ -541,14 +543,16 @@ const AdminMechanicsScreen: React.FC = () => {
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as any)}
                             className="bg-[#0a0a0a] text-white border border-white/10 rounded-xl px-4 py-2.5 focus:border-primary/50 focus:ring-1 focus:ring-primary/50 cursor-pointer hover:bg-white/5 transition-colors flex-grow md:flex-grow-0"
+                            aria-label="Filter mechanics by status"
                         >
                             <option value="all">All Statuses</option> <option value="Active">Active</option> <option value="Inactive">Inactive</option> <option value="Pending">Pending</option>
                         </select>
                         <button
                             onClick={() => { setEditingMechanic(undefined); setIsFormModalOpen(true); }}
                             className="bg-primary hover:bg-orange-600 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-lg shadow-orange-500/20 flex items-center gap-2 whitespace-nowrap"
+                            aria-label="Add new mechanic"
                         >
-                            <Plus size={20} /> <span className="hidden sm:inline">Add Mechanic</span>
+                            <Plus size={20} aria-hidden="true" /> <span className="hidden sm:inline">Add Mechanic</span>
                         </button>
                     </div>
                 </div>
@@ -679,8 +683,8 @@ const AdminMechanicsScreen: React.FC = () => {
                                             key={page}
                                             onClick={() => setCurrentPage(page)}
                                             className={`px-4 py-2 rounded-lg font-bold transition-all ${currentPage === page
-                                                    ? 'bg-primary text-white shadow-lg shadow-orange-500/20'
-                                                    : 'bg-white/5 hover:bg-white/10 text-gray-400'
+                                                ? 'bg-primary text-white shadow-lg shadow-orange-500/20'
+                                                : 'bg-white/5 hover:bg-white/10 text-gray-400'
                                                 }`}
                                         >
                                             {page}

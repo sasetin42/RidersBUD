@@ -1,16 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Spinner from '../../components/Spinner';
 import { useMechanicAuth } from '../../context/MechanicAuthContext';
 import { compressAndEncodeImage } from '../../utils/fileUtils';
 import { Eye, EyeOff, ChevronRight, ChevronLeft, Check, X } from 'lucide-react';
 
+const AUTOSAVE_KEY = 'mechanic_registration_draft';
+
 const MechanicSignUpScreen: React.FC = () => {
     const { register, loading: authLoading } = useMechanicAuth();
     const navigate = useNavigate();
 
-    const [currentStep, setCurrentStep] = useState(1);
-    const [formData, setFormData] = useState({
+    // Load saved draft from localStorage
+    const loadSavedDraft = () => {
+        try {
+            const saved = localStorage.getItem(AUTOSAVE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return parsed;
+            }
+        } catch (error) {
+            console.error('Failed to load draft:', error);
+        }
+        return null;
+    };
+
+    const savedDraft = loadSavedDraft();
+
+    const [currentStep, setCurrentStep] = useState(savedDraft?.currentStep || 1);
+    const [formData, setFormData] = useState(savedDraft?.formData || {
         name: '',
         email: '',
         phone: '',
@@ -20,12 +38,32 @@ const MechanicSignUpScreen: React.FC = () => {
         basePrice: '',
     });
     const [specializationInput, setSpecializationInput] = useState('');
-    const [portfolioImages, setPortfolioImages] = useState<string[]>([]);
+    const [portfolioImages, setPortfolioImages] = useState<string[]>(savedDraft?.portfolioImages || []);
     const [isLoading, setIsLoading] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const [error, setError] = useState('');
     const [isSuccess, setIsSuccess] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+
+    // Auto-save to localStorage
+    useEffect(() => {
+        if (!isSuccess && !isLoading) {
+            const draft = {
+                currentStep,
+                formData,
+                portfolioImages,
+                savedAt: new Date().toISOString()
+            };
+            localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(draft));
+        }
+    }, [currentStep, formData, portfolioImages, isSuccess, isLoading]);
+
+    // Clear draft on successful submission
+    useEffect(() => {
+        if (isSuccess) {
+            localStorage.removeItem(AUTOSAVE_KEY);
+        }
+    }, [isSuccess]);
 
     // Password strength calculation
     const getPasswordStrength = (password: string): { strength: number; label: string; color: string } => {
@@ -237,8 +275,8 @@ const MechanicSignUpScreen: React.FC = () => {
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-xs text-gray-400">Password Strength:</span>
                                             <span className={`text-xs font-bold ${passwordStrength.label === 'Weak' ? 'text-red-400' :
-                                                    passwordStrength.label === 'Fair' ? 'text-yellow-400' :
-                                                        passwordStrength.label === 'Good' ? 'text-blue-400' : 'text-green-400'
+                                                passwordStrength.label === 'Fair' ? 'text-yellow-400' :
+                                                    passwordStrength.label === 'Good' ? 'text-blue-400' : 'text-green-400'
                                                 }`}>{passwordStrength.label}</span>
                                         </div>
                                         <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
