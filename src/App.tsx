@@ -101,7 +101,7 @@ const AppInitializer: React.FC = () => {
     const [appLoading, setAppLoading] = useState(true);
 
     useEffect(() => {
-        const timer = setTimeout(() => setAppLoading(false), 2500); // Splash screen duration
+        const timer = setTimeout(() => setAppLoading(false), 800); // Optimized splash screen duration
         return () => clearTimeout(timer);
     }, []);
 
