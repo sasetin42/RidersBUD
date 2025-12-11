@@ -440,26 +440,21 @@ CREATE POLICY "Customers can create reviews" ON reviews FOR INSERT WITH CHECK (t
 -- ============================================================================
 
 -- Enable realtime for ALL tables for complete live data synchronization
-ALTER PUBLICATION supabase_realtime ADD TABLE services;
-ALTER PUBLICATION supabase_realtime ADD TABLE parts;
-ALTER PUBLICATION supabase_realtime ADD TABLE mechanics;
-ALTER PUBLICATION supabase_realtime ADD TABLE customers;
-ALTER PUBLICATION supabase_realtime ADD TABLE vehicles;
-ALTER PUBLICATION supabase_realtime ADD TABLE bookings;
-ALTER PUBLICATION supabase_realtime ADD TABLE booking_status_history;
-ALTER PUBLICATION supabase_realtime ADD TABLE orders;
-ALTER PUBLICATION supabase_realtime ADD TABLE order_items;
-ALTER PUBLICATION supabase_realtime ADD TABLE reviews;
-ALTER PUBLICATION supabase_realtime ADD TABLE banners;
-ALTER PUBLICATION supabase_realtime ADD TABLE settings;
-ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE admin_users;
-ALTER PUBLICATION supabase_realtime ADD TABLE roles;
-ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
-ALTER PUBLICATION supabase_realtime ADD TABLE payout_requests;
-ALTER PUBLICATION supabase_realtime ADD TABLE faqs;
-ALTER PUBLICATION supabase_realtime ADD TABLE rental_cars;
-ALTER PUBLICATION supabase_realtime ADD TABLE rental_bookings;
+DO $$
+DECLARE
+  schema_tables TEXT[] := ARRAY['services', 'parts', 'mechanics', 'customers', 'vehicles', 'bookings', 'booking_status_history', 'orders', 'order_items', 'reviews', 'banners', 'settings', 'notifications', 'admin_users', 'roles', 'tasks', 'payout_requests', 'faqs', 'rental_cars', 'rental_bookings'];
+  t TEXT;
+BEGIN
+  FOREACH t IN ARRAY schema_tables LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' 
+      AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', t);
+    END IF;
+  END LOOP;
+END $$;
 
 -- ============================================================================
 -- STORAGE BUCKETS
