@@ -256,7 +256,7 @@ CREATE TABLE IF NOT EXISTS rental_cars (
     make TEXT NOT NULL,
     model TEXT NOT NULL,
     year INTEGER NOT NULL,
-    type TEXTToCheck (type IN ('Sedan', 'SUV', 'Van', 'Luxury')),
+    type TEXT CHECK (type IN ('Sedan', 'SUV', 'Van', 'Luxury')),
     price_per_day DECIMAL(10,2) NOT NULL,
     seats INTEGER NOT NULL,
     image_url TEXT,
@@ -303,21 +303,28 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Apply updated_at trigger to tables
+-- Apply updated_at trigger to tables
+DROP TRIGGER IF EXISTS update_services_updated_at ON services;
 CREATE TRIGGER update_services_updated_at BEFORE UPDATE ON services
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_parts_updated_at ON parts;
 CREATE TRIGGER update_parts_updated_at BEFORE UPDATE ON parts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_mechanics_updated_at ON mechanics;
 CREATE TRIGGER update_mechanics_updated_at BEFORE UPDATE ON mechanics
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_customers_updated_at ON customers;
 CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_bookings_updated_at ON bookings;
 CREATE TRIGGER update_bookings_updated_at BEFORE UPDATE ON bookings
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_orders_updated_at ON orders;
 CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -334,6 +341,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_mechanic_rating ON reviews;
 CREATE TRIGGER trigger_update_mechanic_rating
 AFTER INSERT ON reviews
 FOR EACH ROW
@@ -362,38 +370,57 @@ ALTER TABLE rental_cars ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rental_bookings ENABLE ROW LEVEL SECURITY;
 
 -- Public read access for data that should be public
+DROP POLICY IF EXISTS "Public can view services" ON services;
 CREATE POLICY "Public can view services" ON services FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public can view parts" ON parts;
 CREATE POLICY "Public can view parts" ON parts FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public can view banners" ON banners;
 CREATE POLICY "Public can view banners" ON banners FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public can view mechanics" ON mechanics;
 CREATE POLICY "Public can view mechanics" ON mechanics FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public can view faqs" ON faqs;
 CREATE POLICY "Public can view faqs" ON faqs FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public can view rental_cars" ON rental_cars;
 CREATE POLICY "Public can view rental_cars" ON rental_cars FOR SELECT USING (true);
 
 -- Customers policies
+DROP POLICY IF EXISTS "Customers can view own profile" ON customers;
 CREATE POLICY "Customers can view own profile" ON customers 
     FOR SELECT USING (auth.uid()::text = id::text);
 
+DROP POLICY IF EXISTS "Customers can update own profile" ON customers;
 CREATE POLICY "Customers can update own profile" ON customers 
     FOR UPDATE USING (auth.uid()::text = id::text);
 
 -- Mechanics policies
+DROP POLICY IF EXISTS "Mechanics can view own profile" ON mechanics;
 CREATE POLICY "Mechanics can view own profile" ON mechanics 
     FOR SELECT USING (auth.uid()::text = id::text);
 
+DROP POLICY IF EXISTS "Mechanics can update own profile" ON mechanics;
 CREATE POLICY "Mechanics can update own profile" ON mechanics 
     FOR UPDATE USING (auth.uid()::text = id::text);
 
 -- Bookings policies
+DROP POLICY IF EXISTS "Customers view own bookings" ON bookings;
 CREATE POLICY "Customers view own bookings" ON bookings 
     FOR SELECT USING (auth.uid()::text = customer_id::text);
 
+DROP POLICY IF EXISTS "Mechanics view assigned bookings" ON bookings;
 CREATE POLICY "Mechanics view assigned bookings" ON bookings 
     FOR SELECT USING (auth.uid()::text = mechanic_id::text);
 
+DROP POLICY IF EXISTS "Customers create bookings" ON bookings;
 CREATE POLICY "Customers create bookings" ON bookings 
     FOR INSERT WITH CHECK (auth.uid()::text = customer_id::text);
 
 -- Notifications policies
+DROP POLICY IF EXISTS "Users view own notifications" ON notifications;
 CREATE POLICY "Users view own notifications" ON notifications 
     FOR SELECT USING (
         recipient_id = 'all' OR 
@@ -402,7 +429,10 @@ CREATE POLICY "Users view own notifications" ON notifications
     );
 
 -- Reviews policies
+DROP POLICY IF EXISTS "Public can view reviews" ON reviews;
 CREATE POLICY "Public can view reviews" ON reviews FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Customers can create reviews" ON reviews;
 CREATE POLICY "Customers can create reviews" ON reviews FOR INSERT WITH CHECK (true);
 
 -- ============================================================================
