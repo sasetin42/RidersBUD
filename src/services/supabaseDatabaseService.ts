@@ -408,22 +408,151 @@ export class SupabaseDatabaseService {
 
     static async getCustomers(): Promise<Customer[]> {
         if (!isSupabaseConfigured()) return [];
-        const { data, error } = await supabase!.from('customers').select('*');
-        if (error) { console.error('[DB] Get customers error:', error); return []; }
-        return data || [];
+        // Select all fields AND join vehicles table
+        const { data, error } = await supabase!
+            .from('customers')
+            .select('*, vehicles(*)');
+
+        if (error) {
+            console.error('[DB] Get customers error:', error);
+            return [];
+        }
+
+        // Transform Supabase data to match Customer interface
+        return (data || []).map((row: any) => ({
+            ...row,
+            password: row.password_hash, // Map back
+            vehicles: row.vehicles ? row.vehicles.map((v: any) => ({
+                ...v,
+                plateNumber: v.plate_number, // Map snake_case to camelCase
+                isPrimary: v.is_primary
+            })) : []
+        })) as Customer[];
     }
 
     static async addCustomer(customer: Omit<Customer, 'id'>): Promise<Customer | null> {
         if (!isSupabaseConfigured()) return null;
-        const { data, error } = await supabase!.from('customers').insert([customer]).select().single();
-        if (error) { console.error('[DB] Add customer error:', error); return null; }
-        return data;
+
+        // Separate fields that need transformation
+        const { password, vehicles, ...rest } = customer;
+
+        // Prepare payload for 'customers' table
+        const customerPayload = {
+            ...rest,
+            password_hash: password, // Map password to password_hash
+            vehicles: undefined     // Exclude array, stored in separate table
+        };
+        // Remove undefined properties to avoid errors
+        delete (customerPayload as any).vehicles;
+
+        // 1. Insert Customer
+        const { data: newCustomer, error: insertError } = await supabase!
+            .from('customers')
+            .insert([customerPayload])
+            .select() // Return the created row
+            .single();
+
+        if (insertError) {
+            console.error('[DB] Add customer insert error:', insertError);
+            return null;
+        }
+
+        if (!newCustomer) return null;
+
+        // 2. Insert Vehicles (if any)
+        if (vehicles && vehicles.length > 0) {
+            const vehiclesPayload = vehicles.map((v: any) => ({
+                customer_id: newCustomer.id,
+                make: v.make,
+                model: v.model,
+                year: v.year,
+                plate_number: v.plateNumber,
+                is_primary: v.isPrimary,
+                // ... map other vehicle fields if necessary
+            }));
+
+            const { error: vehicleError } = await supabase!.from('vehicles').insert(vehiclesPayload);
+            if (vehicleError) {
+                console.error('[DB] Add customer vehicles error:', vehicleError);
+                // Non-fatal, return customer but warn
+            }
+        }
+
+        // Return combined object matching Customer interface
+        return {
+            ...newCustomer,
+            password: newCustomer.password_hash, // Map back for app usage
+            vehicles: vehicles || [] // Return initial vehicles (optimistic)
+        } as Customer;
     }
 
     static async updateCustomer(id: string, updates: Partial<Customer>): Promise<boolean> {
         if (!isSupabaseConfigured()) return false;
-        const { error } = await supabase!.from('customers').update(updates).eq('id', id);
-        if (error) { console.error('[DB] Update customer error:', error); return false; }
+
+        const { password, vehicles, id: _id, ...rest } = updates; // Extract ID to avoid updating it
+
+        const customerPayload: any = { ...rest };
+        if (password) customerPayload.password_hash = password;
+
+        // 1. Update Customer fields
+        const { error } = await supabase!
+            .from('customers')
+            .update(customerPayload)
+            .eq('id', id);
+
+        if (error) {
+            console.error('[DB] Update customer error:', error);
+            return false;
+        }
+
+        // 2. Sync Vehicles if provided
+        if (vehicles) {
+            // A. Fetch existing vehicles
+            const { data: existingVehicles } = await supabase!
+                .from('vehicles')
+                .select('id, plate_number')
+                .eq('customer_id', id);
+
+            const existingPlates = new Set((existingVehicles || []).map(v => v.plate_number));
+            const newPlates = new Set(vehicles.map(v => v.plateNumber));
+
+            // B. Upsert (Add/Update)
+            for (const v of vehicles) {
+                const vehiclePayload = {
+                    customer_id: id,
+                    make: v.make,
+                    model: v.model,
+                    year: v.year,
+                    plate_number: v.plateNumber,
+                    is_primary: v.isPrimary,
+                    image_urls: v.imageUrls
+                };
+
+                // Use upsert with conflict on customer_id + plate_number (requires constraint)
+                const { error: upsertError } = await supabase!
+                    .from('vehicles')
+                    .upsert(vehiclePayload, { onConflict: 'customer_id, plate_number' });
+
+                if (upsertError) console.error('[DB] Vehicle upsert error:', upsertError);
+            }
+
+            // C. Delete removed vehicles
+            // Find plates that are in existing but NOT in new list
+            const platesToDelete = (existingVehicles || [])
+                .filter(v => !newPlates.has(v.plate_number))
+                .map(v => v.plate_number);
+
+            if (platesToDelete.length > 0) {
+                const { error: deleteError } = await supabase!
+                    .from('vehicles')
+                    .delete()
+                    .eq('customer_id', id)
+                    .in('plate_number', platesToDelete);
+
+                if (deleteError) console.error('[DB] Vehicle delete error (likely referenced by booking):', deleteError);
+            }
+        }
+
         return true;
     }
 
