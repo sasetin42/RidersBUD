@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, ReactNode, useEffect } from
 import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest, RentalCar, RentalBooking } from '../types';
 import { getSeedData } from '../data/mockData';
 import { SupabaseDatabaseService } from '../services/supabaseDatabaseService';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -122,6 +122,19 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         };
         // No delay needed if fetching
         loadData();
+
+        // Realtime Subscription
+        if (isSupabaseConfigured() && supabase) {
+            console.log("Subscribing to realtime updates...");
+            const channel = supabase.channel('db-changes')
+                .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+                    console.log('Realtime change detected, reloading data...');
+                    loadData();
+                })
+                .subscribe();
+
+            return () => { supabase.removeChannel(channel); };
+        }
     }, []); // Runs only once on mount
 
     // Effect for persisting any changes to the DB state into localStorage
