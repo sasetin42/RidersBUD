@@ -356,6 +356,7 @@ ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE parts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mechanics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vehicles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
@@ -388,45 +389,25 @@ CREATE POLICY "Public can view faqs" ON faqs FOR SELECT USING (true);
 DROP POLICY IF EXISTS "Public can view rental_cars" ON rental_cars;
 CREATE POLICY "Public can view rental_cars" ON rental_cars FOR SELECT USING (true);
 
--- Customers policies
-DROP POLICY IF EXISTS "Customers can view own profile" ON customers;
-CREATE POLICY "Customers can view own profile" ON customers 
-    FOR SELECT USING (auth.uid()::text = id::text);
-
-DROP POLICY IF EXISTS "Customers can update own profile" ON customers;
-CREATE POLICY "Customers can update own profile" ON customers 
-    FOR UPDATE USING (auth.uid()::text = id::text);
+-- Customers policies (Custom Auth Support)
+DROP POLICY IF EXISTS "Enable access to all users" ON customers;
+CREATE POLICY "Enable access to all users" ON customers FOR ALL USING (true) WITH CHECK (true);
 
 -- Mechanics policies
-DROP POLICY IF EXISTS "Mechanics can view own profile" ON mechanics;
-CREATE POLICY "Mechanics can view own profile" ON mechanics 
-    FOR SELECT USING (auth.uid()::text = id::text);
-
-DROP POLICY IF EXISTS "Mechanics can update own profile" ON mechanics;
-CREATE POLICY "Mechanics can update own profile" ON mechanics 
-    FOR UPDATE USING (auth.uid()::text = id::text);
+DROP POLICY IF EXISTS "Enable access to all mechanics" ON mechanics;
+CREATE POLICY "Enable access to all mechanics" ON mechanics FOR ALL USING (true) WITH CHECK (true);
 
 -- Bookings policies
-DROP POLICY IF EXISTS "Customers view own bookings" ON bookings;
-CREATE POLICY "Customers view own bookings" ON bookings 
-    FOR SELECT USING (auth.uid()::text = customer_id::text);
-
-DROP POLICY IF EXISTS "Mechanics view assigned bookings" ON bookings;
-CREATE POLICY "Mechanics view assigned bookings" ON bookings 
-    FOR SELECT USING (auth.uid()::text = mechanic_id::text);
-
-DROP POLICY IF EXISTS "Customers create bookings" ON bookings;
-CREATE POLICY "Customers create bookings" ON bookings 
-    FOR INSERT WITH CHECK (auth.uid()::text = customer_id::text);
+DROP POLICY IF EXISTS "Enable access to all bookings" ON bookings;
+CREATE POLICY "Enable access to all bookings" ON bookings FOR ALL USING (true) WITH CHECK (true);
 
 -- Notifications policies
-DROP POLICY IF EXISTS "Users view own notifications" ON notifications;
-CREATE POLICY "Users view own notifications" ON notifications 
-    FOR SELECT USING (
-        recipient_id = 'all' OR 
-        recipient_id = 'customer-' || auth.uid()::text OR 
-        recipient_id = 'mechanic-' || auth.uid()::text
-    );
+DROP POLICY IF EXISTS "Enable access to all notifications" ON notifications;
+CREATE POLICY "Enable access to all notifications" ON notifications FOR ALL USING (true) WITH CHECK (true);
+
+-- Vehicles policies
+DROP POLICY IF EXISTS "Enable access to all vehicles" ON vehicles;
+CREATE POLICY "Enable access to all vehicles" ON vehicles FOR ALL USING (true) WITH CHECK (true);
 
 -- Reviews policies
 DROP POLICY IF EXISTS "Public can view reviews" ON reviews;
