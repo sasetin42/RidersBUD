@@ -110,23 +110,26 @@ const AppInitializer: React.FC = () => {
     }
 
     return (
-        <AuthProvider>
-            <AdminAuthProvider>
-                <MechanicAuthProvider>
-                    <CartProvider>
-                        <WishlistProvider>
-                            <ChatNotificationProvider>
-                                <AppContent />
-                            </ChatNotificationProvider>
-                        </WishlistProvider>
-                    </CartProvider>
-                </MechanicAuthProvider>
-            </AdminAuthProvider>
-        </AuthProvider>
+        <HashRouter>
+            <AuthProvider>
+                <AdminAuthProvider>
+                    <MechanicAuthProvider>
+                        <CartProvider>
+                            <WishlistProvider>
+                                <ChatNotificationProvider>
+                                    <AppContent />
+                                </ChatNotificationProvider>
+                            </WishlistProvider>
+                        </CartProvider>
+                    </MechanicAuthProvider>
+                </AdminAuthProvider>
+            </AuthProvider>
+        </HashRouter>
     );
 };
 
 const AppContent: React.FC = () => {
+    const location = useLocation();
     const { isAuthenticated, user } = useAuth();
     const { isAdminAuthenticated } = useAdminAuth();
     const { isMechanicAuthenticated, mechanic } = useMechanicAuth();
@@ -329,7 +332,7 @@ const AppContent: React.FC = () => {
 
 
     return (
-        <HashRouter>
+        <>
             <ScrollToTop />
             <NotificationToasts />
             <PageWrapper>
@@ -453,7 +456,7 @@ const AppContent: React.FC = () => {
                     />
                 </Routes>
             </PageWrapper>
-        </HashRouter>
+        </>
     )
 }
 

@@ -81,7 +81,17 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 const storedData = localStorage.getItem(DB_STORAGE_KEY);
                 if (storedData) {
                     console.log("Loading database from localStorage...");
-                    setDb(JSON.parse(storedData));
+                    const parsedData = JSON.parse(storedData);
+                    // Simple validation: check if critical 'settings' exist
+                    if (!parsedData || !parsedData.settings) {
+                        console.warn("Stored data is corrupt or missing settings. Falling back to seed data.");
+                        const seedData = getSeedData();
+                        setDb(seedData);
+                        // Optionally overwrite corrupt data immediately
+                        localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(seedData));
+                    } else {
+                        setDb(parsedData);
+                    }
                 } else {
                     console.log("Initializing database from seed data...");
                     const seedData = getSeedData();
@@ -132,7 +142,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         };
     }, []);
 
-     // Effect for simulating mechanic movement and calculating ETA
+    // Effect for simulating mechanic movement and calculating ETA
     useEffect(() => {
         const simulationInterval = setInterval(() => {
             setDb(prevDb => {
@@ -145,9 +155,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 const enRouteBookings = newBookings.filter(b => b.status === 'En Route' && b.mechanic && b.location);
 
                 if (enRouteBookings.length === 0) {
-                    return prevDb; 
+                    return prevDb;
                 }
-                
+
                 const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
                     const R = 6371; // Radius of the Earth in km
                     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -257,7 +267,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         // No delay for this one as it's a real-time update
         setDb(prevDb => {
             if (!prevDb) return null;
-            const newMechanics = prevDb.mechanics.map(m => 
+            const newMechanics = prevDb.mechanics.map(m =>
                 m.id === mechanicId ? { ...m, lat: location.lat, lng: location.lng } : m
             );
             return { ...prevDb, mechanics: newMechanics };
@@ -271,7 +281,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         setDb(prevDb => prevDb ? { ...prevDb, bookings: [...prevDb.bookings, newBooking] } : null);
         return newBooking;
     };
-     const updateBooking = async (bookingId: string, updates: Partial<Booking>) => {
+    const updateBooking = async (bookingId: string, updates: Partial<Booking>) => {
         await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
@@ -306,10 +316,10 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
-            const newBookings = prevDb.bookings.map(b => 
-                b.id === bookingId 
-                ? { ...b, mechanic: mechanic, status: 'En Route' as BookingStatus } 
-                : b
+            const newBookings = prevDb.bookings.map(b =>
+                b.id === bookingId
+                    ? { ...b, mechanic: mechanic, status: 'En Route' as BookingStatus }
+                    : b
             );
             return { ...prevDb, bookings: newBookings };
         });
@@ -358,9 +368,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         const newStatus: BookingStatus = 'Reschedule Requested';
                         const newHistoryEntry = { status: newStatus, timestamp: new Date().toISOString() };
                         const updatedHistory = [...(b.statusHistory || []), newHistoryEntry];
-                        return { 
-                            ...b, 
-                            status: newStatus, 
+                        return {
+                            ...b,
+                            status: newStatus,
                             statusHistory: updatedHistory,
                             rescheduleDetails: { newDate, newTime, reason }
                         };
@@ -380,13 +390,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 bookings: prevDb.bookings.map(b => {
                     if (b.id === bookingId) {
                         const originalStatusBeforeRequest = b.statusHistory?.slice().reverse().find(h => h.status !== 'Reschedule Requested')?.status as BookingStatus || 'Booking Confirmed';
-                        
+
                         if (response === 'accepted' && b.rescheduleDetails) {
                             const newHistoryEntry = { status: 'Booking Confirmed', timestamp: new Date().toISOString() };
                             const updatedHistory = [...(b.statusHistory || []), newHistoryEntry];
-                            return { 
-                                ...b, 
-                                status: 'Booking Confirmed', 
+                            return {
+                                ...b,
+                                status: 'Booking Confirmed',
                                 statusHistory: updatedHistory,
                                 date: b.rescheduleDetails.newDate,
                                 time: b.rescheduleDetails.newTime,
@@ -420,11 +430,11 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, customers: prevDb.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c) } : null);
     };
-     const updateCustomerLocation = async (customerId: string, location: { lat: number; lng: number }) => {
+    const updateCustomerLocation = async (customerId: string, location: { lat: number; lng: number }) => {
         // No delay for real-time updates
         setDb(prevDb => {
             if (!prevDb) return null;
-            const newCustomers = prevDb.customers.map(c => 
+            const newCustomers = prevDb.customers.map(c =>
                 c.id === customerId ? { ...c, lat: location.lat, lng: location.lng } : c
             );
             return { ...prevDb, customers: newCustomers };
@@ -477,8 +487,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         const newHistoryEntry = { status, timestamp: new Date().toISOString() };
                         // Add new entry, ensuring history exists
                         const updatedHistory = [...(o.statusHistory || [{ status: o.status, timestamp: o.date }]), newHistoryEntry];
-                        return { 
-                            ...o, 
+                        return {
+                            ...o,
                             status,
                             statusHistory: updatedHistory,
                         };
@@ -488,19 +498,19 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             };
         });
     };
-    
+
     // --- Settings Operations ---
     const updateSettings = async (newSettings: Partial<Settings>) => {
         await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, settings: { ...prevDb.settings, ...newSettings } } : null);
     };
-    
+
     // --- Review Operations ---
     const addReviewToMechanic = async (mechanicId: string, bookingId: string, reviewData: { rating: number, comment: string }, customerName: string) => {
         await delay(300);
         setDb(prevDb => {
             if (!prevDb) return null;
-            
+
             const newMechanics = prevDb.mechanics.map(mechanic => {
                 if (mechanic.id === mechanicId) {
                     const newReview: Review = {
@@ -533,7 +543,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return { ...prevDb, mechanics: newMechanics, bookings: newBookings };
         });
     };
-    
+
     // --- Banner Operations ---
     const addBanner = async (banner: Omit<Banner, 'id'>) => {
         await delay(300);
@@ -626,7 +636,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
 
-     // --- Payout Operations ---
+    // --- Payout Operations ---
     const addPayoutRequest = async (payoutRequest: Omit<PayoutRequest, 'id' | 'status' | 'requestDate'>) => {
         await delay(300);
         const newRequest: PayoutRequest = {

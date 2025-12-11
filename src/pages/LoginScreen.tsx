@@ -38,12 +38,12 @@ const LoginScreen: React.FC = () => {
     if (!db) {
         return <div className="flex items-center justify-center h-screen bg-secondary"><Spinner size="lg" /></div>;
     }
-    const { settings } = db;
+
     // Set the default logo as a fallback to ensure it's always available.
     const defaultLogo = "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
-    const logoUrl = settings.appLogoUrl || defaultLogo;
+    const logoUrl = db?.settings?.appLogoUrl || defaultLogo;
 
-
+    // Helper validation
     const validateCustomerField = (name: string, value: string) => {
         let fieldError = '';
         if (name === 'email') {
@@ -118,6 +118,8 @@ const LoginScreen: React.FC = () => {
     };
 
     const anyLoading = isLoading || authLoading || mechanicAuthLoading;
+    const appName = db?.settings?.appName || 'RidersBUD';
+    const appTagline = db?.settings?.appTagline || 'Sign in to continue';
 
     return (
         <div className="relative flex flex-col items-center justify-center min-h-screen bg-secondary overflow-hidden p-4">
@@ -130,9 +132,9 @@ const LoginScreen: React.FC = () => {
                     {logoUrl ? (
                         <img src={logoUrl} alt="Logo" className="w-48 mb-6 max-h-24 object-contain mx-auto drop-shadow-lg" />
                     ) : (
-                        <h1 className="text-5xl font-bold text-primary mb-4 tracking-tight">{settings.appName || 'RidersBUD'}</h1>
+                        <h1 className="text-5xl font-bold text-primary mb-4 tracking-tight">{appName}</h1>
                     )}
-                    <p className="text-light-gray text-sm font-medium tracking-wide uppercase">{settings.appTagline || 'Sign in to continue'}</p>
+                    <p className="text-light-gray text-sm font-medium tracking-wide uppercase">{appTagline}</p>
                 </div>
 
                 <div className="mb-8 p-1 bg-black/20 backdrop-blur-sm rounded-xl flex relative overflow-hidden">
