@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Settings, Role, AdminModule, PermissionLevel } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
-import { fileToBase64 } from '../../utils/fileUtils';
+import { fileToBase64, compressAndEncodeImage } from '../../utils/fileUtils';
 import Modal from '../../components/admin/Modal';
 import {
     Settings as SettingsIcon,
@@ -119,7 +119,8 @@ const AdminSettingsScreen: React.FC = () => {
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: keyof Settings) => {
         if (e.target.files?.[0]) {
-            const base64 = await fileToBase64(e.target.files[0]);
+            // Updated to use compression to prevent large payload issues
+            const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
             setSettings(prev => prev ? ({ ...prev, [field]: base64 }) : null);
         }
     };
@@ -449,7 +450,7 @@ const AdminSettingsScreen: React.FC = () => {
                                                     Upload
                                                     <input type="file" className="hidden" onChange={async (e) => {
                                                         if (e.target.files?.[0]) {
-                                                            const base64 = await fileToBase64(e.target.files[0]);
+                                                            const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
                                                             setSettings(s => s ? ({ ...s, brandingAssets: { ...s.brandingAssets, splashLogoUrl: base64 } }) : null);
                                                         }
                                                     }} accept="image/*" />
@@ -466,7 +467,7 @@ const AdminSettingsScreen: React.FC = () => {
                                                     Upload
                                                     <input type="file" className="hidden" onChange={async (e) => {
                                                         if (e.target.files?.[0]) {
-                                                            const base64 = await fileToBase64(e.target.files[0]);
+                                                            const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
                                                             setSettings(s => s ? ({ ...s, brandingAssets: { ...s.brandingAssets, customerAuthLogoUrl: base64 } }) : null);
                                                         }
                                                     }} accept="image/*" />
@@ -483,7 +484,7 @@ const AdminSettingsScreen: React.FC = () => {
                                                     Upload
                                                     <input type="file" className="hidden" onChange={async (e) => {
                                                         if (e.target.files?.[0]) {
-                                                            const base64 = await fileToBase64(e.target.files[0]);
+                                                            const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
                                                             setSettings(s => s ? ({ ...s, brandingAssets: { ...s.brandingAssets, mechanicAuthLogoUrl: base64 } }) : null);
                                                         }
                                                     }} accept="image/*" />
