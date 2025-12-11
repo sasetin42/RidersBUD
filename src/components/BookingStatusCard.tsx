@@ -135,9 +135,9 @@ const getDistanceInKm = (lat1: number, lon1: number, lat2: number, lon2: number)
 };
 
 
-const BookingStatusCard: React.FC<{ 
-    booking: Booking; 
-    showHeader?: boolean; 
+const BookingStatusCard: React.FC<{
+    booking: Booking;
+    showHeader?: boolean;
     onTrack?: (booking: Booking) => void;
     onProgressView?: (booking: Booking) => void;
 }> = ({ booking, showHeader = true, onTrack, onProgressView }) => {
@@ -148,7 +148,7 @@ const BookingStatusCard: React.FC<{
     const [isRescheduling, setIsRescheduling] = useState(false);
     const [eta, setEta] = useState<number | null>(null);
     const [isChatOpen, setIsChatOpen] = useState(false);
-    
+
     const formatTimestamp = (isoString: string) => {
         return new Date(isoString).toLocaleDateString('en-US', {
             month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
@@ -182,7 +182,7 @@ const BookingStatusCard: React.FC<{
 
 
     const timelineSteps: BookingStatus[] = ['Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'];
-    
+
     const statusIcons: Record<string, React.ReactNode> = {
         'Booking Confirmed': <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>,
         'Mechanic Assigned': <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
@@ -193,10 +193,10 @@ const BookingStatusCard: React.FC<{
 
     const currentStatusIndex = useMemo(() => {
         if (!booking) return -1;
-        
+
         let highestIndex = -1;
         const allStatuses = [...(booking.statusHistory?.map(h => h.status) || []), booking.status];
-        
+
         for (const status of allStatuses) {
             const index = timelineSteps.indexOf(status as BookingStatus);
             if (index > highestIndex) {
@@ -218,28 +218,28 @@ const BookingStatusCard: React.FC<{
     };
 
     return (
-        <div className="bg-secondary border border-dark-gray rounded-lg overflow-hidden">
+        <div className="glass-card overflow-hidden">
             {showHeader && (
-                <div className="p-4 bg-dark-gray flex justify-between items-center">
+                <div className="p-4 bg-white/5 flex justify-between items-center border-b border-white/5">
                     <h3 className="font-bold text-white">Booking #{booking.id.toUpperCase().slice(-6)}</h3>
-                     <div className="flex items-center gap-2">
-                         {eta !== null && <span className="text-xs font-semibold text-yellow-300 animate-pulse">ETA: ~{eta} min</span>}
+                    <div className="flex items-center gap-2">
+                        {eta !== null && <span className="text-xs font-semibold text-yellow-300 animate-pulse">ETA: ~{eta} min</span>}
                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[booking.status]}`}>
                             {booking.status}
                         </span>
                     </div>
                 </div>
             )}
-            
+
             <div className="p-4 space-y-6">
                 {/* Status Timeline */}
                 <div>
                     <h3 className="font-semibold text-white mb-4">Booking Status</h3>
                     <div className="space-y-0">
-                         {timelineSteps.map((step, index) => {
+                        {timelineSteps.map((step, index) => {
                             const isCompleted = index <= currentStatusIndex;
                             const historyEntry = booking.statusHistory?.find(s => s.status === step);
-                            
+
                             let subtitle = 'Pending';
                             if (historyEntry) {
                                 subtitle = formatTimestamp(historyEntry.timestamp);
@@ -262,11 +262,11 @@ const BookingStatusCard: React.FC<{
                 </div>
 
                 {/* Mechanic Details */}
-                 {booking.mechanic && (
+                {booking.mechanic && (
                     <div className="bg-dark-gray p-4 rounded-lg">
                         <h3 className="font-semibold text-white mb-3">Your Mechanic</h3>
                         <div className="flex items-center gap-3">
-                             <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0">
+                            <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0">
                                 {booking.mechanic.name.split(' ').map(n => n[0]).join('')}
                             </div>
                             <div>
@@ -278,7 +278,7 @@ const BookingStatusCard: React.FC<{
                 )}
 
                 {/* Service Details */}
-                 <div className="bg-dark-gray p-4 rounded-lg">
+                <div className="bg-dark-gray p-4 rounded-lg">
                     <h3 className="font-semibold text-white mb-2">Service Details</h3>
                     <div className="flex justify-between text-sm">
                         <span className="text-light-gray">Service:</span>
@@ -292,9 +292,9 @@ const BookingStatusCard: React.FC<{
                         <span className="text-light-gray">Plate No:</span>
                         <span className="font-medium text-white font-mono">{booking.vehicle.plateNumber}</span>
                     </div>
-                 </div>
-                
-                 <div className="flex flex-col sm:flex-row gap-2">
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
                     {onProgressView && !['En Route', 'Completed', 'Cancelled'].includes(booking.status) && (
                         <button onClick={() => onProgressView(booking)} className="flex-1 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">View Progress</button>
                     )}
@@ -315,17 +315,17 @@ const BookingStatusCard: React.FC<{
                     </button>
                 )}
             </div>
-             {isCancelling && (
-                <CancellationModal 
-                    booking={booking} 
-                    onClose={() => setIsCancelling(false)} 
+            {isCancelling && (
+                <CancellationModal
+                    booking={booking}
+                    onClose={() => setIsCancelling(false)}
                     onConfirm={handleConfirmCancellation}
                 />
             )}
-             {isRescheduling && (
-                <RescheduleModal 
-                    booking={booking} 
-                    onClose={() => setIsRescheduling(false)} 
+            {isRescheduling && (
+                <RescheduleModal
+                    booking={booking}
+                    onClose={() => setIsRescheduling(false)}
                     onConfirm={handleConfirmReschedule}
                 />
             )}

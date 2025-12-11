@@ -1,7 +1,8 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import ScrollToTop from './components/ScrollToTop';
 import SplashScreen from './pages/SplashScreen';
 import LoginScreen from './pages/LoginScreen';
 import SignUpScreen from './pages/SignUpScreen';
@@ -76,6 +77,15 @@ const usePrevious = <T,>(value: T) => {
 };
 
 
+const PageWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const location = useLocation();
+    return (
+        <div key={location.pathname} className="animate-fadeIn w-full">
+            {children}
+        </div>
+    );
+};
+
 const App: React.FC = () => {
     return (
         <NotificationProvider>
@@ -98,7 +108,7 @@ const AppInitializer: React.FC = () => {
     if (appLoading || dbLoading) {
         return <SplashScreen />;
     }
-    
+
     return (
         <AuthProvider>
             <AdminAuthProvider>
@@ -124,10 +134,10 @@ const AppContent: React.FC = () => {
     const { addNotification } = useNotification();
     const { openChatIds } = useChatNotification();
     const [isAssistantOpen, setIsAssistantOpen] = useState(false);
-    
+
     const prevDb = usePrevious<Database | null>(db);
     const watchIdRef = useRef<number | null>(null);
-    
+
     // Effect to generate notifications based on database changes
     useEffect(() => {
         if (!prevDb || !db) return;
@@ -139,16 +149,16 @@ const AppContent: React.FC = () => {
                 if (currentBooking.customerName !== user.name) return;
                 const oldBooking = prevDb.bookings.find(b => b.id === currentBooking.id);
                 if (oldBooking && oldBooking.status !== currentBooking.status) {
-                     let title = ''; let message = '';
-                     switch (currentBooking.status) {
-                         case 'Mechanic Assigned': title = 'Mechanic Assigned!'; message = `${currentBooking.mechanic?.name} has been assigned to your job.`; break;
-                         case 'En Route': title = 'Mechanic En Route!'; message = `${currentBooking.mechanic?.name} is on the way.`; break;
-                         case 'In Progress': title = 'Work has Begun!'; message = `${currentBooking.mechanic?.name} has started the ${currentBooking.service.name} service.`; break;
-                         case 'Completed': title = 'Service Complete!'; message = `Your ${currentBooking.service.name} is now complete.`; break;
-                     }
-                     if (title) {
-                         addNotification({ type: 'booking', title, message, link: '/booking-history', recipientId: `customer-${user.id}` });
-                     }
+                    let title = ''; let message = '';
+                    switch (currentBooking.status) {
+                        case 'Mechanic Assigned': title = 'Mechanic Assigned!'; message = `${currentBooking.mechanic?.name} has been assigned to your job.`; break;
+                        case 'En Route': title = 'Mechanic En Route!'; message = `${currentBooking.mechanic?.name} is on the way.`; break;
+                        case 'In Progress': title = 'Work has Begun!'; message = `${currentBooking.mechanic?.name} has started the ${currentBooking.service.name} service.`; break;
+                        case 'Completed': title = 'Service Complete!'; message = `Your ${currentBooking.service.name} is now complete.`; break;
+                    }
+                    if (title) {
+                        addNotification({ type: 'booking', title, message, link: '/booking-history', recipientId: `customer-${user.id}` });
+                    }
                 }
             });
         }
@@ -199,16 +209,16 @@ const AppContent: React.FC = () => {
         }
 
     }, [db, prevDb, isAuthenticated, user, isMechanicAuthenticated, mechanic, addNotification]);
-    
-     // Effect for Live Customer Location Tracking
+
+    // Effect for Live Customer Location Tracking
     useEffect(() => {
         if (!isAuthenticated || !user || !db || !updateCustomerLocation) {
             return;
         }
 
-        const activeBooking = db.bookings.find(b => 
-            b.customerName === user.name && 
-            b.mechanic && 
+        const activeBooking = db.bookings.find(b =>
+            b.customerName === user.name &&
+            b.mechanic &&
             b.status === 'En Route'
         );
 
@@ -216,9 +226,9 @@ const AppContent: React.FC = () => {
             if (watchIdRef.current === null) {
                 watchIdRef.current = navigator.geolocation.watchPosition(
                     (position) => {
-                        updateCustomerLocation(user.id, { 
-                            lat: position.coords.latitude, 
-                            lng: position.coords.longitude 
+                        updateCustomerLocation(user.id, {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
                         });
                     },
                     (err) => console.warn(`Customer location watch error: ${err.message}`),
@@ -240,7 +250,7 @@ const AppContent: React.FC = () => {
         };
     }, [db, user, isAuthenticated, updateCustomerLocation]);
 
-     // Effect for Time-based and Chat Notifications
+    // Effect for Time-based and Chat Notifications
     useEffect(() => {
         // 1. Request general notification permission on login
         if (isAuthenticated || isMechanicAuthenticated) {
@@ -252,21 +262,21 @@ const AppContent: React.FC = () => {
             const storedRemindersJSON = localStorage.getItem('serviceReminders');
             const reminders: Reminder[] = storedRemindersJSON ? JSON.parse(storedRemindersJSON) : [];
             const today = new Date();
-            today.setHours(0,0,0,0);
+            today.setHours(0, 0, 0, 0);
             const oneWeekFromNow = new Date(today);
             oneWeekFromNow.setDate(today.getDate() + 7);
-            
+
             reminders.forEach(reminder => {
                 const dateParts = reminder.date.split('-');
                 const reminderDate = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
-                
+
                 if (reminderDate >= today && reminderDate <= oneWeekFromNow) {
                     const notifiedThisSession = sessionStorage.getItem(`notified_reminder_${reminder.id}`);
                     if (!notifiedThisSession) {
-                         const daysUntilDue = Math.round((reminderDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                         let message;
-                         if (daysUntilDue === 0) { message = `Your ${reminder.serviceName} for ${reminder.vehicle} is due today!`;} 
-                         else { message = `Your ${reminder.serviceName} for ${reminder.vehicle} is due in ${daysUntilDue} day${daysUntilDue > 1 ? 's' : ''}.`;}
+                        const daysUntilDue = Math.round((reminderDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        let message;
+                        if (daysUntilDue === 0) { message = `Your ${reminder.serviceName} for ${reminder.vehicle} is due today!`; }
+                        else { message = `Your ${reminder.serviceName} for ${reminder.vehicle} is due in ${daysUntilDue} day${daysUntilDue > 1 ? 's' : ''}.`; }
                         addNotification({ type: 'reminder', title: 'Service Reminder', message, link: '/reminders', recipientId: `customer-${user.id}` });
                         sessionStorage.setItem(`notified_reminder_${reminder.id}`, 'true');
                     }
@@ -289,24 +299,24 @@ const AppContent: React.FC = () => {
                 if (isAuthenticated && user && lastMessage.sender === 'mechanic') {
                     const booking = db.bookings.find(b => b.id === bookingId && b.customerName === user.name);
                     if (booking?.mechanic) {
-                         addNotification({
+                        addNotification({
                             type: 'chat',
                             title: `New Message from ${booking.mechanic.name}`,
                             message: lastMessage.text,
                             link: booking.status === 'Completed' ? '/booking-history' : '/', // Link depends on context
                             recipientId: `customer-${user.id}`
-                         });
+                        });
                     }
                 } else if (isMechanicAuthenticated && mechanic && lastMessage.sender === 'customer') {
                     const booking = db.bookings.find(b => b.id === bookingId && b.mechanic?.id === mechanic.id);
                     if (booking) {
-                         addNotification({
+                        addNotification({
                             type: 'chat',
                             title: `New Message from ${booking.customerName}`,
                             message: lastMessage.text,
                             link: `/mechanic/job/${booking.id}`,
                             recipientId: `mechanic-${mechanic.id}`
-                         });
+                        });
                     }
                 }
             } catch (error) { console.error("Error handling chat notification:", error); }
@@ -320,126 +330,129 @@ const AppContent: React.FC = () => {
 
     return (
         <HashRouter>
+            <ScrollToTop />
             <NotificationToasts />
-            <Routes>
-                {/* Admin Routes */}
-                <Route path="/admin/login" element={<AdminLoginScreen />} />
-                <Route
-                    path="/admin/*"
-                    element={
-                        isAdminAuthenticated ? (
-                            <AdminLayout>
-                                <Routes>
-                                    <Route path="dashboard" element={<AdminDashboardScreen />} />
-                                    <Route path="catalog" element={<AdminCatalogScreen />} />
-                                    <Route path="mechanics" element={<AdminMechanicsScreen />} />
-                                    <Route path="bookings" element={<AdminBookingsScreen />} />
-                                    <Route path="orders" element={<AdminOrdersScreen />} />
-                                    <Route path="payouts" element={<AdminPayoutsScreen />} />
-                                    <Route path="customers" element={<AdminCustomersScreen />} />
-                                    <Route path="analytics" element={<AdminAnalyticsScreen />} />
-                                    <Route path="marketing" element={<AdminMarketingScreen />} />
-                                    <Route path="users" element={<AdminUsersScreen />} />
-                                    <Route path="settings" element={<AdminSettingsScreen />} />
-                                    <Route path="*" element={<Navigate to="/admin/dashboard" />} />
-                                </Routes>
-                            </AdminLayout>
-                        ) : (
-                            <Navigate to="/admin/login" />
-                        )
-                    }
-                />
+            <PageWrapper>
+                <Routes>
+                    {/* Admin Routes */}
+                    <Route path="/admin/login" element={<AdminLoginScreen />} />
+                    <Route
+                        path="/admin/*"
+                        element={
+                            isAdminAuthenticated ? (
+                                <AdminLayout>
+                                    <Routes>
+                                        <Route path="dashboard" element={<AdminDashboardScreen />} />
+                                        <Route path="catalog" element={<AdminCatalogScreen />} />
+                                        <Route path="mechanics" element={<AdminMechanicsScreen />} />
+                                        <Route path="bookings" element={<AdminBookingsScreen />} />
+                                        <Route path="orders" element={<AdminOrdersScreen />} />
+                                        <Route path="payouts" element={<AdminPayoutsScreen />} />
+                                        <Route path="customers" element={<AdminCustomersScreen />} />
+                                        <Route path="analytics" element={<AdminAnalyticsScreen />} />
+                                        <Route path="marketing" element={<AdminMarketingScreen />} />
+                                        <Route path="users" element={<AdminUsersScreen />} />
+                                        <Route path="settings" element={<AdminSettingsScreen />} />
+                                        <Route path="*" element={<Navigate to="/admin/dashboard" />} />
+                                    </Routes>
+                                </AdminLayout>
+                            ) : (
+                                <Navigate to="/admin/login" />
+                            )
+                        }
+                    />
 
-                {/* Mechanic Routes */}
-                 <Route
-                    path="/mechanic/*"
-                    element={
-                        isMechanicAuthenticated ? (
+                    {/* Mechanic Routes */}
+                    <Route
+                        path="/mechanic/*"
+                        element={
+                            isMechanicAuthenticated ? (
+                                <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
+                                    <div>
+                                        <Routes>
+                                            <Route path="dashboard" element={<MechanicDashboardScreen />} />
+                                            <Route path="jobs" element={<MechanicJobsScreen />} />
+                                            <Route path="tasks" element={<MechanicTasksScreen />} />
+                                            <Route path="earnings" element={<MechanicEarningsScreen />} />
+                                            <Route path="job/:bookingId" element={<MechanicJobDetailScreen />} />
+                                            <Route path="profile" element={<MechanicProfileManagementScreen />} />
+                                            <Route path="notification-settings" element={<MechanicNotificationSettingsScreen />} />
+                                            <Route path="*" element={<Navigate to="/mechanic/dashboard" />} />
+                                        </Routes>
+                                    </div>
+                                    <MechanicBottomNav />
+                                </div>
+                            ) : (
+                                <Navigate to="/login" state={{ from: 'mechanic' }} />
+                            )
+                        }
+                    />
+
+                    {/* Customer App Routes */}
+                    <Route
+                        path="/*"
+                        element={
                             <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
                                 <div>
                                     <Routes>
-                                        <Route path="dashboard" element={<MechanicDashboardScreen />} />
-                                        <Route path="jobs" element={<MechanicJobsScreen />} />
-                                        <Route path="tasks" element={<MechanicTasksScreen />} />
-                                        <Route path="earnings" element={<MechanicEarningsScreen />} />
-                                        <Route path="job/:bookingId" element={<MechanicJobDetailScreen />} />
-                                        <Route path="profile" element={<MechanicProfileManagementScreen />} />
-                                        <Route path="notification-settings" element={<MechanicNotificationSettingsScreen />} />
-                                        <Route path="*" element={<Navigate to="/mechanic/dashboard" />} />
+                                        {isAuthenticated ? (
+                                            <>
+                                                <Route path="/" element={<HomeScreen />} />
+                                                <Route path="/services" element={<ServicesScreen />} />
+                                                <Route path="/service/:id" element={<ServiceDetailScreen />} />
+                                                <Route path="/parts-store" element={<PartsStoreScreen />} />
+                                                <Route path="/part/:id" element={<PartDetailScreen />} />
+                                                <Route path="/booking/:serviceId" element={<BookingScreen />} />
+                                                <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
+                                                <Route path="/cart" element={<CartScreen />} />
+                                                <Route path="/payment" element={<PaymentScreen />} />
+                                                <Route path="/service-payment" element={<ServicePaymentScreen />} />
+                                                <Route path="/order-confirmation" element={<OrderConfirmationScreen />} />
+                                                <Route path="/service-payment-confirmation" element={<ServicePaymentConfirmationScreen />} />
+                                                <Route path="/profile" element={<ProfileScreen />} />
+                                                <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
+                                                <Route path="/my-garage" element={<MyGarageScreen />} />
+                                                <Route path="/mechanic-profile/:mechanicId" element={<MechanicProfileScreen />} />
+                                                <Route path="/favorite-mechanics" element={<FavoriteMechanicsScreen />} />
+                                                <Route path="/reminders" element={<RemindersScreen />} />
+                                                <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
+                                                <Route path="/order-history" element={<OrderHistoryScreen />} />
+                                                <Route path="/warranties" element={<WarrantyScreen />} />
+                                                <Route path="/wishlist" element={<WishlistScreen />} />
+                                                <Route path="/faq" element={<FAQScreen />} />
+                                                <Route path="/rent-a-car" element={<RentCarScreen />} />
+                                                <Route path="/hire-a-driver" element={<HireDriverScreen />} />
+                                                <Route path="*" element={<Navigate to="/" />} />
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Route path="/signup" element={<SignUpScreen />} />
+                                                <Route path="*" element={<LoginScreen />} />
+                                            </>
+                                        )}
                                     </Routes>
                                 </div>
-                                <MechanicBottomNav />
+                                {isAuthenticated && (
+                                    <>
+                                        <button
+                                            onClick={() => setIsAssistantOpen(true)}
+                                            className="fixed bottom-20 right-5 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition-transform transform hover:scale-110 active:scale-100 z-[5]"
+                                            aria-label="Open AI Assistant"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
+                                                <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
+                                                <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
+                                            </svg>
+                                        </button>
+                                        {location.pathname !== '/payment' && <BottomNav />}
+                                        {isAssistantOpen && <AIAssistantModal onClose={() => setIsAssistantOpen(false)} />}
+                                    </>
+                                )}
                             </div>
-                        ) : (
-                            <Navigate to="/login" state={{ from: 'mechanic' }} />
-                        )
-                    }
-                />
-
-                {/* Customer App Routes */}
-                <Route
-                    path="/*"
-                    element={
-                        <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
-                            <div>
-                                <Routes>
-                                    {isAuthenticated ? (
-                                        <>
-                                            <Route path="/" element={<HomeScreen />} />
-                                            <Route path="/services" element={<ServicesScreen />} />
-                                            <Route path="/service/:id" element={<ServiceDetailScreen />} />
-                                            <Route path="/parts-store" element={<PartsStoreScreen />} />
-                                            <Route path="/part/:id" element={<PartDetailScreen />} />
-                                            <Route path="/booking/:serviceId" element={<BookingScreen />} />
-                                            <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
-                                            <Route path="/cart" element={<CartScreen />} />
-                                            <Route path="/payment" element={<PaymentScreen />} />
-                                            <Route path="/service-payment" element={<ServicePaymentScreen />} />
-                                            <Route path="/order-confirmation" element={<OrderConfirmationScreen />} />
-                                            <Route path="/service-payment-confirmation" element={<ServicePaymentConfirmationScreen />} />
-                                            <Route path="/profile" element={<ProfileScreen />} />
-                                            <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
-                                            <Route path="/my-garage" element={<MyGarageScreen />} />
-                                            <Route path="/mechanic-profile/:mechanicId" element={<MechanicProfileScreen />} />
-                                            <Route path="/favorite-mechanics" element={<FavoriteMechanicsScreen />} />
-                                            <Route path="/reminders" element={<RemindersScreen />} />
-                                            <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
-                                            <Route path="/order-history" element={<OrderHistoryScreen />} />
-                                            <Route path="/warranties" element={<WarrantyScreen />} />
-                                            <Route path="/wishlist" element={<WishlistScreen />} />
-                                            <Route path="/faq" element={<FAQScreen />} />
-                                            <Route path="/rent-a-car" element={<RentCarScreen />} />
-                                            <Route path="/hire-a-driver" element={<HireDriverScreen />} />
-                                            <Route path="*" element={<Navigate to="/" />} />
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Route path="/signup" element={<SignUpScreen />} />
-                                            <Route path="*" element={<LoginScreen />} />
-                                        </>
-                                    )}
-                                </Routes>
-                            </div>
-                            {isAuthenticated && (
-                                <>
-                                    <button
-                                        onClick={() => setIsAssistantOpen(true)}
-                                        className="fixed bottom-20 right-5 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition-transform transform hover:scale-110 active:scale-100 z-[5]"
-                                        aria-label="Open AI Assistant"
-                                    >
-                                        <svg xmlns="http://www.w.org/2000/svg" className="h-7 w-7" viewBox="0 0 20 20" fill="currentColor">
-                                          <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
-                                          <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
-                                        </svg>
-                                    </button>
-                                    <BottomNav />
-                                    {isAssistantOpen && <AIAssistantModal onClose={() => setIsAssistantOpen(false)} />}
-                                </>
-                            )}
-                        </div>
-                    }
-                />
-            </Routes>
+                        }
+                    />
+                </Routes>
+            </PageWrapper>
         </HashRouter>
     )
 }

@@ -52,7 +52,7 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         if (!db) throw new Error("Database not ready");
 
         const targetMechanic = db.mechanics.find(m => m.email.toLowerCase() === email.toLowerCase());
-
+        
         if (targetMechanic && pass === targetMechanic.password) {
             if (targetMechanic.status !== 'Active') {
                 throw new Error(`Your account status is: ${targetMechanic.status}. You cannot log in.`);
@@ -70,8 +70,7 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         setMechanic(null);
         sessionStorage.removeItem('ridersbud_mechanic_session');
     };
-
-
+    
     const register = async (mechanicData: Omit<Mechanic, 'id' | 'status' | 'rating' | 'reviews' | 'reviewsList' | 'password'> & { password?: string }) => {
         if (!db) throw new Error("Database not ready");
 
@@ -80,24 +79,15 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
             throw new Error("An account with this email already exists.");
         }
 
-        // Create mechanic profile with status 'Pending' for admin approval
-        await addMechanic({
-            ...mechanicData,
-            password: mechanicData.password || 'password123',
-            status: 'Pending', // Requires admin approval
-            rating: 0,
-            reviews: 0
-        });
-
-        addNotification({
-            type: 'success',
-            title: 'Application Submitted',
-            message: 'Your mechanic application has been submitted for review. You will be notified once approved.',
-            recipientId: `mechanic-pending-${mechanicData.email}`
+        await addMechanic({ 
+            ...mechanicData, 
+            password: mechanicData.password || 'password123', // Use provided password or a default
+            status: 'Pending', 
+            rating: 0, 
+            reviews: 0 
         });
     };
-
-
+    
     const updateOnlineStatus = async (isOnline: boolean) => {
         if (!mechanic) return;
         await updateMechanicOnlineStatus(mechanic.id, isOnline);

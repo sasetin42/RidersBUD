@@ -1,11 +1,17 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Header from '../components/Header';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Reminder, Customer } from '../types';
 import Spinner from '../components/Spinner';
 import { compressAndEncodeImage } from '../utils/fileUtils';
+import { useDatabase } from '../context/DatabaseContext';
+import { useWishlist } from '../context/WishlistContext';
+import {
+    Car, Wrench, Calendar, Package, ShieldCheck, Heart, Bell,
+    Settings, HelpCircle, MessageCircle, LogOut, ChevronRight,
+    Camera, User, Mail, Phone, LayoutDashboard
+} from 'lucide-react';
 
 const EditProfileModal: React.FC<{
     user: Customer;
@@ -24,20 +30,18 @@ const EditProfileModal: React.FC<{
     const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            if (file.size > 2 * 1024 * 1024) { // 2MB limit before compression
+            if (file.size > 2 * 1024 * 1024) {
                 setErrors(prev => ({ ...prev, picture: 'Image size cannot exceed 2MB.' }));
                 return;
             }
             try {
                 const base64 = await compressAndEncodeImage(file);
                 setFormData(prev => ({ ...prev, picture: base64 as string }));
-                if (errors.picture) {
-                    setErrors(prev => {
-                        const newErrors = { ...prev };
-                        delete newErrors.picture;
-                        return newErrors;
-                    });
-                }
+                setErrors(prev => {
+                    const newErrors = { ...prev };
+                    delete newErrors.picture;
+                    return newErrors;
+                });
             } catch (error) {
                 console.error("Error converting file:", error);
                 setErrors(prev => ({ ...prev, picture: 'Failed to upload image.' }));
@@ -45,13 +49,11 @@ const EditProfileModal: React.FC<{
         }
     };
 
-
     const validate = () => {
         const newErrors: { [key: string]: string } = {};
         if (!formData.name.trim()) newErrors.name = "Name cannot be empty.";
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = "Invalid email format.";
         if (!/^\d{10,15}$/.test(formData.phone.replace(/\D/g, ''))) newErrors.phone = "Phone must be 10-15 digits.";
-
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -62,7 +64,7 @@ const EditProfileModal: React.FC<{
             setIsSaving(true);
             try {
                 await onSave(formData);
-                onClose(); // Close modal on successful save
+                onClose();
             } catch (error) {
                 console.error("Failed to save profile:", error);
                 setErrors({ general: "Failed to save profile. Please try again." });
@@ -73,47 +75,83 @@ const EditProfileModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="edit-profile-title">
-            <div className="glass border border-white/10 rounded-xl p-6 w-full max-w-sm animate-scaleUp max-h-[90vh] overflow-y-auto scrollbar-thin shadow-2xl shadow-primary/10">
-                <h2 id="edit-profile-title" className="text-xl font-bold mb-4">Edit Profile</h2>
-                <form onSubmit={handleSave} noValidate>
-                    <div className="relative w-24 h-24 mx-auto mb-6 group">
-                        <img
-                            src={formData.picture || `https://i.pravatar.cc/150?u=${user.id}`}
-                            alt="Profile Preview"
-                            className="w-24 h-24 rounded-full object-cover border-2 border-primary"
-                        />
-                        <label htmlFor="picture-upload" className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586l-1-1.414A2 2 0 0013.414 3H6.586a2 2 0 00-1.414.586L4.172 5H4zm6 9a4 4 0 100-8 4 4 0 000 8zm-2-4a2 2 0 114 0 2 2 0 01-4 0z" clipRule="evenodd" />
-                            </svg>
-                        </label>
-                        <input id="picture-upload" type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="glass-panel w-full max-w-md rounded-2xl overflow-hidden border border-white/10 shadow-2xl animate-scaleUp">
+                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                    <h2 className="text-xl font-bold text-white">Edit Profile</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+                        <span className="sr-only">Close</span>
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <form onSubmit={handleSave} className="p-6 space-y-6">
+                    <div className="flex flex-col items-center">
+                        <div className="relative group">
+                            <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-white/10 shadow-lg bg-[#2A2A2A]">
+                                <img
+                                    src={formData.picture || `https://i.pravatar.cc/150?u=${user.id}`}
+                                    alt="Profile Preview"
+                                    className="w-full h-full object-cover"
+                                />
+                            </div>
+                            <label htmlFor="picture-upload" className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 cursor-pointer backdrop-blur-sm">
+                                <Camera className="w-8 h-8 text-white" />
+                            </label>
+                            <input id="picture-upload" type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
+                        </div>
+                        {errors.picture && <p className="text-red-400 text-xs mt-2">{errors.picture}</p>}
                     </div>
-                    {errors.picture && <p className="text-red-400 text-xs text-center -mt-4 mb-4">{errors.picture}</p>}
 
                     <div className="space-y-4">
-                        <div>
-                            <label className="text-sm text-light-gray mb-1 block">Full Name</label>
-                            <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.name ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`} required />
-                            {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+                        <div className="relative group">
+                            <User className="absolute left-4 top-3.5 w-5 h-5 text-gray-400 group-focus-within:text-primary transition-colors" />
+                            <input
+                                type="text"
+                                value={formData.name}
+                                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                className={`w-full pl-12 pr-4 py-3 bg-[#1A1A1A] border ${errors.name ? 'border-red-500' : 'border-white/10'} rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all`}
+                                placeholder="Full Name"
+                            />
+                            {errors.name && <p className="text-red-400 text-xs mt-1 ml-1">{errors.name}</p>}
                         </div>
-                        <div>
-                            <label className="text-sm text-light-gray mb-1 block">Email</label>
-                            <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.email ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`} required />
-                            {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
+
+                        <div className="relative group">
+                            <Mail className="absolute left-4 top-3.5 w-5 h-5 text-gray-400 group-focus-within:text-primary transition-colors" />
+                            <input
+                                type="email"
+                                value={formData.email}
+                                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                className={`w-full pl-12 pr-4 py-3 bg-[#1A1A1A] border ${errors.email ? 'border-red-500' : 'border-white/10'} rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all`}
+                                placeholder="Email Address"
+                            />
+                            {errors.email && <p className="text-red-400 text-xs mt-1 ml-1">{errors.email}</p>}
                         </div>
-                        <div>
-                            <label className="text-sm text-light-gray mb-1 block">Phone</label>
-                            <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.phone ? 'border-red-500 ring-red-500' : 'border-dark-gray focus:ring-primary'}`} required />
-                            {errors.phone && <p className="text-red-400 text-xs mt-1">{errors.phone}</p>}
+
+                        <div className="relative group">
+                            <Phone className="absolute left-4 top-3.5 w-5 h-5 text-gray-400 group-focus-within:text-primary transition-colors" />
+                            <input
+                                type="tel"
+                                value={formData.phone}
+                                onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                className={`w-full pl-12 pr-4 py-3 bg-[#1A1A1A] border ${errors.phone ? 'border-red-500' : 'border-white/10'} rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all`}
+                                placeholder="Phone Number"
+                            />
+                            {errors.phone && <p className="text-red-400 text-xs mt-1 ml-1">{errors.phone}</p>}
                         </div>
                     </div>
-                    {errors.general && <p className="text-red-400 text-xs mt-4 text-center">{errors.general}</p>}
-                    <div className="mt-6 flex gap-4">
-                        <button type="button" onClick={onClose} className="w-1/2 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">Cancel</button>
-                        <button type="submit" disabled={isSaving} className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition flex items-center justify-center disabled:opacity-50">
-                            {isSaving ? <Spinner size="sm" /> : 'Save Changes'}
+
+                    {errors.general && <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm text-center">{errors.general}</div>}
+
+                    <div className="flex gap-4 pt-2">
+                        <button type="button" onClick={onClose} className="flex-1 px-4 py-3 bg-[#2A2A2A] text-white font-semibold rounded-xl hover:bg-[#333] transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={isSaving} className="flex-1 px-4 py-3 bg-gradient-to-r from-primary to-orange-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-orange-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                            {isSaving && <Spinner size="sm" />}
+                            Save Changes
                         </button>
                     </div>
                 </form>
@@ -122,45 +160,89 @@ const EditProfileModal: React.FC<{
     );
 };
 
-const ChevronRightIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-light-gray" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
+const ProfileStat: React.FC<{ label: string; value: string | number; icon: React.ReactNode }> = ({ label, value, icon }) => (
+    <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/5 backdrop-blur-sm">
+        <div className="mb-1 text-primary">{icon}</div>
+        <span className="text-lg font-bold text-white leading-none mb-1">{value}</span>
+        <span className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">{label}</span>
+    </div>
 );
 
+const MenuItem: React.FC<{
+    icon: React.ReactNode;
+    label: string;
+    onClick: () => void;
+    badge?: number | string | boolean;
+    isDestructive?: boolean;
+}> = ({ icon, label, onClick, badge, isDestructive }) => {
+    return (
+        <button
+            onClick={onClick}
+            className={`w-full flex items-center justify-between p-4 group transition-colors duration-200 ${isDestructive
+                    ? 'hover:bg-red-500/10 text-red-400'
+                    : 'hover:bg-white/5 text-gray-200'
+                } border-b border-white/5 last:border-0`}
+        >
+            <div className="flex items-center gap-4">
+                <div className={`p-2 rounded-lg ${isDestructive ? 'bg-red-500/10 text-red-500' : 'bg-[#2A2A2A] text-primary group-hover:text-white group-hover:bg-primary transition-colors duration-300'}`}>
+                    {icon}
+                </div>
+                <span className={`font-medium ${isDestructive ? 'text-red-400' : 'text-white'}`}>{label}</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+                {badge && (
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${badge === true
+                            ? 'w-2.5 h-2.5 bg-red-500'
+                            : 'bg-primary/20 text-primary border border-primary/20'
+                        }`}>
+                        {badge === true ? '' : badge}
+                    </span>
+                )}
+                {!isDestructive && <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-white transition-colors" />}
+            </div>
+        </button>
+    );
+};
+
 const ProfileScreen: React.FC = () => {
-    const { user, logout, updateUserProfile, loading } = useAuth();
+    const { user, logout, updateUserProfile, loading: authLoading } = useAuth();
+    const { db } = useDatabase();
+    const { wishlist } = useWishlist();
     const navigate = useNavigate();
-    const [hasUpcomingReminder, setHasUpcomingReminder] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [hasUpcomingReminder, setHasUpcomingReminder] = useState(false);
+
+    console.log("ProfileScreen Rendering. User:", user ? "Present" : "Missing", "AuthLoading:", authLoading);
+
+    // Calculate Stats
+    const stats = useMemo(() => {
+        if (!user || !db || !db.bookings || !db.orders) return { bookings: 0, orders: 0, garage: 0 };
+        const userBookings = db.bookings.filter(b => b.customerName === user.name).length;
+        const userOrders = db.orders.filter(o => o.customerName === user.name).length;
+        const userVehicles = user.vehicles?.length || 0;
+        return { bookings: userBookings, orders: userOrders, garage: userVehicles };
+    }, [user, db]);
 
     useEffect(() => {
         try {
             const storedReminders = localStorage.getItem('serviceReminders');
             if (storedReminders) {
                 const reminders: Reminder[] = JSON.parse(storedReminders);
-
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
-
                 const cutOffDate = new Date(today);
                 cutOffDate.setDate(today.getDate() + 6);
 
                 const upcoming = reminders.some(reminder => {
                     const dateParts = reminder.date.split('-');
-                    const reminderDate = new Date(
-                        parseInt(dateParts[0]),
-                        parseInt(dateParts[1]) - 1,
-                        parseInt(dateParts[2])
-                    );
-
+                    const reminderDate = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
                     return reminderDate >= today && reminderDate <= cutOffDate;
                 });
-
                 setHasUpcomingReminder(upcoming);
             }
         } catch (error) {
-            console.error("Failed to check for upcoming reminders:", error);
+            console.error("Failed check reminders", error);
         }
     }, []);
 
@@ -169,122 +251,145 @@ const ProfileScreen: React.FC = () => {
         setIsEditModalOpen(false);
     };
 
-    if (loading) {
-        return (
-            <div className="flex flex-col h-full bg-secondary">
-                <Header title="My Profile" />
-                <div className="flex-grow flex items-center justify-center">
-                    <Spinner size="lg" />
-                </div>
-            </div>
-        );
-    }
-
-    if (!user) {
-        return (
-            <div className="flex flex-col h-full bg-secondary">
-                <Header title="My Profile" />
-                <div className="flex-grow flex items-center justify-center">
-                    <p>Could not load user profile. Please try logging in again.</p>
-                </div>
-            </div>
-        )
-    }
+    if (authLoading) return <div className="flex h-screen bg-secondary items-center justify-center"><Spinner size="lg" /></div>;
+    if (!user) return <div className="flex flex-col h-screen bg-secondary"><Header title="My Profile" /><div className="flex-1 flex items-center justify-center text-gray-400">Please log in.</div></div>;
 
     return (
-        <div className="flex flex-col h-full bg-secondary">
+        <div className="flex flex-col min-h-screen bg-secondary pb-24">
             <Header title="My Profile" />
-            <div className="flex-grow p-6 space-y-8 overflow-y-auto">
-                <div className="flex flex-col items-center text-center p-4 glass border border-white/10 rounded-xl">
-                    {user.picture ? (
-                        <img src={user.picture} alt={user.name} className="w-24 h-24 rounded-full object-cover mb-4" />
-                    ) : (
-                        <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center text-4xl font-bold mb-4">
-                            {user.name.charAt(0).toUpperCase()}
+
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+                {/* Profile Header */}
+                <div className="relative pt-6 pb-8 px-6 bg-gradient-to-b from-[#1F1F1F] to-secondary border-b border-white/5">
+                    <div className="flex flex-col items-center text-center relative z-10">
+                        <div className="relative mb-4 group">
+                            <div className="w-28 h-28 rounded-full p-1 bg-gradient-to-tr from-primary to-orange-600 shadow-2xl shadow-orange-500/20">
+                                <img
+                                    src={user.picture || `https://i.pravatar.cc/150?u=${user.id}`}
+                                    alt={user.name}
+                                    className="w-full h-full rounded-full object-cover border-4 border-[#1A1A1A]"
+                                />
+                            </div>
+                            <button
+                                onClick={() => setIsEditModalOpen(true)}
+                                className="absolute bottom-0 right-1 p-2 bg-[#2A2A2A] border border-white/10 rounded-full text-white shadow-lg hover:scale-110 active:scale-95 transition-all duration-200"
+                            >
+                                <Camera className="w-4 h-4" />
+                            </button>
                         </div>
-                    )}
-                    <h2 className="text-2xl font-bold">{user.name}</h2>
-                    <p className="text-light-gray">{user.email}</p>
-                    <p className="text-light-gray text-sm">{user.phone}</p>
-                    <button onClick={() => setIsEditModalOpen(true)} className="mt-4 bg-field text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-600 transition text-sm">
-                        Edit Profile
-                    </button>
-                </div>
 
-                <div>
-                    <h3 className="text-lg font-semibold mb-3 text-primary">My Account & Activity</h3>
-                    <div className="glass border border-white/10 rounded-xl overflow-hidden">
-                        <button onClick={() => navigate('/my-garage')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>My Garage</span>
-                            <ChevronRightIcon />
-                        </button>
-                        <button onClick={() => navigate('/favorite-mechanics')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>Favorite Mechanics</span>
-                            <ChevronRightIcon />
-                        </button>
-                        <button onClick={() => navigate('/booking-history')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>Booking History</span>
-                            <ChevronRightIcon />
-                        </button>
-                        <button onClick={() => navigate('/order-history')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>Order History</span>
-                            <ChevronRightIcon />
-                        </button>
-                        <button onClick={() => navigate('/warranties')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>Warranty Tracking</span>
-                            <ChevronRightIcon />
-                        </button>
-                        <button onClick={() => navigate('/wishlist')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>My Wishlist</span>
-                            <ChevronRightIcon />
-                        </button>
-                        <button onClick={() => navigate('/reminders')} className="w-full text-left p-4 flex justify-between items-center hover:bg-field transition">
-                            <span className="flex items-center">
-                                Service Reminders
-                                {hasUpcomingReminder && (
-                                    <span className="relative flex h-3 w-3 ml-2">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
-                                    </span>
-                                )}
-                            </span>
-                            <ChevronRightIcon />
-                        </button>
+                        <h2 className="text-2xl font-bold text-white mb-1">{user.name}</h2>
+                        <p className="text-gray-400 text-sm mb-4">{user.email}</p>
+
+                        {/* Quick Stats Grid */}
+                        <div className="grid grid-cols-3 gap-3 w-full max-w-sm mt-2">
+                            <ProfileStat icon={<Car size={18} />} label="Vehicles" value={stats.garage} />
+                            <ProfileStat icon={<Calendar size={18} />} label="Bookings" value={stats.bookings} />
+                            <ProfileStat icon={<Package size={18} />} label="Orders" value={stats.orders} />
+                        </div>
                     </div>
                 </div>
 
-                <div>
-                    <h3 className="text-lg font-semibold mb-3 text-primary">Settings & Support</h3>
-                    <div className="bg-dark-gray rounded-lg overflow-hidden">
-                        <button onClick={() => navigate('/notification-settings')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>Notification Settings</span>
-                            <ChevronRightIcon />
+                {/* Menu Sections */}
+                <div className="px-4 py-6 space-y-6">
+
+                    {/* Account Section */}
+                    <div className="space-y-3">
+                        <h3 className="px-2 text-xs font-bold text-gray-500 uppercase tracking-widest">My Account & Activity</h3>
+                        <div className="glass-panel overflow-hidden rounded-2xl border border-white/5 bg-[#1F1F1F]/50 backdrop-blur-md">
+                            <MenuItem
+                                icon={<Car size={18} />}
+                                label="My Garage"
+                                onClick={() => navigate('/my-garage')}
+                                badge={stats.garage > 0 ? stats.garage : undefined}
+                            />
+                            <MenuItem
+                                icon={<Wrench size={18} />}
+                                label="Favorite Mechanics"
+                                onClick={() => navigate('/favorite-mechanics')}
+                            />
+                            <MenuItem
+                                icon={<Calendar size={18} />}
+                                label="Booking History"
+                                onClick={() => navigate('/booking-history')}
+                            />
+                            <MenuItem
+                                icon={<Package size={18} />}
+                                label="Order History"
+                                onClick={() => navigate('/order-history')}
+                            />
+                            <MenuItem
+                                icon={<ShieldCheck size={18} />}
+                                label="Warranty Tracking"
+                                onClick={() => navigate('/warranties')}
+                            />
+                            <MenuItem
+                                icon={<Heart size={18} />}
+                                label="My Wishlist"
+                                onClick={() => navigate('/wishlist')}
+                                badge={wishlist?.length > 0 ? wishlist.length : undefined}
+                            />
+                            <MenuItem
+                                icon={<Bell size={18} />}
+                                label="Service Reminders"
+                                onClick={() => navigate('/reminders')}
+                                badge={hasUpcomingReminder}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Support Section */}
+                    <div className="space-y-3">
+                        <h3 className="px-2 text-xs font-bold text-gray-500 uppercase tracking-widest">Settings & Support</h3>
+                        <div className="glass-panel overflow-hidden rounded-2xl border border-white/5 bg-[#1F1F1F]/50 backdrop-blur-md">
+                            <MenuItem
+                                icon={<Settings size={18} />}
+                                label="Notification Settings"
+                                onClick={() => navigate('/notification-settings')}
+                            />
+                            <MenuItem
+                                icon={<HelpCircle size={18} />}
+                                label="FAQ"
+                                onClick={() => navigate('/faq')}
+                            />
+                            <MenuItem
+                                icon={<MessageCircle size={18} />}
+                                label="Contact Support"
+                                onClick={() => console.log('Support clicked')}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Admin & Logout Section */}
+                    <div className="space-y-4 pt-2">
+                        <button
+                            onClick={() => navigate('/admin')}
+                            className="w-full flex items-center justify-between p-4 rounded-xl border border-white/10 bg-gradient-to-r from-[#2A2A2A] to-[#1F1F1F] hover:border-primary/30 transition-all duration-300 group"
+                        >
+                            <div className="flex items-center gap-4">
+                                <div className="p-2 rounded-lg bg-white/5 text-gray-300 group-hover:bg-primary/20 group-hover:text-primary transition-colors">
+                                    <LayoutDashboard size={20} />
+                                </div>
+                                <span className="font-medium text-white group-hover:text-primary transition-colors">Switch to Admin Panel</span>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" />
                         </button>
-                        <button onClick={() => navigate('/faq')} className="w-full text-left p-4 flex justify-between items-center border-b border-field hover:bg-field transition">
-                            <span>FAQ</span>
-                            <ChevronRightIcon />
-                        </button>
-                        <button className="w-full text-left p-4 flex justify-between items-center hover:bg-field transition">
-                            <span>Contact Support</span>
-                            <ChevronRightIcon />
+
+                        <button
+                            onClick={logout}
+                            className="w-full py-4 rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-500 font-bold tracking-wide transition-all active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <LogOut size={18} />
+                            Log Out
                         </button>
                     </div>
-                </div>
 
-                <div className="pt-4">
-                    <button onClick={() => navigate('/admin')} className="w-full text-left p-3 glass-hover border border-white/10 rounded-xl text-light-gray hover:text-white transition-all duration-300 flex justify-between items-center text-sm">
-                        <span>Switch to Admin Panel</span>
-                        <ChevronRightIcon />
-                    </button>
+                    <div className="text-center pb-8 pt-4">
+                        <p className="text-xs text-gray-600">App Version 1.2.0 • Build 2405</p>
+                    </div>
                 </div>
-
-                <button
-                    onClick={logout}
-                    className="w-full bg-red-600/20 text-red-400 font-bold py-3 rounded-lg hover:bg-red-600/40 transition"
-                >
-                    Logout
-                </button>
             </div>
+
             {isEditModalOpen && user && <EditProfileModal user={user} onClose={() => setIsEditModalOpen(false)} onSave={handleSaveProfile} />}
         </div>
     );

@@ -1,35 +1,38 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
     title: string;
     isOpen: boolean;
     onClose: () => void;
     children: React.ReactNode;
+    maxWidth?: string;
 }
 
-const Modal: React.FC<ModalProps> = ({ title, isOpen, onClose, children }) => {
+const Modal: React.FC<ModalProps> = ({ title, isOpen, onClose, children, maxWidth = 'max-w-2xl' }) => {
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn overflow-y-auto" role="dialog" aria-modal="true">
-            <div className="glass-card rounded-2xl p-0 w-full max-w-2xl shadow-2xl border border-white/10 animate-scaleUp my-8 max-h-[90vh] flex flex-col relative overflow-hidden">
-                {/* Background Glow */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-admin-accent/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-
-                <div className="flex justify-between items-center p-6 border-b border-white/10 flex-shrink-0 bg-black/20 backdrop-blur-md relative z-10">
-                    <h2 className="text-xl font-bold text-white tracking-wide">{title}</h2>
+    return createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fadeIn" role="dialog" aria-modal="true">
+            <div className={`glass-modal rounded-2xl w-full ${maxWidth} shadow-2xl text-white animate-scaleUp flex flex-col max-h-[90vh] border border-white/10 overflow-hidden`}>
+                {/* Header */}
+                <div className="flex justify-between items-center p-6 border-b border-white/10 flex-shrink-0 bg-[#171617]/95 backdrop-blur-md z-10">
+                    <h2 className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">{title}</h2>
                     <button
                         onClick={onClose}
-                        className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-all"
+                        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
                     >
                         &times;
                     </button>
                 </div>
-                <div className="overflow-y-auto flex-1 p-6 custom-scrollbar relative z-10">
+
+                {/* Scrollable Content */}
+                <div className="p-6 overflow-y-auto custom-scrollbar flex-1 relative z-0">
                     {children}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

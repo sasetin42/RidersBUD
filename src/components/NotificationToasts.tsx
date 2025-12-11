@@ -28,7 +28,7 @@ const NotificationToasts: React.FC = () => {
     };
 
     return (
-        <div className="fixed top-5 right-5 z-[100] space-y-3">
+        <div className="fixed top-5 right-5 z-[100] space-y-4">
             {activeToasts.map(toast => (
                 <NotificationToast key={toast.id} notification={toast} onDismiss={handleDismiss} />
             ))}

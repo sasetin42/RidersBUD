@@ -977,6 +977,7 @@ If a user asks about something not in your knowledge base (e.g., "Can you fix my
 
 Your responses should be friendly, conversational, and easy to understand. Keep answers concise. When the conversation starts, greet the user and ask how you can help them today.`,
     mechanicMarkerUrl: '',
+    googleMapsApiKey: 'AIzaSyDk8M9aZVVeUDPPgd2R4TebXr3YOajbPRM',
     adminPanelTitle: 'RidersBUD Admin',
     adminSidebarLogoUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_icon.png',
     serviceCategories: ['Maintenance', 'Repair', 'Emergency', 'Diagnostics', 'Specialty Services', 'Cleaning & Detailing', 'Liason Services', 'Rentals'],
@@ -984,6 +985,38 @@ Your responses should be friendly, conversational, and easy to understand. Keep 
     minimumPayout: 1000,
     maximumPayout: 50000,
     payoutSchedule: 'Manual',
+
+    // Enhanced General Information
+    supportEmail: 'support@ridersbud.com',
+    businessHoursDisplay: 'Mon-Fri: 8AM-6PM, Sat: 9AM-3PM',
+    timezone: 'Asia/Manila',
+    currency: 'PHP',
+    language: 'en',
+
+    // Social Links
+    socialLinks: {
+        facebook: '',
+        twitter: '',
+        instagram: '',
+        website: ''
+    },
+
+    // Booking Configuration
+    bookingBufferTime: 15,
+    maxAdvanceBookingDays: 30,
+    cancellationPolicyWindow: 24,
+    autoAssignMechanic: false,
+    emergencyBookingEnabled: true,
+    weekendBookingEnabled: true,
+    holidayDates: [],
+    minimumBookingNotice: 2,
+
+    // Branding Assets
+    brandingAssets: {
+        splashLogoUrl: '',
+        customerAuthLogoUrl: '',
+        mechanicAuthLogoUrl: ''
+    }
 };
 
 export const seedFaqs: FAQCategory[] = [

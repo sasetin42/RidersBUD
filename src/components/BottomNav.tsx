@@ -1,95 +1,67 @@
-
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
+import { Home, Wrench, ShoppingBag, Heart, User, Circle } from 'lucide-react';
 import { useCart } from '../context/CartContext';
-import { useWishlist } from '../context/WishlistContext';
-import { Home, Wrench, ShoppingBag, Heart, ShoppingCart, User } from 'lucide-react';
-
-const NavIcon = ({ icon, label, to, itemCount }: { icon: React.ReactNode; label: string; to: string; itemCount?: number }) => (
-    <NavLink
-        to={to}
-        className={({ isActive }) => `
-            flex flex-col items-center justify-center w-full py-3 text-xs 
-            transition-all duration-300 relative group
-            ${isActive ? 'text-primary' : 'text-light-gray hover:text-white'}
-        `}
-    >
-        {({ isActive }) => (
-            <>
-                {isActive && (
-                    <>
-                        {/* Active indicator bar with glow */}
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-1 gradient-primary rounded-b-full shadow-glow animate-scale-in" />
-                        {/* Subtle background glow */}
-                        <div className="absolute inset-0 bg-gradient-radial opacity-20 pointer-events-none" />
-                    </>
-                )}
-
-                <div className="relative group-hover:scale-110 transition-transform duration-300 flex items-center justify-center">
-                    <div className={`${isActive ? 'drop-shadow-glow' : ''}`}>
-                        {icon}
-                    </div>
-
-                    {itemCount !== undefined && itemCount > 0 && (
-                        <span className="absolute -top-1 -right-2 flex h-5 w-5 items-center justify-center rounded-full gradient-primary text-white text-[10px] font-bold shadow-glow border border-white/30 animate-scale-in">
-                            {itemCount}
-                        </span>
-                    )}
-                </div>
-
-                <span className={`mt-1.5 font-medium leading-tight transition-all duration-300 ${isActive ? 'drop-shadow-glow' : ''}`}>
-                    {label}
-                </span>
-            </>
-        )}
-    </NavLink>
-);
-
 
 const BottomNav: React.FC = () => {
-    const { itemCount: cartItemCount } = useCart();
-    const { itemCount: wishlistItemCount } = useWishlist();
+    const location = useLocation();
+    const { cartItems } = useCart();
+
+    const hideNavPaths = ['/login', '/signup', '/admin', '/mechanic', '/payment', '/service-payment', '/order-confirmation'];
+    if (hideNavPaths.some(path => location.pathname.startsWith(path))) return null;
+
+    const navItems = [
+        { path: '/home', label: 'Home', icon: Home },
+        { path: '/services', label: 'Services', icon: Wrench },
+        { path: '/parts-store', label: 'Shop', icon: ShoppingBag, badge: cartItems.length }, // Changed label to Shop (Parts & Tools)
+        { path: '/wishlist', label: 'Wishlist', icon: Heart },
+        { path: '/profile', label: 'Profile', icon: User },
+    ];
 
     return (
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-50">
-            {/* Glass navigation bar with enhanced effects */}
-            <div className="relative flex justify-around items-center glass-dark border-t border-glass-light shadow-glass backdrop-blur-xl animate-slide-up">
-                {/* Top highlight line */}
-                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+        <div className="fixed bottom-0 left-0 right-0 z-50 p-4 pointer-events-none">
+            <nav className="pointer-events-auto max-w-lg mx-auto bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.5)] flex items-center justify-around h-[70px] px-2 relative overflow-hidden">
+                {/* Background Glow Effect */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
 
-                <NavIcon
-                    to="/"
-                    label="Home"
-                    icon={<Home className="h-6 w-6" />}
-                />
-                <NavIcon
-                    to="/services"
-                    label="Services"
-                    icon={<Wrench className="h-6 w-6" />}
-                />
-                <NavIcon
-                    to="/parts-store"
-                    label="Store"
-                    icon={<ShoppingBag className="h-6 w-6" />}
-                />
-                <NavIcon
-                    to="/wishlist"
-                    label="Wishlist"
-                    itemCount={wishlistItemCount}
-                    icon={<Heart className="h-6 w-6" />}
-                />
-                <NavIcon
-                    to="/cart"
-                    label="Cart"
-                    itemCount={cartItemCount}
-                    icon={<ShoppingCart className="h-6 w-6" />}
-                />
-                <NavIcon
-                    to="/profile"
-                    label="Profile"
-                    icon={<User className="h-6 w-6" />}
-                />
-            </div>
+                {navItems.map((item) => {
+                    const isActive = location.pathname.startsWith(item.path);
+                    const Icon = item.icon;
+
+                    return (
+                        <NavLink
+                            key={item.path}
+                            to={item.path}
+                            className={({ isActive: linkActive }) => `
+                                relative flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300 group
+                                ${linkActive ? 'text-primary' : 'text-gray-500 hover:text-gray-300'}
+                            `}
+                        >
+                            <div className={`relative p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-primary/10 -translate-y-1' : 'group-hover:-translate-y-0.5'}`}>
+                                <Icon
+                                    size={24}
+                                    strokeWidth={isActive ? 2.5 : 2}
+                                    className={`transition-all duration-300 ${isActive ? 'drop-shadow-[0_0_8px_rgba(234,88,12,0.5)]' : ''}`}
+                                />
+                                {item.badge ? (
+                                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white shadow-sm ring-2 ring-[#1A1A1A]">
+                                        {item.badge}
+                                    </span>
+                                ) : null}
+                            </div>
+
+                            <span className={`text-[10px] font-bold transition-all duration-300 ${isActive ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 absolute bottom-1'}`}>
+                                {item.label}
+                            </span>
+
+                            {/* Active Dot Indicator */}
+                            {isActive && (
+                                <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary shadow-[0_0_5px_rgba(234,88,12,1)]" />
+                            )}
+                        </NavLink>
+                    );
+                })}
+            </nav>
         </div>
     );
 };

@@ -15,7 +15,7 @@ const PartWishlistItem: React.FC<{ item: Part }> = ({ item }) => {
     };
 
     return (
-        <div className="flex items-center glass border border-white/10 p-3 rounded-xl hover:border-primary/20 transition-all duration-300">
+        <div className="flex items-center bg-dark-gray p-3 rounded-lg">
             <img src={item.imageUrls[0]} alt={item.name} className="w-20 h-20 rounded-lg object-cover mr-4" />
             <div className="flex-grow">
                 <h4 className="font-bold text-white">{item.name}</h4>
@@ -24,7 +24,7 @@ const PartWishlistItem: React.FC<{ item: Part }> = ({ item }) => {
                     <button onClick={handleMoveToCart} className="bg-primary text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-orange-600 transition">
                         Move to Cart
                     </button>
-                    <button onClick={() => removeFromWishlist(item.id)} className="bg-field text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-gray-600 transition">
+                     <button onClick={() => removeFromWishlist(item.id)} className="bg-field text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-gray-600 transition">
                         Remove
                     </button>
                 </div>
@@ -51,7 +51,7 @@ const ServiceWishlistItem: React.FC<{ item: Service }> = ({ item }) => {
                     <button onClick={handleBookNow} className="bg-primary text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-orange-600 transition">
                         Book Now
                     </button>
-                    <button onClick={() => removeFromWishlist(item.id)} className="bg-field text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-gray-600 transition">
+                     <button onClick={() => removeFromWishlist(item.id)} className="bg-field text-white text-xs font-bold py-1 px-3 rounded-md hover:bg-gray-600 transition">
                         Remove
                     </button>
                 </div>
@@ -84,7 +84,7 @@ const WishlistScreen: React.FC = () => {
     const renderContent = () => {
         if (activeTab === 'parts') {
             if (parts.length === 0) {
-                return <EmptyState title="Your Parts Wishlist is Empty" subtitle="Tap the heart icon on any part in the store to save it for later." />;
+                 return <EmptyState title="Your Parts Wishlist is Empty" subtitle="Tap the heart icon on any part in the store to save it for later." />;
             }
             return (
                 <div className="space-y-4 p-4">
@@ -95,7 +95,7 @@ const WishlistScreen: React.FC = () => {
 
         if (activeTab === 'services') {
             if (services.length === 0) {
-                return <EmptyState title="Your Services Wishlist is Empty" subtitle="Tap the heart icon on any service to save it for later." />;
+                 return <EmptyState title="Your Services Wishlist is Empty" subtitle="Tap the heart icon on any service to save it for later." />;
             }
             return (
                 <div className="space-y-4 p-4">
@@ -109,7 +109,7 @@ const WishlistScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary">
             <Header title="My Wishlist" showBackButton />
-            <div className="border-b border-dark-gray flex-shrink-0 px-4">
+             <div className="border-b border-dark-gray flex-shrink-0 px-4">
                 <nav className="flex space-x-4" aria-label="Tabs">
                     <button
                         onClick={() => setActiveTab('parts')}
@@ -126,7 +126,7 @@ const WishlistScreen: React.FC = () => {
                 </nav>
             </div>
             <main className="flex-grow overflow-y-auto">
-                {renderContent()}
+               {renderContent()}
             </main>
         </div>
     );

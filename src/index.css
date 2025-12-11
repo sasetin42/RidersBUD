@@ -1,504 +1,260 @@
 @import "tailwindcss";
+@config "../tailwind.config.js";
 
 @layer base {
-  body {
-    font-family: 'Poppins', sans-serif;
-    color: white;
-    background: linear-gradient(135deg, #0a0a0a 0%, #171617 50%, #1a1a1a 100%);
-    background-attachment: fixed;
-  }
+    body {
+        @apply bg-secondary text-white font-sans overflow-x-hidden;
+        background-image:
+            radial-gradient(at 0% 0%, rgba(254, 120, 3, 0.15) 0px, transparent 50%),
+            radial-gradient(at 100% 0%, rgba(23, 22, 23, 1) 0px, transparent 50%),
+            radial-gradient(at 100% 100%, rgba(254, 120, 3, 0.1) 0px, transparent 50%);
+        background-attachment: fixed;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @layer utilities {
-  /* ========================================
-     GLASSMORPHISM UTILITIES - ENHANCED
-     ======================================== */
+    .animate-fadeIn {
+        animation: fadeIn 0.4s ease-out forwards;
+    }
 
-  .glass {
-    background: rgba(20, 20, 20, 0.6);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  }
+    .animate-slideInUp {
+        animation: slideInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
 
-  .glass-light {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
-  }
+    @keyframes slideInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
 
-  .glass-dark {
-    background: rgba(10, 10, 10, 0.85);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-  }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
 
-  .glass-primary {
-    background: rgba(254, 120, 3, 0.1);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(254, 120, 3, 0.2);
-    box-shadow: 0 8px 32px rgba(254, 120, 3, 0.15);
-  }
+    @keyframes shrink {
+        from {
+            width: 100%;
+        }
 
-  .glass-card {
-    background: linear-gradient(145deg, rgba(30, 30, 30, 0.7) 0%, rgba(20, 20, 20, 0.6) 100%);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+        to {
+            width: 0%;
+        }
+    }
 
-  .glass-hover {
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+    .glass {
+        @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-lg;
+    }
 
-  .glass-hover:hover {
-    background: linear-gradient(145deg, rgba(40, 40, 40, 0.8) 0%, rgba(30, 30, 30, 0.7) 100%);
-    border-color: rgba(254, 120, 3, 0.4);
-    transform: translateY(-4px) scale(1.01);
-    box-shadow:
-      0 16px 48px rgba(0, 0, 0, 0.5),
-      0 0 20px rgba(254, 120, 3, 0.15);
-  }
+    .glass-heavy {
+        @apply bg-[#171617]/80 backdrop-blur-2xl border-r border-white/5 shadow-xl;
+    }
 
-  .glass-modal {
-    background: rgba(15, 15, 15, 0.95);
-    backdrop-filter: blur(32px);
-    -webkit-backdrop-filter: blur(32px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow:
-      0 24px 96px rgba(0, 0, 0, 0.8),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  }
+    .glass-card {
+        @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl shadow-md transition-all duration-300 hover:bg-white/10 hover:shadow-lg hover:scale-[1.02] hover:border-primary/30;
+    }
 
-  /* ========================================
-     GRADIENT UTILITIES
-     ======================================== */
+    .glass-panel {
+        @apply bg-[#202938]/60 backdrop-blur-lg border border-white/5 rounded-xl shadow-xl;
+    }
 
-  .gradient-primary {
-    background: linear-gradient(135deg, #FE7803 0%, #FF9A3C 100%);
-  }
+    .glass-input {
+        @apply bg-white/5 border border-white/10 text-white placeholder-gray-400 focus:border-primary/50 focus:bg-white/10 focus:ring-1 focus:ring-primary/50 transition-all duration-200;
+    }
 
-  .gradient-primary-hover {
-    background: linear-gradient(135deg, #FF9A3C 0%, #FE7803 100%);
-  }
+    .glass-button {
+        @apply bg-gradient-to-r from-primary to-orange-600 text-white shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 border border-white/10;
+    }
 
-  .gradient-dark {
-    background: linear-gradient(135deg, #121212 0%, #2A2A2A 100%);
-  }
-
-  .gradient-overlay {
-    background: linear-gradient(180deg, transparent 0%, rgba(10, 10, 10, 0.95) 100%);
-  }
-
-  .gradient-radial {
-    background: radial-gradient(circle at center, rgba(254, 120, 3, 0.15) 0%, transparent 70%);
-  }
-
-  .gradient-text {
-    background: linear-gradient(135deg, #FE7803 0%, #FFB366 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    text-shadow: 0 0 30px rgba(254, 120, 3, 0.3);
-  }
-
-  /* ========================================
-     SHADOW & GLOW UTILITIES
-     ======================================== */
-
-  .shadow-glow {
-    box-shadow: 0 0 32px rgba(254, 120, 3, 0.3);
-  }
-
-  .shadow-glow-sm {
-    box-shadow: 0 0 16px rgba(254, 120, 3, 0.2);
-  }
-
-  .shadow-glow-lg {
-    box-shadow: 0 0 64px rgba(254, 120, 3, 0.4);
-  }
-
-  .shadow-glass {
-    box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  }
-
-  .shadow-inner-glow {
-    box-shadow: inset 0 0 32px rgba(254, 120, 3, 0.08);
-  }
-
-  /* ========================================
-     ANIMATION UTILITIES
-     ======================================== */
-
-  .animate-fade-in {
-    animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .animate-slide-up {
-    animation: slideUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .animate-scale-in {
-    animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .animate-glow-pulse {
-    animation: glowPulse 3s ease-in-out infinite;
-  }
-
-  /* ========================================
-     BORDER UTILITIES
-     ======================================== */
-
-  .border-glass {
-    border: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .border-glass-light {
-    border: 1px solid rgba(255, 255, 255, 0.12);
-  }
-
-  .border-primary-glow {
-    border: 1px solid rgba(254, 120, 3, 0.3);
-    box-shadow: 0 0 12px rgba(254, 120, 3, 0.15);
-  }
-
-  /* ========================================
-     BUTTON UTILITIES
-     ======================================== */
-
-  .btn-glass {
-    background: linear-gradient(145deg, rgba(50, 50, 50, 0.6) 0%, rgba(30, 30, 30, 0.5) 100%);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-  }
-
-  .btn-glass::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-    transition: 0.5s;
-  }
-
-  .btn-glass:hover {
-    background: rgba(254, 120, 3, 0.15);
-    border-color: rgba(254, 120, 3, 0.4);
-    box-shadow: 0 8px 24px rgba(254, 120, 3, 0.25);
-    transform: translateY(-2px);
-  }
-
-  .btn-glass:hover::before {
-    left: 100%;
-  }
-
-  .btn-glass:active {
-    transform: translateY(0);
-  }
-
-  /* ========================================
-     SCROLLBAR UTILITIES
-     ======================================== */
-
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: rgba(254, 120, 3, 0.4);
-    border-radius: 3px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: rgba(254, 120, 3, 0.7);
-  }
-
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 4px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(254, 120, 3, 0.3);
-    border-radius: 4px;
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(254, 120, 3, 0.6);
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
+    .glass-modal {
+        @apply bg-[#171617]/90 backdrop-blur-2xl border border-white/10 shadow-2xl;
+    }
 }
 
-/* ========================================
-   KEYFRAME ANIMATIONS
-   ======================================== */
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes glowPulse {
-
-  0%,
-  100% {
-    box-shadow: 0 0 20px rgba(254, 120, 3, 0.3);
-  }
-
-  50% {
-    box-shadow: 0 0 40px rgba(254, 120, 3, 0.5);
-  }
-}
-
-@keyframes pulse-green {
-
-  0%,
-  100% {
-    box-shadow: 0 0 12px rgba(40, 167, 69, 0.7);
-  }
-
-  50% {
-    box-shadow: 0 0 24px rgba(40, 167, 69, 0.9);
-  }
-}
-
-/* ========================================
-   GLOBAL SCROLLBAR
-   ======================================== */
-
+/* Modern, beautiful scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+    width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(23, 22, 23, 0.5);
+    background: #171617;
+    /* secondary */
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(254, 120, 3, 0.6) 0%, rgba(254, 120, 3, 0.8) 100%);
-  border-radius: 4px;
+    background-color: #2A2A2A;
+    /* dark-gray */
+    border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #FE7803 0%, #ff9a3c 100%);
+    background-color: #FE7803;
+    /* primary */
 }
 
-/* ========================================
-   LEAFLET MAP CUSTOMIZATION
-   ======================================== */
-
+/* Custom styles for Leaflet marker clusters */
 .marker-cluster-ridersbud {
-  background: rgba(254, 120, 3, 0.25);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 2px solid rgba(254, 120, 3, 0.7);
-  border-radius: 50%;
-  color: white;
-  font-weight: bold;
-  text-align: center;
-  box-shadow: 0 0 24px rgba(254, 120, 3, 0.6);
+    background-color: rgba(254, 120, 3, 0.7);
+    border: 2px solid #FE7803;
+    border-radius: 50%;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 0 8px rgba(254, 120, 3, 0.5);
 }
 
 .marker-cluster-ridersbud div {
-  width: 36px;
-  height: 36px;
-  margin-left: 2px;
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin-left: 2px;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .marker-cluster-ridersbud span {
-  font-size: 14px;
+    font-size: 14px;
 }
 
+/* Custom styles for Admin LiveMap logo markers */
 .custom-marker-div-icon {
-  background: transparent;
-  border: none;
+    background: transparent;
+    border: none;
 }
 
 .custom-marker-container {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    width: 36px;
+    height: 36px;
+    transition: transform 0.2s ease-out;
 }
 
 .custom-marker-image {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 3px solid #28a745;
-  box-shadow: 0 0 16px rgba(40, 167, 69, 0.8);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #28a745;
+    /* Green for available */
+    box-shadow: 0 0 8px rgba(40, 167, 69, 0.7);
+    transition: all 0.2s ease-out;
 }
 
 .custom-marker-image.unavailable {
-  border-color: #dc3545;
-  box-shadow: 0 0 16px rgba(220, 53, 69, 0.8);
-  filter: grayscale(80%);
+    border-color: #dc3545;
+    /* Red for unavailable */
+    box-shadow: 0 0 8px rgba(220, 53, 69, 0.7);
+    filter: grayscale(80%);
 }
 
 .custom-marker-container.selected .custom-marker-image {
-  transform: scale(1.3);
-  box-shadow: 0 0 24px rgba(254, 120, 3, 1);
-  border-color: #FE7803;
+    transform: scale(1.25);
+    box-shadow: 0 0 12px rgba(254, 120, 3, 0.9);
+    border-color: #FE7803;
 }
+
 
 .pulse-green {
-  animation: pulse-green 2s infinite;
+    animation: pulse-green 2s infinite;
 }
 
-/* Custom Popup Styles */
+/* Custom Popup Styles for Home Screen Map */
 .ridersbud-popup .leaflet-popup-content-wrapper {
-  background: rgba(23, 22, 23, 0.95);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
-  padding: 0;
+    background: #2A2A2A;
+    /* dark-gray */
+    color: #fff;
+    border: 1px solid #4a4a4a;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    padding: 0;
 }
 
 .ridersbud-popup .leaflet-popup-content {
-  margin: 0;
-  width: 200px !important;
+    margin: 0;
+    width: 180px !important;
+    /* Override Leaflet's auto width */
 }
 
 .ridersbud-popup .leaflet-popup-tip {
-  background: rgba(23, 22, 23, 0.95);
+    background: #2A2A2A;
 }
 
 .ridersbud-popup-inner {
-  font-family: 'Poppins', sans-serif;
-  padding: 12px;
+    font-family: 'Poppins', sans-serif;
+    padding: 8px;
 }
 
 .ridersbud-popup-img {
-  width: 100%;
-  height: 100px;
-  object-fit: cover;
-  border-radius: 12px;
-  margin-bottom: 10px;
+    width: 100%;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-bottom: 8px;
 }
 
 .ridersbud-popup-name {
-  font-weight: 700;
-  font-size: 1.05rem;
-  margin: 0 0 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #fff;
+    font-weight: 700;
+    font-size: 1rem;
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
 }
 
 .ridersbud-popup-spec {
-  font-size: 0.8rem;
-  color: #A0A0A0;
-  margin: 0 0 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+    font-size: 0.75rem;
+    color: #A0A0A0;
+    /* light-gray */
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .ridersbud-popup-rating {
-  font-size: 0.85rem;
-  color: #facc15;
-  font-weight: 600;
-  margin: 0 0 10px;
+    font-size: 0.8rem;
+    color: #facc15;
+    /* yellow-400 */
+    font-weight: 600;
+    margin: 0;
 }
 
 .ridersbud-popup-btn {
-  font-size: 0.85rem;
-  background: linear-gradient(135deg, #FE7803 0%, #ff9a3c 100%);
-  color: white;
-  font-weight: 600;
-  padding: 10px 14px;
-  border-radius: 10px;
-  width: 100%;
-  border: none;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 16px rgba(254, 120, 3, 0.4);
+    margin-top: 10px;
+    font-size: 0.8rem;
+    background-color: #FE7803;
+    /* primary */
+    color: white;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    width: 100%;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
 }
 
 .ridersbud-popup-btn:hover {
-  background: linear-gradient(135deg, #ff9a3c 0%, #FE7803 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(254, 120, 3, 0.5);
+    background-color: #d96802;
 }
 
+/* Move leaflet attribution to bottom left to avoid overlapping with AI chat button */
 .leaflet-control-container .leaflet-bottom.leaflet-right {
-  right: auto;
-  left: 10px;
+    right: auto;
+    left: 10px;
 }

@@ -1,20 +1,88 @@
-
 import React, { useState, useMemo } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
 import { fileToBase64 } from '../../utils/fileUtils';
 import { Banner } from '../../types';
+import { Plus, Megaphone, Calendar, Link as LinkIcon, Image as ImageIcon, Trash2, Edit2, Eye, Layout } from 'lucide-react';
 
-const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <div className="bg-admin-card p-5 rounded-xl shadow-lg flex items-center gap-4 border border-admin-border">
-        <div className="bg-admin-bg p-3 rounded-full text-admin-accent">{icon}</div>
+/* -------------------------------------------------------------------------- */
+/*                                SUBCOMPONENTS                               */
+/* -------------------------------------------------------------------------- */
+
+const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode; color: string }> = ({ title, value, icon, color }) => (
+    <div className="glass-panel p-5 rounded-2xl flex items-center gap-4 border border-white/5 relative overflow-hidden group">
+        <div className={`p-3 rounded-xl ${color} bg-opacity-10 text-white shadow-inner ring-1 ring-white/10`}>
+            {icon}
+        </div>
         <div>
-            <p className="text-2xl font-bold text-admin-text-primary">{value}</p>
-            <p className="text-sm text-admin-text-secondary">{title}</p>
+            <p className="text-2xl font-bold text-white">{value}</p>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{title}</p>
         </div>
     </div>
 );
+
+const BannerCard: React.FC<{ banner: Banner, onEdit: () => void, onDelete: () => void }> = ({ banner, onEdit, onDelete }) => {
+    const isActive = useMemo(() => {
+        const now = new Date();
+        const start = new Date(banner.startDate);
+        const end = new Date(banner.endDate);
+        end.setHours(23, 59, 59, 999);
+        return now >= start && now <= end;
+    }, [banner]);
+
+    const categoryColors: Record<Banner['category'], string> = {
+        Services: 'bg-blue-500',
+        Booking: 'bg-green-500',
+        Reminders: 'bg-yellow-500',
+        Store: 'bg-purple-500'
+    };
+
+    return (
+        <div className="group relative h-64 rounded-2xl overflow-hidden border border-white/5 shadow-2xl transition-all hover:scale-[1.02] hover:shadow-primary/20">
+            {/* Background Image */}
+            <div className="absolute inset-0">
+                <img src={banner.imageUrl} alt={banner.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent opacity-90" />
+            </div>
+
+            {/* Status Badge */}
+            <div className="absolute top-4 left-4 z-10 flex gap-2">
+                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider text-white shadow-lg ${isActive ? 'bg-green-500' : 'bg-gray-500'}`}>
+                    {isActive ? 'Active' : 'Inactive'}
+                </span>
+                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider text-white shadow-lg ${categoryColors[banner.category] || 'bg-gray-500'}`}>
+                    {banner.category}
+                </span>
+            </div>
+
+            {/* Actions */}
+            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity translate-x-4 group-hover:translate-x-0 duration-300">
+                <button onClick={onEdit} className="p-2 bg-white/10 hover:bg-white text-white hover:text-black rounded-full backdrop-blur-md transition-colors shadow-lg">
+                    <Edit2 size={16} />
+                </button>
+                <button onClick={onDelete} className="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full backdrop-blur-md transition-colors shadow-lg">
+                    <Trash2 size={16} />
+                </button>
+            </div>
+
+            {/* Content */}
+            <div className="absolute bottom-0 left-0 right-0 p-6 z-10">
+                <h3 className="text-xl font-bold text-white mb-1 line-clamp-1">{banner.name}</h3>
+                <p className="text-sm text-gray-300 line-clamp-2 mb-3">{banner.description}</p>
+
+                <div className="flex items-center justify-between text-xs text-gray-400 border-t border-white/10 pt-3">
+                    <span className="flex items-center gap-1">
+                        <Calendar size={12} /> {new Date(banner.startDate).toLocaleDateString()} - {new Date(banner.endDate).toLocaleDateString()}
+                    </span>
+                    <span className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer" title={banner.link}>
+                        <LinkIcon size={12} /> Link
+                    </span>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const BannerForm: React.FC<{
     banner?: Banner;
@@ -22,81 +90,91 @@ const BannerForm: React.FC<{
     onCancel: () => void
 }> = ({ banner, onSave, onCancel }) => {
     const [formData, setFormData] = useState({ name: banner?.name || '', description: banner?.description || '', imageUrl: banner?.imageUrl || '', link: banner?.link || '/services', category: banner?.category || 'Services' as Banner['category'], startDate: banner?.startDate || '', endDate: banner?.endDate || '', });
-    const [errors, setErrors] = useState<{ [key: string]: string }>({});
-    const validate = (data = formData) => {
-        const newErrors: { [key: string]: string } = {};
-        if (!data.name.trim()) newErrors.name = "Banner name is required.";
-        if (!data.imageUrl) newErrors.imageUrl = "Please upload an image for the banner.";
-        if (!data.startDate) newErrors.startDate = "Start date is required.";
-        if (!data.endDate) { newErrors.endDate = "End date is required."; } else if (data.startDate && data.endDate < data.startDate) { newErrors.endDate = "End date cannot be before the start date."; }
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (banner) onSave({ ...banner, ...formData }); else onSave(formData);
     };
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        if (name === 'category') {
-            const categoryLinks: Record<Banner['category'], string> = { Services: '/services', Booking: '/booking/1', Reminders: '/reminders', Store: '/parts-store', };
-            const newLink = categoryLinks[value as Banner['category']];
-            const newData = { ...formData, category: value as Banner['category'], link: newLink };
-            setFormData(newData); validate(newData);
-        } else { const newData = { ...formData, [name]: value }; setFormData(newData); validate(newData); }
-    };
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            try { const base64 = await fileToBase64(file); const newData = { ...formData, imageUrl: base64 }; setFormData(newData); validate(newData); } 
-            catch (err) { setErrors(prev => ({ ...prev, imageUrl: 'Failed to process image.'})); }
-        }
-    };
-    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (validate()) { if (banner) onSave({ ...banner, ...formData }); else onSave(formData); } };
-    const isSaveDisabled = Object.keys(errors).length > 0 || !formData.name || !formData.imageUrl || !formData.startDate || !formData.endDate;
+
+    const handleCategoryChange = (val: string) => {
+        const categoryLinks: Record<string, string> = { Services: '/services', Booking: '/booking/1', Reminders: '/reminders', Store: '/parts-store' };
+        setFormData({ ...formData, category: val as any, link: categoryLinks[val] || '' });
+    }
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-             <div>
-                <label className="block text-sm font-medium text-admin-text-secondary mb-1">Banner Name</label>
-                <input type="text" name="name" value={formData.name} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary ${errors.name ? 'border-red-500' : 'border-admin-border focus:ring-admin-accent focus:border-admin-accent'}`} />
-                {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
-            </div>
-             <div>
-                <label className="block text-sm font-medium text-admin-text-secondary mb-1">Description</label>
-                <textarea name="description" value={formData.description} onChange={handleChange} rows={3} className="w-full p-3 bg-admin-bg border rounded placeholder-admin-text-secondary border-admin-border focus:ring-admin-accent focus:border-admin-accent" />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-admin-text-secondary mb-1">Banner Image</label>
-                <input type="file" onChange={handleFileChange} accept="image/*" className="w-full text-sm text-admin-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-admin-accent/10 file:text-admin-accent hover:file:bg-admin-accent/20" />
-                {formData.imageUrl && <img src={formData.imageUrl} alt="Banner preview" className="mt-4 rounded-lg max-h-40 w-auto" />}
-                {errors.imageUrl && <p className="text-red-400 text-xs mt-1">{errors.imageUrl}</p>}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-admin-border pt-4">
-                 <div>
-                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Category</label>
-                    <select name="category" value={formData.category} onChange={handleChange} className="w-full p-3 bg-admin-bg border rounded border-admin-border focus:ring-admin-accent focus:border-admin-accent">
-                        <option>Services</option> <option>Booking</option> <option>Reminders</option> <option>Store</option>
-                    </select>
+        <form onSubmit={handleSubmit} className="space-y-5 text-white min-w-[600px]">
+            <div className="flex gap-6">
+                {/* Image Upload Area */}
+                <div className="w-1/3">
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Banner Image</label>
+                    <div className="relative aspect-[3/4] rounded-xl overflow-hidden bg-white/5 border-2 border-dashed border-white/20 group hover:border-primary/50 transition-colors">
+                        {formData.imageUrl ? (
+                            <img src={formData.imageUrl} className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500">
+                                <ImageIcon size={32} className="mb-2" />
+                                <span className="text-xs text-center px-4">Click to upload</span>
+                            </div>
+                        )}
+                        <input type="file" onChange={async (e) => {
+                            if (e.target.files?.[0]) setFormData({ ...formData, imageUrl: await fileToBase64(e.target.files[0]) });
+                        }} className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" />
+
+                        {/* Overlay for change */}
+                        {formData.imageUrl && (
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold text-xs">
+                                Change Image
+                            </div>
+                        )}
+                    </div>
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Link URL</label>
-                    <input type="text" name="link" value={formData.link} onChange={handleChange} placeholder="e.g., /services" className="w-full p-3 bg-admin-bg border rounded border-admin-border placeholder-admin-text-secondary focus:ring-admin-accent focus:border-admin-accent" />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">Start Date</label>
-                    <input type="date" name="startDate" value={formData.startDate} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded ${errors.startDate ? 'border-red-500' : 'border-admin-border'}`} />
-                    {errors.startDate && <p className="text-red-400 text-xs mt-1">{errors.startDate}</p>}
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-admin-text-secondary mb-1">End Date</label>
-                    <input type="date" name="endDate" value={formData.endDate} onChange={handleChange} className={`w-full p-3 bg-admin-bg border rounded ${errors.endDate ? 'border-red-500' : 'border-admin-border'}`} />
-                    {errors.endDate && <p className="text-red-400 text-xs mt-1">{errors.endDate}</p>}
+
+                {/* Form Fields */}
+                <div className="flex-1 space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase">Campaign Name</label>
+                        <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-2.5 focus:border-primary outline-none mt-1" placeholder="Summer Sale" required />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase">Description</label>
+                        <textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-2.5 focus:border-primary outline-none mt-1 h-20 resize-none" placeholder="Details about this promotion..." required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">Category</label>
+                            <select value={formData.category} onChange={e => handleCategoryChange(e.target.value)} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-2.5 focus:border-primary outline-none mt-1">
+                                <option>Services</option> <option>Booking</option> <option>Reminders</option> <option>Store</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">Link Destination</label>
+                            <input type="text" value={formData.link} onChange={e => setFormData({ ...formData, link: e.target.value })} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-2.5 focus:border-primary outline-none mt-1" />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">Start Date</label>
+                            <input type="date" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-2.5 focus:border-primary outline-none mt-1 text-gray-300" required />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">End Date</label>
+                            <input type="date" value={formData.endDate} onChange={e => setFormData({ ...formData, endDate: e.target.value })} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-2.5 focus:border-primary outline-none mt-1 text-gray-300" required />
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div className="flex justify-end gap-4 pt-4">
-                <button type="button" onClick={onCancel} className="bg-admin-border text-white py-2 px-4 rounded-lg hover:bg-gray-600">Cancel</button>
-                <button type="submit" className="bg-admin-accent text-white py-2 px-4 rounded-lg hover:bg-orange-600" disabled={isSaveDisabled}>Save Banner</button>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                <button type="button" onClick={onCancel} className="px-5 py-2 rounded-xl border border-white/10 font-bold text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button type="submit" className="px-5 py-2 rounded-xl bg-primary hover:bg-orange-600 font-bold text-white shadow-lg shadow-orange-500/20 transition-colors disabled:opacity-50" disabled={!formData.imageUrl || !formData.name}>Save Campaign</button>
             </div>
         </form>
     );
 };
+
+/* -------------------------------------------------------------------------- */
+/*                               MAIN COMPONENT                               */
+/* -------------------------------------------------------------------------- */
 
 const AdminMarketingScreen: React.FC = () => {
     const { db, addBanner, updateBanner, deleteBanner, loading } = useDatabase();
@@ -107,65 +185,66 @@ const AdminMarketingScreen: React.FC = () => {
         if (!db) return { total: 0, active: 0 };
         const now = new Date();
         const active = db.banners.filter(b => {
-            const start = new Date(b.startDate.replace(/-/g, '/'));
-            const end = new Date(b.endDate.replace(/-/g, '/'));
-            end.setHours(23, 59, 59, 999); // Include the whole end day
-            return start <= now && now <= end;
+            const start = new Date(b.startDate);
+            const end = new Date(b.endDate);
+            end.setHours(23, 59, 59, 999);
+            return now >= start && now <= end;
         }).length;
         return { total: db.banners.length, active };
     }, [db]);
 
-    if (loading || !db) {
-        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
-    }
-    
-    const handleOpenModal = (banner?: Banner) => { setEditingBanner(banner); setIsModalOpen(true); };
-    const handleCloseModal = () => { setEditingBanner(undefined); setIsModalOpen(false); };
-    const handleSaveBanner = (banner: Omit<Banner, 'id'> | Banner) => { 'id' in banner ? updateBanner(banner) : addBanner(banner); handleCloseModal(); };
-    const handleDeleteBanner = (id: string) => { if (window.confirm('Are you sure?')) deleteBanner(id); };
-    const categoryColors: { [key in Banner['category']]: string } = { Services: 'bg-blue-500/20 text-blue-300', Booking: 'bg-green-500/20 text-green-300', Reminders: 'bg-yellow-500/20 text-yellow-300', Store: 'bg-purple-500/20 text-purple-300' };
+    if (loading || !db) return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
+
+    const handleSaveBanner = (banner: Omit<Banner, 'id'> | Banner) => {
+        'id' in banner ? updateBanner(banner) : addBanner(banner);
+        setEditingBanner(undefined); setIsModalOpen(false);
+    };
 
     return (
-        <div className="flex flex-col h-full overflow-hidden">
-            <div className="flex-shrink-0">
-                <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
-                    <h1 className="text-3xl font-bold">Marketing Banners</h1>
-                    <button onClick={() => handleOpenModal()} className="bg-admin-accent text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition">+ Add Banner</button>
-                </div>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-6">
-                    <StatCard title="Total Banners" value={stats.total} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" /></svg>} />
-                    <StatCard title="Currently Active" value={stats.active} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" /></svg>} />
+        <div className="space-y-8 animate-slideInUp">
+            {/* Header */}
+            <div>
+                <h1 className="text-3xl font-bold text-white mb-6">Marketing & Promotions</h1>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <StatCard title="Total Campaigns" value={stats.total} icon={<Megaphone size={24} />} color="bg-purple-500" />
+                    <StatCard title="Active Now" value={stats.active} icon={<Eye size={24} />} color="bg-green-500" />
+                    <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-center items-start gap-2 bg-gradient-to-br from-primary/20 to-transparent">
+                        <button
+                            onClick={() => { setEditingBanner(undefined); setIsModalOpen(true); }}
+                            className="bg-white text-primary font-bold py-2 px-6 rounded-xl hover:bg-gray-100 transition shadow-lg w-full flex items-center justify-center gap-2"
+                        >
+                            <Plus size={20} /> Create New Campaign
+                        </button>
+                    </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+            {/* Content */}
+            <div className="space-y-4">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Layout size={18} /> Active Banners
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {db.banners.map(banner => (
-                        <div key={banner.id} className="bg-admin-card rounded-lg overflow-hidden group relative flex flex-col border border-admin-border">
-                            <img src={banner.imageUrl} alt={banner.name} className="h-32 w-full object-cover" />
-                             <div className="p-4 flex-grow flex flex-col">
-                                <span className={`text-xs font-bold px-2 py-1 rounded-full self-start mb-2 ${categoryColors[banner.category]}`}>{banner.category}</span>
-                                <h3 className="font-bold text-admin-text-primary text-lg">{banner.name}</h3>
-                                <p className="text-sm text-admin-text-secondary flex-grow my-1">{banner.description}</p>
-                                <div className="text-xs text-gray-400 border-t border-admin-border pt-2 mt-2">
-                                    <p>Active: {banner.startDate} to {banner.endDate}</p>
-                                    <p className="truncate">Link: <span className="font-mono text-gray-300">{banner.link}</span></p>
-                                </div>
-                            </div>
-                            <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleOpenModal(banner)} className="bg-black/50 text-white rounded-full p-1.5 hover:bg-blue-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg></button>
-                                <button onClick={() => handleDeleteBanner(banner.id)} className="bg-black/50 text-white rounded-full p-1.5 hover:bg-red-500"><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                            </div>
-                        </div>
+                        <BannerCard
+                            key={banner.id}
+                            banner={banner}
+                            onEdit={() => { setEditingBanner(banner); setIsModalOpen(true); }}
+                            onDelete={() => { if (window.confirm('Delete this banner?')) deleteBanner(banner.id); }}
+                        />
                     ))}
                     {db.banners.length === 0 && (
-                        <div className="col-span-full text-center py-16 text-admin-text-secondary">
-                            <p>No marketing banners have been added yet.</p>
+                        <div className="col-span-full py-20 text-center border-2 border-dashed border-white/10 rounded-2xl bg-white/5">
+                            <Megaphone className="mx-auto text-gray-600 mb-4" size={48} />
+                            <h3 className="text-gray-400 font-bold mb-2">No Active Campaigns</h3>
+                            <button onClick={() => setIsModalOpen(true)} className="text-primary hover:text-white underline">Create your first banner</button>
                         </div>
                     )}
                 </div>
             </div>
-            <Modal title={editingBanner ? "Edit Banner" : "Add New Banner"} isOpen={isModalOpen} onClose={handleCloseModal}>
-                <BannerForm banner={editingBanner} onSave={handleSaveBanner} onCancel={handleCloseModal} />
+
+            <Modal title={editingBanner ? "Edit Campaign" : "New Marketing Campaign"} isOpen={isModalOpen} onClose={() => { setEditingBanner(undefined); setIsModalOpen(false); }}>
+                <BannerForm banner={editingBanner} onSave={handleSaveBanner} onCancel={() => { setEditingBanner(undefined); setIsModalOpen(false); }} />
             </Modal>
         </div>
     );

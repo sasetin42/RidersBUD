@@ -36,19 +36,22 @@ const UpdateEtaModal: React.FC<{
                     Enter your new estimated time of arrival in minutes. The customer will be notified.
                 </p>
                 <div>
-                    <label className="text-xs text-light-gray">ETA (in minutes)</label>
-                    <input
-                        type="number"
-                        value={eta}
-                        onChange={e => setEta(e.target.value)}
-                        placeholder="e.g., 25"
-                        className="w-full p-2 bg-field border border-secondary rounded-md"
-                    />
+                    <label className="text-xs text-light-gray mb-1 block">ETA (in minutes)</label>
+                    <div className="relative">
+                        <input
+                            type="number"
+                            value={eta}
+                            onChange={e => setEta(e.target.value)}
+                            placeholder="e.g., 25"
+                            className="w-full p-3 glass-input rounded-xl focus:ring-1 focus:ring-primary focus:border-primary/50 text-white placeholder-white/20"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-light-gray">min</span>
+                    </div>
                 </div>
             </div>
-            <div className="mt-6 flex justify-end gap-4">
-                <button onClick={onClose} className="bg-field text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition">Cancel</button>
-                <button onClick={handleSave} disabled={isSaving || !eta} className="bg-primary text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-600 transition flex items-center justify-center min-w-[100px] disabled:opacity-50">
+            <div className="mt-6 flex justify-end gap-3">
+                <button onClick={onClose} className="glass-button px-4 py-2 border border-white/10 rounded-xl text-light-gray hover:text-white hover:bg-white/5 transition">Cancel</button>
+                <button onClick={handleSave} disabled={isSaving || !eta} className="bg-primary text-white font-bold py-2 px-6 rounded-xl hover:bg-orange-600 transition flex items-center justify-center min-w-[100px] disabled:opacity-50 shadow-lg shadow-primary/20">
                     {isSaving ? <Spinner size="sm" /> : 'Save ETA'}
                 </button>
             </div>
@@ -58,12 +61,12 @@ const UpdateEtaModal: React.FC<{
 
 
 const DetailRow: React.FC<{ label: string, value: string, icon?: React.ReactNode }> = ({ label, value, icon }) => (
-    <div className="flex items-start justify-between py-2">
+    <div className="flex items-start justify-between py-3 border-b border-white/5 last:border-0 group hover:bg-white/5 px-2 -mx-2 rounded-lg transition-colors">
         <div className="flex items-center text-light-gray">
-            {icon && <span className="mr-2">{icon}</span>}
-            <span>{label}</span>
+            {icon && <span className="mr-3 text-primary/70 group-hover:text-primary transition-colors">{icon}</span>}
+            <span className="font-medium text-sm">{label}</span>
         </div>
-        <span className="font-semibold text-white text-right">{value}</span>
+        <span className="font-bold text-white text-right text-sm">{value}</span>
     </div>
 );
 
@@ -96,17 +99,20 @@ const ImageUploadSection: React.FC<{
 );
 
 const AwaitingPaymentModal: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fadeIn">
-        <div className="bg-dark-gray rounded-xl p-6 shadow-2xl animate-scaleUp border border-primary/30 w-full max-w-sm text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-primary mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h2 className="text-xl font-bold text-white">Job Complete!</h2>
-            <p className="text-light-gray mt-2 mb-4">
-                The customer has been notified and sent an invoice. You will be notified once payment is confirmed.
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn">
+        <div className="glass-panel rounded-2xl p-8 shadow-2xl animate-scaleUp border border-green-500/30 w-full max-w-sm text-center relative overflow-hidden">
+            <div className="absolute inset-0 bg-green-500/5 pointer-events-none"></div>
+            <div className="bg-green-500/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Job Complete!</h2>
+            <p className="text-light-gray mb-8 leading-relaxed">
+                Great job! The customer has been notified. You will receive a notification once the payment is confirmed.
             </p>
-            <button onClick={onClose} className="w-full bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition">
-                Okay
+            <button onClick={onClose} className="w-full bg-green-600 text-white font-bold py-3.5 rounded-xl hover:bg-green-500 transition shadow-lg shadow-green-600/20">
+                Back to Dashboard
             </button>
         </div>
     </div>
@@ -117,10 +123,10 @@ const JobTimeline: React.FC<{ booking: Booking }> = ({ booking }) => {
 
     const currentStatusIndex = useMemo(() => {
         if (!booking) return -1;
-        
+
         let highestIndex = -1;
         const allStatuses = [...(booking.statusHistory?.map(h => h.status) || []), booking.status];
-        
+
         for (const status of allStatuses) {
             const index = timelineSteps.indexOf(status as BookingStatus);
             if (index > highestIndex) {
@@ -131,32 +137,44 @@ const JobTimeline: React.FC<{ booking: Booking }> = ({ booking }) => {
     }, [booking]);
 
     return (
-        <div className="bg-dark-gray p-4 rounded-lg">
-            <h3 className="text-lg font-semibold text-white mb-4">Job Timeline</h3>
-            <div className="relative pl-5">
+        <div className="glass-panel p-8 rounded-xl border border-white/5 mt-6">
+            <h3 className="text-xl font-bold text-white mb-8 flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-orange-500">
+                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 000-1.5h-3.75V6z" clipRule="evenodd" />
+                </svg>
+                Job Timeline
+            </h3>
+            <div className="relative pl-6 ml-1">
                 {timelineSteps.map((step, index) => {
                     const isCompleted = index < currentStatusIndex;
                     const isActive = index === currentStatusIndex;
                     const historyEntry = booking.statusHistory?.find(s => s.status === step);
 
                     return (
-                        <div key={step} className={`relative pb-8 ${index === timelineSteps.length - 1 ? 'pb-0' : ''}`}>
+                        <div key={step} className={`relative pb-12 ${index === timelineSteps.length - 1 ? 'pb-0' : ''}`}>
                             {index < timelineSteps.length - 1 && (
-                                <div className={`absolute top-2.5 left-[7px] w-0.5 h-full ${isCompleted ? 'bg-primary' : 'bg-field'}`}></div>
+                                <div className={`absolute top-6 left-[7px] w-0.5 h-full -z-10 ${isCompleted ? 'bg-orange-500' : 'bg-gray-700/50'}`}></div>
                             )}
-                            <div className="flex items-center">
-                                <div className={`-left-3.5 absolute w-4 h-4 rounded-full flex items-center justify-center ${
-                                    isActive ? 'bg-primary ring-4 ring-primary/30' : isCompleted ? 'bg-primary' : 'bg-field'
-                                }`}>
-                                    {isCompleted && <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+
+                            <div className="flex items-start group">
+                                <div className={`relative z-10 w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300 ${isActive ? 'bg-orange-500 ring-4 ring-orange-500/20 shadow-lg shadow-orange-500/40 scale-150' :
+                                        isCompleted ? 'bg-orange-500 text-white' :
+                                            'bg-transparent border-2 border-gray-600'
+                                    }`}>
+                                    {isCompleted && <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
                                 </div>
-                                <div className="ml-4">
-                                    <p className={`font-semibold text-sm ${
-                                        isActive ? 'text-primary' : isCompleted ? 'text-white' : 'text-gray-500'
-                                    }`}>{step}</p>
-                                    {historyEntry && (
-                                        <p className="text-xs text-gray-400">{new Date(historyEntry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                                    )}
+
+                                <div className={`ml-8 transition-all duration-300 ${isActive ? 'translate-x-1' : ''}`}>
+                                    <p className={`font-bold text-base mb-1 ${isActive ? 'text-orange-500' : isCompleted ? 'text-white' : 'text-gray-500'
+                                        }`}>{step}</p>
+
+                                    {isActive ? (
+                                        <p className="text-sm font-medium text-orange-400">Current Status</p>
+                                    ) : historyEntry ? (
+                                        <p className="text-xs uppercase tracking-wider font-semibold text-gray-500">
+                                            {new Date(historyEntry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).toUpperCase()}
+                                        </p>
+                                    ) : null}
                                 </div>
                             </div>
                         </div>
@@ -174,11 +192,11 @@ const MechanicJobProgressModal: React.FC<{
     onClose: () => void;
 }> = ({ booking, customer, onClose }) => {
     const { updateBookingNotes, updateBookingImages } = useDatabase();
-    
+
     const [notes, setNotes] = useState(booking?.notes || '');
     const [isSavingNotes, setIsSavingNotes] = useState(false);
     const [notesSuccess, setNotesSuccess] = useState(false);
-    
+
     const [beforeImages, setBeforeImages] = useState<string[]>(booking?.beforeImages || []);
     const [afterImages, setAfterImages] = useState<string[]>(booking?.afterImages || []);
     const [isSavingImages, setIsSavingImages] = useState(false);
@@ -208,7 +226,7 @@ const MechanicJobProgressModal: React.FC<{
         if (type === 'before') setBeforeImages(prev => prev.filter((_, i) => i !== index));
         else setAfterImages(prev => prev.filter((_, i) => i !== index));
     };
-    
+
     const handleSaveImages = async () => {
         setIsSavingImages(true);
         await updateBookingImages(booking.id, beforeImages, afterImages);
@@ -218,30 +236,37 @@ const MechanicJobProgressModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-secondary/90 backdrop-blur-sm flex flex-col z-50 p-0 sm:p-4 animate-slideInUp" role="dialog" aria-modal="true">
-            <div className="relative bg-secondary rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full">
-                <header className="flex-shrink-0 p-4 border-b border-dark-gray flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex flex-col z-50 p-0 sm:p-6 animate-slideInUp" role="dialog" aria-modal="true">
+            <div className="relative glass-panel rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full border border-white/10 shadow-2xl overflow-hidden">
+                <header className="flex-shrink-0 p-5 border-b border-white/5 flex items-center justify-center relative bg-white/5">
                     <h2 className="text-xl font-bold text-white">Job Progress</h2>
-                    <button onClick={onClose} className="absolute right-4 text-white text-3xl">&times;</button>
+                    <button onClick={onClose} className="absolute right-5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition">&times;</button>
                 </header>
-                 <main className="flex-grow overflow-y-auto p-4 space-y-4">
+                <main className="flex-grow overflow-y-auto p-5 space-y-6">
                     {/* Job Documentation */}
-                     <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold text-white mb-3">Job Documentation</h3>
-                        <div className="space-y-4">
+                    <div className="bg-white/5 p-5 rounded-xl border border-white/5">
+                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 2H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4zm6 9a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" /></svg>
+                            Documentation
+                        </h3>
+                        <div className="space-y-6">
                             <ImageUploadSection title="Before Service" images={beforeImages} onUpload={(e) => handleImageUpload(e, 'before')} onDelete={(i) => handleDeleteImage(i, 'before')} />
+                            <div className="h-px bg-white/5"></div>
                             <ImageUploadSection title="After Service" images={afterImages} onUpload={(e) => handleImageUpload(e, 'after')} onDelete={(i) => handleDeleteImage(i, 'after')} />
                         </div>
-                         <button onClick={handleSaveImages} disabled={isSavingImages} className={`w-full font-bold py-2 px-4 rounded-lg transition mt-4 text-sm flex items-center justify-center ${imagesSuccess ? 'bg-green-600 text-white' : 'bg-primary text-white hover:bg-orange-600 disabled:opacity-50'}`}>
+                        <button onClick={handleSaveImages} disabled={isSavingImages} className={`w-full font-bold py-3 px-4 rounded-xl transition mt-6 text-sm flex items-center justify-center shadow-lg ${imagesSuccess ? 'bg-green-600 text-white shadow-green-600/30' : 'bg-primary text-white hover:bg-orange-600 disabled:opacity-50 shadow-primary/30'}`}>
                             {isSavingImages ? <Spinner size="sm" /> : imagesSuccess ? '✓ Images Saved' : 'Save Documentation'}
                         </button>
                     </div>
 
                     {/* Job Notes */}
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="text-lg font-semibold text-white mb-2">Job Notes</h3>
-                        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add details about work performed, parts used, or customer requests..." rows={5} className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary" />
-                        <button onClick={handleSaveNotes} disabled={isSavingNotes} className={`w-full font-bold py-2 px-4 rounded-lg transition mt-3 text-sm flex items-center justify-center ${notesSuccess ? 'bg-green-600 text-white' : 'bg-primary text-white hover:bg-orange-600 disabled:opacity-50'}`}>
+                    <div className="bg-white/5 p-5 rounded-xl border border-white/5">
+                        <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                            Job Notes
+                        </h3>
+                        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add details about work performed, parts used, or customer requests..." rows={5} className="w-full p-4 glass-input rounded-xl text-sm placeholder-light-gray/50 focus:ring-primary focus:border-primary/50 resize-none" />
+                        <button onClick={handleSaveNotes} disabled={isSavingNotes} className={`w-full font-bold py-3 px-4 rounded-xl transition mt-4 text-sm flex items-center justify-center shadow-lg ${notesSuccess ? 'bg-green-600 text-white shadow-green-600/30' : 'bg-primary text-white hover:bg-orange-600 disabled:opacity-50 shadow-primary/30'}`}>
                             {isSavingNotes ? <Spinner size="sm" /> : notesSuccess ? '✓ Notes Saved' : 'Save Notes'}
                         </button>
                     </div>
@@ -260,12 +285,12 @@ const MechanicJobDetailScreen: React.FC = () => {
     const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
     const [isEtaModalOpen, setIsEtaModalOpen] = useState(false);
     const watchIdRef = useRef<number | null>(null);
-    
+
     const booking = db?.bookings.find(b => b.id === bookingId);
     const customer = db?.customers.find(c => c.name === booking?.customerName);
     const vehicle = booking?.vehicle;
     const mechanic = booking?.mechanic;
-    
+
     useEffect(() => {
         if (booking?.status !== 'En Route' && watchIdRef.current !== null) {
             navigator.geolocation.clearWatch(watchIdRef.current);
@@ -293,7 +318,7 @@ const MechanicJobDetailScreen: React.FC = () => {
             </div>
         );
     }
-    
+
     const handleAcceptJob = () => {
         if (!navigator.geolocation) {
             alert("Geolocation is not supported by your browser.");
@@ -310,7 +335,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                 updateBookingStatus(booking.id, 'En Route');
                 const { latitude, longitude } = position.coords;
                 updateMechanicLocation(mechanic.id, { lat: latitude, lng: longitude });
-                
+
                 // Open ETA Modal right after setting status to 'En Route'
                 setIsEtaModalOpen(true);
 
@@ -347,7 +372,7 @@ const MechanicJobDetailScreen: React.FC = () => {
     const handleRescheduleResponse = (response: 'accepted' | 'rejected') => {
         respondToReschedule(booking.id, response);
     };
-    
+
     const mapMarkers = useMemo((): MapMarker[] => {
         const markers: MapMarker[] = [];
         if (mechanic?.lat && mechanic.lng) {
@@ -382,40 +407,49 @@ const MechanicJobDetailScreen: React.FC = () => {
             case 'En Route':
                 return <button onClick={() => handleUpdateStatus('In Progress')} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Arrived & Begin Service</button>;
             case 'In Progress':
-                 return <button onClick={() => handleUpdateStatus('Completed')} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">Mark as Complete</button>;
+                return <button onClick={() => handleUpdateStatus('Completed')} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">Mark as Complete</button>;
             default: return null;
         }
     };
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title={`Job #${booking.id.toUpperCase().slice(-6)}`} showBackButton />
+            <div className="p-4 glass-heavy border-b border-white/5 z-10 w-full">
+                <Header title={`Job #${booking.id.toUpperCase().slice(-6)}`} showBackButton />
+            </div>
+
             <div className="flex-grow p-4 space-y-4 overflow-y-auto">
-                <div className="bg-dark-gray p-4 rounded-lg">
-                    <h2 className="text-xl font-bold text-primary mb-2">{booking.service.name}</h2>
-                    <DetailRow label="Date" value={new Date(booking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} />
-                    <DetailRow label="Time" value={booking.time} />
-                     {booking.eta && booking.status === 'En Route' && (<DetailRow label="Current ETA" value={`${booking.eta} minutes`} />)}
+                <div className="glass-panel p-6 rounded-xl border border-white/5">
+                    <h2 className="text-2xl font-bold text-primary mb-4">{booking.service.name}</h2>
+                    <DetailRow label="Date" value={new Date(booking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" /></svg>} />
+                    <DetailRow label="Time" value={booking.time} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>} />
+                    {booking.eta && booking.status === 'En Route' && (<DetailRow label="Current ETA" value={`${booking.eta} minutes`} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>} />)}
                 </div>
 
                 {booking.status === 'Reschedule Requested' && booking.rescheduleDetails && (
-                    <div className="bg-orange-900/50 border border-orange-500/50 p-4 rounded-lg animate-pulse">
-                        <h3 className="text-lg font-bold text-orange-300">Reschedule Requested</h3>
-                        <p className="text-sm text-white mt-2">The customer requested to move this appointment to:</p>
-                        <div className="bg-field p-3 rounded-md my-2">
-                            <p><span className="font-semibold">New Date:</span> {new Date(booking.rescheduleDetails.newDate.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-                            <p><span className="font-semibold">New Time:</span> {booking.rescheduleDetails.newTime}</p>
+                    <div className="bg-orange-900/30 backdrop-blur-sm border border-orange-500/50 p-6 rounded-xl animate-pulse-glow shadow-[0_0_15px_rgba(234,88,12,0.2)]">
+                        <h3 className="text-xl font-bold text-orange-300 mb-2 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                            Reschedule Requested
+                        </h3>
+                        <p className="text-sm text-orange-100/90 mt-1 mb-4">The customer requested to move this appointment:</p>
+                        <div className="bg-orange-950/50 p-4 rounded-lg my-2 border border-orange-500/30">
+                            <p className="flex justify-between mb-1"><span className="font-semibold text-orange-200">New Date:</span> <span className="text-white">{new Date(booking.rescheduleDetails.newDate.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span></p>
+                            <p className="flex justify-between"><span className="font-semibold text-orange-200">New Time:</span> <span className="text-white">{booking.rescheduleDetails.newTime}</span></p>
                         </div>
-                        <p className="text-sm text-white">Reason: <span className="italic text-light-gray">"{booking.rescheduleDetails.reason}"</span></p>
-                        <div className="flex gap-3 mt-4">
-                            <button onClick={() => handleRescheduleResponse('rejected')} className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg hover:bg-red-700">Reject</button>
-                            <button onClick={() => handleRescheduleResponse('accepted')} className="flex-1 bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700">Accept</button>
+                        <p className="text-sm text-orange-200 mt-3 mb-4">Reason: <span className="italic text-white">"{booking.rescheduleDetails.reason}"</span></p>
+                        <div className="flex gap-4">
+                            <button onClick={() => handleRescheduleResponse('rejected')} className="flex-1 bg-red-600/80 text-white font-bold py-3 rounded-xl hover:bg-red-700 transition backdrop-blur-sm border border-red-500/20">Reject</button>
+                            <button onClick={() => handleRescheduleResponse('accepted')} className="flex-1 bg-green-600/80 text-white font-bold py-3 rounded-xl hover:bg-green-700 transition backdrop-blur-sm border border-green-500/20 shadow-lg shadow-green-900/20">Accept</button>
                         </div>
                     </div>
                 )}
 
-                <div className="bg-dark-gray p-4 rounded-lg">
-                    <h3 className="text-lg font-semibold text-white mb-2">Customer & Vehicle</h3>
+                <div className="glass-panel p-6 rounded-xl border border-white/5">
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
+                        Customer & Vehicle
+                    </h3>
                     <DetailRow label="Customer" value={customer.name} />
                     <DetailRow label="Phone" value={customer.phone} />
                     <DetailRow label="Vehicle" value={`${vehicle.year} ${vehicle.make} ${vehicle.model}`} />
@@ -424,16 +458,31 @@ const MechanicJobDetailScreen: React.FC = () => {
                 <JobTimeline booking={booking} />
             </div>
 
-             <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex-shrink-0 space-y-3">
-                <h3 className="text-lg font-semibold text-white text-center">Actions</h3>
-                <div className="grid grid-cols-3 gap-3">
-                    <button onClick={() => setIsChatOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Chat</button>
-                    <a href={`tel:${customer.phone}`} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm text-center flex items-center justify-center">Call</a>
-                    <button onClick={() => setIsLocationModalOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">View Location</button>
-                    <button onClick={() => setIsProgressModalOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm">Edit Progress</button>
-                    <button onClick={() => setIsEtaModalOpen(true)} className="bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition text-sm disabled:opacity-50" disabled={booking.status !== 'En Route'}>Update ETA</button>
+            <div className="p-4 glass-heavy border-t border-white/5 flex-shrink-0 space-y-4 shadow-lg z-20">
+                <h3 className="text-xs font-bold text-light-gray uppercase tracking-widest text-center">Actions</h3>
+                <div className="grid grid-cols-5 gap-2">
+                    <button onClick={() => setIsChatOpen(true)} className="glass-button flex flex-col items-center justify-center py-2 rounded-xl hover:bg-white/10 transition border border-white/5 text-xs gap-1 group">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary group-hover:scale-110 transition-transform" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" /></svg>
+                        Chat
+                    </button>
+                    <a href={`tel:${customer.phone}`} className="glass-button flex flex-col items-center justify-center py-2 rounded-xl hover:bg-white/10 transition border border-white/5 text-xs gap-1 group text-white">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-400 group-hover:scale-110 transition-transform" viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" /></svg>
+                        Call
+                    </a>
+                    <button onClick={() => setIsLocationModalOpen(true)} className="glass-button flex flex-col items-center justify-center py-2 rounded-xl hover:bg-white/10 transition border border-white/5 text-xs gap-1 group">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-400 group-hover:scale-110 transition-transform" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+                        Locate
+                    </button>
+                    <button onClick={() => setIsProgressModalOpen(true)} className="glass-button flex flex-col items-center justify-center py-2 rounded-xl hover:bg-white/10 transition border border-white/5 text-xs gap-1 group">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-400 group-hover:scale-110 transition-transform" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
+                        Edit
+                    </button>
+                    <button onClick={() => setIsEtaModalOpen(true)} className="glass-button flex flex-col items-center justify-center py-2 rounded-xl hover:bg-white/10 transition border border-white/5 text-xs gap-1 group disabled:opacity-30 disabled:hover:bg-transparent" disabled={booking.status !== 'En Route'}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-400 group-hover:scale-110 transition-transform" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" /></svg>
+                        ETA
+                    </button>
                 </div>
-                <div className="pt-3 border-t border-field"><PrimaryActionButton /></div>
+                <div className="pt-2"><PrimaryActionButton /></div>
             </div>
 
             {isProgressModalOpen && (<MechanicJobProgressModal booking={booking} customer={customer} onClose={() => setIsProgressModalOpen(false)} />)}
@@ -441,14 +490,17 @@ const MechanicJobDetailScreen: React.FC = () => {
             {isLocationModalOpen && (
                 <Modal title="Live Service Location" isOpen={true} onClose={() => setIsLocationModalOpen(false)}>
                     <div className="space-y-4">
-                        <div className="h-72 w-full rounded-lg overflow-hidden">
-                             {mapMarkers.length > 0 ? (
+                        <div className="h-72 w-full rounded-xl overflow-hidden shadow-inner border border-white/10 relative">
+                            {mapMarkers.length > 0 ? (
                                 <MapComponent center={mapMarkers[0].position} zoom={14} markers={mapMarkers} bounds={mapBounds} disableScrollZoom={false} />
                             ) : (
-                                <div className="flex items-center justify-center h-full bg-field text-light-gray">Location data not available.</div>
+                                <div className="flex items-center justify-center h-full bg-black/40 text-light-gray backdrop-blur-sm">Location data not available.</div>
                             )}
                         </div>
-                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${customer.lat},${customer.lng}`} target="_blank" rel="noopener noreferrer" className="block w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition text-center">Navigate with Google Maps</a>
+                        <a href={`https://www.google.com/maps/dir/?api=1&destination=${customer.lat},${customer.lng}`} target="_blank" rel="noopener noreferrer" className="block w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-blue-700 transition text-center shadow-lg shadow-blue-900/40 flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" /></svg>
+                            Navigate with Google Maps
+                        </a>
                     </div>
                 </Modal>
             )}

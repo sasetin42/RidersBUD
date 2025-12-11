@@ -3,20 +3,23 @@ import { AdminUser, AdminModule, PermissionLevel, RoleName } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
+import { Users, Shield, Lock, Eye, Edit, Trash2, Plus, CheckCircle, XCircle } from 'lucide-react';
 
-const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <div className="glass-card p-6 flex items-center gap-4 group hover:scale-[1.02] transition-all duration-300">
-        <div className="w-12 h-12 rounded-xl bg-admin-accent/20 flex items-center justify-center text-admin-accent group-hover:scale-110 transition-transform duration-300 shadow-glow-sm">
+/* -------------------------------------------------------------------------- */
+/*                                SUBCOMPONENTS                               */
+/* -------------------------------------------------------------------------- */
+
+const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode; color: string }> = ({ title, value, icon, color }) => (
+    <div className="glass-panel p-5 rounded-2xl flex items-center gap-4 border border-white/5 relative overflow-hidden group">
+        <div className={`p-3 rounded-xl ${color} bg-opacity-10 text-white shadow-inner ring-1 ring-white/10`}>
             {icon}
         </div>
         <div>
-            <p className="text-3xl font-bold text-white mb-1 tracking-tight">{value}</p>
-            <p className="text-sm font-medium text-gray-400 uppercase tracking-wider">{title}</p>
+            <p className="text-2xl font-bold text-white">{value}</p>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{title}</p>
         </div>
     </div>
 );
-
-const modules: AdminModule[] = ['dashboard', 'analytics', 'bookings', 'services', 'mechanics', 'customers', 'marketing', 'users', 'settings'];
 
 const UserFormModal: React.FC<{
     user?: AdminUser;
@@ -24,185 +27,211 @@ const UserFormModal: React.FC<{
     onSave: (user: Omit<AdminUser, 'id'> | AdminUser) => void;
 }> = ({ user, onClose, onSave }) => {
     const { db } = useDatabase();
-    const [formData, setFormData] = useState({ email: user?.email || '', password: '', role: user?.role || 'Viewer' as AdminUser['role'], permissions: user?.permissions || db?.roles.find(r => r.name === 'Viewer')?.defaultPermissions || {}, });
-    const [errors, setErrors] = useState<{ [key: string]: string }>({});
+    const modules: AdminModule[] = ['dashboard', 'analytics', 'bookings', 'catalog', 'mechanics', 'customers', 'marketing', 'users', 'settings'];
 
-    const validate = (data = formData) => {
-        const newErrors: { [key: string]: string } = {};
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) newErrors.email = "Invalid email format.";
-        if (!user && (!data.password || data.password.length < 6)) { newErrors.password = "Password must be at least 6 characters for new users."; }
-        else if (user && data.password && data.password.length < 6) { newErrors.password = "New password must be at least 6 characters."; }
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+    // State
+    const [formData, setFormData] = useState({
+        email: user?.email || '',
+        password: '',
+        role: user?.role || 'Viewer' as AdminUser['role'],
+        permissions: user?.permissions || db?.roles.find(r => r.name === 'Viewer')?.defaultPermissions || {},
+    });
+    const [activeTab, setActiveTab] = useState<'details' | 'permissions'>('details');
+
+    // Handlers
+    const handleRoleChange = (newRole: RoleName) => {
+        const roleTemplate = db?.roles.find(r => r.name === newRole);
+        setFormData({ ...formData, role: newRole, permissions: roleTemplate?.defaultPermissions || {} });
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        if (name === 'role') {
-            const newRole = value as RoleName;
-            const roleTemplate = db?.roles.find(r => r.name === newRole);
-            const defaultPermissions = roleTemplate?.defaultPermissions || {};
-            const newData = { ...formData, role: newRole, permissions: defaultPermissions };
-            setFormData(newData);
-            validate(newData);
-        } else { const newData = { ...formData, [name]: value }; setFormData(newData); validate(newData); }
-    };
-
-    const handlePermissionChange = (module: AdminModule, level: PermissionLevel) => {
-        setFormData(prev => ({ ...prev, permissions: { ...prev.permissions, [module]: level } }));
+    const handlePermissionToggle = (module: AdminModule) => {
+        const current = formData.permissions[module] || 'none';
+        const next: PermissionLevel = current === 'none' ? 'view' : current === 'view' ? 'edit' : 'none';
+        setFormData(prev => ({ ...prev, permissions: { ...prev.permissions, [module]: next } }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (validate()) {
-            const finalData = { ...formData };
-            if (finalData.role === 'Super Admin') { finalData.permissions = db?.roles.find(r => r.name === 'Super Admin')?.defaultPermissions || {}; }
-            if (user) onSave({ ...user, ...finalData, password: finalData.password || user.password });
-            else onSave(finalData as Omit<AdminUser, 'id'>);
-        }
+        const finalData = { ...formData };
+        if (finalData.role === 'Super Admin') finalData.permissions = db?.roles.find(r => r.name === 'Super Admin')?.defaultPermissions || {};
+        user ? onSave({ ...user, ...finalData, password: finalData.password || user.password }) : onSave(finalData as Omit<AdminUser, 'id'>);
     };
 
-    const isSaveDisabled = !formData.email || (!user && !formData.password) || Object.keys(errors).length > 0;
-
     return (
-        <Modal title={user ? "Edit User" : "Add New User"} isOpen={true} onClose={onClose}>
-            <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Email Address</label>
-                        <input type="email" name="email" value={formData.email} onChange={handleChange} className={`w-full p-3 bg-black/20 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all ${errors.email ? 'border-red-500' : 'border-white/10'}`} placeholder="admin@example.com" />
-                        {errors.email && <p className="text-red-400 text-xs mt-1 font-medium">{errors.email}</p>}
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{user ? 'New Password (optional)' : 'Password'}</label>
-                        <input type="password" name="password" value={formData.password} onChange={handleChange} className={`w-full p-3 bg-black/20 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all ${errors.password ? 'border-red-500' : 'border-white/10'}`} placeholder="••••••••" />
-                        {errors.password && <p className="text-red-400 text-xs mt-1 font-medium">{errors.password}</p>}
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Role</label>
-                        <select name="role" value={formData.role} onChange={handleChange} className="w-full p-3 bg-black/20 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-admin-accent/50 transition-all appearance-none cursor-pointer">
-                            {db?.roles.map(r => <option key={r.name} value={r.name} className="bg-gray-900">{r.name}</option>)}
-                        </select>
-                    </div>
+        <Modal title={user ? "Edit Admin User" : "Add New Admin"} isOpen={true} onClose={onClose}>
+            <div className="flex flex-col h-[500px] min-w-[600px] text-white">
+                {/* Tabs */}
+                <div className="flex border-b border-white/10 mb-6">
+                    <button onClick={() => setActiveTab('details')} className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'details' ? 'border-primary text-primary' : 'border-transparent text-gray-400 hover:text-white'}`}>
+                        <Users size={16} /> User Details
+                    </button>
+                    <button onClick={() => setActiveTab('permissions')} className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'permissions' ? 'border-primary text-primary' : 'border-transparent text-gray-400 hover:text-white'}`}>
+                        <Shield size={16} /> Access Control
+                    </button>
                 </div>
 
-                <div className="border-t border-white/10 pt-6">
-                    <h3 className="text-lg font-bold text-white mb-4">Module Permissions</h3>
-                    {formData.role === 'Super Admin' ? (
-                        <div className="bg-admin-accent/10 border border-admin-accent/20 p-4 rounded-xl flex items-center gap-3">
-                            <svg className="w-6 h-6 text-admin-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                            <p className="text-sm text-admin-accent font-medium">Super Admins have full access to all modules.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                            {modules.map(module => (
-                                <div key={module} className="bg-white/5 p-3 rounded-lg border border-white/5 flex flex-col gap-2">
-                                    <label className="text-sm font-bold text-gray-300 capitalize">{module}</label>
-                                    <select value={formData.permissions[module] || 'none'} onChange={e => handlePermissionChange(module, e.target.value as PermissionLevel)} className="w-full p-2 bg-black/20 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:ring-1 focus:ring-admin-accent/50">
-                                        <option value="none" className="bg-gray-900">No Access</option>
-                                        <option value="view" className="bg-gray-900">View Only</option>
-                                        <option value="edit" className="bg-gray-900">View & Edit</option>
-                                    </select>
+                <form onSubmit={handleSubmit} className="flex-grow flex flex-col">
+                    <div className="flex-grow overflow-y-auto pr-2">
+                        {activeTab === 'details' ? (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">Email Address</label>
+                                    <input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-3 focus:border-primary outline-none mt-1" required />
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">{user ? 'Change Password' : 'Password'}</label>
+                                    <input type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} className="w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-3 focus:border-primary outline-none mt-1" placeholder={user ? "Leave blank to keep current" : "Min. 6 characters"} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Role Assignment</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {db?.roles.map(r => (
+                                            <div
+                                                key={r.name}
+                                                onClick={() => handleRoleChange(r.name)}
+                                                className={`p-3 rounded-lg border cursor-pointer transition-all ${formData.role === r.name ? 'bg-primary/20 border-primary' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}
+                                            >
+                                                <div className="flex items-center gap-2 font-bold text-sm">
+                                                    <div className={`w-3 h-3 rounded-full ${formData.role === r.name ? 'bg-primary' : 'bg-gray-600'}`} />
+                                                    {r.name}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {formData.role === 'Super Admin' ? (
+                                    <div className="text-center py-12 bg-green-500/10 rounded-xl border border-green-500/20">
+                                        <Shield size={48} className="mx-auto text-green-400 mb-4" />
+                                        <h3 className="text-lg font-bold text-green-400">Full System Access</h3>
+                                        <p className="text-sm text-green-300/80 mt-2">Super Admins have unrestricted access to all modules.</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {modules.map(module => (
+                                            <div key={module} className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 hover:border-white/10">
+                                                <span className="capitalize font-medium text-sm text-gray-200">{module}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handlePermissionToggle(module)}
+                                                        className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase transition-all border ${(formData.permissions[module] || 'none') === 'edit' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                                                            (formData.permissions[module] || 'none') === 'view' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+                                                                'bg-red-500/20 text-red-400 border-red-500/30'
+                                                            }`}
+                                                    >
+                                                        {formData.permissions[module] || 'None'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
 
-                <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-                    <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all">Cancel</button>
-                    <button type="submit" className="bg-gradient-to-r from-admin-accent to-orange-600 text-white font-bold py-2 px-6 rounded-lg hover:shadow-glow hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled={isSaveDisabled}>Save User</button>
-                </div>
-            </form>
+                    <div className="border-t border-white/10 pt-4 mt-4 flex justify-end gap-3">
+                        <button type="button" onClick={onClose} className="px-5 py-2 rounded-xl border border-white/10 font-bold text-gray-400 hover:text-white transition-colors">Cancel</button>
+                        <button type="submit" className="px-5 py-2 rounded-xl bg-primary hover:bg-orange-600 font-bold text-white shadow-lg shadow-orange-500/20 transition-colors">Save User</button>
+                    </div>
+                </form>
+            </div>
         </Modal>
-    )
+    );
 };
+
+/* -------------------------------------------------------------------------- */
+/*                               MAIN COMPONENT                               */
+/* -------------------------------------------------------------------------- */
 
 const AdminUsersScreen: React.FC = () => {
     const { db, addAdminUser, updateAdminUser, deleteAdminUser, loading } = useDatabase();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<AdminUser | undefined>(undefined);
 
-    if (loading || !db?.adminUsers) {
-        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
-    }
+    if (loading || !db?.adminUsers) return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
 
-    const handleOpenModal = (user?: AdminUser) => { setEditingUser(user); setIsModalOpen(true); };
-    const handleCloseModal = () => { setEditingUser(undefined); setIsModalOpen(false); };
-    const handleSave = (user: Omit<AdminUser, 'id'> | AdminUser) => { 'id' in user ? updateAdminUser(user) : addAdminUser(user); handleCloseModal(); };
-    const handleDelete = (userId: string) => { if (window.confirm('Are you sure?')) deleteAdminUser(userId); };
+    // Handlers
+    const handleSave = (user: Omit<AdminUser, 'id'> | AdminUser) => { 'id' in user ? updateAdminUser(user) : addAdminUser(user); setIsModalOpen(false); setEditingUser(undefined); };
+    const handleDelete = (userId: string) => { if (window.confirm('Delete this user?')) deleteAdminUser(userId); };
 
-    const roleColors: Record<AdminUser['role'], string> = {
-        'Super Admin': 'bg-red-500/20 text-red-300 border-red-500/30',
-        'Content Manager': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-        'Viewer': 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+    // Role Colors
+    const roleConfig: Record<AdminUser['role'], { color: string, icon: any }> = {
+        'Super Admin': { color: 'bg-red-500', icon: Shield },
+        'Content Manager': { color: 'bg-blue-500', icon: Edit },
+        'Viewer': { color: 'bg-gray-500', icon: Eye }
     };
 
     return (
-        <div className="flex flex-col h-full space-y-6">
-            <div className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
-                <div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">Users & Roles</h1>
-                    <p className="text-gray-400 mt-1">Manage platform administrators and their permissions.</p>
+        <div className="space-y-8 animate-slideInUp">
+            {/* Header */}
+            <div>
+                <h1 className="text-3xl font-bold text-white mb-6">Users & Roles</h1>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <StatCard title="Total Admins" value={db.adminUsers.length} icon={<Users size={24} />} color="bg-blue-500" />
+                    <StatCard title="Roles Configured" value={db.roles.length} icon={<Lock size={24} />} color="bg-purple-500" />
+                    <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-center items-start gap-2 bg-gradient-to-br from-primary/20 to-transparent">
+                        <button
+                            onClick={() => { setEditingUser(undefined); setIsModalOpen(true); }}
+                            className="bg-white text-primary font-bold py-2 px-6 rounded-xl hover:bg-gray-100 transition shadow-lg w-full flex items-center justify-center gap-2"
+                        >
+                            <Plus size={20} /> Add New User
+                        </button>
+                    </div>
                 </div>
-                <button onClick={() => handleOpenModal()} className="bg-gradient-to-r from-admin-accent to-orange-600 text-white font-bold py-3 px-6 rounded-xl hover:shadow-glow hover:scale-105 transition-all shadow-lg flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                    Add User
-                </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <StatCard title="Total Admin Users" value={db.adminUsers.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>} />
-                <StatCard title="Configured Roles" value={db.roles.length} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4z" /></svg>} />
-            </div>
-
-            <div className="glass-card rounded-2xl overflow-hidden border border-white/5 flex-1 flex flex-col shadow-xl">
-                <div className="overflow-x-auto flex-1 custom-scrollbar">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
-                        <thead className="bg-black/20 backdrop-blur-md sticky top-0 z-10">
-                            <tr>
-                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10">Email</th>
-                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10">Role</th>
-                                <th className="py-4 px-6 font-bold text-gray-400 uppercase text-xs tracking-wider border-b border-white/10 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {db.adminUsers.map(user => (
-                                <tr key={user.id} className="hover:bg-white/5 transition-colors group">
-                                    <td className="py-4 px-6 text-sm font-medium text-white">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center text-xs font-bold text-white border border-white/10">
-                                                {user.email.charAt(0).toUpperCase()}
-                                            </div>
+            {/* List */}
+            <div className="glass-panel rounded-2xl border border-white/5 overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="border-b border-white/5 bg-white/[0.02] text-xs uppercase tracking-wider text-gray-400 font-medium">
+                            <th className="p-5 pl-6">Email Address</th>
+                            <th className="p-5">Access Role</th>
+                            <th className="p-5">Permissions</th>
+                            <th className="p-5 text-right pr-6">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                        {db.adminUsers.map(user => {
+                            const config = roleConfig[user.role] || { color: 'bg-gray-500', icon: Users };
+                            return (
+                                <tr key={user.id} className="group hover:bg-white/5 transition-colors">
+                                    <td className="p-5 pl-6">
+                                        <div className="flex items-center gap-3 font-bold text-white">
+                                            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-mono">{user.email.substring(0, 2).toUpperCase()}</div>
                                             {user.email}
                                         </div>
                                     </td>
-                                    <td className="py-4 px-6">
-                                        <span className={`px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-full border ${roleColors[user.role] || 'bg-gray-500/20 text-gray-300 border-gray-500/30'}`}>
-                                            {user.role}
+                                    <td className="p-5">
+                                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-white ${config.color} bg-opacity-20 border border-white/10`}>
+                                            <config.icon size={12} /> {user.role}
                                         </span>
                                     </td>
-                                    <td className="py-4 px-6 text-sm whitespace-nowrap text-right">
-                                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => handleOpenModal(user)} className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white transition-all" title="Edit">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                            </button>
-                                            {db.adminUsers.length > 1 && (
-                                                <button onClick={() => handleDelete(user.id)} className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all" title="Delete">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            )}
-                                        </div>
+                                    <td className="p-5 text-sm text-gray-400">
+                                        {user.role === 'Super Admin' ? (
+                                            <span className="text-green-400 flex items-center gap-1"><CheckCircle size={14} /> Full Access</span>
+                                        ) : (
+                                            <span className="opacity-70">{Object.keys(user.permissions).length} Custom Modules</span>
+                                        )}
+                                    </td>
+                                    <td className="p-5 text-right pr-6 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => { setEditingUser(user); setIsModalOpen(true); }} className="p-2 bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white rounded-lg transition-colors"><Edit size={16} /></button>
+                                        <button onClick={() => handleDelete(user.id)} className="p-2 bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white rounded-lg transition-colors"><Trash2 size={16} /></button>
                                     </td>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            );
+                        })}
+                    </tbody>
+                </table>
             </div>
-            {isModalOpen && <UserFormModal user={editingUser} onSave={handleSave} onClose={handleCloseModal} />}
+
+            {isModalOpen && <UserFormModal user={editingUser} onSave={handleSave} onClose={() => { setEditingUser(undefined); setIsModalOpen(false); }} />}
         </div>
-    )
+    );
 };
 
 export default AdminUsersScreen;

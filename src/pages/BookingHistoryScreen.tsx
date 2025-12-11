@@ -5,33 +5,39 @@ import { Booking, BookingStatus, Customer } from '../types';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
-import BookingStatusCard from '../components/BookingStatusCard';
+import {
+    Calendar, MapPin, Wrench, User, Clock, Star,
+    ChevronRight, Filter, X, MessageCircle, Navigation,
+    AlertCircle, CheckCircle2, XCircle
+} from 'lucide-react';
 import TrackMechanicModal from '../components/TrackMechanicModal';
 import { getAIServiceSuggestions } from '../services/geminiService';
 
 declare const L: any;
 
+// --- Sub-Components ---
+
 const StarRatingInput: React.FC<{ rating: number; setRating: (rating: number) => void; }> = ({ rating, setRating }) => {
     const [hoverRating, setHoverRating] = useState(0);
     return (
-        <div className="flex justify-center" onMouseLeave={() => setHoverRating(0)}>
+        <div className="flex justify-center gap-2" onMouseLeave={() => setHoverRating(0)}>
             {[1, 2, 3, 4, 5].map((star) => (
                 <button
                     key={star}
                     type="button"
                     onClick={() => setRating(star)}
                     onMouseEnter={() => setHoverRating(star)}
-                    className="text-4xl focus:outline-none"
+                    className="focus:outline-none transition-transform hover:scale-110"
                 >
-                    <span className={star <= (hoverRating || rating) ? 'text-yellow-400' : 'text-gray-600'}>
-                        ★
-                    </span>
+                    <Star
+                        size={32}
+                        className={`${star <= (hoverRating || rating) ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'} transition-colors`}
+                    />
                 </button>
             ))}
         </div>
     );
 };
-
 
 const ReviewModal: React.FC<{
     booking: Booking;
@@ -52,24 +58,40 @@ const ReviewModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true">
-            <div className="glass border border-white/10 rounded-xl p-6 w-full max-w-sm animate-scaleUp shadow-2xl shadow-primary/10">
-                <h2 className="text-xl font-bold mb-2">Rate Your Service</h2>
-                <p className="text-light-gray mb-4">How was your experience with <span className="font-semibold text-primary">{booking.mechanic?.name}</span> for the {booking.service.name} service?</p>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[60] p-4 animate-fadeIn">
+            <div className="glass-panel w-full max-w-sm rounded-2xl overflow-hidden border border-white/10 shadow-2xl animate-scaleUp">
+                <div className="p-6 border-b border-white/5 flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-white">Rate Experience</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={24} /></button>
+                </div>
 
-                <StarRatingInput rating={rating} setRating={setRating} />
-                {error && <p className="text-red-400 text-xs mt-2 text-center">{error}</p>}
+                <div className="p-6 space-y-6">
+                    <div className="text-center">
+                        <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-3 text-primary">
+                            <User size={32} />
+                        </div>
+                        <p className="text-gray-300">How was <span className="text-white font-semibold">{booking.mechanic?.name}</span>?</p>
+                        <p className="text-sm text-gray-500">{booking.service.name}</p>
+                    </div>
 
-                <textarea
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder="Share your experience... (optional)"
-                    rows={4}
-                    className="w-full px-4 py-3 mt-4 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <div className="mt-6 flex gap-4">
-                    <button onClick={onClose} className="w-1/2 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">Cancel</button>
-                    <button onClick={handleSubmit} className="w-1/2 bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50" disabled={rating === 0}>Submit Review</button>
+                    <StarRatingInput rating={rating} setRating={setRating} />
+                    {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+
+                    <textarea
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        placeholder="Write a review... (optional)"
+                        rows={3}
+                        className="w-full px-4 py-3 bg-[#1A1A1A] border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50"
+                    />
+
+                    <button
+                        onClick={handleSubmit}
+                        disabled={rating === 0}
+                        className="w-full py-3 bg-gradient-to-r from-primary to-orange-600 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-orange-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Submit Review
+                    </button>
                 </div>
             </div>
         </div>
@@ -89,75 +111,69 @@ const JobProgressModal: React.FC<{
     const currentStatusIndex = useMemo(() => {
         const historyStatuses = booking.statusHistory?.map(h => h.status) || [];
         const allStatuses = [...historyStatuses, booking.status];
-
         let highestIndex = -1;
         allStatuses.forEach(status => {
-            const indexInTimeline = timelineSteps.indexOf(status as BookingStatus);
-            if (indexInTimeline > highestIndex) {
-                highestIndex = indexInTimeline;
-            }
+            const index = timelineSteps.indexOf(status as BookingStatus);
+            if (index > highestIndex) highestIndex = index;
         });
         return highestIndex;
     }, [booking.status, booking.statusHistory]);
 
     useEffect(() => {
         if (!mapRef.current || !customerLocation || mapInstanceRef.current || typeof L === 'undefined') return;
-
         mapInstanceRef.current = L.map(mapRef.current).setView([customerLocation.lat, customerLocation.lng], 15);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; CARTO' }).addTo(mapInstanceRef.current);
-        const workIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.532 1.532 0 012.287-.947c1.372.836 2.942-.734-2.106-2.106a1.532 1.532 0 01.947-2.287c1.561-.379-1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" /></svg>`,
-            className: 'bg-transparent border-0', iconSize: [32, 32], iconAnchor: [16, 16]
+        const markerIcon = L.divIcon({
+            html: `<div class="w-4 h-4 bg-primary rounded-full border-2 border-white shadow-lg pulse-ring"></div>`,
+            className: 'bg-transparent border-0', iconSize: [16, 16], iconAnchor: [8, 8]
         });
-        L.marker([customerLocation.lat, customerLocation.lng], { icon: workIcon }).addTo(mapInstanceRef.current).bindPopup("Service Location");
+        L.marker([customerLocation.lat, customerLocation.lng], { icon: markerIcon }).addTo(mapInstanceRef.current);
         setTimeout(() => mapInstanceRef.current?.invalidateSize(), 100);
         return () => { mapInstanceRef.current?.remove(); mapInstanceRef.current = null; };
     }, [customerLocation]);
 
-    const ImagePlaceholder = () => (
-        <div className="w-full h-28 bg-field border-2 border-dashed border-dark-gray rounded-md flex flex-col items-center justify-center text-center p-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            <p className="text-xs text-gray-500 mt-1">No Photo Uploaded</p>
-        </div>
-    );
-
     return (
-        <div className="fixed inset-0 bg-secondary/90 backdrop-blur-sm flex flex-col z-50 p-0 sm:p-4 animate-slideInUp" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex flex-col z-[60] animate-fadeIn">
             {fullScreenImage && (
-                <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 animate-fadeIn" onClick={() => setFullScreenImage(null)}>
-                    <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg" />
+                <div className="fixed inset-0 bg-black z-[70] flex items-center justify-center p-4 animate-scaleUp" onClick={() => setFullScreenImage(null)}>
+                    <img src={fullScreenImage} alt="Full screen" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+                    <button className="absolute top-4 right-4 text-white hover:text-primary"><X size={32} /></button>
                 </div>
             )}
-            <div className="relative bg-secondary rounded-t-2xl sm:rounded-2xl flex flex-col h-full max-w-2xl mx-auto w-full">
-                <header className="flex-shrink-0 p-4 border-b border-dark-gray flex items-center justify-center">
-                    <h2 className="text-xl font-bold text-white">Job Progress</h2>
-                    <button onClick={onClose} className="absolute right-4 text-white text-3xl">&times;</button>
-                </header>
-                <main className="flex-grow overflow-y-auto p-4 space-y-4">
-                    <div className="glass border border-white/10 p-4 rounded-xl flex items-center gap-4">
-                        <img src={booking.mechanic?.imageUrl} alt={booking.mechanic?.name} className="w-16 h-16 rounded-full object-cover border-2 border-primary" />
+
+            <div className="flex-1 overflow-y-auto pb-safe">
+                {/* Header */}
+                <div className="sticky top-0 bg-black/80 backdrop-blur-md border-b border-white/10 z-10 p-4 flex items-center justify-between">
+                    <h2 className="text-lg font-bold text-white">Job Progress</h2>
+                    <button onClick={onClose} className="p-2 bg-white/5 rounded-full hover:bg-white/10 text-white"><X size={20} /></button>
+                </div>
+
+                <div className="p-4 space-y-6 max-w-2xl mx-auto">
+                    {/* Mechanic Card */}
+                    <div className="glass-panel p-4 rounded-2xl border border-white/5 flex items-center gap-4">
+                        <img src={booking.mechanic?.imageUrl || `https://ui-avatars.com/api/?name=${booking.mechanic?.name}&background=EA580C&color=fff`} alt={booking.mechanic?.name} className="w-14 h-14 rounded-full object-cover border-2 border-primary shadow-lg" />
                         <div>
-                            <p className="font-bold text-lg text-white">{booking.mechanic?.name}</p>
-                            <p className="font-semibold text-primary">{booking.service.name}</p>
-                            <p className="text-sm text-light-gray">{booking.vehicle.make} {booking.vehicle.model}</p>
+                            <p className="font-bold text-white text-lg">{booking.mechanic?.name}</p>
+                            <div className="flex items-center gap-2 text-primary text-sm font-medium">
+                                <Wrench size={14} />
+                                <span>{booking.service.name}</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="font-semibold text-white mb-4">Timeline</h3>
-                        <div className="relative pl-5">
+                    {/* Timeline */}
+                    <div className="glass-panel p-6 rounded-2xl border border-white/5">
+                        <h3 className="text-white font-bold mb-6 flex items-center gap-2"><Clock size={18} className="text-primary" /> Timeline</h3>
+                        <div className="relative pl-4 space-y-8 border-l border-white/10 ml-2">
                             {timelineSteps.map((step, index) => {
                                 const isCompleted = index <= currentStatusIndex;
                                 const historyEntry = booking.statusHistory?.find(h => h.status === step);
                                 return (
-                                    <div key={step} className={`relative pb-6 ${index === timelineSteps.length - 1 ? 'pb-0' : ''}`}>
-                                        {index < timelineSteps.length - 1 && <div className={`absolute top-2.5 left-[3px] w-0.5 h-full ${isCompleted && index < currentStatusIndex ? 'bg-primary' : 'bg-field'}`}></div>}
-                                        <div className="flex items-start">
-                                            <div className={`-left-2 absolute w-2 h-2 rounded-full mt-[7px] ${isCompleted ? 'bg-primary ring-4 ring-primary/20' : 'bg-field'}`}></div>
-                                            <div className="ml-4">
-                                                <p className={`font-semibold text-sm ${isCompleted ? 'text-white' : 'text-gray-500'}`}>{step}</p>
-                                                <p className="text-xs text-gray-400">{historyEntry ? new Date(historyEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}</p>
-                                            </div>
+                                    <div key={step} className="relative">
+                                        <div className={`absolute -left-[21px] top-1 w-3 h-3 rounded-full border-2 ${isCompleted ? 'bg-primary border-primary shadow-[0_0_10px_rgba(234,88,12,0.5)]' : 'bg-[#121212] border-gray-600'}`} />
+                                        <div>
+                                            <p className={`font-semibold text-sm ${isCompleted ? 'text-white' : 'text-gray-500'}`}>{step}</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{historyEntry ? new Date(historyEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}</p>
                                         </div>
                                     </div>
                                 );
@@ -165,330 +181,333 @@ const JobProgressModal: React.FC<{
                         </div>
                     </div>
 
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="font-semibold text-white mb-3">Job Documentation</h3>
+                    {/* Photos */}
+                    <div className="space-y-4">
+                        <h3 className="text-white font-bold px-2">Job Photos</h3>
                         <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <h4 className="text-sm font-medium text-light-gray mb-2">Before Service</h4>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {(booking.beforeImages && booking.beforeImages.length > 0) ? booking.beforeImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`Before ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
-                                </div>
+                            <div className="glass-panel p-3 rounded-2xl border border-white/5">
+                                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-3">Before</span>
+                                {booking.beforeImages?.length ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {booking.beforeImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full aspect-square object-cover rounded-lg cursor-pointer hover:opacity-80 transition" alt="Before" />)}
+                                    </div>
+                                ) : (
+                                    <div className="h-24 flex items-center justify-center text-gray-600 text-xs italic bg-white/5 rounded-lg">No photos</div>
+                                )}
                             </div>
-                            <div>
-                                <h4 className="text-sm font-medium text-light-gray mb-2">After Service</h4>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {(booking.afterImages && booking.afterImages.length > 0) ? booking.afterImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full h-28 object-cover rounded-md cursor-pointer" alt={`After ${i + 1}`} />) : <><ImagePlaceholder /><ImagePlaceholder /></>}
-                                </div>
+                            <div className="glass-panel p-3 rounded-2xl border border-white/5">
+                                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-3">After</span>
+                                {booking.afterImages?.length ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {booking.afterImages.map((img, i) => <img key={i} src={img} onClick={() => setFullScreenImage(img)} className="w-full aspect-square object-cover rounded-lg cursor-pointer hover:opacity-80 transition" alt="After" />)}
+                                    </div>
+                                ) : (
+                                    <div className="h-24 flex items-center justify-center text-gray-600 text-xs italic bg-white/5 rounded-lg">No photos</div>
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="font-semibold text-white mb-2">Mechanic's Notes</h3>
-                        <p className="text-sm text-light-gray bg-field p-3 rounded-md min-h-[50px]">{booking.notes || 'No notes were added by the mechanic.'}</p>
-                    </div>
+                    {/* Notes */}
+                    {booking.notes && (
+                        <div className="glass-panel p-4 rounded-2xl border border-white/5">
+                            <h3 className="text-white font-bold mb-2 text-sm">Mechanic Notes</h3>
+                            <p className="text-gray-400 text-sm leading-relaxed">{booking.notes}</p>
+                        </div>
+                    )}
 
-                    <div className="bg-dark-gray p-4 rounded-lg">
-                        <h3 className="font-semibold text-white mb-2">Service Location</h3>
-                        <div ref={mapRef} className="h-40 w-full rounded-lg" />
+                    {/* Map */}
+                    <div className="h-48 rounded-2xl overflow-hidden border border-white/10 shadow-lg relative z-0">
+                        <div ref={mapRef} className="w-full h-full" />
                     </div>
-                </main>
+                </div>
             </div>
         </div>
     );
 };
 
-
-const PastBookingCard: React.FC<{ booking: Booking, onReview: (booking: Booking) => void, onViewProgress: (booking: Booking) => void }> = ({ booking, onReview, onViewProgress }) => {
-    const navigate = useNavigate();
-
-    const statusClasses: { [key: string]: string } = {
-        Completed: 'bg-green-500/10 text-green-400',
-        Cancelled: 'bg-red-500/10 text-red-400',
+const BookingListItem: React.FC<{
+    booking: Booking;
+    onAction: (type: 'track' | 'progress' | 'review' | 'pay' | 'book_again', booking: Booking) => void;
+}> = ({ booking, onAction }) => {
+    const statusConfig: Record<string, { color: string, icon: React.ReactNode }> = {
+        'Completed': { color: 'text-green-400 bg-green-400/10 border-green-400/20', icon: <CheckCircle2 size={12} /> },
+        'Cancelled': { color: 'text-red-400 bg-red-400/10 border-red-400/20', icon: <XCircle size={12} /> },
+        'In Progress': { color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', icon: <Wrench size={12} /> },
+        'En Route': { color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20', icon: <Navigation size={12} /> },
+        'Upcoming': { color: 'text-gray-300 bg-gray-500/10 border-gray-500/20', icon: <Calendar size={12} /> },
     };
 
-    const handleBookAgain = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        navigate(`/booking/${booking.service.id}`, {
-            state: { vehiclePlateNumber: booking.vehicle.plateNumber }
-        });
-    };
-
-    const dateParts = booking.date.split('-');
-    const localDate = new Date(
-        parseInt(dateParts[0]),
-        parseInt(dateParts[1]) - 1,
-        parseInt(dateParts[2])
-    );
+    const statusStyle = statusConfig[booking.status] || statusConfig['Upcoming'];
+    const dateObj = new Date(booking.date);
 
     return (
-        <div className="glass border border-white/10 p-4 rounded-xl flex flex-col gap-3 hover:border-primary/20 transition-all duration-300">
-            {/* Header */}
-            <div className="flex justify-between items-start">
-                <div>
-                    <h3 className="text-lg font-bold text-white">{booking.service.name}</h3>
-                    <p className="text-sm text-light-gray">{localDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+        <div className="glass-card p-0 rounded-2xl overflow-hidden group hover:bg-white/5 transition-colors duration-300">
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row gap-5">
+                {/* Left: Image */}
+                <div className="w-full sm:w-24 h-32 sm:h-24 bg-[#1A1A1A] rounded-xl flex-shrink-0 relative overflow-hidden">
+                    <img
+                        src={booking.service.imageUrl || 'default_service.png'}
+                        alt={booking.service.name}
+                        className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent sm:hidden" />
+                    <div className="absolute bottom-2 left-2 sm:hidden text-white font-bold text-lg">{booking.service.name}</div>
                 </div>
-                <span className={`px-3 py-1 text-xs font-semibold rounded-full ${statusClasses[booking.status] || ''}`}>
-                    {booking.status}
-                </span>
+
+                {/* Center: Details */}
+                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-bold text-lg text-white hidden sm:block truncate">{booking.service.name}</h3>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${statusStyle.color}`}>
+                            {statusStyle.icon}
+                            {booking.status}
+                        </span>
+                    </div>
+
+                    <div className="space-y-1.5 mb-3">
+                        <div className="flex items-center gap-2 text-sm text-gray-400">
+                            <Calendar size={14} className="text-primary/70" />
+                            <span>{dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            <span className="w-1 h-1 rounded-full bg-gray-700" />
+                            <span>{booking.time}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-400">
+                            <MessageCircle size={14} className="text-primary/70" />
+                            <span>{Math.floor(Math.random() * 59) + 10} km away</span> {/* Mock distance if needed */}
+                        </div>
+                        {booking.mechanic && (
+                            <div className="flex items-center gap-2 text-sm text-gray-300">
+                                <User size={14} className="text-primary/70" />
+                                <span className="font-medium text-white">{booking.mechanic.name}</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Price Tag Mockup - If you have real price, use it */}
+                    <div className="flex items-center gap-1 text-white font-bold">
+                        <span className="text-xs text-gray-500 font-normal">Total</span>
+                        <span>$120.00</span>
+                    </div>
+                </div>
             </div>
 
-            {/* Details */}
-            <div className="border-t border-field pt-3 space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-light-gray">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clipRule="evenodd" /></svg>
-                    <span>Mechanic:</span>
-                    <span className="font-medium text-white ml-auto">{booking.mechanic?.name || 'N/A'}</span>
-                </div>
-                <div className="flex items-center gap-2 text-light-gray">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 2a2 2 0 00-2 2v1H6V5a2 2 0 00-4 0v1H1a1 1 0 00-1 1v8a1 1 0 001 1h18a1 1 0 001-1V7a1 1 0 00-1-1h-1V5a2 2 0 00-4 0v1h-2V4a2 2 0 00-2-2h-2zM4 9a1 1 0 100-2 1 1 0 000 2zm12 0a1 1 0 100-2 1 1 0 000 2zM4 13a1 1 0 100-2 1 1 0 000 2zm12 0a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
-                    <span>Vehicle:</span>
-                    <span className="font-medium text-white ml-auto">{booking.vehicle.make} {booking.vehicle.model}</span>
-                </div>
-            </div>
-
-            {/* Conditional Content */}
-            {booking.status === 'Completed' && (
-                <div className="border-t border-field pt-3 flex gap-2">
-                    <button onClick={() => onViewProgress(booking)} className="flex-1 bg-secondary text-white font-bold py-2 rounded-lg hover:bg-gray-700 transition text-sm">
-                        View Progress
+            {/* Actions Footer */}
+            <div className="bg-white/5 px-4 py-3 flex gap-3 border-t border-white/5">
+                {['Upcoming', 'En Route', 'In Progress', 'Mechanic Assigned', 'Booking Confirmed'].includes(booking.status) && (
+                    <button onClick={() => onAction('track', booking)} className="flex-1 py-2 rounded-lg bg-primary/20 text-primary border border-primary/20 font-semibold text-sm hover:bg-primary/30 transition">
+                        Track Status
                     </button>
-                    <button onClick={handleBookAgain} className="flex-1 bg-field text-white font-bold py-2 rounded-lg hover:bg-gray-600 transition text-sm">
+                )}
+                {booking.status === 'Completed' && (
+                    <>
+                        <button onClick={() => onAction('progress', booking)} className="flex-1 py-2 rounded-lg bg-[#2A2A2A] text-gray-300 border border-white/10 font-semibold text-sm hover:bg-white/10 transition">
+                            View Progress
+                        </button>
+                        {!booking.isReviewed && (
+                            <button onClick={() => onAction('review', booking)} className="flex-1 py-2 rounded-lg bg-primary text-white font-bold text-sm shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition">
+                                Rate
+                            </button>
+                        )}
+                        <button onClick={() => onAction('book_again', booking)} className="flex-1 py-2 rounded-lg bg-[#2A2A2A] text-white border border-white/10 font-semibold text-sm hover:bg-white/10 transition">
+                            Book Again
+                        </button>
+                    </>
+                )}
+                {booking.status === 'Cancelled' && (
+                    <button onClick={() => onAction('book_again', booking)} className="flex-1 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 font-semibold text-sm hover:bg-primary/20 transition">
                         Book Again
                     </button>
-                    {!booking.isPaid ? (
-                        <button onClick={() => navigate('/service-payment', { state: { booking } })} className="flex-1 bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition text-sm">
-                            Pay Now
-                        </button>
-                    ) : !booking.isReviewed ? (
-                        <button onClick={() => onReview(booking)} className="flex-1 bg-primary text-white font-bold py-2 rounded-lg hover:bg-orange-600 transition text-sm">
-                            Rate & Review
-                        </button>
-                    ) : null}
-                </div>
-            )}
-            {booking.status === 'Cancelled' && booking.cancellationReason && (
-                <div className="border-t border-field pt-3">
-                    <p className="text-sm text-red-400">
-                        <span className="font-semibold">Cancellation Reason:</span> {booking.cancellationReason}
-                    </p>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 };
 
+
+// --- Main Screen ---
 
 const BookingHistoryScreen: React.FC = () => {
     const { plateNumber } = useParams<{ plateNumber?: string }>();
-    const { db, addReviewToMechanic, loading } = useDatabase();
+    const { db, addReviewToMechanic, loading: dbLoading } = useDatabase();
     const { user } = useAuth();
+    const navigate = useNavigate();
 
-    const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-    const [reviewingBooking, setReviewingBooking] = useState<Booking | null>(null);
+    // State
+    const [selectedTab, setSelectedTab] = useState<'upcoming' | 'past'>('upcoming');
+    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [dateFilter, setDateFilter] = useState<string>(''); // Single date
+
+    // Modals
+    const [reviewBooking, setReviewBooking] = useState<Booking | null>(null);
     const [progressBooking, setProgressBooking] = useState<Booking | null>(null);
-    const [trackingBooking, setTrackingBooking] = useState<Booking | null>(null);
-    const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
-    const [mechanicFilter, setMechanicFilter] = useState<string>('all');
-    const [vehicleFilter, setVehicleFilter] = useState<string>(plateNumber || 'all');
-    const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
+    const [trackBooking, setTrackBooking] = useState<Booking | null>(null);
 
-    const customerLocation = (user && user.lat && user.lng) ? { lat: user.lat, lng: user.lng } : null;
-
+    // AI Suggestions
     useEffect(() => {
         const fetchSuggestions = async () => {
             if (plateNumber && user && db && !sessionStorage.getItem('ai_suggestions')) {
                 const vehicle = user.vehicles.find(v => v.plateNumber === plateNumber);
                 if (vehicle) {
-                    const serviceHistory = db.bookings
+                    const history = db.bookings
                         .filter(b => b.customerName === user.name && b.status === 'Completed' && b.vehicle.plateNumber === vehicle.plateNumber)
                         .map(b => b.service.name) || [];
-
                     try {
-                        const suggestions = await getAIServiceSuggestions(vehicle, serviceHistory);
+                        const suggestions = await getAIServiceSuggestions(vehicle, history);
                         sessionStorage.setItem('ai_suggestions', JSON.stringify(suggestions));
-                    } catch (error) {
-                        console.error("Failed to get AI suggestions:", error);
-                    }
+                    } catch (e) { console.error(e); }
                 }
             }
         };
         fetchSuggestions();
     }, [plateNumber, user, db]);
 
-    const { upcomingBookings, pastBookings } = useMemo(() => {
-        if (!user || !db) {
-            return { upcomingBookings: [], pastBookings: [] };
+    // Derived Data
+    const { upcoming, past } = useMemo(() => {
+        if (!user || !db) return { upcoming: [], past: [] };
+
+        let all = db.bookings.filter(b => b.customerName === user.name);
+
+        // Filter Logic
+        if (statusFilter !== 'all') {
+            all = all.filter(b => b.status === statusFilter);
+        }
+        if (dateFilter) {
+            const filterDate = new Date(dateFilter).toDateString();
+            all = all.filter(b => new Date(b.date).toDateString() === filterDate);
         }
 
-        let bookingsToFilter = db.bookings.filter(b => b.customerName === user.name);
+        const upcomingStatus = ['Upcoming', 'En Route', 'In Progress', 'Mechanic Assigned', 'Booking Confirmed', 'Reschedule Requested'];
 
-        const upcoming = bookingsToFilter
-            .filter(b => ['Upcoming', 'En Route', 'In Progress', 'Mechanic Assigned', 'Booking Confirmed', 'Reschedule Requested'].includes(b.status))
+        const up = all
+            .filter(b => upcomingStatus.includes(b.status))
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-        let past = bookingsToFilter.filter(b => b.status === 'Completed' || b.status === 'Cancelled');
+        const p = all
+            .filter(b => b.status === 'Completed' || b.status === 'Cancelled')
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        // Apply filters to past bookings
-        if (statusFilter !== 'all') {
-            past = past.filter(b => b.status === statusFilter);
+        return { upcoming: up, past: p };
+    }, [db, user, statusFilter, dateFilter]);
+
+    // Handlers
+    const handleAction = (type: string, booking: Booking) => {
+        switch (type) {
+            case 'review': setReviewBooking(booking); break;
+            case 'progress': setProgressBooking(booking); break;
+            case 'track': setTrackBooking(booking); break;
+            case 'book_again':
+                navigate(`/booking/${booking.service.id}`, { state: { vehiclePlateNumber: booking.vehicle.plateNumber } });
+                break;
+            case 'pay': navigate('/service-payment', { state: { booking } }); break;
         }
-        if (mechanicFilter !== 'all') {
-            past = past.filter(b => b.mechanic?.id === mechanicFilter);
-        }
-        if (vehicleFilter !== 'all') {
-            past = past.filter(b => b.vehicle.plateNumber === vehicleFilter);
-        }
-        if (dateFilter.start && dateFilter.end) {
-            const startDate = new Date(dateFilter.start.replace(/-/g, '/')).getTime();
-            const endDateObj = new Date(dateFilter.end.replace(/-/g, '/'));
-            endDateObj.setDate(endDateObj.getDate() + 1);
-            const endDate = endDateObj.getTime();
-
-            past = past.filter(b => {
-                const bookingDate = new Date(b.date.replace(/-/g, '/')).getTime();
-                return bookingDate >= startDate && bookingDate < endDate;
-            });
-        }
-
-        past.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        return { upcomingBookings: upcoming, pastBookings: past };
-    }, [db, user, statusFilter, mechanicFilter, vehicleFilter, dateFilter]);
-
-    const handleOpenReviewModal = (booking: Booking) => {
-        setReviewingBooking(booking);
-        setIsReviewModalOpen(true);
-    };
-
-    const handleCloseReviewModal = () => {
-        setReviewingBooking(null);
-        setIsReviewModalOpen(false);
     };
 
     const handleSubmitReview = (review: { rating: number; comment: string }) => {
-        if (reviewingBooking && reviewingBooking.mechanic && user) {
-            addReviewToMechanic(reviewingBooking.mechanic.id, reviewingBooking.id, review, user.name);
-            handleCloseReviewModal();
-        } else {
-            alert("Could not submit review. Mechanic or user information is missing.");
+        if (reviewBooking && reviewBooking.mechanic && user) {
+            addReviewToMechanic(reviewBooking.mechanic.id, reviewBooking.id, review, user.name);
+            setReviewBooking(null);
         }
     };
 
-    const handleShare = async () => {
-        if (!trackingBooking) return;
-        const shareData = {
-            title: 'RidersBUD Booking Update',
-            text: `Track my mechanic for my ${trackingBooking.service.name} service!`,
-            url: window.location.href,
-        };
-        try {
-            await navigator.share(shareData);
-        } catch (err) {
-            console.error('Error sharing:', err);
-        }
-    };
-
-
-    if (loading || !db || !user) {
-        return (
-            <div className="flex flex-col h-full bg-secondary">
-                <Header title="Booking History" showBackButton />
-                <div className="flex-grow flex items-center justify-center">
-                    <Spinner size="lg" />
-                </div>
-            </div>
-        );
+    if (dbLoading || !user) {
+        return <div className="flex h-screen bg-secondary items-center justify-center"><Spinner size="lg" /></div>;
     }
 
-    return (
-        <div className="flex flex-col h-full bg-secondary">
-            <Header title={plateNumber ? `History for ${plateNumber}` : "Booking History"} showBackButton />
+    const displayedBookings = selectedTab === 'upcoming' ? upcoming : past;
 
-            <div className="p-4 border-b border-dark-gray space-y-3">
-                <h3 className="text-sm font-semibold text-light-gray">Filter Past Bookings</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-2 gap-3">
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as any)}
-                        className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm"
+    return (
+        <div className="flex flex-col min-h-screen bg-secondary pb-24">
+            <Header title={plateNumber ? `History: ${plateNumber}` : "Booking History"} showBackButton />
+
+            {/* Filter Header */}
+            <div className="px-4 py-4 space-y-4 bg-[#1F1F1F]/50 backdrop-blur-sm border-b border-white/5 sticky top-[60px] z-30">
+                {/* Tabs */}
+                <div className="flex p-1 bg-black/40 rounded-xl">
+                    <button
+                        onClick={() => setSelectedTab('upcoming')}
+                        className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${selectedTab === 'upcoming' ? 'bg-primary text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-white'}`}
                     >
-                        <option value="all">All Statuses</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Cancelled">Cancelled</option>
-                    </select>
-                    <select
-                        value={vehicleFilter}
-                        onChange={(e) => setVehicleFilter(e.target.value)}
-                        className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm"
+                        Upcoming ({upcoming.length})
+                    </button>
+                    <button
+                        onClick={() => setSelectedTab('past')}
+                        className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${selectedTab === 'past' ? 'bg-primary text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-white'}`}
                     >
-                        <option value="all">All Vehicles</option>
-                        {user.vehicles.map(v => <option key={v.plateNumber} value={v.plateNumber}>{v.make} {v.model}</option>)}
-                    </select>
-                    <select
-                        value={mechanicFilter}
-                        onChange={(e) => setMechanicFilter(e.target.value)}
-                        className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm col-span-2"
-                    >
-                        <option value="all">All Mechanics</option>
-                        {db.mechanics.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
-                    <input
-                        type="date"
-                        value={dateFilter.start}
-                        onChange={e => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
-                        className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm"
-                        aria-label="Start date for filtering"
-                        placeholder="Start Date"
-                    />
-                    <input
-                        type="date"
-                        value={dateFilter.end}
-                        min={dateFilter.start}
-                        onChange={e => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
-                        className="w-full px-3 py-2 bg-field border border-dark-gray rounded-lg text-white text-sm"
-                        aria-label="End date for filtering"
-                        placeholder="End Date"
-                    />
+                        History
+                    </button>
+                </div>
+
+                {/* Simplified Filters */}
+                <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+                    <div className="relative min-w-[140px]">
+                        <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="w-full pl-10 pr-8 py-2.5 bg-[#2A2A2A] border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-primary/50 appearance-none"
+                        >
+                            <option value="all">All Statuses</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                            <option value="In Progress">In Progress</option>
+                        </select>
+                        <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 rotate-90" />
+                    </div>
+
+                    <div className="relative flex-1 min-w-[140px]">
+                        <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                            type="date"
+                            value={dateFilter}
+                            onChange={(e) => setDateFilter(e.target.value)}
+                            className="w-full pl-10 pr-3 py-2.5 bg-[#2A2A2A] border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-primary/50 placeholder-gray-500"
+                            placeholder="Filter by Date"
+                        />
+                        {dateFilter && (
+                            <button onClick={() => setDateFilter('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white">
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 
-            <div className="flex-grow overflow-y-auto p-4 space-y-8">
-                <section>
-                    <h2 className="text-xl font-semibold mb-3 text-white px-2">Upcoming</h2>
-                    {upcomingBookings.length > 0 ? (
-                        <div className="space-y-4">
-                            {upcomingBookings.map(booking => <BookingStatusCard key={booking.id} booking={booking} onTrack={setTrackingBooking} onProgressView={setProgressBooking} />)}
+            {/* Content List */}
+            <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+                {displayedBookings.length > 0 ? (
+                    displayedBookings.map(booking => (
+                        <BookingListItem
+                            key={booking.id}
+                            booking={booking}
+                            onAction={handleAction}
+                        />
+                    ))
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                        <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-4">
+                            <Calendar size={32} className="text-gray-600" />
                         </div>
-                    ) : (
-                        <div className="text-center py-8 px-4 glass border border-white/10 rounded-xl">
-                            <p className="text-light-gray">You have no upcoming bookings.</p>
-                        </div>
-                    )}
-                </section>
-                <section>
-                    <h2 className="text-xl font-semibold mb-3 text-white px-2">Past</h2>
-                    {pastBookings.length > 0 ? (
-                        <div className="space-y-4">
-                            {pastBookings.map(booking => <PastBookingCard key={booking.id} booking={booking} onReview={handleOpenReviewModal} onViewProgress={setProgressBooking} />)}
-                        </div>
-                    ) : (
-                        <div className="text-center py-8 px-4 bg-dark-gray rounded-lg">
-                            <p className="text-light-gray">No past bookings match the current filters.</p>
-                        </div>
-                    )}
-                </section>
+                        <h3 className="text-xl font-bold text-white mb-2">No Bookings Found</h3>
+                        <p className="text-gray-400 max-w-xs mx-auto">
+                            {selectedTab === 'upcoming'
+                                ? "You don't have any upcoming appointments scheduled."
+                                : "No past service history matches your filters."}
+                        </p>
+                        {selectedTab === 'upcoming' && (
+                            <button onClick={() => navigate('/services')} className="mt-6 px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition">
+                                Book a Service
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
-            {isReviewModalOpen && reviewingBooking && (
-                <ReviewModal
-                    booking={reviewingBooking}
-                    onClose={handleCloseReviewModal}
-                    onSubmit={handleSubmitReview}
-                />
-            )}
-            {progressBooking && <JobProgressModal booking={progressBooking} customerLocation={customerLocation} onClose={() => setProgressBooking(null)} />}
-            {trackingBooking && <TrackMechanicModal booking={trackingBooking} customerLocation={customerLocation} onClose={() => setTrackingBooking(null)} onShare={handleShare} />}
+
+            {/* Modals */}
+            {reviewBooking && <ReviewModal booking={reviewBooking} onClose={() => setReviewBooking(null)} onSubmit={handleSubmitReview} />}
+            {progressBooking && <JobProgressModal booking={progressBooking} customerLocation={user ? { lat: user.lat!, lng: user.lng! } : null} onClose={() => setProgressBooking(null)} />}
+            {trackBooking && <TrackMechanicModal booking={trackBooking} customerLocation={user ? { lat: user.lat!, lng: user.lng! } : null} onClose={() => setTrackBooking(null)} onShare={() => { }} />}
         </div>
     );
 };

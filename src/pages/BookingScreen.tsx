@@ -12,7 +12,7 @@ declare const L: any;
 const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, onSelect: (serviceId: string) => void }> = ({ service, isSelected, onSelect }) => (
     <div
         onClick={() => onSelect(service.id)}
-        className={`glass p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all duration-300 border-2 ${isSelected ? 'border-primary ring-2 ring-primary/30 shadow-glow-sm' : 'border-white/10 hover:border-primary/50 hover:-translate-y-1'}`}
+        className={`glass-card p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all duration-200 ${isSelected ? 'border-[1.5px] border-primary/50 ring-1 ring-primary/20' : 'border border-white/5 hover:border-primary/30 hover:-translate-y-1'}`}
     >
         <div className="text-primary flex-shrink-0" dangerouslySetInnerHTML={{ __html: service.icon }} />
         <div className="flex-grow text-left">
@@ -70,7 +70,7 @@ const MechanicAvailabilityCard: React.FC<{
     }, [bookings, mechanic.id, selectedDate]);
 
     return (
-        <div className="glass border border-white/10 rounded-xl overflow-hidden hover:border-primary/30 transition-all duration-300 shadow-lg animate-fadeIn">
+        <div className="glass-card rounded-2xl overflow-hidden hover:border-primary/30 transition-all duration-300 shadow-lg animate-fadeIn">
             {/* Top Section: Profile Info */}
             <div className="p-4 flex items-center gap-4">
                 <img src={mechanic.imageUrl} alt={mechanic.name} className="w-24 h-24 rounded-full object-cover border-4 border-primary/20" />
@@ -97,7 +97,7 @@ const MechanicAvailabilityCard: React.FC<{
             </div>
 
             {/* Bottom Section: Time Slots */}
-            <div className="p-4 bg-secondary/30 border-t border-field">
+            <div className="p-4 bg-white/5 border-t border-white/10">
                 <h4 className="text-sm font-semibold text-light-gray mb-3">Available Slots:</h4>
                 {availableTimeSlots.length > 0 ? (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
@@ -110,7 +110,7 @@ const MechanicAvailabilityCard: React.FC<{
                                     onClick={() => onSelectTimeSlot(mechanic, time)}
                                     className={`py-3 px-2 rounded-lg text-sm font-semibold transition-all duration-200 transform focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-dark-gray ${isBooked
                                         ? 'bg-black/40 text-gray-600 cursor-not-allowed line-through'
-                                        : 'bg-field text-white hover:bg-primary hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/30'
+                                        : 'glass-button text-white hover:bg-primary hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/30'
                                         }`}
                                 >
                                     {time}
@@ -501,10 +501,10 @@ const BookingScreen: React.FC = () => {
             <div className="p-6 space-y-6 flex-grow overflow-y-auto">
                 <div>
                     {user?.vehicles && user.vehicles.length > 0 ? (
-                        <div className="glass border border-white/10 p-3 rounded-xl">
-                            <label className="text-xs text-light-gray block mb-1">Your Vehicle</label>
-                            <select value={selectedVehiclePlate} onChange={e => setSelectedVehiclePlate(e.target.value)} className="w-full bg-transparent font-semibold text-white focus:outline-none">
-                                {user.vehicles.map(v => <option key={v.plateNumber} value={v.plateNumber}>{v.year} {v.make} {v.model}</option>)}
+                        <div className="glass-panel p-4 rounded-xl">
+                            <label className="text-xs text-light-gray block mb-1 uppercase tracking-wider">Your Vehicle</label>
+                            <select value={selectedVehiclePlate} onChange={e => setSelectedVehiclePlate(e.target.value)} className="w-full bg-transparent font-semibold text-white focus:outline-none border-b border-white/10 pb-2">
+                                {user.vehicles.map(v => <option key={v.plateNumber} value={v.plateNumber} className="bg-secondary text-white">{v.year} {v.make} {v.model}</option>)}
                             </select>
                         </div>
                     ) : (
@@ -528,15 +528,15 @@ const BookingScreen: React.FC = () => {
                     ))}
                 </div>
             </div>
-            <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
-                {error && <p className="text-red-400 text-center text-sm mb-2">{error}</p>}
+            <div className="p-4 glass-heavy border-t border-white/5 z-10">
+                {error && <p className="text-red-400 text-center text-sm mb-2 p-2 bg-red-500/10 rounded-lg">{error}</p>}
                 {totalPrice > 0 && (
-                    <div className="flex justify-between items-center mb-2">
+                    <div className="flex justify-between items-center mb-2 px-1">
                         <span className="text-light-gray">Total for {selectedServiceIds.size} service(s):</span>
                         <span className="font-bold text-xl text-primary">₱{totalPrice.toLocaleString()}</span>
                     </div>
                 )}
-                <button onClick={handleStep1Continue} disabled={selectedServiceIds.size === 0 || !selectedVehiclePlate} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
+                <button onClick={handleStep1Continue} disabled={selectedServiceIds.size === 0 || !selectedVehiclePlate} className="glass-button w-full font-bold py-3.5 rounded-xl transition disabled:opacity-50 flex items-center justify-center">
                     Continue
                 </button>
             </div>
@@ -556,13 +556,13 @@ const BookingScreen: React.FC = () => {
                 <div className="p-6 space-y-6 flex-grow overflow-y-auto">
                     <div>
                         <h3 className="text-lg font-semibold mb-2">Choose a Date</h3>
-                        <div className="bg-dark-gray p-4 rounded-lg">
+                        <div className="glass-panel p-4 rounded-xl">
                             <div className="flex justify-between items-center mb-4">
-                                <button onClick={() => setSelectedDate(new Date(year, month - 1))} className="text-primary">&lt;</button>
+                                <button onClick={() => setSelectedDate(new Date(year, month - 1))} className="text-primary hover:bg-white/10 p-1 rounded-full text-xl leading-none">&lt;</button>
                                 <p className="font-bold">{selectedDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</p>
-                                <button onClick={() => setSelectedDate(new Date(year, month + 1))} className="text-primary">&gt;</button>
+                                <button onClick={() => setSelectedDate(new Date(year, month + 1))} className="text-primary hover:bg-white/10 p-1 rounded-full text-xl leading-none">&gt;</button>
                             </div>
-                            <div className="grid grid-cols-7 text-center text-xs text-light-gray mb-2">{['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}</div>
+                            <div className="grid grid-cols-7 text-center text-xs text-light-gray mb-2 font-medium">{['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}</div>
                             <div className="grid grid-cols-7 text-center text-sm">
                                 {Array.from({ length: firstDay }).map((_, i) => <div key={`b-${i}`}></div>)}
                                 {Array.from({ length: daysInMonth }).map((_, dayIndex) => {
@@ -576,11 +576,11 @@ const BookingScreen: React.FC = () => {
                                             <button
                                                 onClick={() => !isPast && setSelectedDate(date)}
                                                 disabled={isPast}
-                                                className={`w-8 h-8 rounded-full transition-colors ${isPast
+                                                className={`w-9 h-9 rounded-full transition-all duration-200 flex items-center justify-center ${isPast
                                                     ? 'text-gray-600 cursor-not-allowed'
                                                     : isSelected
-                                                        ? 'bg-primary text-white ring-2 ring-primary ring-offset-2 ring-offset-dark-gray'
-                                                        : 'hover:bg-primary/20'
+                                                        ? 'bg-primary text-white shadow-lg shadow-primary/30 font-bold'
+                                                        : 'hover:bg-white/10'
                                                     }`}
                                             >
                                                 {day}
@@ -592,9 +592,9 @@ const BookingScreen: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
+                <div className="p-4 glass-heavy border-t border-white/5">
                     {error && <p className="text-red-400 text-center text-sm mb-2">{error}</p>}
-                    <button onClick={handleStep2Continue} disabled={!selectedDate} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
+                    <button onClick={handleStep2Continue} disabled={!selectedDate} className="glass-button w-full font-bold py-3.5 rounded-xl transition disabled:opacity-50">
                         Continue
                     </button>
                 </div>
@@ -629,8 +629,8 @@ const BookingScreen: React.FC = () => {
                         <div ref={mapRef} className={`h-full w-full transition-opacity ${locationStatus === 'success' ? 'opacity-100' : 'opacity-0'}`} />
                     </div>
                 </div>
-                <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
-                    <button onClick={handleStep3Continue} disabled={locationStatus !== 'success'} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition disabled:opacity-50">
+                <div className="p-4 glass-heavy border-t border-white/5">
+                    <button onClick={handleStep3Continue} disabled={locationStatus !== 'success'} className="glass-button w-full font-bold py-3.5 rounded-xl transition disabled:opacity-50">
                         Confirm Location & See Mechanics
                     </button>
                 </div>
@@ -645,24 +645,24 @@ const BookingScreen: React.FC = () => {
         return (
             <div className="p-4 space-y-4 flex-grow overflow-y-auto">
                 {selectedServices.length > 0 && (
-                    <div className="text-center text-sm text-light-gray -mt-2 mb-2 bg-field p-2 rounded-md border border-dark-gray">
+                    <div className="text-center text-sm text-light-gray -mt-2 mb-2 glass-panel p-2 rounded-md border border-white/10">
                         <p>Showing mechanics specializing in your selected services.</p>
                     </div>
                 )}
 
-                <div className="bg-field p-3 rounded-lg border border-dark-gray">
+                <div className="glass-panel p-4 rounded-xl border border-white/10">
                     <h4 className="text-sm font-semibold text-light-gray mb-3">Refine Your Search</h4>
                     <div className="space-y-3">
                         {isToday && (
-                            <div className="flex items-center gap-2 bg-dark-gray p-2 rounded-lg">
+                            <div className="flex items-center gap-2 bg-black/20 p-2 rounded-lg">
                                 <input
                                     type="checkbox"
                                     id="available-now"
                                     checked={availableNowFilter}
                                     onChange={(e) => setAvailableNowFilter(e.target.checked)}
-                                    className="w-5 h-5 text-primary bg-secondary rounded border-gray-500 focus:ring-primary"
+                                    className="w-5 h-5 text-primary bg-transparent rounded border-gray-500 focus:ring-primary"
                                 />
-                                <label htmlFor="available-now" className="text-white font-semibold">Available Now</label>
+                                <label htmlFor="available-now" className="text-white font-semibold cursor-pointer">Available Now</label>
                             </div>
                         )}
                         <div className="relative">
@@ -674,17 +674,17 @@ const BookingScreen: React.FC = () => {
                                 placeholder="Search by name..."
                                 value={mechanicSearch}
                                 onChange={(e) => setMechanicSearch(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 glass border border-white/10 rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 transition-all duration-300"
+                                className="w-full pl-10 pr-4 py-2.5 glass-input rounded-xl focus:outline-none focus:ring-1 focus:ring-primary"
                             />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                             <select
                                 value={specializationFilter}
                                 onChange={e => setSpecializationFilter(e.target.value)}
-                                className="w-full px-3 py-2 glass border border-white/10 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary/50 focus:border-primary/30 transition-all duration-300"
+                                className="w-full px-3 py-2.5 glass-input rounded-xl text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                             >
                                 {allSpecializations.map(spec => (
-                                    <option key={spec} value={spec} className="capitalize">
+                                    <option key={spec} value={spec} className="bg-secondary capitalize">
                                         {spec === 'all' ? 'Any Specialization' : spec}
                                     </option>
                                 ))}
@@ -692,11 +692,11 @@ const BookingScreen: React.FC = () => {
                             <select
                                 value={sortOption}
                                 onChange={e => setSortOption(e.target.value as any)}
-                                className="w-full px-3 py-2 bg-dark-gray border border-secondary rounded-lg text-white text-sm"
+                                className="w-full px-3 py-2.5 glass-input rounded-xl text-white text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                             >
-                                <option value="rating">Sort by: Rating (High to Low)</option>
-                                <option value="jobs">Sort by: Jobs Completed</option>
-                                <option value="name">Sort by: Name (A-Z)</option>
+                                <option value="rating" className="bg-secondary">Sort by: Rating</option>
+                                <option value="jobs" className="bg-secondary">Sort by: Jobs</option>
+                                <option value="name" className="bg-secondary">Sort by: Name</option>
                             </select>
                         </div>
                     </div>
@@ -733,10 +733,10 @@ const BookingScreen: React.FC = () => {
         return (
             <>
                 <div className="p-6 space-y-4 flex-grow overflow-y-auto">
-                    <div className="bg-dark-gray p-4 rounded-lg">
+                    <div className="glass-panel p-4 rounded-xl">
                         <h3 className="font-bold text-primary mb-2">Service Details</h3>
                         {selectedServices.map(service => (
-                            <div key={service.id} className="flex justify-between items-center py-1">
+                            <div key={service.id} className="flex justify-between items-center py-1 border-b border-white/5 last:border-0">
                                 <p className="font-semibold text-white">{service.name}</p>
                                 {service.price > 0 ? (
                                     <p className="font-semibold text-white">₱{service.price.toLocaleString()}</p>
@@ -745,23 +745,23 @@ const BookingScreen: React.FC = () => {
                                 )}
                             </div>
                         ))}
-                        <div className="flex justify-between items-center pt-2 mt-2 border-t border-field">
+                        <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/10">
                             <p className="font-bold text-primary">Total</p>
                             <p className="font-bold text-primary text-lg">{totalPrice > 0 ? `₱${totalPrice.toLocaleString()}` : 'For Quotation'}</p>
                         </div>
                         <p className="text-sm text-light-gray mt-3">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.plateNumber})</p>
                     </div>
-                    <div className="bg-dark-gray p-4 rounded-lg">
+                    <div className="glass-panel p-4 rounded-xl">
                         <h3 className="font-bold text-primary mb-2">Schedule</h3>
                         <p className="font-semibold text-white">{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
                         <p className="text-sm text-light-gray">{selectedTime}</p>
                     </div>
-                    <div className="bg-dark-gray p-4 rounded-lg">
+                    <div className="glass-panel p-4 rounded-xl">
                         <h3 className="font-bold text-primary mb-2">Your Mechanic</h3>
                         <p className="font-semibold text-white">{selectedMechanic.name}</p>
                         <p className="text-sm text-yellow-400">⭐ {selectedMechanic.rating.toFixed(1)} ({selectedMechanic.reviews} jobs)</p>
                     </div>
-                    <div className="bg-dark-gray p-4 rounded-lg">
+                    <div className="glass-panel p-4 rounded-xl">
                         <h3 className="font-bold text-primary mb-2">Notes for Mechanic</h3>
                         <p className="text-xs text-light-gray mb-2">Please provide any specific details about the issue or instructions for the mechanic.</p>
                         <textarea
@@ -769,13 +769,13 @@ const BookingScreen: React.FC = () => {
                             onChange={(e) => setNotes(e.target.value)}
                             placeholder="e.g., 'There's a rattling noise...' or 'Doorbell is broken, please call.'"
                             rows={3}
-                            className="w-full p-2 bg-field border border-secondary rounded-md text-sm placeholder-light-gray focus:ring-primary focus:border-primary"
+                            className="w-full p-3 glass-input rounded-xl text-sm placeholder-light-gray focus:ring-primary focus:border-primary focus:outline-none"
                         />
                     </div>
                 </div>
-                <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
-                    {error && <p className="text-red-400 text-center text-sm mb-2">{error}</p>}
-                    <button onClick={handleBooking} disabled={isBooking} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition flex items-center justify-center disabled:opacity-50">
+                <div className="p-4 glass-heavy border-t border-white/5">
+                    {error && <p className="text-red-400 text-center text-sm mb-2 p-2 bg-red-500/10 rounded-lg">{error}</p>}
+                    <button onClick={handleBooking} disabled={isBooking} className="glass-button w-full font-bold py-3.5 rounded-xl transition flex items-center justify-center disabled:opacity-50">
                         {isBooking ? <Spinner size="sm" /> : isQuoteRequest ? 'Confirm & Request Quote' : 'Confirm & Book Now'}
                     </button>
                 </div>
@@ -786,7 +786,7 @@ const BookingScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <div className="relative flex items-center justify-center p-4 bg-[#1D1D1D] border-b border-dark-gray flex-shrink-0">
+            <div className="relative flex items-center justify-center p-4 glass-heavy border-b border-white/5 flex-shrink-0 z-10">
                 <button onClick={handleBack} className="absolute left-4 text-primary">
                     <ChevronLeft className="h-6 w-6" />
                 </button>

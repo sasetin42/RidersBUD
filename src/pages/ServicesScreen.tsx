@@ -5,14 +5,15 @@ import Header from '../components/Header';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { useWishlist } from '../context/WishlistContext';
-import { Heart, Star, Search, X } from 'lucide-react';
+import { Heart, Star, Search, X, Filter } from 'lucide-react';
 
 const ServiceCard: React.FC<{
     service: Service;
     rating: number;
     reviewCount: number;
     onBook: (service: Service) => void;
-}> = React.memo(({ service, rating, reviewCount, onBook }) => {
+    index: number;
+}> = React.memo(({ service, rating, reviewCount, onBook, index }) => {
     const { addToWishlist, removeFromWishlist, isInWishlist } = useWishlist();
     const isWishlisted = isInWishlist(service.id);
 
@@ -33,67 +34,83 @@ const ServiceCard: React.FC<{
     return (
         <div
             onClick={() => onBook(service)}
-            className="glass border border-white/10 rounded-xl overflow-hidden flex flex-col group shadow-lg hover:shadow-glow-sm transition-all duration-300 hover:-translate-y-2 cursor-pointer"
-            aria-label={`Service card for ${service.name}`}
+            className="group relative rounded-2xl overflow-hidden bg-gradient-to-br from-[#2A2A2A] to-[#1A1A1A] border border-white/5 hover:border-primary/50 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/10 animate-fadeIn cursor-pointer"
+            style={{ animationDelay: `${index * 50}ms` }}
         >
-            {/* Image Section */}
-            <div className="relative">
-                <img src={service.imageUrl} alt="" className="w-full h-40 object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+            {/* Image & Badges */}
+            <div className="relative h-40 overflow-hidden">
+                <img
+                    src={service.imageUrl}
+                    alt={service.name}
+                    className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#1A1A1A] via-transparent to-transparent opacity-90" />
+
                 <button
                     onClick={handleToggleWishlist}
-                    className="absolute top-3 right-3 glass-light rounded-full p-2 transition-all duration-300 hover:scale-110 hover:shadow-glow-sm active:scale-95 z-10"
-                    aria-label="Toggle Wishlist"
+                    className="absolute top-3 right-3 p-2 rounded-full glass-heavy text-white hover:text-red-500 hover:bg-white/10 transition-all active:scale-95"
                 >
-                    <Heart className={`h-5 w-5 transition-colors ${isWishlisted ? 'text-red-500 fill-current' : 'text-white'}`} />
+                    <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-red-500 text-red-500' : ''}`} />
                 </button>
-                <div className="absolute bottom-3 left-3">
-                    <span className="glass-light text-white text-[10px] leading-[14px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-white/20">
-                        <div className="w-4 h-4 flex items-center justify-center transition-transform duration-300 group-hover:scale-110" dangerouslySetInnerHTML={{ __html: service.icon }} />
+
+                <div className="absolute top-3 left-3">
+                    <span className="px-2.5 py-1 rounded-lg bg-black/40 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white flex items-center gap-1.5 uppercase tracking-wide">
+                        <div className="w-3.5 h-3.5 text-primary" dangerouslySetInnerHTML={{ __html: service.icon }} />
                         {service.category}
                     </span>
                 </div>
             </div>
 
-            {/* Content Section */}
-            <div className="p-4 flex-grow flex flex-col">
-                <div>
-                    <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-[14px] leading-[18px] text-white">{service.name}</h3>
-                        {reviewCount > 0 && (
-                            <div className="flex items-center gap-1 text-sm text-yellow-400 flex-shrink-0">
-                                <Star className="h-4 w-4 fill-current" />
-                                <span className="font-bold">{rating.toFixed(1)}</span>
-                                <span className="text-light-gray text-xs">({reviewCount})</span>
-                            </div>
-                        )}
-                    </div>
-
-                    <p className="text-[10px] leading-[15px] text-light-gray mt-2 line-clamp-2">
-                        {service.description}
-                    </p>
+            {/* Content */}
+            <div className="p-4 pt-2">
+                <div className="flex justify-between items-start gap-2 mb-2">
+                    <h3 className="text-white font-bold text-[15px] leading-tight line-clamp-2 group-hover:text-primary transition-colors">
+                        {service.name}
+                    </h3>
                 </div>
 
-                <div className="mt-auto pt-4 border-t border-white/10">
-                    <div className="flex justify-between items-baseline mb-3">
-                        <p className="font-bold text-primary text-[15px]">
-                            {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Get Quote'}
+                <div className="flex items-center gap-2 mb-3">
+                    {reviewCount > 0 ? (
+                        <div className="flex items-center gap-1 bg-yellow-400/10 px-1.5 py-0.5 rounded border border-yellow-400/20">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            <span className="text-xs font-bold text-yellow-400">{rating.toFixed(1)}</span>
+                            <span className="text-[10px] text-gray-400">({reviewCount})</span>
+                        </div>
+                    ) : (
+                        <span className="text-[10px] text-gray-500 italic">New Service</span>
+                    )}
+                </div>
+
+                <p className="text-[11px] text-gray-400 line-clamp-2 mb-4 h-[33px]">
+                    {service.description}
+                </p>
+
+                <div className="flex items-center justify-between mt-auto">
+                    <div>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Est. {service.estimatedTime}</p>
+                        <p className="text-lg font-extrabold text-white">
+                            {service.price > 0 ? (
+                                <>
+                                    <span className="text-primary">₱</span>
+                                    {service.price.toLocaleString()}
+                                </>
+                            ) : (
+                                <span className="text-sm text-primary">Get Quote</span>
+                            )}
                         </p>
-                        <p className="text-[8px] leading-[12px] text-light-gray">Est. {service.estimatedTime}</p>
                     </div>
 
                     <button
                         onClick={handleBookNow}
-                        className="w-full gradient-primary text-white font-medium py-2 px-3 rounded-lg text-sm hover:shadow-glow transition-all duration-300 hover:scale-[1.02] active:scale-95"
+                        className="bg-primary hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 transition-all active:scale-95"
                     >
-                        {service.price > 0 ? 'Book Now' : 'Get Quote'}
+                        Book
                     </button>
                 </div>
             </div>
         </div>
     );
 });
-
 
 const ServicesScreen: React.FC = () => {
     const { db, loading } = useDatabase();
@@ -117,18 +134,16 @@ const ServicesScreen: React.FC = () => {
 
         const availableMechanics = db.mechanics.filter(mechanic => {
             const daySchedule = mechanic.availability?.[todayDayOfWeek];
-            if (mechanic.status !== 'Active' || !daySchedule?.isAvailable) {
-                return false;
-            }
+            if (mechanic.status !== 'Active' || !daySchedule?.isAvailable) return false;
+
             if (mechanic.unavailableDates?.some(d => {
                 const start = new Date(d.startDate.replace(/-/g, '/'));
                 start.setHours(0, 0, 0, 0);
                 const end = new Date(d.endDate.replace(/-/g, '/'));
                 end.setHours(0, 0, 0, 0);
                 return today >= start && today <= end;
-            })) {
-                return false;
-            }
+            })) return false;
+
             return true;
         });
 
@@ -146,9 +161,7 @@ const ServicesScreen: React.FC = () => {
         db.mechanics.forEach(mechanic => {
             mechanic.specializations.forEach(spec => {
                 const specLower = spec.toLowerCase();
-                if (!categoryToMechanics.has(specLower)) {
-                    categoryToMechanics.set(specLower, []);
-                }
+                if (!categoryToMechanics.has(specLower)) categoryToMechanics.set(specLower, []);
                 categoryToMechanics.get(specLower)!.push(mechanic);
             });
         });
@@ -156,15 +169,9 @@ const ServicesScreen: React.FC = () => {
         return new Map(db.services.map(service => {
             const serviceNameLower = service.name.toLowerCase();
             const serviceCategoryLower = service.category.toLowerCase();
+            const relevantMechanics = [...new Set([...(categoryToMechanics.get(serviceNameLower) || []), ...(categoryToMechanics.get(serviceCategoryLower) || [])])];
 
-            const nameMechanics = categoryToMechanics.get(serviceNameLower) || [];
-            const categoryMechanics = categoryToMechanics.get(serviceCategoryLower) || [];
-
-            const relevantMechanics = [...new Set([...nameMechanics, ...categoryMechanics])];
-
-            if (relevantMechanics.length === 0) {
-                return [service.id, { avgRating: 0, totalReviews: 0 }];
-            }
+            if (relevantMechanics.length === 0) return [service.id, { avgRating: 0, totalReviews: 0 }];
 
             const totalReviews = relevantMechanics.reduce((sum, m) => sum + m.reviews, 0);
             const weightedTotalRating = relevantMechanics.reduce((sum, m) => sum + (m.rating * m.reviews), 0);
@@ -174,34 +181,26 @@ const ServicesScreen: React.FC = () => {
         }));
     }, [db]);
 
-
     const displayedServices = useMemo(() => {
         const lowercasedQuery = searchQuery.toLowerCase();
-
         let filtered = services.filter(service => {
             const searchMatch = searchQuery
                 ? service.name.toLowerCase().includes(lowercasedQuery) || service.description.toLowerCase().includes(lowercasedQuery)
                 : true;
-
             const categoryMatch = filterCategory !== 'all' ? service.category === filterCategory : true;
-
             const priceMatch = priceRange === 'all' ? true : (() => {
-                if (service.price === 0) return true; // Always include "Quote Required"
+                if (service.price === 0) return true;
                 const [min, max] = priceRange.split('-').map(Number);
                 if (max) return service.price >= min && service.price <= max;
                 return service.price >= min;
             })();
-
             const availabilityMatch = !availabilityFilter ? true : (
                 availableMechanicSpecializations.has(service.category.toLowerCase()) ||
                 availableMechanicSpecializations.has(service.name.toLowerCase())
             );
-
             return searchMatch && categoryMatch && priceMatch && availabilityMatch;
         });
-
         filtered.sort((a, b) => a.name.localeCompare(b.name));
-
         return filtered;
     }, [searchQuery, filterCategory, priceRange, services, availabilityFilter, availableMechanicSpecializations]);
 
@@ -210,65 +209,74 @@ const ServicesScreen: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col bg-secondary">
+        <div className="flex flex-col min-h-screen bg-secondary pb-20">
             <Header title="All Services" />
 
-            <div className="p-4 space-y-4 flex-shrink-0">
-                <div className="relative">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                        <Search className="h-5 w-5 text-light-gray" />
-                    </span>
-                    <input
-                        type="text"
-                        placeholder="Search for any service..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-10 py-2 glass border border-white/10 rounded-full text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 transition-all duration-300"
-                        aria-label="Search services"
-                    />
-                    {searchQuery && (
-                        <button
-                            onClick={() => setSearchQuery('')}
-                            className="absolute inset-y-0 right-0 flex items-center pr-3"
-                            aria-label="Clear search"
-                        >
-                            <X className="h-5 w-5 text-light-gray" />
-                        </button>
-                    )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                    <select
-                        value={priceRange}
-                        onChange={e => setPriceRange(e.target.value)}
-                        className="w-full px-4 py-2 glass border border-white/10 rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/30 h-[42px] transition-all duration-300"
-                    >
-                        <option value="all">All Prices</option>
-                        <option value="0-1000">Under ₱1,000</option>
-                        <option value="1000-2500">₱1,000 - ₱2,500</option>
-                        <option value="2500-5000">₱2,500 - ₱5,000</option>
-                        <option value="5000">Over ₱5,000</option>
-                    </select>
-                    <div className="flex items-center glass rounded-lg px-4 h-[42px] border border-white/10 hover:border-primary/30 transition-all duration-300">
+            <div className="px-4 py-4 space-y-5 bg-secondary/95 backdrop-blur-sm border-b border-white/5">
+                {/* Search Bar */}
+                <div className="relative group">
+                    <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-orange-600/20 rounded-xl blur opacity-0 group-hover:opacity-100 transition duration-500" />
+                    <div className="relative flex items-center bg-[#252525] border border-white/10 rounded-xl focus-within:border-primary/50 transition-colors">
+                        <Search className="ml-4 w-5 h-5 text-gray-400 group-focus-within:text-primary transition-colors" />
                         <input
-                            id="availability-filter"
-                            type="checkbox"
-                            checked={availabilityFilter}
-                            onChange={e => setAvailabilityFilter(e.target.checked)}
-                            className="h-4 w-4 rounded border-gray-500 bg-secondary text-primary focus:ring-primary focus:ring-offset-field"
+                            type="text"
+                            placeholder="Search for any service..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-transparent text-white p-3.5 placeholder-gray-500 focus:outline-none"
                         />
-                        <label htmlFor="availability-filter" className="ml-3 text-sm font-medium text-white select-none cursor-pointer">Available Today</label>
+                        {searchQuery && (
+                            <button onClick={() => setSearchQuery('')} className="mr-4 text-gray-400 hover:text-white">
+                                <X className="w-5 h-5" />
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex space-x-3 overflow-x-auto scrollbar-hide -mx-4 px-4">
+                {/* Filters Row */}
+                <div className="flex items-center gap-3">
+                    {/* Price Dropdown */}
+                    <div className="relative flex-1">
+                        <select
+                            value={priceRange}
+                            onChange={e => setPriceRange(e.target.value)}
+                            className="w-full appearance-none bg-[#2A2A2A] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-primary/50"
+                        >
+                            <option value="all">All Prices</option>
+                            <option value="0-1000">Under ₱1,000</option>
+                            <option value="1000-2500">₱1,000 - ₱2,500</option>
+                            <option value="2500-5000">₱2,500 - ₱5,000</option>
+                            <option value="5000">Over ₱5,000</option>
+                        </select>
+                        <Filter className="absolute right-3.5 top-3.5 w-4 h-4 text-gray-400 pointer-events-none" />
+                    </div>
+
+                    {/* Availability Toggle */}
+                    <div
+                        onClick={() => setAvailabilityFilter(!availabilityFilter)}
+                        className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all duration-300 ${availabilityFilter
+                            ? 'bg-primary/10 border-primary/50'
+                            : 'bg-[#2A2A2A] border-white/10 hover:bg-[#333]'
+                            }`}
+                    >
+                        <span className={`text-sm font-medium transition-colors ${availabilityFilter ? 'text-primary' : 'text-gray-400'}`}>
+                            Available Today
+                        </span>
+                        <div className={`w-9 h-5 rounded-full relative transition-colors ${availabilityFilter ? 'bg-primary' : 'bg-gray-600'}`}>
+                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${availabilityFilter ? 'left-5' : 'left-1'}`} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Categories */}
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4">
                     {serviceCategories.map(category => (
                         <button
                             key={category}
                             onClick={() => setFilterCategory(category)}
-                            className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${filterCategory === category
-                                ? 'gradient-primary text-white shadow-glow-sm scale-105'
-                                : 'glass-light text-light-gray hover:text-white hover:border-primary/30 hover:shadow-glow-sm'
+                            className={`flex-shrink-0 px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wide transition-all duration-300 border ${filterCategory === category
+                                ? 'bg-gradient-to-r from-primary to-orange-600 text-white border-transparent shadow-lg shadow-orange-500/30 scale-105'
+                                : 'bg-[#2A2A2A] text-gray-400 border-white/5 hover:border-white/20 hover:text-white'
                                 }`}
                         >
                             {category === 'all' ? 'All' : category}
@@ -277,22 +285,42 @@ const ServicesScreen: React.FC = () => {
                 </div>
             </div>
 
+            {/* Service Grid */}
             {loading ? (
-                <div className="flex-grow flex items-center justify-center p-4">
+                <div className="flex-grow flex items-center justify-center pt-20">
                     <Spinner size="lg" />
                 </div>
             ) : (
-                <div className="p-4 pt-0 grid grid-cols-2 gap-4">
+                <div className="px-4 grid grid-cols-2 gap-4 pb-4">
                     {displayedServices.length > 0 ? (
-                        displayedServices.map(service => {
+                        displayedServices.map((service, index) => {
                             const ratings = serviceRatings.get(service.id) || { avgRating: 0, totalReviews: 0 };
-                            return <ServiceCard key={service.id} service={service} rating={ratings.avgRating} reviewCount={ratings.totalReviews} onBook={handleBook} />;
+                            return (
+                                <ServiceCard
+                                    key={service.id}
+                                    service={service}
+                                    rating={ratings.avgRating}
+                                    reviewCount={ratings.totalReviews}
+                                    onBook={handleBook}
+                                    index={index}
+                                />
+                            );
                         })
                     ) : (
-                        <div className="col-span-2 flex flex-col items-center justify-center text-center text-light-gray p-8">
-                            <Search className="h-20 w-20 text-gray-500 mb-4" />
-                            <h3 className="text-xl font-semibold text-white">No Results Found</h3>
-                            <p className="mt-2 text-sm">Try checking your spelling or adjusting your filters.</p>
+                        <div className="col-span-2 flex flex-col items-center justify-center text-center py-20 animate-fadeIn">
+                            <div className="w-20 h-20 bg-[#2A2A2A] rounded-full flex items-center justify-center mb-4">
+                                <Search className="w-8 h-8 text-gray-500" />
+                            </div>
+                            <h3 className="text-xl font-bold text-white mb-2">No Services Found</h3>
+                            <p className="text-gray-400 text-sm max-w-xs mx-auto">
+                                We couldn't find any services matching your search or filters. Try adjusting them.
+                            </p>
+                            <button
+                                onClick={() => { setSearchQuery(''); setFilterCategory('all'); setPriceRange('all'); setAvailabilityFilter(false); }}
+                                className="mt-6 px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm font-medium text-primary transition-colors"
+                            >
+                                Clear All Filters
+                            </button>
                         </div>
                     )}
                 </div>

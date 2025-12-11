@@ -34,26 +34,26 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, bookings, onClose
     };
 
     return (
-        <Modal 
+        <Modal
             title={`Jobs for ${date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`}
-            isOpen={true} 
+            isOpen={true}
             onClose={onClose}
         >
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                 {bookings.map(booking => (
-                    <button 
+                    <button
                         key={booking.id}
                         onClick={() => handleItemClick(booking)}
-                        className={`w-full text-left bg-field p-3 rounded-lg flex justify-between items-center ${!isPublic ? 'cursor-pointer hover:bg-gray-600' : 'cursor-default'}`}
+                        className={`w-full text-left bg-[#252525] p-3 rounded-lg flex justify-between items-center border border-white/5 transition ${!isPublic ? 'cursor-pointer hover:bg-[#333]' : 'cursor-default'}`}
                     >
                         <div>
-                            <p className="font-semibold text-primary">{booking.time}</p>
+                            <p className="font-semibold text-white">{booking.time}</p>
                             {isPublic ? (
-                                <p className="text-sm font-medium text-white">Booked Slot</p>
+                                <p className="text-sm font-medium text-gray-400">Booked Slot</p>
                             ) : (
                                 <>
-                                    <p className="text-sm font-medium text-white">{booking.service.name}</p>
-                                    <p className="text-xs text-light-gray">{booking.customerName}</p>
+                                    <p className="text-sm font-medium text-gray-300">{booking.service.name}</p>
+                                    <p className="text-xs text-gray-500">{booking.customerName}</p>
                                 </>
                             )}
                         </div>
@@ -104,10 +104,10 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
         }
 
         return (
-            <div className="flex justify-between items-center mb-4">
-                <button onClick={() => changeDate(-1)} className="p-2 rounded-full hover:bg-field">&lt;</button>
+            <div className="flex justify-between items-center mb-4 text-white">
+                <button onClick={() => changeDate(-1)} className="p-2 rounded-full hover:bg-[#252525] transition">&lt;</button>
                 <h3 className="font-bold text-lg">{title}</h3>
-                <button onClick={() => changeDate(1)} className="p-2 rounded-full hover:bg-field">&gt;</button>
+                <button onClick={() => changeDate(1)} className="p-2 rounded-full hover:bg-[#252525] transition">&gt;</button>
             </div>
         );
     };
@@ -118,7 +118,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
         const firstDay = new Date(year, month, 1).getDay();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         const today = new Date();
-        
+
         const statusDotColors: Record<BookingStatus, string> = {
             Completed: 'bg-green-500',
             Upcoming: 'bg-blue-500',
@@ -130,7 +130,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
             'Reschedule Requested': 'bg-orange-500',
         };
 
-        const days = Array.from({ length: firstDay }, (_, i) => <div key={`empty-${i}`} className="border-r border-t border-field"></div>);
+        const days = Array.from({ length: firstDay }, (_, i) => <div key={`empty-${i}`} className="border-r border-t border-white/5 min-h-[80px]"></div>);
 
         for (let day = 1; day <= daysInMonth; day++) {
             const date = new Date(year, month, day);
@@ -139,21 +139,21 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
 
             const dayBookings = bookings.filter(b => b.date === dateStr);
             const isTimeOff = unavailableDates.some(d => {
-                const start = new Date(d.startDate.replace(/-/g,'/'));
-                start.setHours(0,0,0,0);
-                const end = new Date(d.endDate.replace(/-/g,'/'));
-                end.setHours(0,0,0,0);
+                const start = new Date(d.startDate.replace(/-/g, '/'));
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(d.endDate.replace(/-/g, '/'));
+                end.setHours(0, 0, 0, 0);
                 return date >= start && date <= end;
             });
-            
+
             days.push(
-                <button 
-                    key={day} 
+                <button
+                    key={day}
                     disabled={dayBookings.length === 0}
                     onClick={() => dayBookings.length > 0 && setViewingBookings({ date, bookings: dayBookings })}
-                    className={`p-1.5 border-r border-t border-field min-h-[80px] text-left align-top ${isTimeOff ? 'bg-red-900/30' : ''} ${dayBookings.length > 0 ? 'cursor-pointer hover:bg-field' : 'cursor-default'}`}
+                    className={`p-1.5 border-r border-t border-white/5 min-h-[80px] text-left align-top transition ${isTimeOff ? 'bg-red-900/20' : ''} ${dayBookings.length > 0 ? 'cursor-pointer hover:bg-[#252525]' : 'cursor-default'}`}
                 >
-                    <span className={`text-xs ${isToday ? 'bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center font-bold' : ''}`}>{day}</span>
+                    <span className={`text-xs w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-[#EA580C] text-white font-bold' : 'text-gray-400'}`}>{day}</span>
                     {dayBookings.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
                             {dayBookings.slice(0, 4).map(b => (
@@ -167,59 +167,59 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
 
         return (
             <>
-                <div className="grid grid-cols-7 text-center text-xs text-light-gray font-semibold mb-1">
+                <div className="grid grid-cols-7 text-center text-xs text-gray-500 font-semibold mb-2">
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <div key={d}>{d}</div>)}
                 </div>
-                <div className="grid grid-cols-7 border-l border-b border-field">{days}</div>
+                <div className="grid grid-cols-7 border-l border-b border-white/5 rounded-lg overflow-hidden">{days}</div>
             </>
         );
     };
 
     const renderDayView = () => {
         const dateStr = currentDate.toISOString().split('T')[0];
-        const dayBookings = bookings.filter(b => b.date === dateStr).sort((a,b) => a.time.localeCompare(b.time));
+        const dayBookings = bookings.filter(b => b.date === dateStr).sort((a, b) => a.time.localeCompare(b.time));
         const isTimeOff = unavailableDates.some(d => {
-            const start = new Date(d.startDate.replace(/-/g,'/'));
-            start.setHours(0,0,0,0);
-            const end = new Date(d.endDate.replace(/-/g,'/'));
-            end.setHours(0,0,0,0);
+            const start = new Date(d.startDate.replace(/-/g, '/'));
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(d.endDate.replace(/-/g, '/'));
+            end.setHours(0, 0, 0, 0);
             return currentDate >= start && currentDate <= end;
         });
 
         if (isTimeOff) {
-            return <div className="text-center p-8 bg-red-900/20 rounded-md">You have scheduled this day off.</div>
+            return <div className="text-center p-8 bg-red-900/20 rounded-md text-red-300">You have scheduled this day off.</div>
         }
 
         return (
             <div className="space-y-2">
                 {dayBookings.length > 0 ? dayBookings.map(b => (
-                     <div key={b.id} onClick={() => setViewingBookings({ date: currentDate, bookings: dayBookings })} className="bg-primary/20 p-3 rounded-lg flex justify-between items-center cursor-pointer hover:bg-primary/40">
+                    <div key={b.id} onClick={() => setViewingBookings({ date: currentDate, bookings: dayBookings })} className="bg-[#252525] p-3 rounded-lg flex justify-between items-center cursor-pointer hover:bg-[#333] border border-white/5">
                         <div>
-                            <p className="font-semibold text-primary">{b.time}</p>
-                            <p className="text-sm font-medium">{b.service.name}</p>
-                            <p className="text-xs text-light-gray">{b.customerName}</p>
+                            <p className="font-semibold text-white">{b.time}</p>
+                            <p className="text-sm font-medium text-gray-300">{b.service.name}</p>
+                            <p className="text-xs text-gray-500">{b.customerName}</p>
                         </div>
-                         <span className="text-xs font-semibold bg-primary/50 px-2 py-1 rounded-full">{b.status}</span>
+                        <span className="text-xs font-semibold bg-[#EA580C]/20 text-[#EA580C] px-2 py-1 rounded-full">{b.status}</span>
                     </div>
-                )) : <p className="text-center text-light-gray p-8">No jobs scheduled for this day.</p>}
+                )) : <p className="text-center text-gray-500 p-8">No jobs scheduled for this day.</p>}
             </div>
         )
     }
 
     return (
-        <div className="bg-dark-gray p-4 rounded-lg">
+        <div className="w-full">
             <div className="flex justify-between items-center mb-4">
                 {renderHeader()}
-                <div className="flex p-1 bg-field rounded-full text-xs">
-                    <button onClick={() => setView('day')} className={`px-3 py-1 rounded-full ${view === 'day' ? 'bg-primary' : ''}`}>Day</button>
-                    <button onClick={() => setView('week')} className={`px-3 py-1 rounded-full ${view === 'week' ? 'bg-primary' : ''}`}>Week</button>
-                    <button onClick={() => setView('month')} className={`px-3 py-1 rounded-full ${view === 'month' ? 'bg-primary' : ''}`}>Month</button>
+                <div className="flex p-1 bg-[#252525] rounded-full text-xs border border-white/5">
+                    <button onClick={() => setView('day')} className={`px-3 py-1 rounded-full transition ${view === 'day' ? 'bg-[#EA580C] text-white font-bold' : 'text-gray-400 hover:text-white'}`}>Day</button>
+                    <button onClick={() => setView('week')} className={`px-3 py-1 rounded-full transition ${view === 'week' ? 'bg-[#EA580C] text-white font-bold' : 'text-gray-400 hover:text-white'}`}>Week</button>
+                    <button onClick={() => setView('month')} className={`px-3 py-1 rounded-full transition ${view === 'month' ? 'bg-[#EA580C] text-white font-bold' : 'text-gray-400 hover:text-white'}`}>Month</button>
                 </div>
             </div>
             {view === 'month' && renderMonthView()}
             {view === 'day' && renderDayView()}
-            {view === 'week' && <p className="text-center text-light-gray py-8">Weekly view is coming soon!</p>}
-            
+            {view === 'week' && <p className="text-center text-gray-500 py-8 italic">Weekly view is coming soon!</p>}
+
             {viewingBookings && (
                 <DayDetailModal
                     date={viewingBookings.date}

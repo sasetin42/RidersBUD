@@ -1,9 +1,10 @@
 
+
 // This file contains all the type definitions for the application.
 
 export interface Notification {
     id: string;
-    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job';
+    type: 'booking' | 'order' | 'reminder' | 'chat' | 'general' | 'job' | 'success' | 'error';
     title: string;
     message: string;
     timestamp: number;
@@ -33,6 +34,7 @@ export interface Part {
     category: string;
     sku: string;
     stock: number;
+    brand: string;
 }
 
 export type Product = Service | Part;
@@ -104,7 +106,7 @@ export interface Vehicle {
     model: string;
     year: number;
     plateNumber: string;
-    imageUrl: string;
+    imageUrls: string[];
     isPrimary?: boolean;
     vin?: string;
     mileage?: number;
@@ -132,6 +134,7 @@ export interface Booking {
     rescheduleDetails?: { newDate: string; newTime: string; reason: string };
     isReviewed?: boolean;
     isPaid?: boolean;
+    eta?: number; // Estimated time of arrival in minutes
 }
 
 export interface Customer {
@@ -145,6 +148,7 @@ export interface Customer {
     lat?: number;
     lng?: number;
     favoriteMechanicIds?: string[];
+    subscribedMechanicIds?: string[];
 }
 
 export type OrderStatus = 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
@@ -192,67 +196,83 @@ export interface FAQCategory {
     items: FAQItem[];
 }
 
-export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'services' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings';
-
-export type PermissionLevel = 'none' | 'view' | 'edit';
-
-export type RoleName = 'Super Admin' | 'Admin' | 'Manager' | 'Support';
-
-export interface Role {
-    name: string;
-    description: string;
-    isEditable: boolean;
-    defaultPermissions: Partial<Record<AdminModule, PermissionLevel>>;
-}
-
-export interface AdminUser {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    avatar?: string;
-    lastLogin?: string;
-}
-
 export interface Settings {
     appName: string;
     contactEmail: string;
     contactPhone: string;
     address: string;
+    bookingStartTime: string;
+    bookingEndTime: string;
+    bookingSlotDuration: number;
+    maxBookingsPerSlot: number;
+    emailOnNewBooking: boolean;
+    emailOnCancellation: boolean;
+    appLogoUrl: string;
+    appTagline: string;
+    virtualMechanicName: string;
+    virtualMechanicImageUrl: string;
+    virtualMechanicSystemInstruction?: string;
+    mechanicMarkerUrl: string;
+    googleMapsApiKey?: string;
+    adminPanelTitle: string;
+    adminSidebarLogoUrl: string;
+    serviceCategories: string[];
+    partCategories: string[];
+    minimumPayout: number;
+    maximumPayout: number;
+    payoutSchedule: 'Manual' | 'Weekly' | 'Bi-weekly';
+
+    // Enhanced General Information
+    supportEmail?: string;
+    businessHoursDisplay?: string;
+    timezone?: string;
+    currency?: string;
+    language?: string;
+
+    // Social Links
+    socialLinks: {
+        facebook: string;
+        twitter: string;
+        instagram: string;
+        website: string;
+    };
+
+    // Booking Configuration
+    bookingBufferTime: number; // Minutes
+    maxAdvanceBookingDays: number;
+    cancellationPolicyWindow: number; // Hours
+    autoAssignMechanic?: boolean;
+    emergencyBookingEnabled?: boolean;
+    weekendBookingEnabled?: boolean;
+    holidayDates?: string[]; // Array of dates in YYYY-MM-DD format
+    minimumBookingNotice?: number; // Hours
 
     // Branding
-    appLogoUrl?: string;
-    adminSidebarLogoUrl?: string;
-    appTagline?: string;
-    adminPanelTitle?: string; // Added to match previous interface
+    brandingAssets: {
+        splashLogoUrl: string;
+        customerAuthLogoUrl: string;
+        mechanicAuthLogoUrl: string;
+    };
+}
 
-    // Booking
-    bookingStartTime: string;
-    bookingEndTime?: string;
-    bookingSlotDuration?: number;
-    maxBookingsPerSlot?: number;
-    emailOnNewBooking?: boolean;
-    emailOnCancellation?: boolean;
-    bookingBufferTime?: number;
-    advanceBookingDays?: number;
-    cancellationPolicy?: string;
+export type PermissionLevel = 'none' | 'view' | 'edit';
+export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'catalog' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings' | 'orders';
 
-    // AI Assistant
-    virtualMechanicName?: string;
-    virtualMechanicImageUrl?: string;
-    virtualMechanicSystemInstruction?: string;
+export type RoleName = 'Super Admin' | 'Content Manager' | 'Viewer';
 
-    // Map
-    mechanicMarkerUrl?: string;
-    googleMapsApiKey?: string;
+export interface Role {
+    name: RoleName | string; // Allow string for custom roles
+    isEditable: boolean;
+    description: string;
+    defaultPermissions: Partial<Record<AdminModule, PermissionLevel>>;
+}
 
-    // Roles & Permissions
-    role?: RoleName | string;
-    permissions?: Partial<Record<AdminModule, PermissionLevel>>;
-
-    // Categories
-    serviceCategories?: string[];
-    partCategories?: string[];
+export interface AdminUser {
+    id: string;
+    email: string;
+    password: string;
+    role: RoleName | string;
+    permissions: Partial<Record<AdminModule, PermissionLevel>>;
 }
 
 export type TaskPriority = 'High' | 'Medium' | 'Low';
@@ -265,6 +285,7 @@ export interface Task {
     dueDate: string;
     isComplete: boolean;
     priority: TaskPriority;
+    completionDate?: string;
 }
 
 export interface Reminder {
@@ -282,13 +303,14 @@ export interface Warranty {
     expiryDate: string;
 }
 
-// Placeholder interfaces for Rental feature if not yet defined, to resolve potential errors
 export interface RentalCar {
     id: string;
     make: string;
     model: string;
     year: number;
+    type: 'Sedan' | 'SUV' | 'Van' | 'Luxury';
     pricePerDay: number;
+    seats: number;
     imageUrl: string;
     isAvailable: boolean;
 }
@@ -296,11 +318,10 @@ export interface RentalCar {
 export interface RentalBooking {
     id: string;
     carId: string;
-    customerId: string;
-    startDate: string;
-    endDate: string;
+    customerName: string;
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
     totalPrice: number;
-    status: 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled';
 }
 
 export interface Database {
@@ -319,5 +340,4 @@ export interface Database {
     payouts: PayoutRequest[];
     rentalCars: RentalCar[];
     rentalBookings: RentalBooking[];
-    notifications: Notification[];
 }

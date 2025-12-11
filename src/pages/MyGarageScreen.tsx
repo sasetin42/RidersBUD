@@ -91,8 +91,8 @@ const VehicleFormModal: React.FC<{
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true">
-            <div className="glass border border-white/10 rounded-xl p-6 w-full max-w-sm animate-scaleUp max-h-[90vh] overflow-y-auto scrollbar-thin shadow-2xl shadow-primary/10">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn" role="dialog" aria-modal="true">
+            <div className="glass-panel rounded-2xl p-6 w-full max-w-sm animate-scaleUp max-h-[90vh] overflow-y-auto scrollbar-hide">
                 <h2 className="text-xl font-bold mb-4">{vehicle ? 'Edit Vehicle' : 'Add New Vehicle'}</h2>
                 <form onSubmit={handleSave} noValidate className="space-y-4">
                     <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1">Vehicle Images</h3>
@@ -127,16 +127,16 @@ const VehicleFormModal: React.FC<{
                     </div>
 
                     <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1 pt-2">Core Information</h3>
-                    <input type="text" placeholder="Make (e.g., Toyota)" value={formData.make} onChange={e => setFormData({ ...formData, make: e.target.value })} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.make ? 'border-red-500' : 'border-dark-gray focus:ring-primary'}`} />
-                    <input type="text" placeholder="Model (e.g., Camry)" value={formData.model} onChange={e => setFormData({ ...formData, model: e.target.value })} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.model ? 'border-red-500' : 'border-dark-gray focus:ring-primary'}`} />
-                    <input type="number" placeholder="Year (e.g., 2021)" value={formData.year} onChange={e => setFormData({ ...formData, year: e.target.value ? parseInt(e.target.value) : new Date().getFullYear() })} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.year ? 'border-red-500' : 'border-dark-gray focus:ring-primary'}`} />
-                    <input type="text" placeholder="Plate Number" value={formData.plateNumber} onChange={e => setFormData({ ...formData, plateNumber: e.target.value.toUpperCase() })} readOnly={!!vehicle} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.plateNumber ? 'border-red-500' : 'border-dark-gray focus:ring-primary'} ${!!vehicle ? 'bg-gray-700 cursor-not-allowed' : ''}`} />
+                    <input type="text" placeholder="Make (e.g., Toyota)" value={formData.make} onChange={e => setFormData({ ...formData, make: e.target.value })} className={`w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 ${errors.make ? 'border-red-500' : 'focus:ring-primary'}`} />
+                    <input type="text" placeholder="Model (e.g., Camry)" value={formData.model} onChange={e => setFormData({ ...formData, model: e.target.value })} className={`w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 ${errors.model ? 'border-red-500' : 'focus:ring-primary'}`} />
+                    <input type="number" placeholder="Year (e.g., 2021)" value={formData.year} onChange={e => setFormData({ ...formData, year: e.target.value ? parseInt(e.target.value) : new Date().getFullYear() })} className={`w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 ${errors.year ? 'border-red-500' : 'focus:ring-primary'}`} />
+                    <input type="text" placeholder="Plate Number" value={formData.plateNumber} onChange={e => setFormData({ ...formData, plateNumber: e.target.value.toUpperCase() })} readOnly={!!vehicle} className={`w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 ${errors.plateNumber ? 'border-red-500' : 'focus:ring-primary'} ${!!vehicle ? 'bg-white/5 cursor-not-allowed' : ''}`} />
 
                     <h3 className="text-sm font-semibold text-primary border-b border-primary/20 pb-1 pt-2">Additional Details (Optional)</h3>
-                    <input type="text" placeholder="VIN" value={formData.vin} onChange={e => setFormData({ ...formData, vin: e.target.value })} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" />
-                    <input type="number" placeholder="Current Mileage" value={formData.mileage} onChange={e => setFormData({ ...formData, mileage: e.target.value })} className={`w-full px-4 py-3 bg-field border rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 ${errors.mileage ? 'border-red-500' : 'border-dark-gray focus:ring-primary'}`} />
-                    <input type="text" placeholder="Insurance Provider" value={formData.insuranceProvider} onChange={e => setFormData({ ...formData, insuranceProvider: e.target.value })} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" />
-                    <input type="text" placeholder="Insurance Policy #" value={formData.insurancePolicyNumber} onChange={e => setFormData({ ...formData, insurancePolicyNumber: e.target.value })} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <input type="text" placeholder="VIN" value={formData.vin} onChange={e => setFormData({ ...formData, vin: e.target.value })} className="w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <input type="number" placeholder="Current Mileage" value={formData.mileage} onChange={e => setFormData({ ...formData, mileage: e.target.value })} className={`w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 ${errors.mileage ? 'border-red-500' : 'focus:ring-primary'}`} />
+                    <input type="text" placeholder="Insurance Provider" value={formData.insuranceProvider} onChange={e => setFormData({ ...formData, insuranceProvider: e.target.value })} className="w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <input type="text" placeholder="Insurance Policy #" value={formData.insurancePolicyNumber} onChange={e => setFormData({ ...formData, insurancePolicyNumber: e.target.value })} className="w-full px-4 py-3 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary" />
 
                     <div className="mt-6 flex gap-4">
                         <button type="button" onClick={onClose} className="w-1/2 bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition">Cancel</button>
@@ -293,7 +293,7 @@ const MyGarageScreen: React.FC = () => {
             <div className="flex-grow p-4 space-y-4 overflow-y-auto">
                 {user.vehicles.length > 0 ? (
                     user.vehicles.map(v => (
-                        <div key={v.plateNumber} className={`glass rounded-xl shadow-lg relative transition-all duration-300 hover:-translate-y-1 ${v.isPrimary ? 'border-2 border-primary shadow-glow-sm' : 'border-2 border-white/10 hover:border-white/20'}`}>
+                        <div key={v.plateNumber} className={`glass-card rounded-2xl relative transition-all duration-300 ${v.isPrimary ? 'border-[1.5px] border-primary/50 ring-1 ring-primary/20' : 'border border-white/5'}`}>
                             <div className="p-4">
                                 {v.isPrimary && (
                                     <span className="absolute top-3 right-3 bg-primary text-white text-xs font-bold px-2 py-1 rounded-full z-10">
@@ -339,7 +339,7 @@ const MyGarageScreen: React.FC = () => {
                     </div>
                 )}
             </div>
-            <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray">
+            <div className="p-4 glass-heavy z-10">
                 <button onClick={() => handleOpenModal()} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition">
                     + Add New Vehicle
                 </button>

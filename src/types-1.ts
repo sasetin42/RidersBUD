@@ -213,6 +213,7 @@ export interface Settings {
     virtualMechanicImageUrl: string;
     virtualMechanicSystemInstruction?: string;
     mechanicMarkerUrl: string;
+    googleMapsApiKey?: string;
     adminPanelTitle: string;
     adminSidebarLogoUrl: string;
     serviceCategories: string[];

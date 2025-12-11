@@ -7,7 +7,7 @@ import { fileToBase64 } from '../../utils/fileUtils';
 const MechanicSignUpScreen: React.FC = () => {
     const { register, loading: authLoading } = useMechanicAuth();
     const navigate = useNavigate();
-    
+
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -34,7 +34,7 @@ const MechanicSignUpScreen: React.FC = () => {
             }
         }
     };
-    
+
     const handleSignUp = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -42,7 +42,7 @@ const MechanicSignUpScreen: React.FC = () => {
             setError("Please fill in all required fields.");
             return;
         }
-        
+
         setIsLoading(true);
         try {
             await register({
@@ -67,9 +67,9 @@ const MechanicSignUpScreen: React.FC = () => {
 
     if (isSuccess) {
         return (
-             <div className="flex flex-col items-center justify-center h-full bg-secondary p-8 text-center">
+            <div className="flex flex-col items-center justify-center h-full bg-secondary p-8 text-center">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-green-400 mb-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <h1 className="text-3xl font-bold text-white mb-4">Application Submitted!</h1>
                 <p className="text-light-gray mb-8">Thank you for registering. Your profile is now under review by our admin team. You will be notified via email once your account is approved.</p>
@@ -84,32 +84,32 @@ const MechanicSignUpScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary p-8 overflow-y-auto">
-            <div className="w-full max-w-md mx-auto">
+            <div className="w-full max-w-md mx-auto glass-heavy p-8 rounded-3xl shadow-2xl animate-fade-in-up">
                 <div className="text-center mb-10">
-                    <h1 className="text-5xl font-bold text-primary mb-4">Become a Partner</h1>
-                    <p className="text-light-gray">Join our network of professional mechanics.</p>
+                    <h1 className="text-4xl font-bold text-primary mb-2">Become a Partner</h1>
+                    <p className="text-light-gray text-sm uppercase tracking-wide">Join our network of professional mechanics</p>
                 </div>
-            
+
                 <form onSubmit={handleSignUp} className="space-y-4">
-                    <input type="text" placeholder="Full Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" required />
-                    <input type="email" placeholder="Email Address" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" required />
-                    <input type="tel" placeholder="Phone Number" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" required />
-                    <input type="password" placeholder="Password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" required />
-                    <textarea placeholder="Short Bio (Tell customers about yourself)" value={formData.bio} onChange={e => setFormData({...formData, bio: e.target.value})} rows={3} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" />
-                    <input type="text" placeholder="Specializations (comma-separated, e.g., Brakes, Toyota)" value={formData.specializations} onChange={e => setFormData({...formData, specializations: e.target.value})} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" />
-                    <input type="number" placeholder="Base Service Price (optional)" value={formData.basePrice} onChange={e => setFormData({...formData, basePrice: e.target.value})} className="w-full px-4 py-3 bg-field border border-dark-gray rounded-lg text-white placeholder-light-gray focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <input type="text" placeholder="Full Name" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-3.5 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50" required />
+                    <input type="email" placeholder="Email Address" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full px-4 py-3.5 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50" required />
+                    <input type="tel" placeholder="Phone Number" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full px-4 py-3.5 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50" required />
+                    <input type="password" placeholder="Password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} className="w-full px-4 py-3.5 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50" required />
+                    <textarea placeholder="Short Bio (Tell customers about yourself)" value={formData.bio} onChange={e => setFormData({ ...formData, bio: e.target.value })} rows={3} className="w-full px-4 py-3.5 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                    <input type="text" placeholder="Specializations (comma-separated, e.g., Brakes, Toyota)" value={formData.specializations} onChange={e => setFormData({ ...formData, specializations: e.target.value })} className="w-full px-4 py-3.5 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                    <input type="number" placeholder="Base Service Price (optional)" value={formData.basePrice} onChange={e => setFormData({ ...formData, basePrice: e.target.value })} className="w-full px-4 py-3.5 glass-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/50" />
                     <div>
-                        <label className="block text-sm font-medium text-light-gray mb-2">Portfolio/Work Images (optional)</label>
-                        <input type="file" onChange={handleFileChange} multiple accept="image/*" className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
-                        <div className="mt-2 flex flex-wrap gap-2">
-                            {portfolioImages.map((img, i) => <img key={i} src={img} className="h-16 w-16 rounded-md object-cover" alt="portfolio preview"/>)}
+                        <label className="block text-xs font-medium text-light-gray mb-2 ml-1">Portfolio/Work Images (optional)</label>
+                        <input type="file" onChange={handleFileChange} multiple accept="image/*" className="w-full text-sm text-light-gray file:mr-4 file:py-2.5 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 transition-colors cursor-pointer" />
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {portfolioImages.map((img, i) => <img key={i} src={img} className="h-16 w-16 rounded-lg object-cover border border-white/10" alt="portfolio preview" />)}
                         </div>
                     </div>
 
-                    {error && <p className="text-red-400 text-center text-sm">{error}</p>}
-                    
-                    <button type="submit" disabled={anyLoading} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition duration-300 flex items-center justify-center disabled:opacity-70">
-                        {anyLoading ? <Spinner size="sm" color="text-white"/> : 'Submit Application'}
+                    {error && <p className="text-red-400 text-center text-sm bg-red-500/10 p-2 rounded-lg border border-red-500/20">{error}</p>}
+
+                    <button type="submit" disabled={anyLoading} className="glass-button w-full font-bold py-3.5 rounded-xl flex items-center justify-center disabled:opacity-70 mt-2">
+                        {anyLoading ? <Spinner size="sm" color="text-white" /> : 'Submit Application'}
                     </button>
                 </form>
 
