@@ -3,20 +3,42 @@ import { Mechanic } from '../../types';
 import Modal from '../../components/admin/Modal';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
-import { Search, Plus, MapPin, Star, Mail, Phone, Calendar, CheckCircle, XCircle, AlertCircle, Wrench, FileText, Shield, Award, ExternalLink, Car } from 'lucide-react';
+import { Search, Plus, MapPin, Star, Mail, Phone, Calendar, CheckCircle, XCircle, AlertCircle, Wrench, FileText, Shield, Award, ExternalLink, Car, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useDebounce } from '../../hooks/useDebounce';
 
 /* -------------------------------------------------------------------------- */
 /*                                SUBCOMPONENTS                               */
 /* -------------------------------------------------------------------------- */
 
 const StatCard: React.FC<{ title: string; value: number | string; icon: React.ReactNode; color: string }> = ({ title, value, icon, color }) => (
-    <div className="glass-panel p-5 rounded-2xl flex items-center gap-4 border border-white/5 relative overflow-hidden group">
+    <div className="glass-panel p-5 rounded-2xl flex items-center gap-4 border border-white/5 relative overflow-hidden group hover:border-primary/20 transition-all duration-150">
         <div className={`p-3 rounded-xl ${color} bg-opacity-10 text-white shadow-inner ring-1 ring-white/10`}>
             {icon}
         </div>
         <div>
             <p className="text-2xl font-bold text-white">{value}</p>
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{title}</p>
+        </div>
+    </div>
+);
+
+// Loading Skeleton Component
+const MechanicCardSkeleton: React.FC = () => (
+    <div className="glass-panel rounded-2xl p-5 border border-white/5 animate-pulse">
+        <div className="flex items-center gap-4 mb-4">
+            <div className="w-16 h-16 rounded-full bg-white/10" />
+            <div className="flex-1 space-y-2">
+                <div className="h-4 bg-white/10 rounded w-3/4" />
+                <div className="h-3 bg-white/10 rounded w-1/2" />
+            </div>
+        </div>
+        <div className="space-y-2 mb-4">
+            <div className="h-3 bg-white/10 rounded w-full" />
+            <div className="h-3 bg-white/10 rounded w-2/3" />
+        </div>
+        <div className="flex gap-2">
+            <div className="h-8 bg-white/10 rounded flex-1" />
+            <div className="h-8 bg-white/10 rounded flex-1" />
         </div>
     </div>
 );
@@ -421,18 +443,52 @@ const AdminMechanicsScreen: React.FC = () => {
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive' | 'Pending'>('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage] = useState(12);
 
-    if (loading || !db) return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>
+    // Debounced search for better performance
+    const debouncedSearch = useDebounce(searchQuery, 300);
 
-    // Derived Data
+    if (loading || !db) {
+        return (
+            <div className="space-y-8 animate-fade-in">
+                <h1 className="text-3xl font-bold text-white mb-6">Manage Mechanics</h1>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className="glass-panel p-5 rounded-2xl h-24 animate-pulse">
+                            <div className="h-4 bg-white/10 rounded w-3/4 mb-2" />
+                            <div className="h-6 bg-white/10 rounded w-1/2" />
+                        </div>
+                    ))}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {[...Array(6)].map((_, i) => <MechanicCardSkeleton key={i} />)}
+                </div>
+            </div>
+        );
+    }
+
+    // Derived Data with debounced search
     const filteredMechanics = useMemo(() => {
         return db.mechanics.filter(mechanic => {
-            const searchMatch = mechanic.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                mechanic.email.toLowerCase().includes(searchQuery.toLowerCase());
+            const searchMatch = mechanic.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                mechanic.email.toLowerCase().includes(debouncedSearch.toLowerCase());
             const statusMatch = statusFilter === 'all' || mechanic.status === statusFilter;
             return searchMatch && statusMatch;
         });
-    }, [db.mechanics, searchQuery, statusFilter]);
+    }, [db.mechanics, debouncedSearch, statusFilter]);
+
+    // Pagination
+    const totalPages = Math.ceil(filteredMechanics.length / itemsPerPage);
+    const paginatedMechanics = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredMechanics.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredMechanics, currentPage, itemsPerPage]);
+
+    // Reset to page 1 when filters change
+    useMemo(() => {
+        setCurrentPage(1);
+    }, [debouncedSearch, statusFilter]);
 
     const stats = useMemo(() => ({
         total: db.mechanics.length,
@@ -497,9 +553,17 @@ const AdminMechanicsScreen: React.FC = () => {
                     </div>
                 </div>
 
+                {/* Results Summary */}
+                {filteredMechanics.length > 0 && (
+                    <div className="flex items-center justify-between text-sm text-gray-400 px-2">
+                        <span>Showing {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, filteredMechanics.length)} of {filteredMechanics.length} mechanics</span>
+                        {debouncedSearch && <span className="text-primary">Search: "{debouncedSearch}"</span>}
+                    </div>
+                )}
+
                 {/* Grid View */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {filteredMechanics.map(mechanic => (
+                    {paginatedMechanics.map(mechanic => (
                         <div
                             key={mechanic.id}
                             onClick={() => setViewingMechanic(mechanic)}
@@ -574,7 +638,70 @@ const AdminMechanicsScreen: React.FC = () => {
                         </div>
                     ))}
                 </div>
-                {filteredMechanics.length === 0 && <p className="text-center py-20 text-gray-500 text-lg">No mechanics found.</p>}
+
+                {filteredMechanics.length === 0 && (
+                    <div className="text-center py-20">
+                        <AlertCircle className="mx-auto mb-4 text-gray-600" size={48} />
+                        <p className="text-gray-500 text-lg">No mechanics found.</p>
+                        {debouncedSearch && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="mt-4 text-primary hover:underline"
+                            >
+                                Clear search
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mt-8">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >
+                            <ChevronLeft size={20} />
+                        </button>
+
+                        <div className="flex gap-2">
+                            {[...Array(totalPages)].map((_, i) => {
+                                const page = i + 1;
+                                // Show first, last, current, and adjacent pages
+                                if (
+                                    page === 1 ||
+                                    page === totalPages ||
+                                    (page >= currentPage - 1 && page <= currentPage + 1)
+                                ) {
+                                    return (
+                                        <button
+                                            key={page}
+                                            onClick={() => setCurrentPage(page)}
+                                            className={`px-4 py-2 rounded-lg font-bold transition-all ${currentPage === page
+                                                    ? 'bg-primary text-white shadow-lg shadow-orange-500/20'
+                                                    : 'bg-white/5 hover:bg-white/10 text-gray-400'
+                                                }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    );
+                                } else if (page === currentPage - 2 || page === currentPage + 2) {
+                                    return <span key={page} className="px-2 text-gray-600">...</span>;
+                                }
+                                return null;
+                            })}
+                        </div>
+
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >
+                            <ChevronRight size={20} />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {isFormModalOpen && <MechanicFormModal mechanic={editingMechanic} onClose={() => setIsFormModalOpen(false)} onSave={handleSaveMechanic} />}
