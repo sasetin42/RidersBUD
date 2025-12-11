@@ -6,7 +6,7 @@ const SplashScreen: React.FC = () => {
 
     // Use a default logo while the database is loading or if it's not set
     const defaultLogo = "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
-    const logoUrl = db?.settings?.appLogoUrl || defaultLogo;
+    const logoUrl = db?.settings?.brandingAssets?.splashLogoUrl || db?.settings?.appLogoUrl || defaultLogo;
     const tagline = db?.settings?.appTagline || "Trusted Car Care Wherever You Are";
 
     return (

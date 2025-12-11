@@ -41,7 +41,10 @@ const LoginScreen: React.FC = () => {
 
     // Set the default logo as a fallback to ensure it's always available.
     const defaultLogo = "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
-    const logoUrl = db?.settings?.appLogoUrl || defaultLogo;
+    const appLogo = db?.settings?.appLogoUrl || defaultLogo;
+    const logoUrl = activeTab === 'mechanic'
+        ? (db?.settings?.brandingAssets?.mechanicAuthLogoUrl || appLogo)
+        : (db?.settings?.brandingAssets?.customerAuthLogoUrl || appLogo);
 
     // Helper validation
     const validateCustomerField = (name: string, value: string) => {
