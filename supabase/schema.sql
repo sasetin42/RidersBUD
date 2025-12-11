@@ -369,6 +369,7 @@ ALTER TABLE payout_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE faqs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rental_cars ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rental_bookings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
 -- Public read access for data that should be public
 DROP POLICY IF EXISTS "Public can view services" ON services;
@@ -415,6 +416,10 @@ CREATE POLICY "Public can view reviews" ON reviews FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Customers can create reviews" ON reviews;
 CREATE POLICY "Customers can create reviews" ON reviews FOR INSERT WITH CHECK (true);
+
+-- Settings policies
+DROP POLICY IF EXISTS "Enable access to settings" ON settings;
+CREATE POLICY "Enable access to settings" ON settings FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================================================
 -- REALTIME PUBLICATIONS

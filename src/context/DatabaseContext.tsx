@@ -576,6 +576,14 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // --- Settings Operations ---
     const updateSettings = async (newSettings: Partial<Settings>) => {
+        if (isSupabaseConfigured()) {
+            const success = await SupabaseDatabaseService.updateSettings(newSettings);
+            if (success) {
+                setDb(prevDb => prevDb ? { ...prevDb, settings: { ...prevDb.settings, ...newSettings } } : null);
+            }
+            return;
+        }
+
         await delay(500);
         setDb(prevDb => prevDb ? { ...prevDb, settings: { ...prevDb.settings, ...newSettings } } : null);
     };
