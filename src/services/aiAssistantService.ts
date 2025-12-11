@@ -5,15 +5,15 @@ import { Service, Part, Mechanic, Settings, Customer, Database } from '../types'
 export const startAssistantChat = (db: Database, customer: Customer | null): Chat => {
     const { services, parts, mechanics, settings } = db;
 
-    const servicesInfo = services.map(s => 
+    const servicesInfo = services.map(s =>
         `- ${s.name}: ${s.description} It costs ₱${s.price.toLocaleString()} and takes about ${s.estimatedTime}. Category: ${s.category}.`
     ).join('\n');
 
-    const partsInfo = parts.map(p => 
+    const partsInfo = parts.map(p =>
         `- ${p.name} (SKU: ${p.sku}): ${p.description} It costs ₱${p.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Category: ${p.category}.`
     ).join('\n');
 
-    const mechanicsInfo = mechanics.map(m => 
+    const mechanicsInfo = mechanics.map(m =>
         `- ${m.name}: A specialist in ${m.specializations.join(', ')} with a rating of ${m.rating.toFixed(1)} from ${m.reviews} reviews. Bio: ${m.bio}. Status: ${m.status}.`
     ).join('\n');
 
@@ -58,7 +58,14 @@ ${mechanicsInfo}
         };
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
+    if (!apiKey) {
+        console.warn("AI Assistant disabled: API Key missing");
+        // Return a dummy object or throw? The interface expects Chat.
+        // Throwing here is better than crashing blindly.
+        throw new Error("AI Assistant is not configured via API Key.");
+    }
+    const ai = new GoogleGenAI({ apiKey });
     const chat = ai.chats.create({
         // As requested, using gemini-2.5-flash with Maps Grounding.
         model: 'gemini-2.5-flash',

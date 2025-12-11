@@ -2,7 +2,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Vehicle, Part } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+const getAIClient = () => {
+    // Try both standard Vite env and the process.env define
+    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
+    if (!apiKey) {
+        console.warn("Gemini API Key missing. internal AI features will be disabled.");
+        return null;
+    }
+    return new GoogleGenAI({ apiKey });
+};
 
 export const getAIServiceSuggestions = async (vehicle: Vehicle, serviceHistory: string[]) => {
     const prompt = `
@@ -27,6 +35,9 @@ export const getAIServiceSuggestions = async (vehicle: Vehicle, serviceHistory: 
     `;
 
     try {
+        const ai = getAIClient();
+        if (!ai) throw new Error("AI features are not configured (Missing API Key)");
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
@@ -61,7 +72,7 @@ export const getAIServiceSuggestions = async (vehicle: Vehicle, serviceHistory: 
                 },
             },
         });
-        
+
         const jsonText = response.text.trim();
         const data = JSON.parse(jsonText);
         return data.suggestions || [];
@@ -92,8 +103,11 @@ export const getAIPartSuggestions = async (vehicle: Vehicle, serviceHistory: str
 
         Return the response in a structured JSON format.
     `;
-    
+
     try {
+        const ai = getAIClient();
+        if (!ai) throw new Error("AI features are not configured (Missing API Key)");
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
@@ -128,7 +142,7 @@ export const getAIPartSuggestions = async (vehicle: Vehicle, serviceHistory: str
                 },
             },
         });
-        
+
         const jsonText = response.text.trim();
         const data = JSON.parse(jsonText);
         return data.suggestions || [];

@@ -24,14 +24,16 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
 
     useEffect(() => {
         if (!db) return;
-        
+
         const allServicesInfo = db.services
             .map(s => `- ${s.name}: ${s.description} (Price: ₱${s.price}, Time: ${s.estimatedTime})`)
             .join('\n');
 
         const initializeChat = async () => {
             try {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+                const apiKey = import.meta.env.VITE_GOOGLE_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
+                if (!apiKey) throw new Error("AI API Key missing");
+                const ai = new GoogleGenAI({ apiKey });
                 const newChat = ai.chats.create({
                     model: 'gemini-2.5-pro',
                     config: {
@@ -54,11 +56,11 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
                         },
                     }
                 });
-                
+
                 setChat(newChat);
 
                 const initialResponseStream = await newChat.sendMessageStream({ message: "Hello" });
-                
+
                 let fullText = "";
                 setMessages([{ sender: 'ai', text: "" }]);
 
@@ -76,7 +78,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
 
         initializeChat();
     }, [service, db]);
-    
+
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
@@ -105,7 +107,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
             }
         } catch (error) {
             console.error("Failed to send message:", error);
-             setMessages(prev => {
+            setMessages(prev => {
                 const newMessages = [...prev];
                 newMessages[newMessages.length - 1] = { sender: 'ai', text: "I'm sorry, an error occurred. Please try again." };
                 return newMessages;
@@ -114,10 +116,10 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
             setIsLoading(false);
         }
     };
-    
+
     if (!db) {
         return (
-             <div className="fixed inset-0 bg-secondary z-50 flex flex-col items-center justify-center">
+            <div className="fixed inset-0 bg-secondary z-50 flex flex-col items-center justify-center">
                 <Spinner size="lg" />
             </div>
         )
@@ -127,12 +129,12 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
         <div className="fixed inset-0 bg-secondary z-50 flex flex-col animate-fadeIn" role="dialog" aria-modal="true">
             <header className="flex items-center justify-between p-4 bg-[#1D1D1D] border-b border-dark-gray flex-shrink-0">
                 <div className="text-center flex-1">
-                     <h2 className="text-xl font-bold text-white">{db.settings.virtualMechanicName || 'Virtual Mechanic'}</h2>
-                     <p className="text-sm text-light-gray">{service.name}</p>
+                    <h2 className="text-xl font-bold text-white">{db.settings.virtualMechanicName || 'Virtual Mechanic'}</h2>
+                    <p className="text-sm text-light-gray">{service.name}</p>
                 </div>
                 <button onClick={onClose} className="text-primary absolute right-4">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </header>
@@ -140,13 +142,13 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
             <main className="flex-1 overflow-y-auto p-4 space-y-4">
                 {messages.map((msg, index) => (
                     <div key={index} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                       {msg.sender === 'ai' && (
-                           <img 
-                                src={db.settings.virtualMechanicImageUrl} 
-                                alt={db.settings.virtualMechanicName} 
+                        {msg.sender === 'ai' && (
+                            <img
+                                src={db.settings.virtualMechanicImageUrl}
+                                alt={db.settings.virtualMechanicName}
                                 className="w-8 h-8 rounded-full object-cover flex-shrink-0 bg-primary"
                             />
-                       )}
+                        )}
                         <div className={`max-w-xs md:max-w-md p-3 rounded-2xl ${msg.sender === 'user' ? 'bg-primary text-white rounded-br-none' : 'bg-dark-gray text-white rounded-bl-none'}`}>
                             {isLoading && index === messages.length - 1 && msg.sender === 'ai' && msg.text === '' ? (
                                 <p className="text-sm text-light-gray italic animate-pulse">typing...</p>
@@ -171,7 +173,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose }) => {
                     />
                     <button type="submit" className="bg-primary text-white w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-50" disabled={isLoading || !input.trim()}>
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                         </svg>
                     </button>
                 </form>
