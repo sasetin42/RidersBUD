@@ -28,8 +28,14 @@ export const useNotification = () => {
 const NOTIFICATION_STORAGE_KEY = 'ridersbud_notifications';
 
 export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const { currentUser } = useAuth();
-    const { mechanic } = useMechanicAuth();
+    // Get auth contexts - these hooks must be called unconditionally
+    // We'll handle undefined contexts gracefully
+    const authContext = useAuth();
+    const mechanicAuthContext = useMechanicAuth();
+
+    const currentUser = authContext?.currentUser || null;
+    const mechanic = mechanicAuthContext?.mechanic || null;
+
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
 

@@ -115,13 +115,15 @@ const AppInitializer: React.FC = () => {
             <AuthProvider>
                 <AdminAuthProvider>
                     <MechanicAuthProvider>
-                        <CartProvider>
-                            <WishlistProvider>
-                                <ChatNotificationProvider>
-                                    <AppContent />
-                                </ChatNotificationProvider>
-                            </WishlistProvider>
-                        </CartProvider>
+                        <NotificationProvider>
+                            <CartProvider>
+                                <WishlistProvider>
+                                    <ChatNotificationProvider>
+                                        <AppContent />
+                                    </ChatNotificationProvider>
+                                </WishlistProvider>
+                            </CartProvider>
+                        </NotificationProvider>
                     </MechanicAuthProvider>
                 </AdminAuthProvider>
             </AuthProvider>
