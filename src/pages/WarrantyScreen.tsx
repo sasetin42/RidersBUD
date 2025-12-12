@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import { Warranty } from '../types';
 import Spinner from '../components/Spinner';
+import { SupabaseDatabaseService } from '../services/supabaseDatabaseService';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 const AddWarrantyModal: React.FC<{
     onClose: () => void;
@@ -32,7 +35,7 @@ const AddWarrantyModal: React.FC<{
             onClose();
         }
     };
-    
+
     const isSaveDisabled = !itemName || !purchaseDate || !expiryDate || Object.keys(errors).length > 0;
 
     return (
@@ -63,7 +66,7 @@ const AddWarrantyModal: React.FC<{
                                 required
                                 aria-label="Purchase Date"
                             />
-                             {errors.purchaseDate && <p className="text-red-400 text-xs mt-1">{errors.purchaseDate}</p>}
+                            {errors.purchaseDate && <p className="text-red-400 text-xs mt-1">{errors.purchaseDate}</p>}
                         </div>
                         <div>
                             <label className="text-sm text-light-gray mb-1 block">Expiry Date</label>
@@ -75,7 +78,7 @@ const AddWarrantyModal: React.FC<{
                                 required
                                 aria-label="Expiry Date"
                             />
-                             {errors.expiryDate && <p className="text-red-400 text-xs mt-1">{errors.expiryDate}</p>}
+                            {errors.expiryDate && <p className="text-red-400 text-xs mt-1">{errors.expiryDate}</p>}
                         </div>
                     </div>
                     <div className="mt-6 flex gap-4">
@@ -96,41 +99,140 @@ const WarrantyScreen: React.FC = () => {
     const [warranties, setWarranties] = useState<Warranty[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [loading, setLoading] = useState(true);
+    const { currentUser } = useAuth();
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-            try {
-                const storedWarranties = localStorage.getItem('serviceWarranties');
-                if (storedWarranties) {
-                    setWarranties(JSON.parse(storedWarranties));
+        const loadWarranties = async () => {
+            if (currentUser && isSupabaseConfigured()) {
+                try {
+                    const data = await SupabaseDatabaseService.getWarranties(currentUser.id);
+                    const warranties: Warranty[] = data.map((w: any) => ({
+                        id: w.id,
+                        itemName: w.item_name,
+                        purchaseDate: w.purchase_date,
+                        expiryDate: w.expiry_date
+                    }));
+                    setWarranties(warranties);
+                } catch (error) {
+                    console.error('Failed to load warranties from Supabase:', error);
+                    // Fallback to localStorage
+                    try {
+                        const storedWarranties = localStorage.getItem('serviceWarranties');
+                        if (storedWarranties) {
+                            setWarranties(JSON.parse(storedWarranties));
+                        }
+                    } catch (error) {
+                        console.error("Failed to parse warranties from localStorage", error);
+                    }
                 }
-            } catch (error) {
-                console.error("Failed to parse warranties from localStorage", error);
-            } finally {
-                setLoading(false);
+            } else {
+                // Fallback to localStorage
+                try {
+                    const storedWarranties = localStorage.getItem('serviceWarranties');
+                    if (storedWarranties) {
+                        setWarranties(JSON.parse(storedWarranties));
+                    }
+                } catch (error) {
+                    console.error("Failed to parse warranties from localStorage", error);
+                }
             }
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, []);
-
-    const saveWarranties = (newWarranties: Warranty[]) => {
-        setWarranties(newWarranties);
-        localStorage.setItem('serviceWarranties', JSON.stringify(newWarranties));
-    };
-
-    const handleAddWarranty = (newWarrantyData: Omit<Warranty, 'id'>) => {
-        const newWarranty: Warranty = {
-            id: new Date().toISOString() + Math.random(),
-            ...newWarrantyData,
+            setLoading(false);
         };
-        saveWarranties([...warranties, newWarranty]);
+
+        loadWarranties();
+    }, [currentUser]);
+
+    // Setup realtime subscription
+    useEffect(() => {
+        if (!currentUser || !isSupabaseConfigured() || !supabase) return;
+
+        const channel = supabase
+            .channel('warranty-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'service_warranties',
+                    filter: `customer_id=eq.${currentUser.id}`
+                },
+                async () => {
+                    console.log('[Warranties] Realtime update detected');
+                    const data = await SupabaseDatabaseService.getWarranties(currentUser.id);
+                    const warranties: Warranty[] = data.map((w: any) => ({
+                        id: w.id,
+                        itemName: w.item_name,
+                        purchaseDate: w.purchase_date,
+                        expiryDate: w.expiry_date
+                    }));
+                    setWarranties(warranties);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [currentUser]);
+
+    const handleAddWarranty = async (newWarrantyData: Omit<Warranty, 'id'>) => {
+        if (currentUser && isSupabaseConfigured()) {
+            try {
+                await SupabaseDatabaseService.addWarranty({
+                    customer_id: currentUser.id,
+                    item_name: newWarrantyData.itemName,
+                    purchase_date: newWarrantyData.purchaseDate,
+                    expiry_date: newWarrantyData.expiryDate
+                });
+                // Optimistic update
+                const newWarranty: Warranty = {
+                    id: new Date().toISOString() + Math.random(),
+                    ...newWarrantyData,
+                };
+                setWarranties([...warranties, newWarranty]);
+            } catch (error) {
+                console.error('Failed to add warranty to database:', error);
+                // Fallback to localStorage
+                const newWarranty: Warranty = {
+                    id: new Date().toISOString() + Math.random(),
+                    ...newWarrantyData,
+                };
+                const newWarranties = [...warranties, newWarranty];
+                setWarranties(newWarranties);
+                localStorage.setItem('serviceWarranties', JSON.stringify(newWarranties));
+            }
+        } else {
+            // Fallback to localStorage
+            const newWarranty: Warranty = {
+                id: new Date().toISOString() + Math.random(),
+                ...newWarrantyData,
+            };
+            const newWarranties = [...warranties, newWarranty];
+            setWarranties(newWarranties);
+            localStorage.setItem('serviceWarranties', JSON.stringify(newWarranties));
+        }
     };
 
-    const handleDeleteWarranty = (id: string) => {
+    const handleDeleteWarranty = async (id: string) => {
         if (window.confirm('Are you sure you want to delete this warranty?')) {
-            const updatedWarranties = warranties.filter(w => w.id !== id);
-            saveWarranties(updatedWarranties);
+            if (currentUser && isSupabaseConfigured()) {
+                try {
+                    await SupabaseDatabaseService.deleteWarranty(id);
+                    // Optimistic update
+                    setWarranties(warranties.filter(w => w.id !== id));
+                } catch (error) {
+                    console.error('Failed to delete warranty from database:', error);
+                    // Fallback to localStorage
+                    const updatedWarranties = warranties.filter(w => w.id !== id);
+                    setWarranties(updatedWarranties);
+                    localStorage.setItem('serviceWarranties', JSON.stringify(updatedWarranties));
+                }
+            } else {
+                // Fallback to localStorage
+                const updatedWarranties = warranties.filter(w => w.id !== id);
+                setWarranties(updatedWarranties);
+                localStorage.setItem('serviceWarranties', JSON.stringify(updatedWarranties));
+            }
         }
     };
 
@@ -149,7 +251,7 @@ const WarrantyScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary">
             <Header title="Warranty Tracking" showBackButton />
-            
+
             <main className="flex-grow overflow-y-auto p-4">
                 {loading ? (
                     <div className="flex items-center justify-center h-full">
@@ -209,7 +311,7 @@ const WarrantyScreen: React.FC = () => {
                     </div>
                 )}
             </main>
-            
+
             <button
                 onClick={() => setIsModalOpen(true)}
                 className="absolute bottom-20 right-6 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition"

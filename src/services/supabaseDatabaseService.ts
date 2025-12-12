@@ -746,4 +746,397 @@ export class SupabaseDatabaseService {
             return null;
         }
     }
+
+    // ============================================================================
+    // CART ITEMS
+    // ============================================================================
+
+    static async getCartItems(customerId: string): Promise<any[]> {
+        if (!isSupabaseConfigured()) return [];
+
+        const { data, error } = await supabase!
+            .from('cart_items')
+            .select('*, part:parts(*)')
+            .eq('customer_id', customerId);
+
+        if (error) {
+            console.error('[DB] Get cart items error:', error);
+            return [];
+        }
+
+        return data || [];
+    }
+
+    static async addToCart(customerId: string, partId: string, quantity: number = 1): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        // Check if item already exists
+        const { data: existing } = await supabase!
+            .from('cart_items')
+            .select('*')
+            .eq('customer_id', customerId)
+            .eq('part_id', partId)
+            .single();
+
+        if (existing) {
+            // Update quantity
+            const { error } = await supabase!
+                .from('cart_items')
+                .update({ quantity: existing.quantity + quantity })
+                .eq('id', existing.id);
+
+            if (error) {
+                console.error('[DB] Update cart item error:', error);
+                return false;
+            }
+        } else {
+            // Insert new item
+            const { error } = await supabase!
+                .from('cart_items')
+                .insert([{ customer_id: customerId, part_id: partId, quantity }]);
+
+            if (error) {
+                console.error('[DB] Add to cart error:', error);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    static async updateCartItemQuantity(itemId: string, quantity: number): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('cart_items')
+            .update({ quantity })
+            .eq('id', itemId);
+
+        if (error) {
+            console.error('[DB] Update cart quantity error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async removeFromCart(itemId: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('cart_items')
+            .delete()
+            .eq('id', itemId);
+
+        if (error) {
+            console.error('[DB] Remove from cart error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async clearCart(customerId: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('cart_items')
+            .delete()
+            .eq('customer_id', customerId);
+
+        if (error) {
+            console.error('[DB] Clear cart error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    // ============================================================================
+    // WISHLIST ITEMS
+    // ============================================================================
+
+    static async getWishlistItems(customerId: string): Promise<any[]> {
+        if (!isSupabaseConfigured()) return [];
+
+        const { data, error } = await supabase!
+            .from('wishlist_items')
+            .select('*')
+            .eq('customer_id', customerId);
+
+        if (error) {
+            console.error('[DB] Get wishlist items error:', error);
+            return [];
+        }
+
+        return data || [];
+    }
+
+    static async addToWishlist(customerId: string, productId: string, productType: 'service' | 'part'): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('wishlist_items')
+            .insert([{ customer_id: customerId, product_id: productId, product_type: productType }]);
+
+        if (error) {
+            console.error('[DB] Add to wishlist error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async removeFromWishlist(customerId: string, productId: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('wishlist_items')
+            .delete()
+            .eq('customer_id', customerId)
+            .eq('product_id', productId);
+
+        if (error) {
+            console.error('[DB] Remove from wishlist error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    // ============================================================================
+    // SERVICE REMINDERS
+    // ============================================================================
+
+    static async getReminders(customerId: string): Promise<any[]> {
+        if (!isSupabaseConfigured()) return [];
+
+        const { data, error } = await supabase!
+            .from('service_reminders')
+            .select('*')
+            .eq('customer_id', customerId)
+            .order('date', { ascending: true });
+
+        if (error) {
+            console.error('[DB] Get reminders error:', error);
+            return [];
+        }
+
+        return data || [];
+    }
+
+    static async addReminder(reminder: any): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('service_reminders')
+            .insert([reminder]);
+
+        if (error) {
+            console.error('[DB] Add reminder error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async updateReminder(id: string, updates: any): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('service_reminders')
+            .update(updates)
+            .eq('id', id);
+
+        if (error) {
+            console.error('[DB] Update reminder error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async deleteReminder(id: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('service_reminders')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error('[DB] Delete reminder error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    // ============================================================================
+    // SERVICE WARRANTIES
+    // ============================================================================
+
+    static async getWarranties(customerId: string): Promise<any[]> {
+        if (!isSupabaseConfigured()) return [];
+
+        const { data, error } = await supabase!
+            .from('service_warranties')
+            .select('*')
+            .eq('customer_id', customerId)
+            .order('expiry_date', { ascending: true });
+
+        if (error) {
+            console.error('[DB] Get warranties error:', error);
+            return [];
+        }
+
+        return data || [];
+    }
+
+    static async addWarranty(warranty: any): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('service_warranties')
+            .insert([warranty]);
+
+        if (error) {
+            console.error('[DB] Add warranty error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async updateWarranty(id: string, updates: any): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('service_warranties')
+            .update(updates)
+            .eq('id', id);
+
+        if (error) {
+            console.error('[DB] Update warranty error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async deleteWarranty(id: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('service_warranties')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error('[DB] Delete warranty error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    // ============================================================================
+    // CHAT MESSAGES
+    // ============================================================================
+
+    static async getChatMessages(bookingId: string): Promise<any[]> {
+        if (!isSupabaseConfigured()) return [];
+
+        const { data, error } = await supabase!
+            .from('chat_messages')
+            .select('*')
+            .eq('booking_id', bookingId)
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error('[DB] Get chat messages error:', error);
+            return [];
+        }
+
+        return data || [];
+    }
+
+    static async sendChatMessage(message: {
+        booking_id: string;
+        sender_type: 'customer' | 'mechanic' | 'system';
+        sender_id?: string;
+        sender_name: string;
+        message: string;
+    }): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('chat_messages')
+            .insert([message]);
+
+        if (error) {
+            console.error('[DB] Send chat message error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async markChatMessagesAsRead(bookingId: string, userId: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('chat_messages')
+            .update({ is_read: true })
+            .eq('booking_id', bookingId)
+            .neq('sender_id', userId);
+
+        if (error) {
+            console.error('[DB] Mark messages as read error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    // ============================================================================
+    // NOTIFICATION SETTINGS
+    // ============================================================================
+
+    static async getNotificationSettings(userId: string, userType: 'customer' | 'mechanic'): Promise<any | null> {
+        if (!isSupabaseConfigured()) return null;
+
+        const { data, error } = await supabase!
+            .from('notification_settings')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('user_type', userType)
+            .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+            console.error('[DB] Get notification settings error:', error);
+            return null;
+        }
+
+        return data;
+    }
+
+    static async updateNotificationSettings(userId: string, userType: 'customer' | 'mechanic', settings: any): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('notification_settings')
+            .upsert({
+                user_id: userId,
+                user_type: userType,
+                ...settings
+            });
+
+        if (error) {
+            console.error('[DB] Update notification settings error:', error);
+            return false;
+        }
+
+        return true;
+    }
 }

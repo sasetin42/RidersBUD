@@ -4,6 +4,8 @@ import Header from '../components/Header';
 import { Reminder } from '../types';
 import { useAuth } from '../context/AuthContext';
 import Spinner from '../components/Spinner';
+import { SupabaseDatabaseService } from '../services/supabaseDatabaseService';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 const ReminderFormModal: React.FC<{
     reminderToEdit?: Reminder | null;
@@ -58,7 +60,7 @@ const ReminderFormModal: React.FC<{
                             />
                             {errors.serviceName && <p className="text-red-400 text-xs mt-1">{errors.serviceName}</p>}
                         </div>
-                         <div>
+                        <div>
                             <select
                                 value={vehicle}
                                 onChange={(e) => setVehicle(e.target.value)}
@@ -133,7 +135,7 @@ const RemindersScreen: React.FC = () => {
         }, 500);
         return () => clearTimeout(timer);
     }, []);
-    
+
     useEffect(() => {
         // This effect handles pre-filling from navigation state
         const reminderDataFromNav = location.state as { serviceName: string; date: string; vehicle: string; } | null;
@@ -173,12 +175,12 @@ const RemindersScreen: React.FC = () => {
     };
 
     const handleDeleteReminder = (id: string) => {
-        if(window.confirm('Are you sure you want to delete this reminder?')) {
+        if (window.confirm('Are you sure you want to delete this reminder?')) {
             const updatedReminders = reminders.filter(r => r.id !== id);
             saveReminders(updatedReminders);
         }
     };
-    
+
     const handleEditReminder = (reminder: Reminder) => {
         setEditingReminder(reminder);
         setIsModalOpen(true);
@@ -214,7 +216,7 @@ const RemindersScreen: React.FC = () => {
             try {
                 const content = e.target?.result;
                 if (typeof content !== 'string') throw new Error("File content is not readable.");
-                
+
                 const importedReminders = JSON.parse(content);
 
                 if (!Array.isArray(importedReminders)) {
@@ -240,7 +242,7 @@ const RemindersScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary">
             <Header title="Service Reminders" showBackButton />
-            
+
             <div className="p-4 flex gap-4">
                 <button
                     onClick={handleImportClick}
@@ -270,7 +272,7 @@ const RemindersScreen: React.FC = () => {
                     </div>
                 ) : sortedReminders.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center text-light-gray px-6">
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <p className="text-xl font-semibold mb-2">No Reminders Yet</p>
@@ -303,7 +305,7 @@ const RemindersScreen: React.FC = () => {
                     </div>
                 )}
             </main>
-            
+
             <button
                 onClick={() => { setEditingReminder(null); setIsModalOpen(true); }}
                 className="absolute bottom-20 right-6 bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-orange-600 transition"
