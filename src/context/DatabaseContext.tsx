@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, CartItem, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest, RentalCar, RentalBooking } from '../types';
-import { getSeedData } from '../data/mockData';
+import { getEmptyDatabase } from '../utils/emptyDatabase';
 import { SupabaseDatabaseService } from '../services/supabaseDatabaseService';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
@@ -89,7 +89,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         setLoading(false);
                         return;
                     } else {
-                        console.warn("Supabase returned empty data, falling back to local storage/seed.");
+                        console.warn("Supabase returned empty data, falling back to local storage.");
                     }
                 }
 
@@ -99,23 +99,23 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     const parsedData = JSON.parse(storedData);
                     // Simple validation: check if critical 'settings' exist
                     if (!parsedData || !parsedData.settings) {
-                        console.warn("Stored data is corrupt or missing settings. Falling back to seed data.");
-                        const seedData = getSeedData();
-                        setDb(seedData);
+                        console.warn("Stored data is corrupt or missing settings. Initializing empty database.");
+                        const emptyDb = getEmptyDatabase();
+                        setDb(emptyDb);
                         // Optionally overwrite corrupt data immediately
-                        localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(seedData));
+                        localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(emptyDb));
                     } else {
                         setDb(parsedData);
                     }
                 } else {
-                    console.log("Initializing database from seed data...");
-                    const seedData = getSeedData();
-                    setDb(seedData);
+                    console.log("Initializing empty database...");
+                    const emptyDb = getEmptyDatabase();
+                    setDb(emptyDb);
                 }
             } catch (error) {
-                console.error("Failed to load data, falling back to seed data.", error);
-                const seedData = getSeedData();
-                setDb(seedData);
+                console.error("Failed to load data, initializing empty database.", error);
+                const emptyDb = getEmptyDatabase();
+                setDb(emptyDb);
             } finally {
                 setLoading(false);
             }

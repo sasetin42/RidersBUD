@@ -305,64 +305,6 @@ export class SupabaseDatabaseService {
     }
 
     // ============================================================================
-    // NOTIFICATIONS
-    // ============================================================================
-
-    static async getNotifications(recipientId: string): Promise<any[]> {
-        if (!isSupabaseConfigured()) return [];
-
-        const { data, error } = await supabase!
-            .from('notifications')
-            .select('*')
-            .or(`recipient_id.eq.all,recipient_id.eq.${recipientId}`)
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error('[DB] Get notifications error:', error);
-            return [];
-        }
-
-        return data || [];
-    }
-
-    static async markNotificationAsRead(id: string): Promise<boolean> {
-        if (!isSupabaseConfigured()) return false;
-
-        const { error } = await supabase!
-            .from('notifications')
-            .update({ read: true })
-            .eq('id', id);
-
-        if (error) {
-            console.error('[DB] Mark notification as read error:', error);
-            return false;
-        }
-
-        return true;
-    }
-
-    static async createNotification(notification: {
-        type: string;
-        title: string;
-        message: string;
-        recipient_id: string;
-        link?: string;
-    }): Promise<boolean> {
-        if (!isSupabaseConfigured()) return false;
-
-        const { error } = await supabase!
-            .from('notifications')
-            .insert([notification]);
-
-        if (error) {
-            console.error('[DB] Create notification error:', error);
-            return false;
-        }
-
-        return true;
-    }
-
-    // ============================================================================
     // SETTINGS
     // ============================================================================
 
@@ -1134,6 +1076,101 @@ export class SupabaseDatabaseService {
 
         if (error) {
             console.error('[DB] Update notification settings error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    // ============================================================================
+    // NOTIFICATIONS (Realtime)
+    // ============================================================================
+
+    static async getNotifications(recipientId: string): Promise<any[]> {
+        if (!isSupabaseConfigured()) return [];
+
+        const { data, error } = await supabase!
+            .from('notifications')
+            .select('*')
+            .eq('recipient_id', recipientId)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('[DB] Get notifications error:', error);
+            return [];
+        }
+
+        return data || [];
+    }
+
+    static async addNotification(notification: {
+        type: string;
+        title: string;
+        message: string;
+        recipient_id: string;
+        link_url?: string;
+    }): Promise<any | null> {
+        if (!isSupabaseConfigured()) return null;
+
+        const { data, error } = await supabase!
+            .from('notifications')
+            .insert([{
+                ...notification,
+                is_read: false
+            }])
+            .select()
+            .single();
+
+        if (error) {
+            console.error('[DB] Add notification error:', error);
+            return null;
+        }
+
+        return data;
+    }
+
+    static async markNotificationAsRead(id: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('notifications')
+            .update({ is_read: true })
+            .eq('id', id);
+
+        if (error) {
+            console.error('[DB] Mark notification as read error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async markAllNotificationsAsRead(recipientId: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('notifications')
+            .update({ is_read: true })
+            .eq('recipient_id', recipientId);
+
+        if (error) {
+            console.error('[DB] Mark all notifications as read error:', error);
+            return false;
+        }
+
+        return true;
+    }
+
+    static async deleteNotification(id: string): Promise<boolean> {
+        if (!isSupabaseConfigured()) return false;
+
+        const { error } = await supabase!
+            .from('notifications')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error('[DB] Delete notification error:', error);
             return false;
         }
 
