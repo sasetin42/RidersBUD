@@ -32,9 +32,9 @@ const SignUpScreen: React.FC = () => {
     }
 
     const { settings } = db;
-    // Set the default logo as a fallback to ensure it's always available.
-    const defaultLogo = "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
-    const logoUrl = settings.appLogoUrl || defaultLogo;
+    // Set the default logo to the new local asset
+    const defaultLogo = "/riders-logo-full.png";
+    const logoUrl = defaultLogo; // Force use of new logo as requested
 
     // --- Validation ---
     const validateCustomerField = (fieldName: string, value: string) => {
@@ -189,7 +189,7 @@ const SignUpScreen: React.FC = () => {
             <div className="relative w-full max-w-md glass-heavy p-8 rounded-3xl shadow-2xl animate-slideInUp my-8">
                 <div className="text-center mb-8">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="Logo" className="w-40 mb-4 max-h-20 object-contain mx-auto drop-shadow-lg" />
+                        <img src={logoUrl} alt="Logo" className="w-64 mb-4 max-h-24 object-contain mx-auto drop-shadow-lg" />
                     ) : (
                         <h1 className="text-4xl font-bold text-primary mb-2 tracking-tight">{settings.appName}</h1>
                     )}

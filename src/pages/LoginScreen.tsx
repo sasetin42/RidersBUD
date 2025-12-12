@@ -39,12 +39,9 @@ const LoginScreen: React.FC = () => {
         return <div className="flex items-center justify-center h-screen bg-secondary"><Spinner size="lg" /></div>;
     }
 
-    // Set the default logo as a fallback to ensure it's always available.
-    const defaultLogo = "https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/RidersBUD_logo.png";
-    const appLogo = db?.settings?.appLogoUrl || defaultLogo;
-    const logoUrl = activeTab === 'mechanic'
-        ? (db?.settings?.brandingAssets?.mechanicAuthLogoUrl || appLogo)
-        : (db?.settings?.brandingAssets?.customerAuthLogoUrl || appLogo);
+    // Set the default logo to the new local asset
+    const defaultLogo = "/riders-logo-full.png";
+    const logoUrl = defaultLogo; // Force use of new logo as requested
 
     // Helper validation
     const validateCustomerField = (name: string, value: string) => {
@@ -133,7 +130,7 @@ const LoginScreen: React.FC = () => {
             <div className="relative w-full max-w-md glass-heavy p-8 rounded-3xl shadow-2xl animate-slideInUp">
                 <div className="text-center mb-8">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="Logo" className="w-48 mb-6 max-h-24 object-contain mx-auto drop-shadow-lg" />
+                        <img src={logoUrl} alt="Logo" className="w-64 mb-6 max-h-24 object-contain mx-auto drop-shadow-lg" />
                     ) : (
                         <h1 className="text-5xl font-bold text-primary mb-4 tracking-tight">{appName}</h1>
                     )}
