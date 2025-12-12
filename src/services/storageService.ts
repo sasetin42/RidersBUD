@@ -155,7 +155,98 @@ export const STORAGE_BUCKETS = {
     BOOKINGS: 'bookings',
     PARTS: 'parts',
     BANNERS: 'banners',
+    BRANDING: 'branding-assets', // For logos and branding materials
 } as const;
+
+/**
+ * Branding asset types
+ */
+export type BrandingAssetType =
+    | 'app-logo'
+    | 'sidebar-logo'
+    | 'splash-logo'
+    | 'customer-auth-logo'
+    | 'mechanic-auth-logo';
+
+/**
+ * Upload a branding asset (logo) to Supabase Storage
+ * Automatically deletes the old asset if it exists
+ */
+export async function uploadBrandingAsset(
+    file: File,
+    assetType: BrandingAssetType,
+    oldUrl?: string
+): Promise<{ url: string | null; error: Error | null }> {
+    if (!isSupabaseConfigured()) {
+        return {
+            url: null,
+            error: new Error('Supabase not configured'),
+        };
+    }
+
+    try {
+        // Validate file
+        if (!validateFileType(file, ['image/*'])) {
+            throw new Error('Invalid file type. Only images are allowed.');
+        }
+
+        if (!validateFileSize(file, 5)) {
+            throw new Error('File too large. Maximum size is 5MB.');
+        }
+
+        // Delete old asset if exists
+        if (oldUrl) {
+            await deleteBrandingAssetByUrl(oldUrl);
+        }
+
+        // Generate unique filename
+        const ext = file.name.split('.').pop();
+        const filename = `${assetType}-${Date.now()}.${ext}`;
+
+        // Upload new file
+        const result = await StorageService.uploadFile(
+            STORAGE_BUCKETS.BRANDING,
+            filename,
+            file,
+            { upsert: true }
+        );
+
+        return result;
+    } catch (error) {
+        console.error('[Branding] Upload error:', error);
+        return { url: null, error: error as Error };
+    }
+}
+
+/**
+ * Delete a branding asset by its public URL
+ */
+export async function deleteBrandingAssetByUrl(
+    url: string
+): Promise<{ success: boolean; error: Error | null }> {
+    if (!isSupabaseConfigured()) {
+        return {
+            success: false,
+            error: new Error('Supabase not configured'),
+        };
+    }
+
+    try {
+        // Extract filename from URL
+        // URL format: https://[project].supabase.co/storage/v1/object/public/branding-assets/filename.ext
+        const urlParts = url.split('/');
+        const filename = urlParts[urlParts.length - 1];
+
+        if (!filename) {
+            throw new Error('Invalid URL format');
+        }
+
+        return await StorageService.deleteFile(STORAGE_BUCKETS.BRANDING, filename);
+    } catch (error) {
+        console.error('[Branding] Delete error:', error);
+        return { success: false, error: error as Error };
+    }
+}
 
 /**
  * Helper function to generate unique file path

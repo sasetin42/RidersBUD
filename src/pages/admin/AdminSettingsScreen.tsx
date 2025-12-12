@@ -58,6 +58,8 @@ const AdminSettingsScreen: React.FC = () => {
     const [initialSettings, setInitialSettings] = useState<Settings | null>(null);
     const [activeTab, setActiveTab] = useState<'general' | 'booking' | 'ai' | 'branding' | 'map' | 'roles'>('general');
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
+    const [uploadingLogo, setUploadingLogo] = useState<string | null>(null);
+    const [uploadError, setUploadError] = useState<string | null>(null);
 
     useEffect(() => {
         if (db?.settings) {
@@ -122,6 +124,46 @@ const AdminSettingsScreen: React.FC = () => {
             // Updated to use compression to prevent large payload issues
             const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
             setSettings(prev => prev ? ({ ...prev, [field]: base64 }) : null);
+        }
+    };
+
+    const handleBrandingAssetUpload = async (
+        e: React.ChangeEvent<HTMLInputElement>,
+        assetType: BrandingAssetType,
+        settingsKey: 'splashLogoUrl' | 'customerAuthLogoUrl' | 'mechanicAuthLogoUrl'
+    ) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setUploadingLogo(assetType);
+        setUploadError(null);
+
+        try {
+            // Get old URL to delete after successful upload
+            const oldUrl = settings?.brandingAssets?.[settingsKey];
+
+            // Upload to Supabase Storage
+            const { url, error } = await uploadBrandingAsset(file, assetType, oldUrl);
+
+            if (error) {
+                throw error;
+            }
+
+            if (url) {
+                // Update settings with new URL
+                setSettings(prev => prev ? ({
+                    ...prev,
+                    brandingAssets: {
+                        ...prev.brandingAssets,
+                        [settingsKey]: url
+                    }
+                }) : null);
+            }
+        } catch (error) {
+            console.error('Logo upload failed:', error);
+            setUploadError(error instanceof Error ? error.message : 'Upload failed');
+        } finally {
+            setUploadingLogo(null);
         }
     };
 
@@ -414,6 +456,11 @@ const AdminSettingsScreen: React.FC = () => {
                         {activeTab === 'branding' && (
                             <div className="space-y-6">
                                 <SectionHeader title="Branding & Assets" description="Manage logos and visual identity." />
+                                {uploadError && (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
+                                        <strong>Upload Error:</strong> {uploadError}
+                                    </div>
+                                )}
                                 <div className="glass-panel p-6 rounded-2xl border border-white/5 space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -446,14 +493,15 @@ const AdminSettingsScreen: React.FC = () => {
                                             <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Splash Screen Logo</label>
                                             <div className="bg-[#0a0a0a] p-4 rounded-xl border border-white/10 flex items-center justify-between">
                                                 <img src={settings.brandingAssets?.splashLogoUrl || settings.appLogoUrl} className="h-12 object-contain" alt="Splash Logo" />
-                                                <label className="cursor-pointer bg-white/5 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white/10 transition">
-                                                    Upload
-                                                    <input type="file" className="hidden" onChange={async (e) => {
-                                                        if (e.target.files?.[0]) {
-                                                            const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
-                                                            setSettings(s => s ? ({ ...s, brandingAssets: { ...s.brandingAssets, splashLogoUrl: base64 } }) : null);
-                                                        }
-                                                    }} accept="image/*" />
+                                                <label className="cursor-pointer bg-white/5 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white/10 transition relative">
+                                                    {uploadingLogo === 'splash-logo' ? 'Uploading...' : 'Upload'}
+                                                    <input
+                                                        type="file"
+                                                        className="hidden"
+                                                        onChange={(e) => handleBrandingAssetUpload(e, 'splash-logo', 'splashLogoUrl')}
+                                                        accept="image/*"
+                                                        disabled={uploadingLogo === 'splash-logo'}
+                                                    />
                                                 </label>
                                             </div>
                                         </div>
@@ -464,13 +512,14 @@ const AdminSettingsScreen: React.FC = () => {
                                             <div className="bg-[#0a0a0a] p-4 rounded-xl border border-white/10 flex items-center justify-between">
                                                 <img src={settings.brandingAssets?.customerAuthLogoUrl || settings.appLogoUrl} className="h-12 object-contain" alt="Customer Logo" />
                                                 <label className="cursor-pointer bg-white/5 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white/10 transition">
-                                                    Upload
-                                                    <input type="file" className="hidden" onChange={async (e) => {
-                                                        if (e.target.files?.[0]) {
-                                                            const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
-                                                            setSettings(s => s ? ({ ...s, brandingAssets: { ...s.brandingAssets, customerAuthLogoUrl: base64 } }) : null);
-                                                        }
-                                                    }} accept="image/*" />
+                                                    {uploadingLogo === 'customer-auth-logo' ? 'Uploading...' : 'Upload'}
+                                                    <input
+                                                        type="file"
+                                                        className="hidden"
+                                                        onChange={(e) => handleBrandingAssetUpload(e, 'customer-auth-logo', 'customerAuthLogoUrl')}
+                                                        accept="image/*"
+                                                        disabled={uploadingLogo === 'customer-auth-logo'}
+                                                    />
                                                 </label>
                                             </div>
                                         </div>
@@ -481,13 +530,14 @@ const AdminSettingsScreen: React.FC = () => {
                                             <div className="bg-[#0a0a0a] p-4 rounded-xl border border-white/10 flex items-center justify-between">
                                                 <img src={settings.brandingAssets?.mechanicAuthLogoUrl || settings.appLogoUrl} className="h-12 object-contain" alt="Mechanic Logo" />
                                                 <label className="cursor-pointer bg-white/5 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white/10 transition">
-                                                    Upload
-                                                    <input type="file" className="hidden" onChange={async (e) => {
-                                                        if (e.target.files?.[0]) {
-                                                            const base64 = await compressAndEncodeImage(e.target.files[0], 800, 0.8);
-                                                            setSettings(s => s ? ({ ...s, brandingAssets: { ...s.brandingAssets, mechanicAuthLogoUrl: base64 } }) : null);
-                                                        }
-                                                    }} accept="image/*" />
+                                                    {uploadingLogo === 'mechanic-auth-logo' ? 'Uploading...' : 'Upload'}
+                                                    <input
+                                                        type="file"
+                                                        className="hidden"
+                                                        onChange={(e) => handleBrandingAssetUpload(e, 'mechanic-auth-logo', 'mechanicAuthLogoUrl')}
+                                                        accept="image/*"
+                                                        disabled={uploadingLogo === 'mechanic-auth-logo'}
+                                                    />
                                                 </label>
                                             </div>
                                         </div>

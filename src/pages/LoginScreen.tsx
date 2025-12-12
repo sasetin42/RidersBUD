@@ -39,9 +39,10 @@ const LoginScreen: React.FC = () => {
         return <div className="flex items-center justify-center h-screen bg-secondary"><Spinner size="lg" /></div>;
     }
 
-    // Set the default logo to the new local asset
-    const defaultLogo = "/riders-logo.png";
-    const logoUrl = defaultLogo; // Force use of new logo as requested
+    // Dynamically select logo based on active tab and database settings
+    const logoUrl = activeTab === 'mechanic'
+        ? (db?.settings?.brandingAssets?.mechanicAuthLogoUrl || db?.settings?.appLogoUrl)
+        : (db?.settings?.brandingAssets?.customerAuthLogoUrl || db?.settings?.appLogoUrl);
 
     // Helper validation
     const validateCustomerField = (name: string, value: string) => {

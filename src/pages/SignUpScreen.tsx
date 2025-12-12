@@ -32,9 +32,10 @@ const SignUpScreen: React.FC = () => {
     }
 
     const { settings } = db;
-    // Set the default logo to the new local asset
-    const defaultLogo = "/riders-logo.png";
-    const logoUrl = defaultLogo; // Force use of new logo as requested
+    // Dynamically select logo based on user type and database settings
+    const logoUrl = userType === 'mechanic'
+        ? (settings?.brandingAssets?.mechanicAuthLogoUrl || settings?.appLogoUrl)
+        : (settings?.brandingAssets?.customerAuthLogoUrl || settings?.appLogoUrl);
 
     // --- Validation ---
     const validateCustomerField = (fieldName: string, value: string) => {
