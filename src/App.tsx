@@ -101,7 +101,8 @@ const AppInitializer: React.FC = () => {
     const [appLoading, setAppLoading] = useState(true);
 
     useEffect(() => {
-        const timer = setTimeout(() => setAppLoading(false), 800); // Optimized splash screen duration
+        // Optimized splash screen duration - show logo for 1.5 seconds
+        const timer = setTimeout(() => setAppLoading(false), 1500);
         return () => clearTimeout(timer);
     }, []);
 
