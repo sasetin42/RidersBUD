@@ -33,7 +33,7 @@ const SignUpScreen: React.FC = () => {
 
     const { settings } = db;
     // Set the default logo to the new local asset
-    const defaultLogo = "/riders-logo-full.png";
+    const defaultLogo = "/riders-logo.png";
     const logoUrl = defaultLogo; // Force use of new logo as requested
 
     // --- Validation ---
