@@ -1,0 +1,88 @@
+{"users": [
+{
+  "localId": "1RJTjHixhnZg2sjuxvigUeYA1672",
+  "email": "cesartrongcoso@gmail.com",
+  "emailVerified": true,
+  "displayName": "Cesar Trongcoso Jr.",
+  "photoUrl": "blob:http://localhost:3000/c272efab-370b-4e6b-b80d-a994b23c8d0e",
+  "lastSignedInAt": "1779927002210",
+  "createdAt": "1774684123740",
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "109948896624195922648",
+      "email": "cesartrongcoso@gmail.com",
+      "displayName": "Cesar Trongcoso Jr.",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocKIIPwjWDwwcW1XKtfrWLoTM7BqJgtgJ0ePVXHXaI_uNfR9hmde=s96-c"
+    }
+  ]
+},
+{
+  "localId": "FSHQYeUJ4Ib60LppC3ggwcttxsD2",
+  "email": "juan@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "9I36MYdZFlgFdUVJN6+Wq02bw3NCmiUoJkSHtP+Xnbc8p4l8+0SutVgYkcu5DG3e8eTa1s1w1r7nUY/MhuImwg==",
+  "salt": "WgIQ3bWLnVyC/Q==",
+  "displayName": "Juan Dela Cruz",
+  "lastSignedInAt": "1780275771892",
+  "createdAt": "1777522307916",
+  "providerUserInfo": []
+},
+{
+  "localId": "YS5aGm0uKXN7Mn2ThofOeTMhOZn2",
+  "email": "mechanic@ridersbud.com",
+  "emailVerified": false,
+  "passwordHash": "x6qC7FyUmVCwhiyEb/CUHUkJS/GBzd+iSMauucX3MF69UKRz/gkLMttseDewpwDYAULM5YHE6htxBH6It8lPTA==",
+  "salt": "7xm9CVyiWqO1HA==",
+  "displayName": "Juan Dela Cruz",
+  "lastSignedInAt": "1780273654889",
+  "createdAt": "1777369171131",
+  "providerUserInfo": []
+},
+{
+  "localId": "ZmSc20H1gacADlfcFojxPGnRh6q1",
+  "email": "cano_johnmichael@plpasig.edu.ph",
+  "emailVerified": true,
+  "displayName": "JOHN MICHAEL CANO",
+  "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocKDPvcQqi7hyMXZKsgSwHquHbO9vFcHJva-OWNlty2VDp9Y8NwZ=s96-c",
+  "lastSignedInAt": "1777534524932",
+  "createdAt": "1777345338657",
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "105400514374590791310",
+      "email": "cano_johnmichael@plpasig.edu.ph",
+      "displayName": "JOHN MICHAEL CANO",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocKDPvcQqi7hyMXZKsgSwHquHbO9vFcHJva-OWNlty2VDp9Y8NwZ=s96-c"
+    }
+  ]
+},
+{
+  "localId": "pX0LBGL41UXVP67m3ytvfhwNhN23",
+  "email": "johnmichaelcano497@gmail.com",
+  "emailVerified": true,
+  "displayName": "JOHN MICHAEL CANO",
+  "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIyJeZiznS4gjfdjQaLf2oL9wu-kiZQg37u0MhUuJRfbLepKA=s96-c",
+  "lastSignedInAt": "1777535947269",
+  "createdAt": "1777512426570",
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "102738445890513456044",
+      "email": "johnmichaelcano497@gmail.com",
+      "displayName": "JOHN MICHAEL CANO",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIyJeZiznS4gjfdjQaLf2oL9wu-kiZQg37u0MhUuJRfbLepKA=s96-c"
+    }
+  ]
+},
+{
+  "localId": "yfOrQmMGnHNlLzUN98AabN8wPkn1",
+  "email": "admin@ridersbud.com",
+  "emailVerified": false,
+  "passwordHash": "KV333rzMV3FP3+VivpJgMJYv0MkaUsQ/eO+2bt9mGisGxWv1sBDqclCqlQu/f/fKoTHky6fgwxquuJ4sHy2mZQ==",
+  "salt": "JyOsoYPdK1cGCg==",
+  "lastSignedInAt": "1774686521878",
+  "createdAt": "1774684673570",
+  "disabled": false,
+  "providerUserInfo": []
+}]}

@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuth() {
+      return request.auth != null;
+    }
+    
+    // We use a small trick: since checking admin status might be expensive if done on every read,
+    // we'll allow reading if the document matches the user's ID, or if they are admin.
+    // However, to check if admin, we do: exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
+    function isAdmin() {
+      return isAuth() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+    
+    function isMechanic() {
+      return isAuth() && exists(/databases/$(database)/documents/mechanics/$(request.auth.uid));
+    }
+
+    // Customers
+    match /customers/{userId} {
+      allow read: if isAuth() && (request.auth.uid == userId || isAdmin() || isMechanic());
+      allow write: if isAuth() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Mechanics
+    match /mechanics/{mechanicId} {
+      allow read: if true; // Everyone can read mechanics (fixes public snapshot issue)
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // Bookings
+    match /bookings/{bookingId} {
+      // Mechanics can read ALL bookings — they need to see unassigned job requests
+      // to accept them from the dashboard. Customers and admins also see their own.
+      allow read: if isAuth() && (
+        isAdmin() || 
+        isMechanic() ||
+        resource.data.customerId == request.auth.uid || 
+        resource.data.mechanicId == request.auth.uid
+      );
+      allow create: if isAuth() && (
+        isAdmin() || 
+        request.resource.data.customerId == request.auth.uid
+      );
+      allow update: if isAuth() && (
+        isAdmin() || 
+        resource.data.customerId == request.auth.uid || 
+        resource.data.mechanicId == request.auth.uid ||
+        // Allow a verified mechanic to accept/claim an unassigned booking
+        (isMechanic() && (!("mechanicId" in resource.data) || resource.data.mechanicId == null))
+      );
+      allow delete: if isAdmin();
+
+      // Messages inside bookings
+      match /messages/{messageId} {
+        allow read, write: if isAuth();
+      }
+    }
+
+    // Support Chats
+    match /support_chats/{userId} {
+      allow read, write: if isAuth() && (request.auth.uid == userId || isAdmin());
+      
+      match /messages/{messageId} {
+        allow read, write: if isAuth() && (request.auth.uid == userId || isAdmin());
+      }
+    }
+
+    // Support Satisfaction Reviews
+    match /support_satisfaction/{feedbackId} {
+      allow read: if isAuth() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create, update: if isAuth() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Orders (for parts)
+    match /orders/{orderId} {
+      allow read: if isAuth() && (
+        isAdmin() || 
+        resource.data.customerId == request.auth.uid
+      );
+      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
+      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Tasks (for mechanics)
+    match /tasks/{taskId} {
+      allow read: if isAuth() && (isAdmin() || resource.data.mechanicId == request.auth.uid);
+      allow write: if isAdmin() || (isAuth() && resource.data.mechanicId == request.auth.uid);
+    }
+
+    // Payouts
+    match /payouts/{payoutId} {
+      allow read: if isAuth() && (isAdmin() || resource.data.mechanicId == request.auth.uid);
+      allow create: if isAuth() && (isAdmin() || request.resource.data.mechanicId == request.auth.uid);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuth() && (
+        isAdmin() || 
+        resource.data.recipientId == "all" || 
+        resource.data.recipientId == "customer-" + request.auth.uid ||
+        resource.data.recipientId == "mechanic-" + request.auth.uid ||
+        resource.data.recipientId == "admin" && isAdmin()
+      );
+      allow write: if isAuth(); // Anyone can create a notification currently based on DatabaseContext
+    }
+
+    // Public readable collections (Services, Parts, Banners, FAQs, Settings, etc.)
+    match /services/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /parts/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /banners/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /faqs/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /settings/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /promoCodes/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    
+    // Admin Users
+    match /adminUsers/{adminId} {
+      allow read: if true; // To let clients check if they are admin without throwing permission errors
+      allow write: if isAdmin();
+    }
+
+    match /roles/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /rentalCars/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /rentalBookings/{document=**} { 
+      allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
+      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+    match /subscriptions/{document=**} { allow read: if true; allow write: if isAdmin(); }
+
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

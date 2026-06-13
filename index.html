@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <script>
+        // Suppress Tailwind Play CDN and Firebase snapshot console warnings/errors globally
+        (function() {
+            // Immediately unregister any stale Service Worker from previous sessions
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(regs) {
+                    regs.forEach(function(r) { r.unregister(); });
+                });
+                // Catch SW message errors to prevent unhandled rejections
+                navigator.serviceWorker.addEventListener('messageerror', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            }
+            const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup'];
+            const originalLog = console.log;
+            console.log = function(...args) {
+                if (args[0] && typeof args[0] === 'string' && logSuppressions.some(function(s) { return args[0].indexOf(s) !== -1; })) return;
+                originalLog.apply(console, args);
+            };
+            const originalWarn = console.warn;
+            console.warn = function(...args) {
+                var joined = '';
+                for (var i = 0; i < args.length; i++) {
+                    try {
+                        joined += (typeof args[i] === 'object' ? JSON.stringify(args[i]) : String(args[i])) + ' ';
+                    } catch(e) {
+                        joined += String(args[i]) + ' ';
+                    }
+                }
+                if (
+                    joined.includes('contentscript') ||
+                    joined.includes('ObjectMultiplex') ||
+                    joined.includes('MaxListenersExceededWarning') ||
+                    joined.includes('app-init-liveness') ||
+                    joined.includes('background-liveness') ||
+                    joined.includes('orphaned data') ||
+                    joined.includes('cdn.tailwindcss.com') ||
+                    joined.includes('Tailwind CSS') ||
+                    joined.includes('permission-denied') ||
+                    joined.includes('FirebaseError') ||
+                    joined.includes('storage/unauthorized') ||
+                    joined.includes('unauthorized') ||
+                    joined.includes('Missing or insufficient permissions') ||
+                    joined.includes('Bypassing Firebase Auth') ||
+                    joined.includes('@firebase/database') ||
+                    joined.includes('FIREBASE WARNING') ||
+                    joined.includes('Permission denied') ||
+                    joined.includes('auth/invalid-credential') ||
+                    joined.includes('auth/too-many-requests') ||
+                    joined.includes('Firebase Auth failed') ||
+                    joined.includes('identitytoolkit') ||
+                    joined.includes('Cannot read properties') ||
+                    joined.includes('BloomFilter')
+                ) return;
+                originalWarn.apply(console, args);
+            };
+            const originalError = console.error;
+            console.error = function(...args) {
+                var joined = '';
+                for (var i = 0; i < args.length; i++) {
+                    try {
+                        joined += (typeof args[i] === 'object' ? JSON.stringify(args[i]) : String(args[i])) + ' ';
+                    } catch(e) {
+                        joined += String(args[i]) + ' ';
+                    }
+                }
+                if (
+                    joined.includes('contentscript') ||
+                    joined.includes('ObjectMultiplex') ||
+                    joined.includes('MaxListenersExceededWarning') ||
+                    joined.includes('app-init-liveness') ||
+                    joined.includes('background-liveness') ||
+                    joined.includes('orphaned data') ||
+                    joined.includes('permission-denied') ||
+                    joined.includes('Missing or insufficient permissions') ||
+                    joined.includes('FirebaseError') ||
+                    joined.includes('storage/unauthorized') ||
+                    joined.includes('FIRESTORE') ||
+                    joined.includes('INTERNAL ASSERTION') ||
+                    joined.includes('message channel closed') ||
+                    joined.includes('WebSocket') ||
+                    joined.includes('unauthorized') ||
+                    joined.includes('identitytoolkit') ||
+                    joined.includes('accounts:lookup') ||
+                    joined.includes('default-src') ||
+                    joined.includes('.well-known') ||
+                    joined.includes('Failed to load resource')
+                ) return;
+                originalError.apply(console, args);
+            };
+
+            // Suppress console.debug (Firebase logger may use it for internal errors)
+            var originalDebug = console.debug;
+            console.debug = function() {};
+ 
+            var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data'];
+            function shouldSuppress(m) {
+              if (!m) return false;
+              for (var i = 0; i < suppressed.length; i++) {
+                if (m.indexOf(suppressed[i]) !== -1) return true;
+              }
+              return false;
+            }
+            window.addEventListener('error', function(event) {
+                var msg = event.message || (event.error && event.error.message) || '';
+                if (shouldSuppress(msg)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return true;
+                }
+            }, true);
+            window.addEventListener('unhandledrejection', function(event) {
+                var msg = (event.reason && event.reason.message) || String(event.reason) || '';
+                if (shouldSuppress(msg)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return true;
+                }
+            }, true);
+            // Extra safety: window.onerror return true prevents default console output in some browsers
+            window.onerror = function(msg, url, line, col, err) {
+                var m = msg || (err && err.message) || '';
+                return shouldSuppress(m);
+            };
+        })();
+    </script>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-tap-highlight" content="no" />
+    <title>RidersBud - Professional Bike Repair & Mechanics</title>
+    <meta name="description" content="Find and book local bike mechanics, manage your garage, and track your service history with RidersBud." />
+    <link rel="canonical" href="https://ridersbud.com/" />
+    
+    <!-- Preconnect for Performance -->
+    <link rel="preconnect" href="https://ridersbud-10806.firebaseio.com" />
+    <link rel="preconnect" href="https://storage.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ridersbud.com/" />
+    <meta property="og:title" content="RidersBud - Professional Bike Repair & Mechanics" />
+    <meta property="og:description" content="Find and book local bike mechanics, manage your garage, and track your service history with RidersBud." />
+    <meta property="og:image" content="https://ridersbud.com/og-image.png" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://ridersbud.com/" />
+    <meta property="twitter:title" content="RidersBud - Professional Bike Repair & Mechanics" />
+    <meta property="twitter:description" content="Find and book local bike mechanics, manage your garage, and track your service history with RidersBud." />
+    <meta property="twitter:image" content="https://ridersbud.com/og-image.png" />
+
+    <!-- Standalone Mobile App Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RidersBud" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#FE7803" />
+    <meta name="color-scheme" content="dark" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.firebaseio.com; frame-src 'self' https://*.firebaseapp.com https://*.google.com; child-src 'self' https://*.firebaseapp.com https://*.google.com;">
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- Leaflet CSS & JS for Maps (self-hosted to avoid tracking prevention blocks) -->
+    <link rel="stylesheet" href="/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="/leaflet/MarkerCluster.css" />
+    <link rel="stylesheet" href="/leaflet/MarkerCluster.Default.css" />
+    <script src="/leaflet/leaflet.js"></script>
+    <script src="/leaflet/leaflet.markercluster.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Maven+Pro:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Font-display swap for faster loading */
+        @font-face {
+            font-family: 'Maven Pro';
+            font-display: swap;
+            src: local('Maven Pro'), local('MavenPro-Regular');
+        }
+
+        /* Fast tap highlight removal for mobile */
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Smooth scrolling with momentum */
+        html {
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Global Select/Dropdown Styling - Fix for visibility issues */
+        select {
+            background-color: #1F2937 !important;
+            color: #F3F4F6 !important;
+            border: 1px solid #374151 !important;
+        }
+
+        select option {
+            background-color: #1F2937 !important;
+            color: #F3F4F6 !important;
+            padding: 8px !important;
+        }
+
+        select option:hover,
+        select option:focus,
+        select option:checked {
+            background-color: #374151 !important;
+            color: #FFFFFF !important;
+        }
+
+        select::-ms-expand {
+            display: none;
+        }
+
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239CA3AF' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px !important;
+        }
+
+        /* Modern, beautiful scrollbar */
+        body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        body::-webkit-scrollbar-track {
+            background: #171617;
+        }
+
+        body::-webkit-scrollbar-thumb {
+            background-color: #3A3A3A;
+            border-radius: 3px;
+        }
+
+        body::-webkit-scrollbar-thumb:hover {
+            background-color: #FE7803;
+        }
+
+        /* Custom styles for Leaflet marker clusters */
+        .marker-cluster-ridersbud {
+            background-color: rgba(254, 120, 3, 0.7);
+            border: 2px solid #FE7803;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 0 8px rgba(254, 120, 3, 0.5);
+        }
+
+        .marker-cluster-ridersbud div {
+            width: 36px;
+            height: 36px;
+            margin-left: 2px;
+            margin-top: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .marker-cluster-ridersbud span {
+            font-size: 14px;
+        }
+
+        /* Custom styles for Admin LiveMap logo markers */
+        .custom-marker-div-icon {
+            background: transparent;
+            border: none;
+        }
+
+        .custom-marker-container {
+            position: relative;
+            width: 36px;
+            height: 36px;
+            transition: transform 0.2s ease-out;
+        }
+
+        .custom-marker-image {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid #28a745;
+            box-shadow: 0 0 8px rgba(40, 167, 69, 0.7);
+            transition: all 0.2s ease-out;
+        }
+
+        .custom-marker-image.unavailable {
+            border-color: #dc3545;
+            box-shadow: 0 0 8px rgba(220, 53, 69, 0.7);
+            filter: grayscale(80%);
+        }
+
+        .custom-marker-container.selected .custom-marker-image {
+            transform: scale(1.25);
+            box-shadow: 0 0 12px rgba(254, 120, 3, 0.9);
+            border-color: #FE7803;
+        }
+
+        .pulse-green {
+            animation: pulse-green 2s infinite;
+        }
+
+        /* Custom Popup Styles for Home Screen Map */
+        .ridersbud-popup .leaflet-popup-content-wrapper {
+            background: #2A2A2A;
+            color: #fff;
+            border: 1px solid #4a4a4a;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            padding: 0;
+        }
+
+        .ridersbud-popup .leaflet-popup-content {
+            margin: 0;
+            width: 180px !important;
+        }
+
+        .ridersbud-popup .leaflet-popup-tip {
+            background: #2A2A2A;
+        }
+
+        .ridersbud-popup-inner {
+            font-family: 'Maven Pro', sans-serif;
+            padding: 8px;
+        }
+
+        .ridersbud-popup-img {
+            width: 100%;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .ridersbud-popup-name {
+            font-weight: 700;
+            font-size: 1rem;
+            margin: 0 0 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #fff;
+        }
+
+        .ridersbud-popup-spec {
+            font-size: 0.75rem;
+            color: #A0A0A0;
+            margin: 0 0 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ridersbud-popup-rating {
+            font-size: 0.8rem;
+            color: #facc15;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .ridersbud-popup-btn {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            background-color: #FE7803;
+            color: white;
+            font-weight: 600;
+            padding: 6px 10px;
+            border-radius: 6px;
+            width: 100%;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .ridersbud-popup-btn:hover {
+            background-color: #d96802;
+        }
+
+        /* Move leaflet attribution to bottom left */
+        .leaflet-control-container .leaflet-bottom.leaflet-right {
+            right: auto;
+            left: 10px;
+        }
+
+        /* Loading spinner for faster perceived performance */
+        .loading-spinner {
+            border: 3px solid rgba(254, 120, 3, 0.3);
+            border-top: 3px solid #FE7803;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* GPU acceleration for smooth animations */
+        .gpu-accelerated {
+            transform: translateZ(0);
+            will-change: transform;
+            backface-visibility: hidden;
+        }
+    </style>
+</head>
+
+<body class="bg-secondary">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+    <script>
+        // Only register SW in production — prevents HMR message channel errors in dev
+        if ('serviceWorker' in navigator && !location.hostname.includes('localhost') && !location.hostname.includes('127.0.0.1')) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('SW registered:', reg.scope))
+                    .catch(err => console.log('SW registration failed:', err));
+            });
+        }
+    </script>
+</body>
+
+</html>

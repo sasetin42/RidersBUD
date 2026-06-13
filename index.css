@@ -1,0 +1,882 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Native Mobile App Experience Locks */
+:root {
+    --safe-top: env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
+    --safe-left: env(safe-area-inset-left);
+    --safe-right: env(safe-area-inset-right);
+}
+
+html,
+body,
+#root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    /* Kill browser overscroll/pull-to-refresh */
+    overscroll-behavior-y: none;
+    overscroll-behavior-x: none;
+    /* Prevent text selection (web feel) */
+    user-select: none;
+    -webkit-user-select: none;
+    /* Disable tap highlight on mobile */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+}
+
+/* Re-enable selection for inputs, textareas, and other readable elements */
+input,
+textarea,
+[role="textbox"],
+.selectable-text {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+body {
+    font-family: 'Maven Pro', sans-serif;
+    background-color: #171617; /* Matches secondary color */
+    color: #ffffff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100%;
+}
+
+/* Native Micro-interactions */
+.btn-haptic {
+    transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+}
+
+.btn-haptic:active {
+    transform: scale(0.95);
+    opacity: 0.9;
+}
+
+/* Kill all focus outlines/rings for pure touch feel */
+*:focus {
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
+}
+
+button, 
+a, 
+input, 
+select, 
+textarea {
+    -webkit-tap-highlight-color: transparent;
+}
+
+
+/* Custom Scrollbar Hide Utility */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Global Modern Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #FE7803; /* Brand Primary Color */
+}
+
+/* Glassmorphism Utilities */
+.glass {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.glass-card {
+    background: linear-gradient(145deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.8) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-modal {
+    background: rgba(15, 15, 16, 0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.glass-input {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(4px);
+    transition: all 0.3s ease;
+}
+
+.glass-input:focus {
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(254, 120, 3, 0.5);
+    box-shadow: 0 0 15px rgba(254, 120, 3, 0.1);
+    outline: none;
+}
+
+/* Gradient Text */
+.text-gradient {
+    background: linear-gradient(to right, #ffffff, #9ca3af);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-primary {
+    background: linear-gradient(to right, #FE7803, #FF8A00);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    10%,
+    30%,
+    50%,
+    70%,
+    90% {
+        transform: translateX(-5px);
+    }
+
+    20%,
+    40%,
+    60%,
+    80% {
+        transform: translateX(5px);
+    }
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slideUp {
+    animation: slideUp 0.6s ease-out;
+}
+
+.animate-shake {
+    animation: shake 0.5s ease-in-out;
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes modalIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes scaleUp {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes float {
+    0% {
+        transform: translateY(0px);
+    }
+
+    50% {
+        transform: translateY(-10px);
+    }
+
+    100% {
+        transform: translateY(0px);
+    }
+}
+
+.animate-modalIn {
+    animation: modalIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-scaleUp {
+    animation: scaleUp 0.3s ease-out;
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+.animate-slideInRight {
+    animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-slideInUp {
+    animation: slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideOutRight {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(30px); }
+}
+
+@keyframes progress {
+    from { width: 100%; }
+    to { width: 0%; }
+}
+
+/* Notification Toast Enhanced Animations */
+@keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(calc(100% + 24px)) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+@keyframes toastSlideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(calc(100% + 24px)) scale(0.9);
+    }
+}
+
+@keyframes toastSlideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(24px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes notifShimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+}
+
+@keyframes ringPulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.5; }
+    100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes jobModalEntrance {
+    from {
+        opacity: 0;
+        transform: scale(0.85) translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.animate-toast-in {
+    animation: toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-toast-out {
+    animation: toastSlideOut 0.3s ease-in forwards;
+}
+
+.animate-toast-in-up {
+    animation: toastSlideInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-ring-pulse {
+    animation: ringPulse 1.5s ease-out infinite;
+}
+
+.animate-job-modal-in {
+    animation: jobModalEntrance 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+
+/* Delay utilities for staggered animations */
+.delay-100 {
+    animation-delay: 100ms;
+}
+
+.delay-200 {
+    animation-delay: 200ms;
+}
+
+.delay-300 {
+    animation-delay: 300ms;
+}
+
+.delay-1000 {
+    animation-delay: 1s;
+}
+
+/* Slide Down Animation for Filters */
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        max-height: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        max-height: 500px;
+        transform: translateY(0);
+    }
+}
+
+.animate-slideDown {
+    animation: slideDown 0.3s ease-out forwards;
+}
+
+/* --- Premium Admin Dashboard Enhancements --- */
+
+/* Leaflet Overrides for Dark Mode & Glassmorphism */
+.leaflet-popup-content-wrapper {
+    background: #121212 !important;
+    color: #fff !important;
+    border-radius: 24px !important;
+    padding: 0 !important;
+    overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(12px);
+}
+
+.leaflet-popup-content {
+    margin: 0 !important;
+    width: auto !important;
+}
+
+.leaflet-popup-tip {
+    background: #121212 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.leaflet-container {
+    background: #0a0a0a !important;
+    font-family: 'Outfit', 'Inter', sans-serif !important;
+}
+
+/* ================================================
+   RIDERSBUD BRANDED MAP PIN — Circle Logo + Stem
+   ================================================ */
+
+.rb-map-pin-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.45));
+}
+
+/* Outer pulsing ring */
+.rb-map-pin-wrapper.pulse-available::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(34, 197, 94, 0.2);
+    animation: rb-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+    z-index: 0;
+}
+
+/* Circle logo badge */
+.rb-pin-circle {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #1a1a1a;
+    border: 2.5px solid #FE7803;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+    transition: transform 0.2s, border-color 0.2s;
+    box-shadow: 0 0 0 3px rgba(254,120,3,0.18), 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.rb-pin-circle.selected {
+    border-color: #fff;
+    transform: scale(1.18);
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.25), 0 8px 24px rgba(0,0,0,0.6);
+}
+
+.rb-pin-circle.unavailable {
+    border-color: rgba(255,255,255,0.15);
+    filter: grayscale(0.7) brightness(0.5);
+}
+
+.rb-pin-circle img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+/* The vertical stem / line */
+.rb-pin-stem {
+    width: 2.5px;
+    height: 14px;
+    background: linear-gradient(to bottom, #FE7803, rgba(254,120,3,0));
+    border-radius: 2px;
+    position: relative;
+    z-index: 1;
+}
+
+.rb-pin-circle.selected ~ .rb-pin-stem {
+    background: linear-gradient(to bottom, #fff, rgba(255,255,255,0));
+}
+
+.rb-pin-circle.unavailable ~ .rb-pin-stem {
+    background: linear-gradient(to bottom, rgba(255,255,255,0.15), rgba(255,255,255,0));
+}
+
+/* The small dot anchor at the tip */
+.rb-pin-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #FE7803;
+    box-shadow: 0 0 6px rgba(254,120,3,0.7);
+    position: relative;
+    z-index: 1;
+}
+
+.rb-pin-circle.selected ~ .rb-pin-stem ~ .rb-pin-dot {
+    background: #fff;
+    box-shadow: 0 0 6px rgba(255,255,255,0.7);
+}
+
+/* Location pin (customer / service location) */
+.rb-location-pin-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.5));
+    position: relative;
+}
+
+.rb-location-pin-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(254, 120, 3, 0.15);
+    animation: rb-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    z-index: 0;
+}
+
+.rb-location-circle {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #FE7803;
+    border: 3px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 0 0 4px rgba(254,120,3,0.25), 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.rb-location-circle img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border-radius: 0;
+}
+
+.rb-location-stem {
+    width: 3px;
+    height: 16px;
+    background: linear-gradient(to bottom, #FE7803, rgba(254,120,3,0));
+    border-radius: 2px;
+    position: relative;
+    z-index: 1;
+}
+
+.rb-location-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #FE7803;
+    box-shadow: 0 0 8px rgba(254,120,3,0.8);
+    position: relative;
+    z-index: 1;
+}
+
+/* Cluster badge */
+.rb-cluster-badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #FF8C00, #FE7803);
+    border: 2.5px solid rgba(255,255,255,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 5px rgba(254,120,3,0.2), 0 4px 16px rgba(0,0,0,0.5);
+    font-size: 13px;
+    font-weight: 900;
+    color: #fff;
+    font-family: 'Maven Pro', sans-serif;
+    letter-spacing: -0.5px;
+    position: relative;
+}
+
+.rb-cluster-badge::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    background: rgba(254,120,3,0.12);
+    animation: rb-ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Home destination marker */
+.rb-home-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    filter: drop-shadow(0 6px 20px rgba(0,0,0,0.5));
+}
+
+.rb-home-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #fff;
+    border: 3px solid rgba(255,255,255,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.15), 0 4px 16px rgba(0,0,0,0.5);
+    position: relative;
+    z-index: 1;
+}
+
+.rb-home-circle::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    animation: rb-ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.rb-home-stem {
+    width: 2.5px;
+    height: 14px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.8), rgba(255,255,255,0));
+    border-radius: 2px;
+}
+
+.rb-home-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.8);
+    box-shadow: 0 0 6px rgba(255,255,255,0.5);
+}
+
+/* Mechanic (vehicle) marker in TrackModal */
+.rb-mechanic-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    filter: drop-shadow(0 8px 24px rgba(254,120,3,0.35));
+    position: relative;
+}
+
+.rb-mechanic-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(254,120,3,0.18);
+    animation: rb-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+    z-index: 0;
+}
+
+.rb-mechanic-circle {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: #FE7803;
+    border: 3px solid rgba(255,255,255,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 0 0 4px rgba(254,120,3,0.25), 0 4px 16px rgba(0,0,0,0.5);
+}
+
+.rb-mechanic-stem {
+    width: 3px;
+    height: 14px;
+    background: linear-gradient(to bottom, #FE7803, rgba(254,120,3,0));
+    border-radius: 2px;
+    z-index: 1;
+}
+
+.rb-mechanic-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #FE7803;
+    box-shadow: 0 0 8px rgba(254,120,3,0.8);
+    z-index: 1;
+}
+
+/* Leaflet icon container must be transparent */
+.custom-marker-div-icon,
+.rb-leaflet-icon {
+    background: transparent !important;
+    border: none !important;
+    overflow: visible !important;
+}
+
+@keyframes rb-ping {
+    0%   { transform: translate(-50%,-50%) scale(1);   opacity: 0.7; }
+    70%  { transform: translate(-50%,-50%) scale(1.8); opacity: 0; }
+    100% { transform: translate(-50%,-50%) scale(2.2); opacity: 0; }
+}
+
+.premium-marker-shadow {
+    filter: drop-shadow(0 0 12px rgba(254, 120, 3, 0.4));
+}
+
+/* Voice Activity Pulse Indicator */
+.voice-indicator-active {
+    position: relative;
+    overflow: visible !important;
+}
+
+.voice-indicator-active::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    background: rgba(254, 120, 3, 0.4);
+    border-radius: inherit;
+    animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ping-slow {
+    75%, 100% {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+}
+
+/* Custom Scrollbar for Premium Feel */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    transition: background 0.3s;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(254, 120, 3, 0.3);
+}
+
+/* Global White Cancel Button Style */
+.btn-cancel {
+    background-color: #ffffff !important;
+    color: #121212 !important;
+    font-weight: 700 !important;
+    font-family: 'Maven Pro', sans-serif !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+.btn-cancel:hover {
+    background-color: rgba(255, 255, 255, 0.9) !important;
+    transform: translateY(-1px) !important;
+}
+
+.btn-cancel:active {
+    transform: translateY(0) scale(0.98) !important;
+}
+
+/* ==========================================================================
+   GLOBAL BRANDED BUTTON COMPONENT STANDARDIZATION
+   Forces all button shapes, sizes, hover, active, and focus states 
+   to look premium, cohesive, and have comfortable, unified touch padding.
+   ========================================================================== */
+
+/* Primary button utility overrides */
+button.bg-primary,
+button.bg-gradient-to-r,
+button.btn-primary {
+    font-family: 'Maven Pro', sans-serif !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.05em !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Base button defaults for action buttons across the app */
+button.bg-primary,
+button.bg-gradient-to-r,
+button.btn-primary,
+button.btn-secondary,
+button.bg-secondary,
+button.bg-green-500,
+button.bg-orange-600 {
+    padding-top: 14px !important;
+    padding-bottom: 14px !important;
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+    border-radius: 16px !important; /* Modern rounded-2xl standard */
+    font-size: 13px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1.25 !important;
+    font-weight: 700 !important;
+}
+
+/* Pulse/glow hover updates for premium dark mode feel */
+button.bg-primary:hover,
+button.bg-gradient-to-r:hover {
+    filter: brightness(1.1) !important;
+    box-shadow: 0 8px 20px -4px rgba(254, 120, 3, 0.35) !important;
+}
+
+button:active {
+    transform: scale(0.97) !important;
+}
+

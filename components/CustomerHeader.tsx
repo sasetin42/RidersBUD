@@ -1,0 +1,108 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
+import { Settings, LogOut, ChevronLeft, User } from 'lucide-react';
+import { useScrollDirection } from '../hooks/useScrollDirection';
+
+interface CustomerHeaderProps {
+    title: string;
+    subtitle?: string;
+    showBackButton?: boolean;
+    icon?: React.ReactNode;
+}
+
+const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBackButton = false, icon }) => {
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const scrollDirection = useScrollDirection();
+    const isHidden = scrollDirection === 'up';
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login');
+    };
+
+    return (
+        <header
+            className={`sticky top-0 px-4 py-1.5 z-40 bg-[#121212]/90 backdrop-blur-md flex items-center justify-between border-b border-white/5 shadow-sm transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}
+            style={{ paddingTop: 'calc(0.375rem + env(safe-area-inset-top))' }}
+        >
+            <div className="flex items-center gap-3">
+                {showBackButton && (
+                    <button
+                        onClick={() => navigate(-1)}
+                        className="p-1.5 -ml-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95"
+                    >
+                        <ChevronLeft className="h-5 w-5" />
+                    </button>
+                )}
+                <div className="flex items-center gap-2.5">
+                    {icon && (
+                        <span className="text-primary opacity-90">{icon}</span>
+                    )}
+                    <div>
+                        <h1 className="text-base font-black text-white tracking-tight leading-none">{title}</h1>
+                        {subtitle && <p className="text-[10px] text-gray-400 font-medium">{subtitle}</p>}
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+                {/* Notification Bell - fully functional */}
+                <NotificationBell />
+
+                {/* Profile Dropdown */}
+                <div className="relative">
+                    <button
+                        onClick={() => setIsProfileOpen(!isProfileOpen)}
+                        className="w-8 h-8 rounded-full border-2 border-white/10 overflow-hidden shadow-2xl focus:outline-none focus:ring-2 focus:ring-[#FE7803]/50 transition-all"
+                    >
+                        <img
+                            src={user?.picture || `https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=random`}
+                            alt="Profile"
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=FE7803&color=fff&size=256`; }}
+                        />
+                    </button>
+
+                    {isProfileOpen && (
+                        <div className="absolute right-0 mt-2 w-52 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-fadeIn">
+                            {/* User info */}
+                            <div className="px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+                                <p className="text-sm font-bold text-white truncate">{user?.name || 'Customer'}</p>
+                                <p className="text-[11px] text-gray-500 truncate mt-0.5">{user?.email || ''}</p>
+                            </div>
+                            <div className="py-1">
+                                <button
+                                    onClick={() => { navigate('/customer-portal/profile'); setIsProfileOpen(false); }}
+                                    className="w-full px-4 py-3 text-left text-sm text-gray-300 hover:bg-white/5 hover:text-white flex items-center gap-2.5 transition-colors"
+                                >
+                                    <User size={15} />
+                                    Profile Settings
+                                </button>
+                                <button
+                                    onClick={() => { navigate('/customer-portal/settings'); setIsProfileOpen(false); }}
+                                    className="w-full px-4 py-3 text-left text-sm text-gray-300 hover:bg-white/5 hover:text-white flex items-center gap-2.5 transition-colors"
+                                >
+                                    <Settings size={15} />
+                                    Account Settings
+                                </button>
+                                <button
+                                    onClick={handleLogout}
+                                    className="w-full px-4 py-3 text-left text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 flex items-center gap-2.5 transition-colors border-t border-white/5"
+                                >
+                                    <LogOut size={15} />
+                                    Log Out
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </header>
+    );
+};
+
+export default CustomerHeader;

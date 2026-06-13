@@ -1,0 +1,84 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper function
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Receipts / general user uploads
+    match /receipts/{userId}/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == userId;
+    }
+
+    // General user/vehicle uploads under /users/
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == userId;
+    }
+    
+    // Customer profile photos
+    match /customers/profiles/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+    
+    // Customer vehicle photos
+    match /customers/vehicles/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+    
+    // Profiles, Portfolios & General uploads under /mechanics/
+    match /mechanics/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth() && request.auth.uid == userId;
+    }
+
+    match /profiles/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth() && request.auth.uid == userId;
+    }
+
+    match /portfolio/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth() && request.auth.uid == userId;
+    }
+    
+    match /vehicles/{plateNumber}/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+    
+    // Catalog (Services & Parts)
+    match /catalog/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+    
+    // Support Chat Attachments
+    match /chats/{userId}/{allPaths=**} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+    
+    // Marketing Banners
+    match /banners/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+    
+    // System Settings
+    match /settings/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+    
+    // Admin Avatars
+    match /admin/avatars/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+  }
+}
