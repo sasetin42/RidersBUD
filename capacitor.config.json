@@ -1,0 +1,6 @@
+{
+  "appId": "com.sasetin42.ridersbud",
+  "appName": "RidersBUD",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

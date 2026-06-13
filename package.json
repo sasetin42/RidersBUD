@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
     "@google/genai": "^1.21.0",
     "@vitejs/plugin-react": "^5.1.1",
     "browser-image-compression": "^2.0.2",
@@ -27,6 +28,8 @@
     "vite": "^7.2.4"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.23",
