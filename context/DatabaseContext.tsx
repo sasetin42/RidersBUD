@@ -1160,7 +1160,11 @@ await sendNotification({
     };
 
     const updateCustomerLocation = async (id: string, loc: { lat: number; lng: number }) => {
-        await updateDoc(doc(firestore, 'customers', id), { lat: loc.lat, lng: loc.lng });
+        await updateDoc(doc(firestore, 'customers', id), {
+            lat: loc.lat,
+            lng: loc.lng,
+            lastLocationUpdate: new Date().toISOString()
+        });
     };
 
     const addOrder = async (order: Omit<Order, 'id'>) => {

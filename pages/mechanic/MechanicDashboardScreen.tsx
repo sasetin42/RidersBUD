@@ -96,6 +96,13 @@ const MechanicDashboardScreen: React.FC = () => {
     const [newAssignedJob, setNewAssignedJob] = useState<Booking | null>(null);
     const [customerProfile, setCustomerProfile] = useState<any>(null);
 
+    // Enforce offline by default when the mechanic dashboard mounts
+    useEffect(() => {
+        if (mechanic && isOnline) {
+            updateOnlineStatus(false);
+        }
+    }, [mechanic?.id]);
+
     const isBookingApprovedForMechanicView = useCallback((booking: Booking) => {
         const paymentMethod = (booking.paymentMethod || '').toLowerCase();
         const isGCashBooking = paymentMethod === 'gcash' || !!booking.gcashReceiptUrl || !!booking.gcashPaymentStatus;

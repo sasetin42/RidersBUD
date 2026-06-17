@@ -238,6 +238,9 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                 await signOut(auth);
                 throw new Error("Your account is currently inactive. Please contact support.");
             }
+
+            // Set offline status in Firestore upon login
+            await setDoc(doc(firestore, 'mechanics', userCredential.user.uid), { isOnline: false }, { merge: true });
             
             setIsBypassed(false);
             saveMechanicSessionToStorage(null, false);
@@ -259,10 +262,15 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                             throw new Error("Your account is currently inactive. Please contact support.");
                         }
                         console.info("[AuthBypass] Signing in legacy/mock mechanic via local bypass...");
+                        
+                        // Set offline status in Firestore upon local bypass login
+                        await setDoc(doc(firestore, 'mechanics', mechData.id), { isOnline: false }, { merge: true });
+                        const updatedData = { ...mechData, isOnline: false };
+
                         setIsBypassed(true);
-                        setMechanic(mechData);
+                        setMechanic(updatedData);
                         setIsMechanicAuthenticated(true);
-                        saveMechanicSessionToStorage(mechData, true);
+                        saveMechanicSessionToStorage(updatedData, true);
                         return;
                     }
                 }

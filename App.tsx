@@ -240,7 +240,7 @@ const AppContent: React.FC = () => {
         setLocationChecking(true);
         setLocationError(null);
 
-        const handleSuccess = (position: GeolocationPosition) => {
+        const handleSuccess = async (position: GeolocationPosition) => {
             setIsLocationBlocked(false);
             setLocationChecking(false);
             setLocationError(null);
@@ -250,10 +250,15 @@ const AppContent: React.FC = () => {
                 lng: position.coords.longitude
             };
 
-            if (isAuthenticated && user && updateCustomerLocation) {
-                updateCustomerLocation(user.id, coords);
-            } else if (isMechanicAuthenticated && mechanic && updateMechanicLocation) {
-                updateMechanicLocation(mechanic.id, coords);
+            try {
+                if (isAuthenticated && user && updateCustomerLocation) {
+                    await updateCustomerLocation(user.id, coords);
+                } else if (isMechanicAuthenticated && mechanic && updateMechanicLocation) {
+                    await updateMechanicLocation(mechanic.id, coords);
+                }
+            } catch (err) {
+                console.warn('[Location] Failed to save location to database:', err);
+                // Don't block UI — location is still granted
             }
         };
 
@@ -308,12 +313,28 @@ const AppContent: React.FC = () => {
                             checkLocationPermission();
                         } else if (status.state === 'denied') {
                             setIsLocationBlocked(true);
+                        } else if (status.state === 'prompt') {
+                            // User reset permission — allow retry
+                            setLocationError(null);
                         }
                     };
                 })
                 .catch(() => {});
         }
     }, [isAuthenticated, isMechanicAuthenticated, checkLocationPermission]);
+
+    // Fix 3: Visibility-change polling fallback for browsers that don't fire onchange after returning from settings
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible' && isLocationBlocked && (isAuthenticated || isMechanicAuthenticated)) {
+                setTimeout(() => {
+                    checkLocationPermission();
+                }, 500);
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, [isLocationBlocked, isAuthenticated, isMechanicAuthenticated, checkLocationPermission]);
 
     // Prompt location permissions immediately upon login/session start
     useEffect(() => {
@@ -749,31 +770,55 @@ const AppContent: React.FC = () => {
 
                     <div className="space-y-1.5">
                         <h1 className="text-xl font-black tracking-tight text-white">Location Access Required</h1>
-                        <p className="text-xs text-gray-400 leading-relaxed">
-                            Allow location access to connect with nearby mechanics and track your service in real-time.
-                        </p>
+                        {permissionState === 'denied' ? (
+                            <p className="text-xs text-amber-400/90 leading-relaxed">
+                                Location access is blocked. Use the steps below to enable it in your device settings, then return to this page.
+                            </p>
+                        ) : (
+                            <p className="text-xs text-gray-400 leading-relaxed">
+                                Allow location access to connect with nearby mechanics and track your service in real-time.
+                            </p>
+                        )}
                     </div>
 
                     {locationError && (
-                        <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg text-center">
-                            <span className="text-[11px] text-red-300 font-medium">{locationError}</span>
+                        <div className={`p-2.5 border rounded-lg text-center ${
+                            permissionState === 'denied'
+                                ? 'bg-amber-500/10 border-amber-500/20'
+                                : 'bg-red-500/10 border-red-500/20'
+                        }`}>
+                            <span className={`text-[11px] font-medium ${
+                                permissionState === 'denied' ? 'text-amber-300' : 'text-red-300'
+                            }`}>{locationError}</span>
                         </div>
                     )}
 
                     <button
                         onClick={checkLocationPermission}
                         disabled={locationChecking}
-                        className="w-full bg-primary hover:bg-orange-600 text-white text-sm font-bold py-3 rounded-xl transition duration-200 shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                        className={`w-full text-white text-sm font-bold py-3 rounded-xl transition duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${
+                            permissionState === 'denied'
+                                ? 'bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/30 animate-pulse-glow'
+                                : 'bg-primary hover:bg-orange-600 shadow-lg shadow-primary/20'
+                        }`}
+                        style={permissionState === 'denied' ? { boxShadow: '0 0 18px 4px rgba(245,158,11,0.35)' } : undefined}
                     >
                         {locationChecking ? (
                             <>
                                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                <span>Getting location...</span>
+                                <span>Checking location...</span>
                             </>
+                        ) : permissionState === 'denied' ? (
+                            <span>I&apos;ve Enabled Location — Retry</span>
                         ) : (
                             <span>Enable Location Access</span>
                         )}
                     </button>
+                    {permissionState === 'denied' && !locationChecking && (
+                        <p className="text-[10px] text-gray-500 text-center -mt-2">
+                            The page will automatically detect when location is enabled.
+                        </p>
+                    )}
 
                     <div className="glass-card-premium rounded-xl border border-white/5 text-left overflow-hidden">
                         <div className="flex border-b border-white/5 bg-white/5">
