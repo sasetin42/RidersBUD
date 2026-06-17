@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 
 import { ref, onValue } from 'firebase/database';
-import { rtdb } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db as firestore, rtdb } from '../firebase';
 
 declare const L: any;
 
@@ -175,9 +176,43 @@ const BookingDetailScreen: React.FC = () => {
     const [eta, setEta] = useState<string | null>(null);
     const [distance, setDistance] = useState<number | null>(null);
 
-    const booking = useMemo(() => {
-        return db?.bookings?.find(b => b.id === bookingId);
-    }, [db, bookingId]);
+    const [fetchedBooking, setFetchedBooking] = useState<Booking | null>(null);
+    const [isFetching, setIsFetching] = useState(true);
+
+    useEffect(() => {
+        if (!bookingId) {
+            setIsFetching(false);
+            return;
+        }
+
+        // Check cache first
+        const cached = db?.bookings?.find(b => b.id === bookingId);
+        if (cached) {
+            setFetchedBooking(cached);
+            setIsFetching(false);
+            return;
+        }
+
+        // Fetch directly from Firestore
+        const fetchDoc = async () => {
+            try {
+                const docSnap = await getDoc(doc(firestore, 'bookings', bookingId));
+                if (docSnap.exists()) {
+                    setFetchedBooking({ id: docSnap.id, ...docSnap.data() } as Booking);
+                } else {
+                    setFetchedBooking(null);
+                }
+            } catch (err) {
+                console.error("Error fetching booking directly:", err);
+            } finally {
+                setIsFetching(false);
+            }
+        };
+
+        fetchDoc();
+    }, [bookingId, db?.bookings]);
+
+    const booking = fetchedBooking;
 
     const bookingSequenceId = useMemo(() => {
         if (!db?.bookings || !bookingId) return '';
@@ -324,7 +359,7 @@ const BookingDetailScreen: React.FC = () => {
         }
     }, [showCompleteTransactionModal]);
 
-    if (dbLoading || (!booking && !db)) {
+    if (dbLoading || isFetching) {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0a]">
                 <Spinner size="lg" color="text-primary" />
