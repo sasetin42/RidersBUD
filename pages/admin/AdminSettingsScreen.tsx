@@ -6,7 +6,7 @@ import Spinner from '../../components/Spinner';
 import { storageService } from '../../services/StorageService';
 import {
     Save, Globe, Clock, DollarSign, Bell, Shield, Upload, Image as ImageIcon,
-    Layout, Smartphone, Wrench, CreditCard, Mail, FileCheck, Plus, Trash2,
+    Layout, Smartphone, Wrench, CreditCard, Mail, FileCheck, Plus, Trash2, User,
     AlertTriangle, Check, RefreshCw, Facebook, Twitter, Instagram, ChevronRight, MessageSquare, HelpCircle
 } from 'lucide-react';
 
@@ -356,6 +356,26 @@ const AdminSettingsScreen: React.FC = () => {
                                             'App Favicon',
                                             'faviconUrl',
                                             'The small icon displayed in browser tabs.'
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+
+                                <div className="space-y-8">
+                                    <h2 className="text-2xl font-black text-white flex items-center gap-3  tracking-tighter">
+                                        <User className="text-primary" size={24} /> Default Profile Images
+                                    </h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {renderImageUpload(
+                                            'Default Customer Image',
+                                            'defaultCustomerImageUrl',
+                                            'Shown as the default profile picture for new customer accounts.'
+                                        )}
+                                        {renderImageUpload(
+                                            'Default Mechanic Image',
+                                            'defaultMechanicImageUrl',
+                                            'Shown as the default profile picture for new mechanic accounts.'
                                         )}
                                     </div>
                                 </div>

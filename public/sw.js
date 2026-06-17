@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ridersbud-v3';
+const CACHE_NAME = 'ridersbud-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -59,7 +59,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.match(/\.(ts|tsx|jsx|vue|svelte)$/)) return;
 
   const safeRespond = (p) => {
-    const safe = p.catch(() => new Response('', { status: 503 }));
+    const safe = p.catch(() => Response.error());
     event.respondWith(safe);
     event.waitUntil(safe.catch(() => {}));
   };
@@ -98,7 +98,7 @@ async function cacheFirst(request) {
     }
     return response;
   } catch {
-    return new Response('Offline', { status: 503 });
+    return Response.error();
   }
 }
 
@@ -112,7 +112,7 @@ async function networkFirst(request) {
     return response;
   } catch {
     const cached = await caches.match(request);
-    return cached || new Response('Offline', { status: 503 });
+    return cached || Response.error();
   }
 }
 
@@ -128,9 +128,9 @@ async function staleWhileRevalidate(request) {
   try {
     const response = await fetch(request);
     if (response && response.ok) cache.put(request, response.clone());
-    return response || new Response('Offline', { status: 503 });
+    return response || Response.error();
   } catch {
-    return new Response('Offline', { status: 503 });
+    return Response.error();
   }
 }
 

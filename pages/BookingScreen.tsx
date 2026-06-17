@@ -133,7 +133,7 @@ const MechanicAvailabilityCard: React.FC<{
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                             <div className="flex items-center gap-1">
                                 <Star size={13} className="fill-yellow-400 text-yellow-400 filter drop-shadow-[0_0_4px_rgba(250,204,21,0.4)]" />
-                                <span className="text-xs font-black text-white">{mechanic.rating.toFixed(1)}</span>
+                                <span className="text-xs font-black text-white">{(mechanic.rating || 0).toFixed(1)}</span>
                                 <span className="text-[10px] text-gray-500">({mechanic.reviews || 0} jobs)</span>
                             </div>
 
@@ -660,27 +660,24 @@ const BookingScreen: React.FC = () => {
         }
     };
 
-    if (!db || authLoading) {
-        return <div className="flex items-center justify-center h-full"><Spinner size="lg" /></div>;
-    }
-
-    const { services, bookings, mechanics } = db;
+    const { services, bookings, mechanics } = db || { services: [], bookings: [], mechanics: [] };
 
     const totalPrice = useMemo(() => {
+        if (!db) return 0;
         return services
             .filter(s => selectedServiceIds.has(s.id))
             .reduce((sum, s) => sum + s.price, 0);
-    }, [selectedServiceIds, services]);
+    }, [selectedServiceIds, services, db]);
 
     const isQuoteRequest = useMemo(() => {
-        if (selectedServiceIds.size === 0) return false;
+        if (!db || selectedServiceIds.size === 0) return false;
         const selectedServicesList = services.filter(s => selectedServiceIds.has(s.id));
         return selectedServicesList.some(s => s.price === 0);
-    }, [selectedServiceIds, services]);
+    }, [selectedServiceIds, services, db]);
 
 
     const allSpecializations = useMemo(() => {
-        if (!mechanics) return [];
+        if (!db || !mechanics) return ['all'];
         const specSet = new Set<string>();
         mechanics.forEach(m => {
             if (m.status === 'Active') {
@@ -688,11 +685,11 @@ const BookingScreen: React.FC = () => {
             }
         });
         return ['all', ...Array.from(specSet).sort()];
-    }, [mechanics]);
+    }, [mechanics, db]);
 
     // Helper function to calculate distance between two coordinates (Haversine formula)
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-        const R = 6371; // Radius of the Earth in kilometers
+        const R = 6371;
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
         const a =
@@ -700,30 +697,27 @@ const BookingScreen: React.FC = () => {
             Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c; // Distance in kilometers
+        return R * c;
     };
 
     const filteredAndSortedMechanics = useMemo(() => {
+        if (!db || !mechanics) return [];
         const selectedDayOfWeek = selectedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
         const selectedDateWithoutTime = new Date(selectedDate);
         selectedDateWithoutTime.setHours(0, 0, 0, 0);
 
         const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
 
-        // Filter mechanics
         let availableMechanics = mechanics.filter(mechanic => {
-            // Must be Active status and Online (Realtime & Live)
             if (mechanic.status !== 'Active') return false;
             if (!mechanic.isOnline) return false;
 
-            // Check if mechanic has an active booking (is currently busy)
             const hasBusyBooking = bookings.some(b =>
                 b.mechanic?.id === mechanic.id &&
                 (b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Mechanic Assigned')
             );
             if (hasBusyBooking) return false;
 
-            // Check unavailable dates
             if (mechanic.unavailableDates?.some(d => {
                 const start = new Date(d.startDate.replace(/-/g, '/'));
                 const end = new Date(d.endDate.replace(/-/g, '/'));
@@ -734,26 +728,17 @@ const BookingScreen: React.FC = () => {
                 return false;
             }
 
-            // Check day of week availability: if booking is for today and mechanic is online, they are available.
             const isToday = selectedDateWithoutTime.getTime() === new Date().setHours(0, 0, 0, 0);
             if (!(isToday && mechanic.isOnline) && !mechanic.availability?.[selectedDayOfWeek]?.isAvailable) return false;
 
-            // Check specialization match
             if (selectedServices.length > 0) {
                 const hasSpecializationMatch = selectedServices.some(selectedService => {
                     const serviceNameLower = selectedService.name.toLowerCase();
                     const serviceCategoryLower = selectedService.category.toLowerCase();
-
                     return mechanic.specializations.some(specRaw => {
                         const spec = specRaw.toLowerCase();
-                        
-                        // 1. Match category
                         if (spec.includes(serviceCategoryLower) || serviceCategoryLower.includes(spec)) return true;
-                        
-                        // 2. Match service name
                         if (spec.includes(serviceNameLower) || serviceNameLower.includes(spec)) return true;
-
-                        // 3. Word-by-word matching
                         const serviceWords = serviceNameLower.split(' ');
                         return serviceWords.some(word => word.length > 2 && (spec.includes(word) || word.includes(spec)));
                     });
@@ -761,23 +746,20 @@ const BookingScreen: React.FC = () => {
                 if (!hasSpecializationMatch) return false;
             }
 
-            // Optional filters
             if (specializationFilter !== 'all' && !mechanic.specializations.includes(specializationFilter)) return false;
             if (mechanicSearch && !mechanic.name.toLowerCase().includes(mechanicSearch.toLowerCase())) return false;
 
             return true;
         });
 
-        // Calculate distances and sort by proximity if service location is available
         if (serviceLocation) {
             const mechanicsWithDistance = availableMechanics.map(mechanic => ({
                 mechanic,
                 distance: mechanic.lat && mechanic.lng
                     ? calculateDistance(serviceLocation.lat, serviceLocation.lng, mechanic.lat, mechanic.lng)
-                    : 999999 // Put mechanics without location at the end
+                    : 999999
             }));
 
-            // Sort by distance (nearest first)
             mechanicsWithDistance.sort((a, b) => {
                 if (a.distance === b.distance) {
                     switch (sortOption) {
@@ -796,7 +778,6 @@ const BookingScreen: React.FC = () => {
             return mechanicsWithDistance;
         }
 
-        // Fallback: sort based on option if no location available
         availableMechanics.sort((a, b) => {
             switch (sortOption) {
                 case 'rating_desc': return b.rating - a.rating;
@@ -810,7 +791,7 @@ const BookingScreen: React.FC = () => {
         });
 
         return availableMechanics.map(mechanic => ({ mechanic, distance: undefined }));
-    }, [mechanics, services, selectedServiceIds, selectedDate, specializationFilter, mechanicSearch, sortOption, bookings, serviceLocation]);
+    }, [mechanics, services, selectedServiceIds, selectedDate, specializationFilter, mechanicSearch, sortOption, bookings, serviceLocation, db]);
 
 
     const handleStep1Continue = () => {
@@ -1247,105 +1228,111 @@ const BookingScreen: React.FC = () => {
                             {/* GPS Accuracy Pill */}
                             {locationAccuracy !== null && (
                                 <div className="absolute top-24 left-4 z-[400] bg-[#1a1a1ae0] backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 flex items-center gap-3 shadow-2xl transition-all duration-300 animate-slideDown">
-                                    <span className={`w-3 h-3 rounded-full ${isTrackingLive ? 'bg-green-500 animate-pulse shadow-md shadow-green-500/50' : 'bg-amber-500 animate-ping'}`} />
+                                    <span className={`w-3 h-3 rounded-full flex-shrink-0 ${isTrackingLive ? 'bg-green-500 animate-pulse shadow-md shadow-green-500/50' : 'bg-amber-500'}`} />
                                     <div className="flex flex-col">
                                         <span className="text-xs text-white font-extrabold tracking-wider leading-none">
                                             {isTrackingLive ? 'LIVE GPS ACTIVE' : 'MANUAL PIN PLACEMENT'}
                                         </span>
                                         <span className="text-[10px] text-gray-400 font-bold mt-1.5 leading-none">
-                                            {isTrackingLive ? `Accurate to ±${Math.round(locationAccuracy)}m` : 'Live tracking paused'}
+                                            {isTrackingLive ? `Accurate to ±${Math.round(locationAccuracy)}m` : 'Tap recenter to resume tracking'}
                                         </span>
                                     </div>
                                     {!isTrackingLive && (
-                                        <Tooltip content="Resume live tracking">
-                                            <button
-                                                onClick={() => setIsTrackingLive(true)}
-                                                className="border border-primary hover:bg-primary hover:text-white text-primary text-[10px] font-bold px-3 py-1.5 rounded-lg ml-3 transition-all uppercase"
-                                            >
-                                                Resume
-                                            </button>
-                                        </Tooltip>
+                                        <button
+                                            onClick={() => setIsTrackingLive(true)}
+                                            className="border border-[#FE7803] hover:bg-[#FE7803] hover:text-white text-[#FE7803] text-[10px] font-bold px-3 py-1.5 rounded-lg ml-1 transition-all uppercase tracking-wide"
+                                        >
+                                            Resume
+                                        </button>
                                     )}
                                 </div>
                             )}
 
-                            {/* Recenter & Zoom Controls */}
-                            <div className="absolute bottom-6 right-4 z-[400] flex flex-col gap-3">
-                                <Tooltip content="Zoom In">
-                                    <button
-                                        onClick={() => {
-                                            if (mapInstanceRef.current) {
-                                                mapInstanceRef.current.zoomIn();
-                                            }
-                                        }}
-                                        className="w-12 h-12 flex items-center justify-center backdrop-blur-md border border-white/20 bg-[#1E1E1E]/80 text-white rounded-full shadow-2xl transition-all duration-300 hover:bg-primary hover:border-primary hover:text-white"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                                        </svg>
-                                    </button>
-                                </Tooltip>
+                            {/* Zoom + Recenter Controls — right side */}
+                            <div className="absolute bottom-8 right-4 z-[400] flex flex-col gap-2.5">
+                                {/* Zoom In */}
+                                <button
+                                    onClick={() => { if (mapInstanceRef.current) mapInstanceRef.current.zoomIn(); }}
+                                    className="w-11 h-11 flex items-center justify-center backdrop-blur-md border border-white/20 bg-[#1E1E1E]/90 text-white rounded-full shadow-xl transition-all duration-200 hover:bg-white/20 hover:border-white/40 active:scale-90"
+                                    title="Zoom In"
+                                >
+                                    {/* Plus icon */}
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19" />
+                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                    </svg>
+                                </button>
 
-                                <Tooltip content="Zoom Out">
-                                    <button
-                                        onClick={() => {
-                                            if (mapInstanceRef.current) {
-                                                mapInstanceRef.current.zoomOut();
-                                            }
-                                        }}
-                                        className="w-12 h-12 flex items-center justify-center backdrop-blur-md border border-white/20 bg-[#1E1E1E]/80 text-white rounded-full shadow-2xl transition-all duration-300 hover:bg-primary hover:border-primary hover:text-white"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 12H4" />
-                                        </svg>
-                                    </button>
-                                </Tooltip>
+                                {/* Zoom Out */}
+                                <button
+                                    onClick={() => { if (mapInstanceRef.current) mapInstanceRef.current.zoomOut(); }}
+                                    className="w-11 h-11 flex items-center justify-center backdrop-blur-md border border-white/20 bg-[#1E1E1E]/90 text-white rounded-full shadow-xl transition-all duration-200 hover:bg-white/20 hover:border-white/40 active:scale-90"
+                                    title="Zoom Out"
+                                >
+                                    {/* Minus icon */}
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                    </svg>
+                                </button>
 
-                                <Tooltip content="Recenter on your location">
-                                    <button
-                                        onClick={() => {
-                                            setIsTrackingLive(true);
-                                            if (navigator.geolocation) {
-                                                const onRefreshSuccess = (position: GeolocationPosition) => {
+                                {/* Recenter / GPS button */}
+                                <button
+                                    onClick={() => {
+                                        setIsTrackingLive(true);
+                                        if (navigator.geolocation) {
+                                            navigator.geolocation.getCurrentPosition(
+                                                (position) => {
                                                     const { latitude, longitude, accuracy } = position.coords;
                                                     setServiceLocation({ lat: latitude, lng: longitude });
                                                     setLocationAccuracy(accuracy);
                                                     if (mapInstanceRef.current) {
-                                                        mapInstanceRef.current.setView([latitude, longitude], 18);
+                                                        mapInstanceRef.current.setView([latitude, longitude], 18, { animate: true, duration: 0.8 });
                                                     }
-                                                };
-                                                navigator.geolocation.getCurrentPosition(
-                                                    onRefreshSuccess,
-                                                    () => {},
-                                                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-                                                );
-                                            }
-                                        }}
-                                        className={`w-12 h-12 flex items-center justify-center backdrop-blur-md border rounded-full shadow-2xl transition-all duration-300 ${
-                                            isTrackingLive
-                                                ? 'bg-primary border-primary text-white scale-110 shadow-primary/30'
-                                                : 'bg-[#1E1E1E]/80 border-white/20 text-white hover:bg-primary hover:border-primary'
-                                        }`}
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                        </svg>
-                                    </button>
-                                </Tooltip>
+                                                    if (markerRef.current) {
+                                                        markerRef.current.setLatLng([latitude, longitude]);
+                                                    }
+                                                },
+                                                () => {},
+                                                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                                            );
+                                        }
+                                    }}
+                                    className={`w-14 h-14 flex items-center justify-center rounded-2xl shadow-2xl transition-all duration-300 active:scale-90 relative overflow-hidden ${
+                                        isTrackingLive
+                                            ? 'bg-[#FE7803] border-2 border-white/30 shadow-[0_0_24px_rgba(254,120,3,0.5)]'
+                                            : 'bg-[#FE7803]/90 border-2 border-[#FE7803]/60 hover:bg-[#FE7803] hover:shadow-[0_0_20px_rgba(254,120,3,0.4)]'
+                                    }`}
+                                    title="Recenter on my location"
+                                >
+                                    {/* Animated ping ring when active */}
+                                    {isTrackingLive && (
+                                        <span className="absolute inset-0 rounded-2xl border-2 border-white/40 animate-ping opacity-60" />
+                                    )}
+                                    {/* Crosshair / GPS target icon */}
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="3" fill="white" fillOpacity="0.3" />
+                                        <line x1="12" y1="2" x2="12" y2="6" />
+                                        <line x1="12" y1="18" x2="12" y2="22" />
+                                        <line x1="2" y1="12" x2="6" y2="12" />
+                                        <line x1="18" y1="12" x2="22" y2="12" />
+                                        <circle cx="12" cy="12" r="6" />
+                                    </svg>
+                                </button>
                             </div>
 
-                            {/* Tap-to-move hint */}
-                            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[400] pointer-events-none">
-                                <div className="bg-black/60 backdrop-blur-md px-3.5 py-2 rounded-full border border-white/10 flex items-center gap-1.5">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-primary animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+                            {/* Drag-pin hint — bottom center */}
+                            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[400] pointer-events-none">
+                                <div className="bg-black/70 backdrop-blur-md px-4 py-2 rounded-full border border-white/15 flex items-center gap-2 shadow-xl">
+                                    {/* Touch / drag finger icon */}
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FE7803" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-bounce flex-shrink-0">
+                                        <path d="M12 2a2 2 0 0 1 2 2v6.5l1.5-.9A2 2 0 0 1 18 11.5v1a7 7 0 0 1-14 0v-2a2 2 0 0 1 3-1.8V4a2 2 0 0 1 2-2z" />
                                     </svg>
-                                    <span className="text-[9px] font-black text-white tracking-widest">DRAG PIN OR TAP MAP TO MOVE</span>
+                                    <span className="text-[9px] font-black text-white tracking-widest whitespace-nowrap">DRAG PIN OR TAP MAP TO MOVE</span>
                                 </div>
                             </div>
                         </>
                     )}
+
                 </div>
                 <div className="p-0 bg-[#1D1D1D] border-t border-dark-gray z-30 relative w-full shrink-0">
                     <Tooltip content="Confirm your service location" className="w-full">
@@ -1740,7 +1727,7 @@ const BookingScreen: React.FC = () => {
                                         <div className="flex-1">
                                             <p className="text-base font-bold text-white">{selectedMechanic.name}</p>
                                             <div className="flex items-center gap-2 mt-0.5">
-                                                <div className="flex items-center gap-1 text-yellow-400"><svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784-.57-1.838.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg><span className="text-xs font-bold">{selectedMechanic.rating.toFixed(1)}</span></div>
+                                                <div className="flex items-center gap-1 text-yellow-400"><svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784-.57-1.838.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg><span className="text-xs font-bold">{(selectedMechanic.rating || 0).toFixed(1)}</span></div>
                                                 <span className="text-xs text-gray-500">• {selectedMechanic.reviews} jobs</span>
                                             </div>
                                         </div>
@@ -1803,6 +1790,10 @@ const BookingScreen: React.FC = () => {
             </div>
         );
     };
+
+    if (!db || authLoading) {
+        return <div className="flex items-center justify-center h-full"><Spinner size="lg" /></div>;
+    }
 
     return (
         <div className="flex flex-col h-screen h-[100dvh] bg-secondary overflow-hidden">

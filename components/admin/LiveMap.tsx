@@ -1,20 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Mechanic, Settings, Booking } from '../../types';
 import { rtdb } from '../../firebase';
 import { ref, onValue, off } from 'firebase/database';
 
-// Declare L to satisfy TypeScript since it's loaded from the CDN in index.html
 declare const L: any;
 
-// SVG for default map pins
-const greenPinSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="%2328a745"><path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67a24 24 0 0 1-35.464 0zM192 256c35.346 0 64-28.654 64-64s-28.654-64-64-64-64 28.654-64-64 28.654 64 64 64z"/></svg>`;
-const redPinSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="%23dc3545"><path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67a24 24 0 0 1-35.464 0zM192 256c35.346 0 64-28.654 64-64s-28.654-64-64-64-64 28.654-64-64 28.654 64 64 64z"/></svg>`;
-const bluePinSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="%233b82f6"><path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67a24 24 0 0 1-35.464 0zM192 256c35.346 0 64-28.654 64-64s-28.654-64-64-64-64 28.654-64-64 28.654 64 64 64z"/></svg>`;
-
-// Google Maps Distance Matrix API key (same key used for map rendering)
 const GMAPS_API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-// Fetch real driving ETA from Google Maps Distance Matrix API
 const fetchGoogleMapsETA = async (
     originLat: number, originLng: number,
     destLat: number, destLng: number
@@ -26,19 +18,17 @@ const fetchGoogleMapsETA = async (
         const data = await res.json();
         const element = data?.rows?.[0]?.elements?.[0];
         if (element?.status === 'OK') {
-            return element.duration.text; // e.g. "12 mins"
+            return element.duration.text;
         }
-    } catch (_) { /* fall through */ }
-    // Fallback: haversine straight-line estimate
+    } catch (_) { }
     const R = 6371;
     const dLat = (destLat - originLat) * Math.PI / 180;
     const dLon = (destLng - originLng) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(originLat*Math.PI/180)*Math.cos(destLat*Math.PI/180)*Math.sin(dLon/2)**2;
-    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(originLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return `~${Math.round((dist / 25) * 60 + 2)} mins`;
 };
 
-// Fix: Define a local type that includes the dynamically added 'isAvailable' property.
 type MappedMechanic = Mechanic & { isAvailable?: boolean };
 
 interface LiveMapProps {
@@ -46,33 +36,46 @@ interface LiveMapProps {
     bookings: Booking[];
     settings: Settings;
     onViewProfile: (mechanicId: string) => void;
+    onAssignBooking?: (booking: Booking) => void;
 }
 
-const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onViewProfile }) => {
+const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onViewProfile, onAssignBooking }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
     const markersLayerRef = useRef<any>(null);
     const bookingMarkersRef = useRef<{ [key: string]: any }>({});
     const mechanicMarkersRef = useRef<{ [key: string]: any }>({});
     const polylinesRef = useRef<{ [key: string]: any }>({});
+    const [selectedMechanicId, setSelectedMechanicId] = useState<string | null>(null);
+    const [mapReady, setMapReady] = useState(false);
+    const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'pending'>('all');
+    const legendRef = useRef<HTMLDivElement>(null);
 
-    // 1. Initialize map on component mount
+    const filteredMechanics = mechanics.filter(m =>
+        filterStatus === 'all' ? true : m.status?.toLowerCase() === filterStatus
+    );
+
     useEffect(() => {
         if (!mapRef.current || mapInstanceRef.current || !L) return;
 
-        mapInstanceRef.current = L.map(mapRef.current, {
+        const map = L.map(mapRef.current, {
             center: [14.58, 121.05],
             zoom: 12,
-            zoomControl: true,
+            zoomControl: false,
             dragging: true,
             scrollWheelZoom: true,
         });
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        }).addTo(mapInstanceRef.current);
+        }).addTo(map);
 
-        markersLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        mapInstanceRef.current = map;
+        markersLayerRef.current = L.layerGroup().addTo(map);
+
+        map.whenReady(() => setMapReady(true));
 
         return () => {
             if (mapInstanceRef.current) {
@@ -82,15 +85,59 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
         };
     }, []);
 
-    // 2. Sync markers and lines
-    useEffect(() => {
-        if (!mapInstanceRef.current || !markersLayerRef.current) return;
+    const buildMechanicIcon = useCallback((mechanic: Mechanic, isSelected: boolean) => {
+        const isAvailable = mechanic.status === 'Active';
+        const selectedClass = isSelected ? 'selected' : '';
+        const availClass = isAvailable ? 'pulse-available' : '';
+        const unavailClass = !isAvailable ? 'unavailable' : '';
 
-        // Clear only non-tracking markers if needed, or update intelligently
+        const html = `
+            <div class="rb-map-pin-wrapper ${availClass}">
+                <div class="rb-pin-circle ${selectedClass} ${unavailClass}">
+                    <img src="${mechanic.imageUrl || ''}" alt="${mechanic.name}" loading="lazy" />
+                </div>
+                <div class="rb-pin-stem"></div>
+                <div class="rb-pin-dot"></div>
+            </div>`;
+
+        return L.divIcon({
+            html,
+            className: 'rb-leaflet-icon',
+            iconSize: [42, 68],
+            iconAnchor: [21, 68],
+            popupAnchor: [0, -72]
+        });
+    }, []);
+
+    const buildBookingIcon = useCallback((booking: Booking) => {
+        const isCritical = booking.status === 'Upcoming' && !booking.mechanicId;
+        const html = `
+            <div class="rb-location-pin-wrapper">
+                <div class="rb-location-circle">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                </div>
+                <div class="rb-location-stem"></div>
+                <div class="rb-location-dot"></div>
+            </div>`;
+
+        return L.divIcon({
+            html,
+            className: 'rb-leaflet-icon',
+            iconSize: [44, 70],
+            iconAnchor: [22, 70],
+            popupAnchor: [0, -74]
+        });
+    }, []);
+
+    useEffect(() => {
+        if (!mapInstanceRef.current || !markersLayerRef.current || !mapReady) return;
+
         const currentMechanicIds = new Set(mechanics.map(m => m.id));
         const currentBookingIds = new Set(bookings.filter(b => b.location).map(b => b.id));
 
-        // Cleanup stale polylines
         Object.keys(polylinesRef.current).forEach(id => {
             if (!currentBookingIds.has(id)) {
                 polylinesRef.current[id].remove();
@@ -98,92 +145,131 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
             }
         });
 
-        // Update Mechanic Markers
-        mechanics.forEach(mechanic => {
-            const isAvailable = mechanic.status === 'Active';
-            const iconHtml = `
-                <div class="relative group premium-marker-shadow">
-                    <div class="absolute -inset-2 bg-primary/20 rounded-full blur-xl group-hover:bg-primary/40 transition-all ${isAvailable ? 'animate-pulse' : ''}"></div>
-                    <img src="${mechanic.imageUrl}" alt="${mechanic.name}" class="w-10 h-10 rounded-full border-2 border-primary object-cover relative z-10 shadow-2xl" />
-                    <div class="absolute -bottom-1 -right-1 w-3.5 h-3.5 ${isAvailable ? 'bg-green-500' : 'bg-red-500'} border-2 border-[#121212] rounded-full z-20"></div>
+        filteredMechanics.forEach(mechanic => {
+            const isSelected = selectedMechanicId === mechanic.id;
+            const icon = buildMechanicIcon(mechanic, isSelected);
+
+            const popupContent = `
+                <div class="p-5 min-w-[240px] bg-[#121212] text-white rounded-2xl">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-12 h-12 rounded-full overflow-hidden border-2 border-primary/50">
+                            <img src="${mechanic.imageUrl || ''}" alt="${mechanic.name}" class="w-full h-full object-cover" />
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-black leading-none text-white">${mechanic.name}</p>
+                            <p class="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-wider">${mechanic.status}</p>
+                        </div>
+                    </div>
+                    <div class="space-y-2 border-t border-white/5 pt-3">
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-gray-500 font-bold uppercase tracking-wider">Rating</span>
+                            <span class="text-yellow-400 font-black">${(mechanic.rating || 0).toFixed(1)} ⭐</span>
+                        </div>
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-gray-500 font-bold uppercase tracking-wider">Jobs Done</span>
+                            <span class="text-white font-black">${mechanic.reviews || 0}</span>
+                        </div>
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-gray-500 font-bold uppercase tracking-wider">Specialty</span>
+                            <span class="text-gray-300 font-bold truncate max-w-[130px]">${mechanic.specializations?.slice(0, 2).join(', ') || 'N/A'}</span>
+                        </div>
+                    </div>
+                    <button onclick="window.__mapViewProfile && window.__mapViewProfile('${mechanic.id}')" class="mt-4 w-full py-2.5 bg-primary text-white text-[10px] font-black tracking-widest rounded-xl hover:bg-orange-600 transition-all">
+                        VIEW PROFILE
+                    </button>
                 </div>`;
-            
-            const icon = L.divIcon({
-                html: iconHtml,
-                className: 'custom-mechanic-icon',
-                iconSize: [40, 40],
-                iconAnchor: [20, 20],
-                popupAnchor: [0, -20]
-            });
 
             if (mechanicMarkersRef.current[mechanic.id]) {
-                mechanicMarkersRef.current[mechanic.id].setLatLng([mechanic.lat, mechanic.lng]).setIcon(icon);
+                const marker = mechanicMarkersRef.current[mechanic.id];
+                marker.setLatLng([mechanic.lat, mechanic.lng]);
+                marker.setIcon(icon);
+                marker.setPopupContent(popupContent);
             } else {
                 const m = L.marker([mechanic.lat, mechanic.lng], { icon }).addTo(markersLayerRef.current);
-                m.bindPopup(`<div class="p-4 font-bold text-white bg-[#121212] rounded-2xl border border-white/10 shadow-2xl">
-                    <p class="text-sm">${mechanic.name}</p>
-                    <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-widest">${mechanic.status}</p>
-                </div>`);
+                m.bindPopup(popupContent, {
+                    className: 'rb-custom-popup',
+                    closeButton: true,
+                    maxWidth: 280,
+                    minWidth: 240
+                });
+                m.on('click', () => {
+                    setSelectedMechanicId(mechanic.id);
+                });
                 mechanicMarkersRef.current[mechanic.id] = m;
             }
         });
 
-        // Update Booking Markers
+        Object.keys(mechanicMarkersRef.current).forEach(id => {
+            if (!currentMechanicIds.has(id)) {
+                mechanicMarkersRef.current[id].remove();
+                delete mechanicMarkersRef.current[id];
+            }
+        });
+
         bookings.filter(b => b.location).forEach(booking => {
-            const isCritical = booking.status === 'Upcoming' && !booking.mechanicId;
-            const iconUrl = `data:image/svg+xml;charset=UTF-8,${isCritical ? redPinSvg : bluePinSvg}`;
-            const icon = L.icon({
-                iconUrl,
-                iconSize: [32, 48],
-                iconAnchor: [16, 48],
-                popupAnchor: [0, -45]
-            });
+            const icon = buildBookingIcon(booking);
 
             const popupContent = `
-                <div class="p-5 min-w-[220px] bg-[#121212] text-white">
+                <div class="p-5 min-w-[240px] bg-[#121212] text-white rounded-2xl">
                     <div class="flex items-center gap-3 mb-4">
                         <div class="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30">
-                            <span class="text-primary text-xs font-black">${(booking.customerName?.charAt(0)) || '?'}</span>
+                            <span class="text-primary text-sm font-black">${(booking.customerName?.charAt(0)) || '?'}</span>
                         </div>
-                        <div>
-                            <p class="text-sm font-black leading-none">${booking.customerName}</p>
-                            <p class="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-tighter">${(booking.services?.[0]?.name) || 'Service'}</p>
-                        </div>
-                    </div>
-                    <div class="space-y-3 border-t border-white/5 pt-4">
-                        <div id="eta-${booking.id}" class="hidden">
-                            <div class="flex justify-between items-center text-[10px] mb-2">
-                                <span class="text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1">
-                                    <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
-                                    Live ETA
-                                </span>
-                                <span class="text-primary font-black eta-value">Calculating...</span>
-                            </div>
-                        </div>
-                        <div class="flex justify-between text-[10px]">
-                            <span class="text-gray-500 font-bold uppercase tracking-wider">Current Status</span>
-                            <span class="text-primary font-black uppercase tracking-widest animate-pulse">${booking.status}</span>
-                        </div>
-                        <div class="flex justify-between text-[10px]">
-                            <span class="text-gray-500 font-bold uppercase tracking-wider">Service Point</span>
-                            <span class="text-gray-300 font-bold truncate max-w-[120px]">${booking.location?.address}</span>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-black leading-none text-white truncate">${booking.customerName}</p>
+                            <p class="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-tighter">${booking.service?.name || (booking.services?.[0]?.name) || 'Service'}</p>
                         </div>
                     </div>
-                    <a href="https://www.google.com/maps/dir/?api=1&destination=${booking.location?.lat},${booking.location?.lng}" target="_blank" class="mt-5 flex items-center justify-center gap-2 w-full py-3 bg-primary text-white text-[10px] font-black tracking-widest rounded-xl hover:bg-orange-600 transition-all shadow-lg shadow-primary/20">
-                        OPEN IN NAVIGATION
-                    </a>
-                </div>
-            `;
+                    <div id="eta-${booking.id}" class="hidden">
+                        <div class="flex justify-between items-center text-[10px] mb-2">
+                            <span class="text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                Live ETA
+                            </span>
+                            <span class="text-green-400 font-black eta-value">Calculating...</span>
+                        </div>
+                    </div>
+                    <div class="space-y-2 border-t border-white/5 pt-3">
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-gray-500 font-bold uppercase tracking-wider">Status</span>
+                            <span class="text-primary font-black uppercase tracking-widest">${booking.status}</span>
+                        </div>
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-gray-500 font-bold uppercase tracking-wider">Address</span>
+                            <span class="text-gray-300 font-bold truncate max-w-[120px]">${booking.location?.address || 'N/A'}</span>
+                        </div>
+                        ${booking.mechanicName ? `
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-gray-500 font-bold uppercase tracking-wider">Mechanic</span>
+                            <span class="text-primary font-bold">${booking.mechanicName}</span>
+                        </div>` : ''}
+                    </div>
+                    <div class="mt-4 flex gap-2">
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${booking.location?.lat},${booking.location?.lng}" target="_blank" class="flex-1 py-2.5 bg-primary text-white text-[10px] font-black tracking-widest rounded-xl hover:bg-orange-600 transition-all text-center">
+                            NAVIGATE
+                        </a>
+                        ${!booking.mechanicId && onAssignBooking ? `
+                        <button onclick="window.__mapAssignBooking && window.__mapAssignBooking('${booking.id}')" class="flex-1 py-2.5 bg-white/10 text-white text-[10px] font-black tracking-widest rounded-xl hover:bg-white/20 transition-all">
+                            ASSIGN
+                        </button>` : ''}
+                    </div>
+                </div>`;
 
             if (bookingMarkersRef.current[booking.id]) {
-                bookingMarkersRef.current[booking.id].setLatLng([booking.location!.lat, booking.location!.lng]).setIcon(icon).setPopupContent(popupContent);
+                bookingMarkersRef.current[booking.id].setLatLng([booking.location!.lat, booking.location!.lng]);
+                bookingMarkersRef.current[booking.id].setIcon(icon);
+                bookingMarkersRef.current[booking.id].setPopupContent(popupContent);
             } else {
                 const bMarker = L.marker([booking.location!.lat, booking.location!.lng], { icon }).addTo(markersLayerRef.current);
-                bMarker.bindPopup(popupContent);
+                bMarker.bindPopup(popupContent, {
+                    className: 'rb-custom-popup',
+                    closeButton: true,
+                    maxWidth: 280,
+                    minWidth: 240
+                });
                 bookingMarkersRef.current[booking.id] = bMarker;
             }
 
-            // Draw connecting line if mechanic is assigned and en route/in progress
             if (booking.mechanicId && (booking.status === 'En Route' || booking.status === 'In Progress')) {
                 const mechanic = mechanics.find(m => m.id === booking.mechanicId);
                 if (mechanic) {
@@ -191,7 +277,7 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
                         [mechanic.lat, mechanic.lng],
                         [booking.location!.lat, booking.location!.lng]
                     ];
-                    
+
                     if (polylinesRef.current[booking.id]) {
                         polylinesRef.current[booking.id].setLatLngs(latlngs);
                     } else {
@@ -204,7 +290,6 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
                         }).addTo(mapInstanceRef.current);
                     }
 
-                    // Update Popup with Live Google Maps ETA (async)
                     const bId = booking.id;
                     fetchGoogleMapsETA(mechanic.lat, mechanic.lng, booking.location!.lat, booking.location!.lng).then(etaText => {
                         let updatedPopup = popupContent.replace('class="hidden"', 'class="block"');
@@ -217,11 +302,29 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
             }
         });
 
-    }, [mechanics, bookings, settings, onViewProfile]);
+        Object.keys(bookingMarkersRef.current).forEach(id => {
+            if (!currentBookingIds.has(id)) {
+                bookingMarkersRef.current[id].remove();
+                delete bookingMarkersRef.current[id];
+            }
+        });
 
-    // 3. Real-time Tracking Sync from RTDB
+    }, [filteredMechanics, bookings, settings, onViewProfile, mapReady, selectedMechanicId, buildMechanicIcon, buildBookingIcon, onAssignBooking]);
+
     useEffect(() => {
-        if (!rtdb || !L) return;
+        (window as any).__mapViewProfile = onViewProfile;
+        (window as any).__mapAssignBooking = (bookingId: string) => {
+            const booking = bookings.find(b => b.id === bookingId);
+            if (booking && onAssignBooking) onAssignBooking(booking);
+        };
+        return () => {
+            delete (window as any).__mapViewProfile;
+            delete (window as any).__mapAssignBooking;
+        };
+    }, [onViewProfile, bookings, onAssignBooking]);
+
+    useEffect(() => {
+        if (!rtdb || !L || !mapReady) return;
 
         const trackingRef = ref(rtdb, 'tracking');
         const unsubscribe = onValue(trackingRef, (snapshot) => {
@@ -234,8 +337,7 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
                     if (mMarker) {
                         const newPos = [data.mechanicLocation.lat, data.mechanicLocation.lng];
                         mMarker.setLatLng(newPos);
-                        
-                        // Update linked polyline
+
                         if (polylinesRef.current[bookingId]) {
                             const bMarker = bookingMarkersRef.current[bookingId];
                             if (bMarker) {
@@ -251,9 +353,101 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
         });
 
         return () => off(trackingRef);
-    }, []);
+    }, [mapReady]);
 
-    return <div ref={mapRef} className="h-full w-full rounded-2xl shadow-inner bg-[#111]" style={{ minHeight: '550px' }} />;
+    const handleZoomToFit = () => {
+        if (!mapInstanceRef.current) return;
+        const allPoints: [number, number][] = [
+            ...mechanics.map(m => [m.lat, m.lng] as [number, number]),
+            ...bookings.filter(b => b.location).map(b => [b.location!.lat, b.location!.lng] as [number, number])
+        ];
+        if (allPoints.length > 0) {
+            mapInstanceRef.current.fitBounds(allPoints, { padding: [50, 50] });
+        }
+    };
+
+    const handleFullscreen = () => {
+        if (!mapRef.current) return;
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            mapRef.current.requestFullscreen();
+        }
+    };
+
+    return (
+        <div className="relative h-full w-full">
+            <div ref={mapRef} className="h-full w-full rounded-2xl shadow-inner bg-[#111]" style={{ minHeight: '550px' }} />
+
+            {/* Map Controls Overlay */}
+            <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2">
+                {/* Filter Controls */}
+                <div className="bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-xl p-1.5 flex gap-1 shadow-2xl">
+                    {(['all', 'active', 'pending'] as const).map(status => (
+                        <button
+                            key={status}
+                            onClick={() => setFilterStatus(status)}
+                            className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                                filterStatus === status
+                                    ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                                    : 'text-gray-500 hover:text-white hover:bg-white/5'
+                            }`}
+                        >
+                            {status === 'all' ? 'All' : status === 'active' ? 'Active' : 'Pending'}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+                <button
+                    onClick={handleZoomToFit}
+                    className="w-9 h-9 bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:border-white/20 transition-all shadow-2xl"
+                    title="Fit all markers"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                    </svg>
+                </button>
+                <button
+                    onClick={handleFullscreen}
+                    className="w-9 h-9 bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:border-white/20 transition-all shadow-2xl"
+                    title="Fullscreen"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                    </svg>
+                </button>
+            </div>
+
+            {/* Map Legend */}
+            <div className="absolute bottom-4 left-4 z-[1000] bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-xl p-3 shadow-2xl">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-full border-2 border-primary bg-[#1A1A1A]"></div>
+                        <span className="text-[10px] font-bold text-gray-400">Mechanic</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-full bg-primary border-2 border-white"></div>
+                        <span className="text-[10px] font-bold text-gray-400">Job Site</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-5 h-0.5 bg-primary opacity-60" style={{ borderTop: '2px dashed #FE7803' }}></div>
+                        <span className="text-[10px] font-bold text-gray-400">Route</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Stats Badge */}
+            <div className="absolute bottom-4 right-4 z-[1000] bg-[#1A1A1A]/90 backdrop-blur-xl border border-white/10 rounded-xl px-3 py-2 shadow-2xl">
+                <div className="flex items-center gap-3 text-[10px] font-bold">
+                    <span className="text-green-400">{mechanics.filter(m => m.status === 'Active').length} Active</span>
+                    <span className="text-gray-600">|</span>
+                    <span className="text-primary">{bookings.length} Jobs</span>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 export default LiveMap;

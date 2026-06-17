@@ -244,17 +244,14 @@ const BookingStatusCard = React.memo<{
                     {booking.mechanic && (
                         <div className="bg-[#1A1A1A] p-5 rounded-2xl border border-white/5 flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-xl font-bold text-white shadow-lg shadow-primary/20 overflow-hidden">
-                                    {liveMechanic?.imageUrl ? (
-                                        <img
-                                            src={liveMechanic.imageUrl}
-                                            alt={booking.mechanic.name}
-                                            className="w-full h-full object-cover"
-                                            loading="lazy"
-                                        />
-                                    ) : (
-                                        booking.mechanic.name.split(' ').slice(0, 2).map(n => n[0]).join('')
-                                    )}
+                                <div className="w-12 h-12 rounded-full overflow-hidden shadow-lg border border-white/10 bg-[#1A1A1A]">
+                                    <img
+                                        src={liveMechanic?.imageUrl || '/riders-logo.png'}
+                                        alt={booking.mechanic.name}
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                    />
                                 </div>
                                 <div>
                                     <p className="text-xs text-gray-400 font-bold  tracking-wider mb-0.5">Your Mechanic</p>

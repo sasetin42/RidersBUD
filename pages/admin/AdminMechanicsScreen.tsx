@@ -767,7 +767,7 @@ const AdminMechanicsScreen: React.FC = () => {
         const state = location.state as { viewMechanicId?: string };
         const mechanicIdToView = state?.viewMechanicId;
 
-        if (mechanicIdToView && db) {
+        if (mechanicIdToView && db?.mechanics) {
             const mechanicToView = db.mechanics.find(m => m.id === mechanicIdToView);
             if (mechanicToView) {
                 setEditingMechanic(mechanicToView);
@@ -777,19 +777,22 @@ const AdminMechanicsScreen: React.FC = () => {
         }
     }, [location.state, db, navigate, location.pathname]);
 
-    // Get all unique specializations
     const allSpecializations = useMemo(() => {
-        if (!db) return [];
+        if (!db?.mechanics) return [];
         const specs = new Set<string>();
-        db.mechanics.forEach(m => m.specializations.forEach(s => specs.add(s)));
+        db.mechanics.forEach(m => {
+            if (m.specializations && Array.isArray(m.specializations)) {
+                m.specializations.forEach(s => specs.add(s));
+            }
+        });
         return Array.from(specs).sort();
     }, [db]);
 
     const filteredMechanics = useMemo(() => {
-        if (!db) return [];
+        if (!db?.mechanics) return [];
         let filtered = db.mechanics.filter(mechanic => {
-            const searchMatch = mechanic.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                mechanic.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            const searchMatch = (mechanic.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (mechanic.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (mechanic.specializations || []).some(s => s.toLowerCase().includes(searchQuery.toLowerCase()));
             const statusMatch = statusFilter === 'all' || mechanic.status === statusFilter;
             const specMatch = specializationFilter === 'all' || (mechanic.specializations || []).includes(specializationFilter);
@@ -802,8 +805,8 @@ const AdminMechanicsScreen: React.FC = () => {
 
             switch (sortConfig.key) {
                 case 'name':
-                    aValue = a.name.toLowerCase();
-                    bValue = b.name.toLowerCase();
+                    aValue = (a.name || '').toLowerCase();
+                    bValue = (b.name || '').toLowerCase();
                     break;
                 case 'rating':
                     aValue = a.rating || 0;
@@ -814,16 +817,16 @@ const AdminMechanicsScreen: React.FC = () => {
                     bValue = b.reviews || 0;
                     break;
                 case 'registrationDate':
-                    aValue = a.registrationDate ? new Date(a.registrationDate.replace(/-/g, '/')).getTime() : 0;
-                    bValue = b.registrationDate ? new Date(b.registrationDate.replace(/-/g, '/')).getTime() : 0;
+                    aValue = a.registrationDate ? new Date(String(a.registrationDate).replace(/-/g, '/')).getTime() : 0;
+                    bValue = b.registrationDate ? new Date(String(b.registrationDate).replace(/-/g, '/')).getTime() : 0;
                     break;
                 case 'status':
-                    aValue = a.status;
-                    bValue = b.status;
+                    aValue = a.status || '';
+                    bValue = b.status || '';
                     break;
                 default:
-                    aValue = a.name.toLowerCase();
-                    bValue = b.name.toLowerCase();
+                    aValue = (a.name || '').toLowerCase();
+                    bValue = (b.name || '').toLowerCase();
             }
 
             if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
@@ -836,7 +839,7 @@ const AdminMechanicsScreen: React.FC = () => {
 
     // Calculate stats with trends
     const stats = useMemo(() => {
-        if (!db) return { total: 0, active: 0, pending: 0, avgRating: 0, totalJobs: 0 };
+        if (!db?.mechanics) return { total: 0, active: 0, pending: 0, avgRating: 0, totalJobs: 0 };
 
         const total = db.mechanics.length;
         const active = db.mechanics.filter(m => m.status === 'Active').length;
@@ -850,14 +853,14 @@ const AdminMechanicsScreen: React.FC = () => {
     // Export to CSV
     const exportToCSV = () => {
         const headers = ['Name', 'Email', 'Phone', 'Status', 'Rating', 'Reviews', 'Specializations', 'Joined'];
-        const rows = filteredMechanics.map(m => [
+        const rows = (filteredMechanics || []).map(m => [
             m.name,
             m.email,
             m.phone,
             m.status,
             (m.rating || 0).toFixed(1),
             m.reviews || 0,
-            (m.specializations || []).join('; '),
+            (Array.isArray(m.specializations) ? m.specializations : []).join('; '),
             m.registrationDate || 'N/A'
         ]);
 
@@ -998,7 +1001,7 @@ const AdminMechanicsScreen: React.FC = () => {
                     icon={<CheckCircle size={24} className="text-white" />}
                     gradient="bg-gradient-to-br from-green-600 to-green-900"
                     trend={{ value: 8, isPositive: true }}
-                    subtitle={`${((stats.active / stats.total) * 100).toFixed(0)}% Utilization`}
+                    subtitle={`${(stats.total === 0 ? 0 : (stats.active / stats.total) * 100).toFixed(0)}% Utilization`}
                 />
                 <EnhancedKPICard
                     title="Pending Review"

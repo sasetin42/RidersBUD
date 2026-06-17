@@ -2555,7 +2555,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
                         />
                         <StatCard
                             title="Rating"
-                            value={mechanic.rating.toFixed(1)}
+                            value={(mechanic.rating || 0).toFixed(1)}
                             icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 15.27L16.18 19l-1.64-7.03L20 7.24l-7.19-.61L10 0 7.19 6.63 0 7.24l5.46 4.73L3.82 19z" /></svg>}
                             color="text-orange-400"
                         />
@@ -2576,7 +2576,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
                         badge={
                             <span className="text-[10px] bg-yellow-500/10 text-yellow-500 font-extrabold border border-yellow-500/20 px-2 py-0.5 rounded-full flex items-center gap-0.5">
                                 <Star size={10} className="fill-yellow-500 text-yellow-500" />
-                                {mechanic.rating.toFixed(1)}
+                                {(mechanic.rating || 0).toFixed(1)}
                             </span>
                         }
                         onClick={() => setActiveModal('reviews')} 

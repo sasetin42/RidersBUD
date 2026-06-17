@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 import { Settings, LogOut, ChevronLeft, User } from 'lucide-react';
+import { getProfileImage } from '../utils/imageConstants';
 import { useScrollDirection } from '../hooks/useScrollDirection';
 
 interface CustomerHeaderProps {
@@ -60,10 +61,10 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                         className="w-8 h-8 rounded-full border-2 border-white/10 overflow-hidden shadow-2xl focus:outline-none focus:ring-2 focus:ring-[#FE7803]/50 transition-all"
                     >
                         <img
-                            src={user?.picture || `https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=random`}
+                            src={getProfileImage(user?.picture, user?.name)}
                             alt="Profile"
                             className="w-full h-full object-cover"
-                            onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=FE7803&color=fff&size=256`; }}
+                            onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
                         />
                     </button>
 

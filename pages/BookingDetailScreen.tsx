@@ -9,6 +9,7 @@ import Spinner from '../components/Spinner';
 import ReviewModal from '../components/ReviewModal';
 import ReviewDeclinedModal from '../components/ReviewDeclinedModal';
 import GCashPaymentModal from '../components/GCashPaymentModal';
+import { CallButton } from '../components/CallUI';
 import {
     MapPin, Phone, MessageSquare, Navigation, CheckCircle, Clock,
     Calendar, User, Car, Shield, ChevronRight, AlertCircle,
@@ -456,7 +457,15 @@ const BookingDetailScreen: React.FC = () => {
 
                 {/* Service Card */}
                 <div className="relative overflow-hidden rounded-[2rem] p-6 glass-card border border-primary/20 shadow-[0_8px_32px_rgba(0,0,0,0.3)] animate-slideInUp">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-16 translate-x-16 blur-2xl opacity-50" />
+                    {/* Background overlay image based on the Services primary image */}
+                    <img
+                        src={booking.services?.[0]?.imageUrl || booking.service?.imageUrl || booking.services?.[0]?.image || booking.service?.image || '/images/mockups/parts_placeholder.png'}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none z-0"
+                    />
+                    {/* Dark contrast tint */}
+                    <div className="absolute inset-0 bg-black/65 pointer-events-none z-0" />
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-16 translate-x-16 blur-2xl opacity-50 pointer-events-none z-0" />
                     <div className="relative z-10">
                         {/* Top Row: Service Name and Price */}
                         <div className="flex items-start justify-between mb-4">
@@ -474,25 +483,25 @@ const BookingDetailScreen: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Bottom Row: Date, Time, Status Badge, and Duration */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <div className="flex items-center gap-1.5 glass px-3 py-1.5 rounded-xl border border-white/5">
-                                <Calendar size={13} className="text-primary" />
-                                <span className="text-xs font-bold text-gray-200">
+                        {/* Bottom Row: Date, Time, Status Badge, and Duration - forced one-line layout */}
+                        <div className="flex flex-row items-center gap-1.5 flex-nowrap whitespace-nowrap w-full overflow-hidden">
+                            <div className="flex items-center gap-1 glass px-2 py-1 rounded-xl border border-white/5 flex-shrink-0">
+                                <Calendar size={11} className="text-primary" />
+                                <span className="text-[10px] font-bold text-gray-200">
                                     {new Date(date.replace(/-/g, '/')).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                 </span>
                             </div>
-                            <div className="flex items-center gap-1.5 glass px-3 py-1.5 rounded-xl border border-white/5">
-                                <Clock size={13} className="text-primary" />
-                                <span className="text-xs font-bold text-gray-200">{time}</span>
+                            <div className="flex items-center gap-1 glass px-2 py-1 rounded-xl border border-white/5 flex-shrink-0">
+                                <Clock size={11} className="text-primary" />
+                                <span className="text-[10px] font-bold text-gray-200">{time}</span>
                             </div>
-                            <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-widest border shadow-lg shadow-black/20 ${getStatusColor(status)}`}>
+                            <div className={`px-2.5 py-1 rounded-xl text-[9px] font-black tracking-widest border shadow-lg shadow-black/20 flex-shrink-0 ${getStatusColor(status)}`}>
                                 {status}
                             </div>
                             {totalDuration > 0 && (
-                                <div className="flex items-center gap-1.5 bg-blue-500/10 px-3 py-1.5 rounded-xl border border-blue-500/20">
-                                    <Timer size={12} className="text-blue-400" />
-                                    <span className="text-[10px] font-black text-blue-400 tracking-tighter">~{totalDuration} mins</span>
+                                <div className="flex items-center gap-1 bg-blue-500/10 px-2 py-1 rounded-xl border border-blue-500/20 flex-shrink-0">
+                                    <Timer size={10} className="text-blue-400" />
+                                    <span className="text-[9px] font-black text-blue-400 tracking-tighter">~{totalDuration} mins</span>
                                 </div>
                             )}
                         </div>
@@ -590,22 +599,13 @@ const BookingDetailScreen: React.FC = () => {
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
                                 {/* Mechanic Image */}
-                                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 border border-white/10 overflow-hidden relative flex-shrink-0">
-                                    {mechanic.imageUrl ? (
-                                        <img
-                                            src={mechanic.imageUrl}
-                                            alt={mechanic.name}
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                e.currentTarget.style.display = 'none';
-                                                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                                                if (fallback) fallback.classList.remove('hidden');
-                                            }}
-                                        />
-                                    ) : null}
-                                    <div className={`w-full h-full flex items-center justify-center ${mechanic.imageUrl ? 'hidden' : ''}`}>
-                                        <User size={24} className="text-gray-500" />
-                                    </div>
+                                <div className="w-14 h-14 rounded-full bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0">
+                                    <img
+                                        src={mechanic.imageUrl || '/riders-logo.png'}
+                                        alt={mechanic.name}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                    />
                                 </div>
 
                                 {/* Mechanic Info Details */}
@@ -785,20 +785,19 @@ const BookingDetailScreen: React.FC = () => {
                                 )}
                             </button>
 
-                            <button 
-                                onClick={handleCallMechanic} 
-                                className="w-full bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex items-center justify-center gap-2 text-primary py-3.5 transition-all active:scale-95 text-xs font-bold tracking-wide uppercase"
-                            >
-                                <Phone size={16} />
-                                Call Mechanic
-                            </button>
+                            {mechanic?.phone && (
+                                <a href={`tel:${mechanic.phone}`} className="w-full bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex items-center justify-center gap-2 text-primary py-3.5 transition-all active:scale-95 text-xs font-bold tracking-wide uppercase">
+                                    <Phone size={16} />
+                                    Call Mechanic
+                                </a>
+                            )}
 
                             <button
-                                onClick={() => navigate('/customer-portal/booking-history')}
-                                className="w-full bg-[#151515] border border-white/10 text-white font-bold py-3.5 rounded-xl hover:bg-white/5 transition text-xs tracking-wider uppercase active:scale-95 flex items-center justify-center gap-2"
+                                onClick={() => setIsChatOpen(true)}
+                                className="w-full bg-primary hover:bg-orange-600 transition text-white font-bold py-3.5 rounded-xl text-xs tracking-wider uppercase active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 whitespace-nowrap min-w-0"
                             >
-                                <ClipboardList size={16} className="text-primary" />
-                                View All Bookings
+                                <MessageSquare size={16} className="flex-shrink-0" />
+                                <span className="truncate whitespace-nowrap">Chat Mechanic</span>
                             </button>
 
                             {/* Review Service & Mechanic persistent button for Completed Status */}
@@ -811,27 +810,46 @@ const BookingDetailScreen: React.FC = () => {
                                 </button>
                             )}
 
-                            {/* Pay Balance Action (only shown if not completed yet) */}
-                            {status !== 'Completed' && ((status === 'Work Done' && !booking.isPaid) || booking.paymentStatus === 'partial') && (
+                            {/* Pay Balance Action (PAY THE BALANCE - active when requested by mechanic) */}
+                            {status !== 'Completed' && !booking.isPaid && (
                                 <button
-                                    onClick={() => navigate('/customer-portal/service-payment', { state: { booking } })}
-                                    className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-orange-600 transition text-sm shadow-lg shadow-primary/20"
+                                    onClick={() => {
+                                        if (booking.gcashPaymentStatus === 'awaiting_payment') {
+                                            navigate('/customer-portal/service-payment', { state: { booking } });
+                                        }
+                                    }}
+                                    disabled={booking.gcashPaymentStatus !== 'awaiting_payment'}
+                                    className={`w-full font-black py-3.5 rounded-xl transition text-xs tracking-widest uppercase flex items-center justify-center gap-2 ${
+                                        booking.gcashPaymentStatus === 'awaiting_payment'
+                                            ? 'bg-primary text-white hover:bg-orange-600 shadow-lg shadow-primary/20 cursor-pointer active:scale-95'
+                                            : 'bg-white/5 border border-white/5 text-gray-500 cursor-not-allowed'
+                                    }`}
                                 >
-                                    Pay Remaining Balance
-                                </button>
-                            )}
-
-                            {/* Cancel Booking Action */}
-                            {status === 'Upcoming' && (
-                                <button
-                                    onClick={() => setShowCancelModal(true)}
-                                    className="w-full bg-red-500/10 text-red-400 font-bold py-3 rounded-xl hover:bg-red-500/20 transition text-sm border border-red-500/20"
-                                >
-                                    Cancel Booking
+                                    PAY THE BALANCE
                                 </button>
                             )}
                         </div>
                     </div>
+                </div>
+
+                {/* View All Bookings & Cancel Booking placed inline in one line below the section */}
+                <div className="flex gap-3 w-full mt-4">
+                    <button
+                        onClick={() => navigate('/customer-portal/booking-history')}
+                        className="flex-1 bg-[#151515] border border-white/10 text-white font-bold py-3.5 rounded-xl hover:bg-white/5 transition text-xs tracking-wider uppercase active:scale-95 flex items-center justify-center gap-2"
+                    >
+                        <ClipboardList size={16} className="text-primary" />
+                        View All Bookings
+                    </button>
+                    {status === 'Upcoming' && (
+                        <button
+                            onClick={() => setShowCancelModal(true)}
+                            className="flex-1 bg-red-500/10 text-red-400 border border-red-500/20 font-bold py-3.5 rounded-xl hover:bg-red-500/20 transition text-xs tracking-wider uppercase active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <AlertCircle size={16} />
+                            Cancel Booking
+                        </button>
+                    )}
                 </div>
 
                 {/* Additional Details & Notes Section */}

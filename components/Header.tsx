@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 import { useScrollDirection } from '../hooks/useScrollDirection';
+import { getProfileImage } from '../utils/imageConstants';
 
 interface HeaderProps {
     title: string;
@@ -54,10 +55,10 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false
                         <Link to="/customer-portal/profile" className="relative group">
                             <div className="w-8 h-8 rounded-full p-0.5 bg-gradient-to-br from-white/10 to-transparent border border-white/10 overflow-hidden">
                                 <img
-                                    src={user.picture || `https://ui-avatars.com/api/?name=${user.name}&background=random`}
+                                    src={getProfileImage(user.picture, user.name)}
                                     alt={user.name}
                                     className="w-full h-full rounded-full object-cover"
-                                    onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=FE7803&color=fff&size=256`; }}
+                                    onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
                                 />
                             </div>
                             {/* Notification Dot for Support Messages */}

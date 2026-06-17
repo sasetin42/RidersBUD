@@ -5,7 +5,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import Spinner from '../components/Spinner';
 import { Order, OrderStatus } from '../types';
 import { Package, Truck, CheckCircle, Clock, ChevronDown, ChevronUp, MapPin, CreditCard, Repeat } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const StatusBadge: React.FC<{ status: OrderStatus }> = ({ status }) => {
     const styles = {
@@ -156,7 +156,20 @@ const OrderCard: React.FC<{ order: Order; isExpanded: boolean; onToggle: () => v
 const OrderHistoryScreen: React.FC = () => {
     const { user } = useAuth();
     const { db, loading } = useDatabase();
+    const navigate = useNavigate();
+    const location = useLocation();
     const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+    // Auto-expand order based on query parameter 'id'
+    React.useEffect(() => {
+        const queryParams = new URLSearchParams(location.search);
+        const orderId = queryParams.get('id');
+        if (orderId) {
+            setExpandedOrderId(orderId);
+            // Remove query parameter from address bar to clean it up
+            navigate(location.pathname, { replace: true });
+        }
+    }, [location, navigate]);
 
     const userOrders = useMemo(() => {
         if (!user || !db) return [];

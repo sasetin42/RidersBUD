@@ -4,10 +4,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import MarketingBanner from '../components/MarketingBanner';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
-import { Car, Calendar, FileText, Heart, ChevronRight, Wrench, Search, Bell, Settings, LogOut, User, Phone, MessageSquare, MapPin, Star } from 'lucide-react';
+import { Car, Calendar, FileText, Heart, ChevronRight, Wrench, Search, Bell, Settings, LogOut, User, Phone, MessageSquare, MapPin, Star, Package } from 'lucide-react';
 import Spinner from '../components/Spinner';
 import NotificationBell from '../components/NotificationBell';
-import { MOCKUPS } from '../utils/imageConstants';
+import { MOCKUPS, getProfileImage } from '../utils/imageConstants';
 import { getFallbackImageForCategory } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
 
@@ -150,10 +150,10 @@ const HomeScreen: React.FC = () => {
                                     className="w-12 h-12 rounded-full border border-white/10 overflow-hidden shadow-2xl focus:outline-none transition-all flex items-center justify-center bg-[#1E1E1E] hover:bg-white/10"
                                 >
                                     <img
-                                        src={user?.picture || `https://ui-avatars.com/api/?name=${user?.name || 'User'}&background=random`}
+                                        src={getProfileImage(user?.picture, user?.name)}
                                         alt="Profile"
                                         className="w-full h-full object-cover"
-                                        onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=FE7803&color=fff&size=256`; }}
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
                                     />
                                 </button>
                             </Tooltip>
@@ -337,6 +337,12 @@ const HomeScreen: React.FC = () => {
                     const primaryVehicle = user.vehicles.find(v => v.isPrimary) || user.vehicles[0];
                     return (
                         <div className="relative bg-gradient-to-br from-primary/20 via-[#1E1E1E] to-[#1E1E1E] rounded-3xl overflow-hidden border border-primary/20 animate-slideUp w-full">
+                            {/* Background Overlay Image */}
+                            <img
+                                src="https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=600&q=80"
+                                alt=""
+                                className="absolute inset-0 w-full h-full object-cover opacity-10 mix-blend-overlay group-hover:scale-105 transition-transform duration-1000"
+                            />
                             {/* Background Pattern */}
                             <div className="absolute inset-0 opacity-10">
                                 <div className="absolute top-0 right-0 w-64 h-64 bg-primary rounded-full blur-3xl"></div>
@@ -346,11 +352,17 @@ const HomeScreen: React.FC = () => {
                             <div className="relative z-10 p-6 w-full">
                                 <div className="flex items-center justify-between mb-4">
                                     <div>
-                                        <p className="text-xs font-bold text-primary tracking-wider mb-1">Your Primary Vehicle</p>
-                                        <h2 className="text-2xl font-black text-white leading-tight">
+                                        <p className="text-[10px] font-black text-primary tracking-widest uppercase mb-1">Your Primary Vehicle</p>
+                                        <h2 className="text-lg font-black text-white leading-tight">
                                             {primaryVehicle.year} {primaryVehicle.make}
                                         </h2>
-                                        <p className="text-lg font-bold text-gray-300">{primaryVehicle.model}</p>
+                                        <p className="text-sm font-bold text-gray-400">{primaryVehicle.model}</p>
+                                        
+                                        {/* Dynamic Status / Details */}
+                                        <div className="flex items-center gap-1.5 mt-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black tracking-widest px-2.5 py-1 rounded-full w-fit">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
+                                            VEHICLE ACTIVE & READY
+                                        </div>
                                     </div>
                                     <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center overflow-hidden">
                                         {primaryVehicle.imageUrls && primaryVehicle.imageUrls.length > 0 ? (
@@ -582,68 +594,147 @@ const HomeScreen: React.FC = () => {
                     </div>
                 </section>
 
-                {/* Genuine Parts Banner */}
-                <section className="animate-slideUp">
-                    <Tooltip content="Shop genuine parts" className="w-full">
-                        <div
-                            className="w-full relative rounded-3xl overflow-hidden h-36 bg-gradient-to-br from-[#1A1A1A] to-[#0A0A0A] border border-white/10 group cursor-pointer shadow-2xl hover:shadow-primary/20 mb-4 transition-all duration-500"
-                            onClick={() => navigate('/customer-portal/parts-store')}
-                        >
-                            {/* Abstract Industrial Texture/Image */}
-                            <img
-                                src={MOCKUPS.GENUINE_PARTS_TEXTURE}
-                                alt="Industrial Texture"
-                                className="absolute inset-0 w-full h-full object-cover opacity-20 mix-blend-overlay group-hover:opacity-30 transition-opacity duration-700"
-                                loading="eager"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-r from-black via-[#121212]/95 to-transparent z-10"></div>
+                {/* Genuine Parts Banner — Premium Redesign */}
+                <section className="animate-slideUp space-y-4">
+                    <div
+                        className="w-full relative rounded-3xl overflow-hidden py-6 sm:py-8 min-h-[240px] bg-gradient-to-br from-[#1E1E22] via-[#121214] to-[#0A0A0C] border border-white/5 group cursor-pointer shadow-2xl hover:border-primary/30 hover:shadow-primary/5 transition-all duration-500 flex items-center"
+                        onClick={() => navigate('/customer-portal/parts-store')}
+                    >
+                        {/* Background overlay image — proper dark industrial texture */}
+                        <img
+                            src={MOCKUPS.GENUINE_PARTS_TEXTURE}
+                            alt=""
+                            className="absolute inset-0 w-full h-full object-cover opacity-20 scale-105 group-hover:scale-100 group-hover:opacity-30 transition-all duration-1000"
+                            loading="eager"
+                        />
+                        {/* Diagonal accent lines */}
+                        <div className="absolute inset-0 opacity-[0.04] z-10" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #fff 0px, #fff 1px, transparent 1px, transparent 30px)' }} />
+                        {/* Dark gradient overlay */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/70 to-transparent z-10" />
 
-                            {/* Text Container */}
-                            <div className="relative z-20 h-full flex flex-col justify-center pl-6 pr-2 w-[55%]">
-                                <h3 className="text-2xl font-black text-white tracking-tight leading-tight mb-1">Genuine Parts</h3>
-                                <p className="text-xs text-gray-400 font-medium mb-3">Upgrade your ride today.</p>
-                                <span className="text-xs font-bold text-primary hover:text-white transition-all duration-300 flex items-center gap-1 group-hover:translate-x-2">
-                                    Shop Now <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform duration-300" />
-                                </span>
+                        {/* Content */}
+                        <div className="relative z-20 h-full flex flex-col justify-center pl-6 sm:pl-10 pr-2 w-[60%] sm:w-[55%]">
+                            {/* Badge */}
+                            <span className="inline-flex items-center gap-1.5 bg-primary/20 border border-primary/30 text-primary text-[10px] font-black tracking-widest px-3 py-1 rounded-full w-fit mb-3">
+                                <Package size={12} /> PARTS & ACCESSORIES
+                            </span>
+
+                            <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight mb-1.5">Genuine Parts</h3>
+                            <p className="text-xs sm:text-sm text-gray-400 font-medium mb-2">Premium quality auto parts & tools. Upgrade your ride today.</p>
+                            
+                            {/* Parts count */}
+                            <p className="text-[11px] text-gray-600 font-bold mb-3">
+                                {db?.parts?.length || 0}+ parts available
+                            </p>
+
+                            {/* Category Chips */}
+                            <div className="flex flex-wrap gap-1.5 mb-3.5">
+                                {(() => {
+                                    const cats: string[] = [...new Set((db?.parts || []).map((p: any) => p.category).filter(Boolean) as string[])];
+                                    return cats.slice(0, 4).map(cat => (
+                                        <span
+                                            key={cat}
+                                            onClick={(e) => { e.stopPropagation(); navigate(`/customer-portal/parts-store?category=${encodeURIComponent(cat)}`); }}
+                                            className="text-[9px] sm:text-[10px] font-bold text-white/70 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full hover:bg-primary/20 hover:border-primary/30 hover:text-primary transition-all duration-300 cursor-pointer"
+                                        >
+                                            {cat}
+                                        </span>
+                                    ));
+                                })()}
                             </div>
-                            {/* Floating Part Image with Animation */}
+
+                            <span className="text-xs font-bold text-primary transition-all duration-300 flex items-center gap-1.5 group-hover:translate-x-2 w-fit">
+                                <span className="bg-primary/20 px-3 py-1.5 rounded-full border border-primary/30 group-hover:bg-primary group-hover:text-white transition-all duration-300 flex items-center gap-1.5">
+                                    Browse All Parts <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform duration-300" />
+                                </span>
+                            </span>
+                        </div>
+                        
+                        {/* Floating Part Image — fixed display with screen blend to hide solid background */}
+                        <div className="absolute right-4 sm:right-10 top-1/2 -translate-y-1/2 z-20">
                             <img
                                 src={MOCKUPS.TURBO_PART}
                                 alt="Brake Disc"
-                                className="absolute right-6 top-1/2 -translate-y-1/2 h-28 w-28 object-contain drop-shadow-2xl z-20 group-hover:scale-110 group-hover:rotate-12 transition-all duration-700 ease-out animate-float mix-blend-screen"
+                                className="h-32 w-32 sm:h-40 sm:w-40 object-contain drop-shadow-[0_12px_35px_rgba(254,120,3,0.4)] group-hover:scale-110 group-hover:rotate-12 transition-all duration-700 ease-out animate-float mix-blend-screen"
                                 loading="eager"
                             />
+                            {/* Glow ring behind part */}
+                            <div className="absolute inset-0 -z-10 h-32 w-32 sm:h-40 sm:w-40 rounded-full bg-primary/10 blur-3xl group-hover:bg-primary/20 transition-all duration-700" />
                         </div>
-                    </Tooltip>
 
-                    {/* Expert Services Banner */}
-                    <Tooltip content="Book premium service" className="w-full">
-                        <div
-                            className="w-full relative rounded-3xl overflow-hidden h-36 bg-gradient-to-br from-orange-950/60 to-[#0A0A0A] border border-orange-500/20 group cursor-pointer shadow-2xl hover:shadow-orange-500/30 transition-all duration-500"
-                            onClick={() => navigate('/customer-portal/services')}
-                        >
-                            <div className="absolute inset-0 bg-gradient-to-r from-orange-900/50 via-amber-900/30 to-transparent z-10"></div>
-                            <img
-                                src={MOCKUPS.PREMIUM_SERVICE_BANNER}
-                                alt="Services"
-                                className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:scale-105 group-hover:opacity-60 transition-all duration-700 ease-out"
-                                loading="eager"
-                            />
-                            {/* Glassmorphism Panel */}
-                            <div className="absolute inset-0 z-20 flex flex-col justify-center px-8">
-                                <div className="backdrop-blur-md bg-gradient-to-r from-orange-500/10 to-transparent rounded-2xl p-4 border border-orange-500/20">
-                                    <span className="bg-orange-600/30 text-orange-300 border border-orange-500/40 text-[10px] font-black  tracking-widest px-3 py-1 rounded-full w-fit mb-2 inline-block animate-pulse">Expert Care</span>
-                                    <h3 className="text-2xl font-black text-white leading-tight mb-1 tracking-wide">PREMIUM<br />SERVICE</h3>
-                                    <div className="flex items-center gap-2 text-orange-400 hover:text-orange-300 font-bold text-xs mt-3 group-hover:translate-x-2 transition-all duration-300">
-                                        <span>Book Appointment</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 group-hover:translate-x-1 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                                        </svg>
-                                    </div>
-                                </div>
+                        {/* Bottom gradient edge */}
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/0 via-primary/40 to-primary/0 z-20" />
+                    </div>
+
+                    {/* Expert Services Banner — Premium Redesign */}
+                    <div
+                        className="w-full relative rounded-3xl overflow-hidden py-6 sm:py-8 min-h-[240px] bg-gradient-to-br from-orange-950/40 via-[#121214] to-[#0A0A0C] border border-orange-500/20 group cursor-pointer shadow-2xl hover:border-primary/30 hover:shadow-orange-500/10 transition-all duration-500 flex items-center"
+                        onClick={() => navigate('/customer-portal/services')}
+                    >
+                        {/* Sharp Background Image */}
+                        <img
+                            src={MOCKUPS.PREMIUM_SERVICE_BANNER}
+                            alt="Services Garage"
+                            className="absolute inset-0 w-full h-full object-cover opacity-30 group-hover:scale-105 group-hover:opacity-45 transition-all duration-1000 ease-out"
+                            loading="eager"
+                        />
+                        {/* Diagonal accent lines */}
+                        <div className="absolute inset-0 opacity-[0.04] z-10" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #fff 0px, #fff 1px, transparent 1px, transparent 30px)' }} />
+                        {/* Dark Gradient Overlay to ensure text readability */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/70 to-transparent z-10"></div>
+
+                        {/* Clean Text Container Overlay */}
+                        <div className="relative z-20 h-full flex flex-col justify-center pl-6 sm:pl-10 pr-2 w-[80%] sm:w-[70%]">
+                            {/* Badge */}
+                            <span className="inline-flex items-center gap-1.5 bg-primary/20 border border-primary/30 text-primary text-[10px] font-black tracking-widest px-3 py-1 rounded-full w-fit mb-3 uppercase">
+                                <Wrench size={12} /> EXPERT CARE
+                            </span>
+                            <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight mb-1.5 whitespace-nowrap">
+                                Premium Service
+                            </h3>
+                            <p className="text-xs sm:text-sm text-gray-400 font-medium mb-2 line-clamp-2 leading-relaxed">
+                                Book certified mechanics for expert diagnostics, auto repairs, and maintenance.
+                            </p>
+                            
+                            {/* Services count */}
+                            <p className="text-[11px] text-gray-600 font-bold mb-3">
+                                {db?.services?.length || 0}+ specialized services ready
+                            </p>
+
+                            {/* Service Categories Chips */}
+                            <div className="flex flex-wrap items-center gap-1.5 mb-3.5 w-full">
+                                {(() => {
+                                    const cats: string[] = [...new Set((db?.services || []).map((s: any) => s.category).filter(Boolean) as string[])];
+                                    return cats.slice(0, 4).map(cat => (
+                                        <span
+                                            key={cat}
+                                            onClick={(e) => { e.stopPropagation(); navigate(`/customer-portal/services?category=${encodeURIComponent(cat)}`); }}
+                                            className="text-[9px] sm:text-[10px] font-bold text-white/70 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full hover:bg-primary/20 hover:border-primary/30 hover:text-primary transition-all duration-300 cursor-pointer flex-shrink-0"
+                                        >
+                                            {cat}
+                                        </span>
+                                    ));
+                                })()}
+                            </div>
+
+                            <span className="text-xs font-bold text-primary transition-all duration-300 flex items-center gap-1.5 group-hover:translate-x-2 w-fit">
+                                <span className="bg-primary/20 px-3 py-1.5 rounded-full border border-primary/30 group-hover:bg-primary group-hover:text-white transition-all duration-300 flex items-center gap-1.5">
+                                    Book Appointment <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform duration-300" />
+                                </span>
+                            </span>
+                        </div>
+
+                        {/* Floating visual detail indicator for services */}
+                        <div className="absolute right-6 sm:right-12 top-1/2 -translate-y-1/2 z-20 pointer-events-none hidden xs:block">
+                            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border-2 border-primary/20 flex items-center justify-center bg-black/40 backdrop-blur-md relative animate-pulse">
+                                <Calendar className="w-10 h-10 sm:w-14 sm:h-14 text-primary" />
+                                <div className="absolute -inset-1 rounded-full border border-dashed border-primary/40 animate-spin-slow"></div>
                             </div>
                         </div>
-                    </Tooltip>
+
+                        {/* Bottom gradient edge */}
+                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/0 via-primary/40 to-primary/0 z-20" />
+                    </div>
                 </section>
 
             </main>

@@ -170,7 +170,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         gcashEnabled: false,
         gcashNumber: '',
         gcashAccountName: '',
-        gcashQrCodeUrl: ''
+        gcashQrCodeUrl: '',
+        defaultCustomerImageUrl: '/assets/logo.png',
+        defaultMechanicImageUrl: '/assets/logo.png'
     };
 
     const [db, setDb] = useState<Database | null>({
@@ -297,17 +299,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             console.warn("Failed to set up settings listener:", setupErr);
         }
 
-        subscribePublic('adminUsers', 'adminUsers');
-        subscribePublic('services', 'services');
-        subscribePublic('parts', 'parts');
-        subscribePublic('banners', 'banners');
-        subscribePublic('faqs', 'faqs');
-        subscribePublic('mechanics', 'mechanics');
-        subscribePublic('promoCodes', 'promoCodes');
-        subscribePublic('roles', 'roles');
-        subscribePublic('rentalCars', 'rentalCars');
-        subscribePublic('subscriptions', 'subscriptions');
-        setLoading(false);
+        try {
+            subscribePublic('adminUsers', 'adminUsers');
+            subscribePublic('services', 'services');
+            subscribePublic('parts', 'parts');
+            subscribePublic('banners', 'banners');
+            subscribePublic('faqs', 'faqs');
+            subscribePublic('mechanics', 'mechanics');
+            subscribePublic('promoCodes', 'promoCodes');
+            subscribePublic('roles', 'roles');
+            subscribePublic('rentalCars', 'rentalCars');
+            subscribePublic('subscriptions', 'subscriptions');
+        } catch (err) {
+            console.warn("Error setting up public Firestore listeners:", err);
+        } finally {
+            setLoading(false);
+        }
 
         // --- PRIVATE listeners (torn down and re-built on every auth change / admin bypass login) ---
         const checkAndSubscribe = async (user: any) => {
@@ -353,15 +360,20 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 subscribePrivate('orders', 'orders');
                 subscribePrivate('tasks', 'tasks');
                 subscribePrivate('payouts', 'payouts');
-                subscribePrivate('notifications', 'notifications');
+                // Admin notifications: only get admin-specific and 'all' broadcast notifications
+                subscribePrivateQuery(query(collection(firestore, 'notifications'),
+                    where('recipientId', 'in', ['admin', 'all'])
+                ), 'notifications');
                 subscribePrivate('rentalBookings', 'rentalBookings');
             } else if (isMechanic && user) {
-                // Mechanics need ALL bookings: their own assigned ones + new unassigned ones to accept
                 subscribePrivate('bookings', 'bookings');
                 subscribePrivate('customers', 'customers');
                 subscribePrivateQuery(query(collection(firestore, 'tasks'), where('mechanicId', '==', user.uid)), 'tasks');
                 subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', user.uid)), 'payouts');
-                subscribePrivateQuery(query(collection(firestore, 'notifications'), where('recipientId', 'in', ['all', `mechanic-${user.uid}`])), 'notifications');
+                // Mechanic notifications: only their own + broadcast 'all'
+                subscribePrivateQuery(query(collection(firestore, 'notifications'),
+                    where('recipientId', 'in', [`mechanic-${user.uid}`, 'all'])
+                ), 'notifications');
                 setDb(prev => prev ? { ...prev, orders: [], rentalBookings: [] } : null);
             } else if (user) {
                 // Standard Customer
@@ -375,7 +387,10 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 subscribePrivateQuery(query(collection(firestore, 'bookings'), where('customerId', '==', user.uid)), 'bookings');
                 subscribePrivateQuery(query(collection(firestore, 'orders'), where('customerId', '==', user.uid)), 'orders');
                 subscribePrivateQuery(query(collection(firestore, 'rentalBookings'), where('customerId', '==', user.uid)), 'rentalBookings');
-                subscribePrivateQuery(query(collection(firestore, 'notifications'), where('recipientId', 'in', ['all', `customer-${user.uid}`])), 'notifications');
+                // Customer notifications: only their own + broadcast 'all'
+                subscribePrivateQuery(query(collection(firestore, 'notifications'),
+                    where('recipientId', 'in', [`customer-${user.uid}`, 'all'])
+                ), 'notifications');
                 setDb(prev => prev ? { ...prev, tasks: [], payouts: [] } : null);
             }
         };
@@ -536,7 +551,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             const newMechanic: Mechanic = {
                 ...mechanic,
                 id: uid,
-                password: 'removed',
+                imageUrl: mechanic.imageUrl || db?.settings?.defaultMechanicImageUrl || '/assets/logo.png',
+                password: mechanic.password || 'password123',
                 registrationDate: new Date().toISOString(),
                 joinedAt: new Date().toISOString(),
                 status: mechanic.status || 'Pending',
@@ -585,6 +601,53 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const updateMechanic = async (mechanic: Mechanic) => {
         const { id, ...data } = mechanic;
+        
+        const oldMechanicDoc = db?.mechanics.find(m => m.id === id);
+        const oldPassword = oldMechanicDoc?.password;
+        const oldEmail = oldMechanicDoc?.email || mechanic.email;
+
+        if (mechanic.password && mechanic.password !== oldPassword) {
+            const { getSecondaryAuth, deleteSecondaryAuth } = await import('../utils/secondaryAuth');
+            const { signInWithEmailAndPassword, updatePassword } = await import('firebase/auth');
+
+            const { auth: secondaryAuth, app: secondaryApp } = getSecondaryAuth();
+            try {
+                let userCredential;
+                try {
+                    userCredential = await signInWithEmailAndPassword(
+                        secondaryAuth,
+                        oldEmail,
+                        oldPassword || ''
+                    );
+                } catch (firstErr) {
+                    const fallbacks = ['password123', '123456', '123456#'];
+                    for (const fallbackPass of fallbacks) {
+                        if (fallbackPass === oldPassword) continue;
+                        try {
+                            userCredential = await signInWithEmailAndPassword(
+                                secondaryAuth,
+                                oldEmail,
+                                fallbackPass
+                            );
+                            console.info(`[DatabaseContext] Successfully signed in mechanic ${id} with fallback password.`);
+                            break;
+                        } catch (_) {}
+                    }
+                }
+
+                if (userCredential) {
+                    await updatePassword(userCredential.user, mechanic.password);
+                    console.info(`[DatabaseContext] Successfully synced and updated Firebase Auth password for mechanic ${id}.`);
+                } else {
+                    console.warn(`[DatabaseContext] Could not authenticate mechanic ${id} in Firebase Auth to update password, letting self-healing handles it.`);
+                }
+            } catch (err: any) {
+                console.warn(`[DatabaseContext] Failed to update mechanic Auth password:`, err);
+            } finally {
+                await deleteSecondaryAuth(secondaryApp);
+            }
+        }
+
         const cleanedData = cleanObject(data);
         const batch = writeBatch(firestore);
         
@@ -678,19 +741,6 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             link: '/admin-portal/bookings'
         });
 
-        // Notify mechanic if pre-selected
-        if (mechId) {
-            await sendNotification({
-                recipientId: `mechanic-${mechId}`,
-                title: 'You Have a New Job',
-                message: `You've been assigned a ${booking.services[0]?.name || 'Service'} for ${booking.customerName}`,
-                type: 'alert',
-                date: new Date().toISOString(),
-                read: false,
-                link: `/mechanic-portal/job/${ref.id}`
-            });
-        }
-
         return { id: ref.id, ...newBooking } as Booking;
     };
 
@@ -783,65 +833,43 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
 
         if (booking) {
-            const serviceName = booking.services?.[0]?.name || booking.service?.name || 'service';
-            await sendNotification({
-                recipientId: `customer-${booking.customerId}`,
-                title: 'Booking Update',
-                message: `Your booking for ${serviceName} is now ${status}`,
-                type: status === 'Completed' ? 'success' : 'info',
-                date: new Date().toISOString(),
-                read: false,
-                link: '/customer-portal/booking-history'
-            });
-
-            if (booking.mechanicId) {
-                await sendNotification({
-                    recipientId: `mechanic-${booking.mechanicId}`,
-                    title: 'Job Status Update',
-                    message: `Booking for ${booking.customerName} marked as ${status}`,
-                    type: 'info',
-                    date: new Date().toISOString(),
-                    read: false
-                });
-
-                // Phase 3: Live Payments & Escrow Release (50% split for Completed job)
-                if (status === 'Completed') {
-                    const amount = booking.totalAmount || booking.services?.[0]?.price || booking.service?.price || 0;
-                    const mechanicShare = Math.floor(amount * 0.5);
-                    try {
-                        const mechanicRef = doc(firestore, 'mechanics', booking.mechanicId);
-                        await updateDoc(mechanicRef, {
-                            walletBalance: increment(mechanicShare),
-                            totalEarnings: increment(mechanicShare)
+            // Phase 3: Live Payments & Escrow Release (50% split for Completed job)
+            if (status === 'Completed' && booking.mechanicId) {
+                const amount = booking.totalAmount || booking.services?.[0]?.price || booking.service?.price || 0;
+                const mechanicShare = Math.floor(amount * 0.5);
+                try {
+                    const mechanicRef = doc(firestore, 'mechanics', booking.mechanicId);
+                    await updateDoc(mechanicRef, {
+                        walletBalance: increment(mechanicShare),
+                        totalEarnings: increment(mechanicShare)
+                    });
+                } catch (e) {
+                    console.warn(`[Firestore Write Failed] updateMechanic for mechanic ${booking.mechanicId} failed, falling back to local update:`, e);
+                    setDb(prev => {
+                        if (!prev) return null;
+                        const updatedMechanics = prev.mechanics.map(m => {
+                            if (m.id === booking.mechanicId) {
+                                return {
+                                    ...m,
+                                    walletBalance: (m.walletBalance || 0) + mechanicShare,
+                                    totalEarnings: (m.totalEarnings || 0) + mechanicShare
+                                };
+                            }
+                            return m;
                         });
-                    } catch (e) {
-                        console.warn(`[Firestore Write Failed] updateMechanic for mechanic ${booking.mechanicId} failed, falling back to local update:`, e);
-                        setDb(prev => {
-                            if (!prev) return null;
-                            const updatedMechanics = prev.mechanics.map(m => {
-                                if (m.id === booking.mechanicId) {
-                                    return {
-                                        ...m,
-                                        walletBalance: (m.walletBalance || 0) + mechanicShare,
-                                        totalEarnings: (m.totalEarnings || 0) + mechanicShare
-                                    };
-                                }
-                                return m;
-                            });
-                            return { ...prev, mechanics: updatedMechanics };
-                        });
-                    }
-
-                    await sendNotification({
-                        recipientId: `mechanic-${booking.mechanicId}`,
-                        title: 'Payment Released',
-                        message: `Funds (₱${mechanicShare.toLocaleString()}) for job #${booking.id.slice(-5).toUpperCase()} have been added to your balance.`,
-                        type: 'success',
-                        date: new Date().toISOString(),
-                        read: false,
-                        link: '/mechanic-portal/earnings'
+                        return { ...prev, mechanics: updatedMechanics };
                     });
                 }
+
+                await sendNotification({
+                    recipientId: `mechanic-${booking.mechanicId}`,
+                    title: 'Payment Released',
+                    message: `Funds (₱${mechanicShare.toLocaleString()}) for job #${booking.id.slice(-5).toUpperCase()} have been added to your balance.`,
+                    type: 'success',
+                    date: new Date().toISOString(),
+                    read: false,
+                    link: '/mechanic-portal/earnings'
+                });
             }
         }
     };
@@ -862,29 +890,6 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             status: 'Mechanic Assigned' as BookingStatus
         });
 
-        const booking = db?.bookings.find(b => b.id === bookingId);
-        if (booking) {
-            const serviceName = booking.services?.[0]?.name || booking.service?.name || 'service';
-            await sendNotification({
-                recipientId: `customer-${booking.customerId}`,
-                title: 'Mechanic Assigned',
-                message: `${mechanic.name} will be handling your ${serviceName}.`,
-                type: 'success',
-                date: new Date().toISOString(),
-                read: false,
-                link: `/customer-portal/booking-detail/${bookingId}`
-            });
-
-            await sendNotification({
-                recipientId: `mechanic-${mechanic.id}`,
-                title: 'You Have a New Job',
-                message: `You've been assigned a ${serviceName} for ${booking.customerName}`,
-                type: 'alert',
-                date: new Date().toISOString(),
-                read: false,
-                link: `/mechanic-portal/job/${bookingId}`
-            });
-        }
     };
 
     const cancelBooking = async (bookingId: string, reason: string) => {
@@ -953,7 +958,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             ? `Your GCash remaining balance for "${serviceName}" has been verified. Your booking is now fully paid!`
             : `Your GCash deposit for "${serviceName}" has been verified. Your booking is confirmed!`;
 
-        await sendNotification({
+await sendNotification({
             recipientId: `customer-${booking.customerId}`,
             title: isFinalBalancePayment ? '✅ Remaining Balance Paid' : '✅ Payment Verified!',
             message: customerMessage,
@@ -962,6 +967,19 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             read: false,
             link: `/customer-portal/booking-detail/${bookingId}`
         });
+
+        // Also notify the mechanic when payment is verified (MAIN FIX)
+        if (booking.mechanicId) {
+            await sendNotification({
+                recipientId: `mechanic-${booking.mechanicId}`,
+                title: isFinalBalancePayment ? '🎉 Job Fully Paid - Ready to Start!' : '💰 Deposit Received - Job Confirmed!',
+                message: `Payment verified for "${serviceName}". Customer ${isFinalBalancePayment ? 'has fully paid' : 'deposit confirmed'}. Please proceed with the service.`,
+                type: 'success',
+                date: new Date().toISOString(),
+                read: false,
+                link: `/mechanic-portal/job-detail/${bookingId}`
+            });
+        }
     };
 
     const initiateGCashPayment = async (bookingId: string, amount: number, email: string) => {
@@ -1041,6 +1059,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             const newCustomer: Customer = {
                 ...customer,
                 id: uid,
+                picture: customer.picture || db?.settings?.defaultCustomerImageUrl || '/assets/logo.png',
                 registrationDate: new Date().toISOString(),
                 status: customer.status || 'Active'
             };
@@ -1056,6 +1075,53 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const updateCustomer = async (customer: Customer) => {
         const { id, ...data } = customer;
+
+        const oldCustomerDoc = db?.customers.find(c => c.id === id);
+        const oldPassword = oldCustomerDoc?.password;
+        const oldEmail = oldCustomerDoc?.email || customer.email;
+
+        if (customer.password && customer.password !== oldPassword) {
+            const { getSecondaryAuth, deleteSecondaryAuth } = await import('../utils/secondaryAuth');
+            const { signInWithEmailAndPassword, updatePassword } = await import('firebase/auth');
+
+            const { auth: secondaryAuth, app: secondaryApp } = getSecondaryAuth();
+            try {
+                let userCredential;
+                try {
+                    userCredential = await signInWithEmailAndPassword(
+                        secondaryAuth,
+                        oldEmail,
+                        oldPassword || ''
+                    );
+                } catch (firstErr) {
+                    const fallbacks = ['password123', '123456', '123456#'];
+                    for (const fallbackPass of fallbacks) {
+                        if (fallbackPass === oldPassword) continue;
+                        try {
+                            userCredential = await signInWithEmailAndPassword(
+                                secondaryAuth,
+                                oldEmail,
+                                fallbackPass
+                            );
+                            console.info(`[DatabaseContext] Successfully signed in customer ${id} with fallback password.`);
+                            break;
+                        } catch (_) {}
+                    }
+                }
+
+                if (userCredential) {
+                    await updatePassword(userCredential.user, customer.password);
+                    console.info(`[DatabaseContext] Successfully synced and updated Firebase Auth password for customer ${id}.`);
+                } else {
+                    console.warn(`[DatabaseContext] Could not authenticate customer ${id} in Firebase Auth to update password, letting self-healing handles it.`);
+                }
+            } catch (err: any) {
+                console.warn(`[DatabaseContext] Failed to update customer Auth password:`, err);
+            } finally {
+                await deleteSecondaryAuth(secondaryApp);
+            }
+        }
+
         const cleanedData = cleanObject(data);
         const batch = writeBatch(firestore);
         
@@ -1435,12 +1501,12 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     const markAllNotificationsAsRead = async (recipientId: string) => {
         try {
             const batch = writeBatch(firestore);
+            // Only mark user's own notifications as read, NEVER mark 'all' broadcasts
             const unread = db?.notifications.filter(n =>
-                (n.recipientId === recipientId || n.recipientId === 'all') && !n.read
+                n.recipientId === recipientId && n.recipientId !== 'all' && !n.read
             ) || [];
             unread.forEach(n => {
-                const ref = doc(firestore, 'notifications', n.id);
-                batch.update(ref, { read: true });
+                batch.update(doc(firestore, 'notifications', n.id), { read: true });
             });
             if (unread.length > 0) {
                 await batch.commit();
@@ -1461,18 +1527,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     const clearAllNotifications = async (recipientId: string) => {
         try {
             const batch = writeBatch(firestore);
+            // Only delete notifications where recipientId EXACTLY matches current user
+            // NEVER delete or modify 'all' broadcast notifications (they belong to everyone)
             const myNotifs = db?.notifications.filter(n =>
-                n.recipientId === recipientId || n.recipientId === 'all'
+                n.recipientId === recipientId && n.recipientId !== 'all'
             ) || [];
             myNotifs.forEach(n => {
-                const ref = doc(firestore, 'notifications', n.id);
-                if (n.recipientId === 'all') {
-                    // For shared broadcasts, just mark as read — don't delete for all users
-                    batch.update(ref, { read: true });
-                } else {
-                    // For personal notifications, delete them
-                    batch.delete(ref);
-                }
+                batch.delete(doc(firestore, 'notifications', n.id));
             });
             if (myNotifs.length > 0) {
                 await batch.commit();

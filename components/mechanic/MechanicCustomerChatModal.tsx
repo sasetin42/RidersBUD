@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Booking, Customer, Mechanic } from '../../types';
 import { useChat, ChatMessage } from '../../utils/chatManager';
-import { useChatNotification } from '../../context/ChatNotificationContext';
 import { useDatabase } from '../../context/DatabaseContext';
+import { Send } from 'lucide-react';
 
 interface MechanicCustomerChatModalProps {
     booking: Booking;
@@ -15,7 +15,6 @@ const MechanicCustomerChatModal: React.FC<MechanicCustomerChatModalProps> = ({ b
     const { messages, sendMessage } = useChat(booking.id);
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
-    const { addOpenChat, removeOpenChat } = useChatNotification();
     const { db } = useDatabase();
 
     const liveCustomer = db?.customers?.find(
@@ -23,13 +22,12 @@ const MechanicCustomerChatModal: React.FC<MechanicCustomerChatModalProps> = ({ b
     ) || customer;
 
     useEffect(() => {
+        sessionStorage.setItem(`chat_open_${booking.id}`, 'true');
         sessionStorage.removeItem(`chat_closed_${booking.id}`);
-        addOpenChat(booking.id);
-        // Cleanup function to remove the chat id when the modal is closed
         return () => {
-            removeOpenChat(booking.id);
+            sessionStorage.removeItem(`chat_open_${booking.id}`);
         };
-    }, [addOpenChat, removeOpenChat, booking.id]);
+    }, [booking.id]);
 
 
     useEffect(() => {
@@ -75,14 +73,14 @@ const MechanicCustomerChatModal: React.FC<MechanicCustomerChatModalProps> = ({ b
 
     return (
         <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center p-4" role="dialog" aria-modal="true">
-            <div className="bg-secondary w-full max-w-md h-[600px] flex flex-col rounded-3xl overflow-hidden shadow-2xl border border-white/10 animate-scaleUp pointer-events-auto">
+            <div className="bg-secondary w-full max-w-md max-h-[85vh] h-[600px] flex flex-col rounded-3xl overflow-hidden shadow-2xl border border-white/10 animate-scaleUp pointer-events-auto">
 
                 {/* Header */}
                 <header className="flex items-center p-4 bg-[#1A1A1A] border-b border-white/5 flex-shrink-0 relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-transparent"></div>
                     <div className="relative flex items-center w-full">
                         <div className="relative">
-                            <img src={liveCustomer.picture || liveCustomer.imageUrl || liveCustomer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(liveCustomer.name)}&background=FE7803&color=fff&size=128`} alt={liveCustomer.name} className="w-12 h-12 rounded-full object-cover mr-4 border-2 border-primary/20" onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(liveCustomer.name)}&background=FE7803&color=fff&size=128`; }} />
+                            <img src={liveCustomer.picture || liveCustomer.imageUrl || liveCustomer.avatar || '/riders-logo.png'} alt={liveCustomer.name} className="w-12 h-12 rounded-full object-cover mr-4 border-2 border-primary/20" onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }} />
                             <span className="absolute bottom-0 right-4 w-3 h-3 bg-green-500 border-2 border-[#1A1A1A] rounded-full"></span>
                         </div>
                         <div className="flex-1">
@@ -114,7 +112,7 @@ const MechanicCustomerChatModal: React.FC<MechanicCustomerChatModalProps> = ({ b
                         return (
                             <div key={index} className={`flex items-end gap-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                 {!isMe && (
-                                    <img src={liveCustomer.picture || liveCustomer.imageUrl || liveCustomer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(liveCustomer.name)}&background=FE7803&color=fff&size=64`} alt={liveCustomer.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0 mb-1" onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(liveCustomer.name)}&background=FE7803&color=fff&size=64`; }} />
+                                    <img src={liveCustomer.picture || liveCustomer.imageUrl || liveCustomer.avatar || '/riders-logo.png'} alt={liveCustomer.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0 mb-1" onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }} />
                                 )}
                                 <div className={`flex flex-col gap-1 max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
                                     {msg.attachment && msg.attachment.type === 'image' && (
@@ -165,7 +163,7 @@ const MechanicCustomerChatModal: React.FC<MechanicCustomerChatModalProps> = ({ b
                 </main>
 
                 {/* Footer / Input */}
-                <footer className="p-3 bg-[#1A1A1A] border-t border-white/5 flex-shrink-0">
+                <footer className="p-3 pb-4 bg-[#1A1A1A] border-t border-white/5 flex-shrink-0">
                     <form onSubmit={handleSendMessage} className="flex items-end gap-2 max-w-full">
                         <div className="flex-1 bg-field border border-white/5 rounded-3xl flex items-center px-2 py-1 focus-within:ring-1 focus-within:ring-primary/50 transition-all">
                             <button
@@ -197,9 +195,7 @@ const MechanicCustomerChatModal: React.FC<MechanicCustomerChatModalProps> = ({ b
                             className="bg-primary hover:bg-orange-600 text-white w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-primary/20"
                             disabled={!input.trim()}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform rotate-90 translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                            </svg>
+                            <Send size={18} />
                         </button>
                     </form>
                 </footer>

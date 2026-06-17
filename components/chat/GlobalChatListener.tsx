@@ -80,11 +80,9 @@ const GlobalChatListener: React.FC = () => {
                                     (isMechanicAuthenticated && messageData.sender === 'mechanic');
 
                                 if (!isMe) {
-                                    // It's an incoming message!
-                                    // Add to open chats IF not already open and not manually closed
+                                    const isAlreadyOpen = sessionStorage.getItem(`chat_open_${booking.id}`) === 'true';
                                     const isClosed = sessionStorage.getItem(`chat_closed_${booking.id}`) === 'true';
-                                    if (!openChatIdsRef.current.has(booking.id) && !isClosed) {
-                                        console.log("New message received, auto-popping chat:", booking.id);
+                                    if (!openChatIdsRef.current.has(booking.id) && !isClosed && !isAlreadyOpen) {
                                         addOpenChat(booking.id);
                                     }
                                 }

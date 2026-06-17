@@ -16,10 +16,35 @@ const CategoryManagerModal: React.FC<{
     onClose: () => void;
 }> = ({ onClose }) => {
     const { db, updateSettings } = useDatabase();
-    const [serviceCategories, setServiceCategories] = useState(db?.settings.serviceCategories || []);
-    const [partCategories, setPartCategories] = useState(db?.settings.partCategories || []);
+    
+    // Auto-populate default categories if settings collections are empty or missing
+    const defaultServices = ['Maintenance', 'Repair', 'Emergency', 'Diagnostics', 'Specialty Services', 'Cleaning & Detailing', 'Liason Services'];
+    const defaultParts = ['Tires', 'Engine', 'Brakes', 'Filters', 'Suspension', 'Electrical', 'Tools'];
+    
+    const [serviceCategories, setServiceCategories] = useState<string[]>(
+        db?.settings?.serviceCategories && db.settings.serviceCategories.length > 0
+            ? db.settings.serviceCategories
+            : defaultServices
+    );
+    const [partCategories, setPartCategories] = useState<string[]>(
+        db?.settings?.partCategories && db.settings.partCategories.length > 0
+            ? db.settings.partCategories
+            : defaultParts
+    );
+    
     const [newServiceCategory, setNewServiceCategory] = useState('');
     const [newPartCategory, setNewPartCategory] = useState('');
+
+    // Real-time catalog association count helpers
+    const getServiceCount = (catName: string) => {
+        if (!db?.services) return 0;
+        return db.services.filter(s => s.category?.toLowerCase() === catName.toLowerCase()).length;
+    };
+
+    const getPartCount = (catName: string) => {
+        if (!db?.parts) return 0;
+        return db.parts.filter(p => p.category?.toLowerCase() === catName.toLowerCase()).length;
+    };
 
     const handleSave = () => {
         updateSettings({ serviceCategories, partCategories });
@@ -28,15 +53,30 @@ const CategoryManagerModal: React.FC<{
 
     const handleAdd = (type: 'service' | 'part') => {
         if (type === 'service' && newServiceCategory.trim()) {
-            setServiceCategories(prev => [...prev, newServiceCategory.trim()]);
+            const val = newServiceCategory.trim();
+            if (!serviceCategories.includes(val)) {
+                setServiceCategories(prev => [...prev, val]);
+            }
             setNewServiceCategory('');
         } else if (type === 'part' && newPartCategory.trim()) {
-            setPartCategories(prev => [...prev, newPartCategory.trim()]);
+            const val = newPartCategory.trim();
+            if (!partCategories.includes(val)) {
+                setPartCategories(prev => [...prev, val]);
+            }
             setNewPartCategory('');
         }
     };
 
     const handleDelete = (type: 'service' | 'part', categoryToDelete: string) => {
+        const itemCount = type === 'service' ? getServiceCount(categoryToDelete) : getPartCount(categoryToDelete);
+        
+        if (itemCount > 0) {
+            const confirmDelete = window.confirm(
+                `Warning: There are ${itemCount} ${type === 'service' ? 'services' : 'parts/tools'} registered under "${categoryToDelete}". \n\nDeleting this category will leave them uncategorized. Proceed?`
+            );
+            if (!confirmDelete) return;
+        }
+
         if (type === 'service') {
             setServiceCategories(prev => prev.filter(c => c !== categoryToDelete));
         } else {
@@ -45,83 +85,158 @@ const CategoryManagerModal: React.FC<{
     };
 
     return (
-        <Modal title="Manage Categories" isOpen={true} onClose={onClose}>
+        <Modal title="Manage Catalog Categories" isOpen={true} onClose={onClose}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                <div>
-                    <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                        <Wrench size={18} />
+                {/* Service Categories Panel */}
+                <div className="space-y-4">
+                    <h3 className="text-sm font-black text-white flex items-center gap-2 tracking-widest uppercase">
+                        <Wrench size={16} className="text-primary" />
                         Service Categories
                     </h3>
-                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg/50 p-3 rounded-xl border border-admin-border">
-                        {serviceCategories.map(cat => (
-                            <div key={cat} className="flex items-center justify-between bg-admin-card p-3 rounded-lg hover:bg-admin-card/80 transition-colors">
-                                <span className="text-sm text-white font-medium">{cat}</span>
-                                <button onClick={() => handleDelete('service', cat)} className="text-red-400 hover:text-red-300 p-1 hover:bg-red-500/20 rounded transition-colors">
-                                    <Trash2 size={16} />
-                                </button>
+                    
+                    <div className="space-y-2 mb-3 min-h-[160px] max-h-56 overflow-y-auto bg-black/45 p-4 rounded-2xl border border-white/5 custom-scrollbar">
+                        {serviceCategories.length > 0 ? (
+                            serviceCategories.map(cat => {
+                                const count = getServiceCount(cat);
+                                return (
+                                    <div key={cat} className="flex items-center justify-between bg-white/5 border border-white/5 px-4 py-2.5 rounded-xl hover:bg-white/10 transition-colors group">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-white font-bold">{cat}</span>
+                                            <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${count > 0 ? 'bg-primary/20 text-primary border border-orange-500/20' : 'bg-white/5 text-gray-500 border border-white/5'}`}>
+                                                {count} {count === 1 ? 'service' : 'services'}
+                                            </span>
+                                        </div>
+                                        <button 
+                                            onClick={() => handleDelete('service', cat)} 
+                                            className="text-gray-500 hover:text-red-400 p-1.5 hover:bg-red-500/10 rounded-lg transition-all"
+                                            title="Delete Category"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="flex items-center justify-center min-h-[120px] text-gray-600 text-xs italic">
+                                No service categories configured
                             </div>
-                        ))}
+                        )}
                     </div>
+                    
                     <div className="flex gap-2">
                         <input
                             type="text"
                             value={newServiceCategory}
                             onChange={e => setNewServiceCategory(e.target.value)}
-                            placeholder="New category..."
-                            className="flex-grow p-3 bg-admin-bg border border-admin-border rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                            placeholder="Add Service Category..."
+                            className="flex-grow bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none transition-all placeholder-gray-600 text-xs font-bold focus:border-primary/50"
                         />
                         <button
                             onClick={() => handleAdd('service')}
-                            className="bg-primary hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                            className="bg-primary hover:bg-orange-600 text-white font-black px-6 rounded-xl transition-all text-xs uppercase tracking-wider active:scale-95"
                         >
                             Add
                         </button>
                     </div>
                 </div>
-                <div>
-                    <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
-                        <Package size={18} />
+
+                {/* Part Categories Panel */}
+                <div className="space-y-4">
+                    <h3 className="text-sm font-black text-white flex items-center gap-2 tracking-widest uppercase">
+                        <Package size={16} className="text-primary" />
                         Part Categories
                     </h3>
-                    <div className="space-y-2 mb-3 max-h-48 overflow-y-auto bg-admin-bg/50 p-3 rounded-xl border border-admin-border">
-                        {partCategories.map(cat => (
-                            <div key={cat} className="flex items-center justify-between bg-admin-card p-3 rounded-lg hover:bg-admin-card/80 transition-colors">
-                                <span className="text-sm text-white font-medium">{cat}</span>
-                                <button onClick={() => handleDelete('part', cat)} className="text-red-400 hover:text-red-300 p-1 hover:bg-red-500/20 rounded transition-colors">
-                                    <Trash2 size={16} />
-                                </button>
+                    
+                    <div className="space-y-2 mb-3 min-h-[160px] max-h-56 overflow-y-auto bg-black/45 p-4 rounded-2xl border border-white/5 custom-scrollbar">
+                        {partCategories.length > 0 ? (
+                            partCategories.map(cat => {
+                                const count = getPartCount(cat);
+                                return (
+                                    <div key={cat} className="flex items-center justify-between bg-white/5 border border-white/5 px-4 py-2.5 rounded-xl hover:bg-white/10 transition-colors group">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-white font-bold">{cat}</span>
+                                            <span className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${count > 0 ? 'bg-primary/20 text-primary border border-orange-500/20' : 'bg-white/5 text-gray-500 border border-white/5'}`}>
+                                                {count} {count === 1 ? 'item' : 'items'}
+                                            </span>
+                                        </div>
+                                        <button 
+                                            onClick={() => handleDelete('part', cat)} 
+                                            className="text-gray-500 hover:text-red-400 p-1.5 hover:bg-red-500/10 rounded-lg transition-all"
+                                            title="Delete Category"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="flex items-center justify-center min-h-[120px] text-gray-600 text-xs italic">
+                                No part categories configured
                             </div>
-                        ))}
+                        )}
                     </div>
+                    
                     <div className="flex gap-2">
                         <input
                             type="text"
                             value={newPartCategory}
                             onChange={e => setNewPartCategory(e.target.value)}
-                            placeholder="New category..."
-                            className="flex-grow p-3 bg-admin-bg border border-admin-border rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                            placeholder="Add Part Category..."
+                            className="flex-grow bg-[#121212] border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none transition-all placeholder-gray-600 text-xs font-bold focus:border-primary/50"
                         />
                         <button
                             onClick={() => handleAdd('part')}
-                            className="bg-primary hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition-colors"
+                            className="bg-primary hover:bg-orange-600 text-white font-black px-6 rounded-xl transition-all text-xs uppercase tracking-wider active:scale-95"
                         >
                             Add
                         </button>
                     </div>
                 </div>
             </div>
-            <div className="flex justify-end gap-4 mt-6 border-t border-admin-border pt-4">
-                <button onClick={onClose} className="bg-admin-border hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">Cancel</button>
-                <button onClick={handleSave} className="bg-primary hover:bg-orange-600 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-lg shadow-primary/20">Save Categories</button>
+            
+            <div className="flex justify-end gap-3 mt-8 border-t border-white/5 pt-5">
+                <button 
+                    onClick={onClose} 
+                    className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white border border-white/5 rounded-xl font-bold transition-all text-xs uppercase tracking-wider active:scale-95"
+                >
+                    Cancel
+                </button>
+                <button 
+                    onClick={handleSave} 
+                    className="px-6 py-3 bg-primary hover:bg-orange-600 text-white rounded-xl font-black transition-all shadow-xl shadow-primary/20 text-xs uppercase tracking-widest active:scale-95"
+                >
+                    Save Categories
+                </button>
             </div>
         </Modal>
     );
 };
 
 const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void; onCancel: () => void; categories: string[] }> = ({ service, onSave, onCancel, categories }) => {
-    const [formData, setFormData] = useState({ id: service?.id, name: service?.name || '', description: service?.description || '', price: service?.price ?? '', estimatedTime: service?.estimatedTime || '', category: service?.category || (categories[0] || ''), imageUrl: service?.imageUrl || '', icon: service?.icon || '', });
+    const { db, updateSettings } = useDatabase();
+    const defaultServices = ['Maintenance', 'Repair', 'Emergency', 'Diagnostics', 'Specialty Services', 'Cleaning & Detailing', 'Liason Services'];
+    
+    // Realtime synced categories with fallback default list
+    const activeCategories = useMemo(() => {
+        const list = (db?.settings?.serviceCategories || categories).filter(c => c !== 'all');
+        return list.length > 0 ? list : defaultServices;
+    }, [db?.settings?.serviceCategories, categories]);
+
+    const [formData, setFormData] = useState({ 
+        id: service?.id, 
+        name: service?.name || '', 
+        description: service?.description || '', 
+        price: service?.price ?? '', 
+        estimatedTime: service?.estimatedTime || '', 
+        category: service?.category || (activeCategories[0] || ''), 
+        imageUrl: service?.imageUrl || '', 
+        icon: service?.icon || '', 
+    });
+    
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [isUploading, setIsUploading] = useState(false);
+    const [isAddingCategory, setIsAddingCategory] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
 
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
@@ -157,6 +272,35 @@ const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void;
             } finally {
                 setIsUploading(false);
             }
+        }
+    };
+
+    const handleQuickAddCategory = async () => {
+        const trimmed = newCategoryName.trim();
+        if (!trimmed) return;
+
+        const exists = activeCategories.some(c => c.toLowerCase() === trimmed.toLowerCase());
+        if (exists) {
+            const existingName = activeCategories.find(c => c.toLowerCase() === trimmed.toLowerCase()) || trimmed;
+            const newData = { ...formData, category: existingName };
+            setFormData(newData);
+            setIsAddingCategory(false);
+            setNewCategoryName('');
+            validate(newData);
+            return;
+        }
+
+        const currentSettingsCategories = db?.settings?.serviceCategories || [...defaultServices];
+        const updated = [...currentSettingsCategories, trimmed];
+        try {
+            await updateSettings({ serviceCategories: updated });
+            const newData = { ...formData, category: trimmed };
+            setFormData(newData);
+            setIsAddingCategory(false);
+            setNewCategoryName('');
+            validate(newData);
+        } catch (err) {
+            console.error("Failed to quick add service category:", err);
         }
     };
 
@@ -219,19 +363,71 @@ const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void;
                             className={`w-full p-4 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.name ? 'border-red-500/50' : 'border-white/10'}`}
                         />
                     </div>
+                    
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                            <Package size={14} /> Category
-                        </label>
-                        <select
-                            name="category"
-                            value={formData.category}
-                            onChange={handleChange}
-                            className={`w-full p-4 bg-black/40 border rounded-xl text-white focus:ring-2 focus:ring-primary focus:border-transparent transition-all appearance-none ${errors.category ? 'border-red-500/50' : 'border-white/10'}`}
-                        >
-                            <option value="" disabled>Select Category</option>
-                            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                        </select>
+                        <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                <Package size={14} /> Category
+                            </label>
+                            {!isAddingCategory ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddingCategory(true)}
+                                    className="text-[10px] font-black text-primary hover:text-orange-400 transition-colors uppercase tracking-wider flex items-center gap-0.5"
+                                >
+                                    <Plus size={10} /> Add Category
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddingCategory(false)}
+                                    className="text-[10px] font-black text-gray-500 hover:text-gray-400 transition-colors uppercase tracking-wider"
+                                >
+                                    Cancel
+                                </button>
+                            )}
+                        </div>
+
+                        {!isAddingCategory ? (
+                            <div className="relative">
+                                <select
+                                    name="category"
+                                    value={formData.category}
+                                    onChange={handleChange}
+                                    className={`w-full p-4 bg-black/40 border rounded-xl text-white focus:ring-2 focus:ring-primary focus:border-transparent transition-all appearance-none pr-10 ${errors.category ? 'border-red-500/50' : 'border-white/10'}`}
+                                >
+                                    <option value="" disabled>Select Category</option>
+                                    {activeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                    <ChevronDown size={18} />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex gap-2 animate-fadeIn">
+                                <input
+                                    type="text"
+                                    value={newCategoryName}
+                                    onChange={e => setNewCategoryName(e.target.value)}
+                                    placeholder="Enter new category name..."
+                                    className="flex-grow p-4 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-xs"
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleQuickAddCategory();
+                                        }
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleQuickAddCategory}
+                                    className="bg-primary hover:bg-orange-600 text-white px-4 rounded-xl transition-all flex items-center justify-center active:scale-95"
+                                >
+                                    <Check size={18} />
+                                </button>
+                            </div>
+                        )}
+                        {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
                     </div>
                 </div>
 
@@ -303,9 +499,32 @@ const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void;
 };
 
 const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: () => void; categories: string[] }> = ({ part, onSave, onCancel, categories }) => {
-    const [formData, setFormData] = useState({ id: part?.id, name: part?.name || '', description: part?.description || '', price: part?.price ?? '', salesPrice: part?.salesPrice ?? '', category: part?.category || (categories[0] || ''), sku: part?.sku || '', imageUrl: part?.imageUrls?.[0] || '', stock: part?.stock ?? '', brand: part?.brand || '' });
+    const { db, updateSettings } = useDatabase();
+    const defaultParts = ['Tires', 'Engine', 'Brakes', 'Filters', 'Suspension', 'Electrical', 'Tools'];
+
+    // Realtime synced categories with fallback default list
+    const activeCategories = useMemo(() => {
+        const list = (db?.settings?.partCategories || categories).filter(c => c !== 'all');
+        return list.length > 0 ? list : defaultParts;
+    }, [db?.settings?.partCategories, categories]);
+
+    const [formData, setFormData] = useState({ 
+        id: part?.id, 
+        name: part?.name || '', 
+        description: part?.description || '', 
+        price: part?.price ?? '', 
+        salesPrice: part?.salesPrice ?? '', 
+        category: part?.category || (activeCategories[0] || ''), 
+        sku: part?.sku || '', 
+        imageUrl: part?.imageUrls?.[0] || '', 
+        stock: part?.stock ?? '', 
+        brand: part?.brand || '' 
+    });
+
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [isUploading, setIsUploading] = useState(false);
+    const [isAddingCategory, setIsAddingCategory] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
 
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
@@ -342,6 +561,35 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
             } finally {
                 setIsUploading(false);
             }
+        }
+    };
+
+    const handleQuickAddCategory = async () => {
+        const trimmed = newCategoryName.trim();
+        if (!trimmed) return;
+
+        const exists = activeCategories.some(c => c.toLowerCase() === trimmed.toLowerCase());
+        if (exists) {
+            const existingName = activeCategories.find(c => c.toLowerCase() === trimmed.toLowerCase()) || trimmed;
+            const newData = { ...formData, category: existingName };
+            setFormData(newData);
+            setIsAddingCategory(false);
+            setNewCategoryName('');
+            validate(newData);
+            return;
+        }
+
+        const currentSettingsCategories = db?.settings?.partCategories || [...defaultParts];
+        const updated = [...currentSettingsCategories, trimmed];
+        try {
+            await updateSettings({ partCategories: updated });
+            const newData = { ...formData, category: trimmed };
+            setFormData(newData);
+            setIsAddingCategory(false);
+            setNewCategoryName('');
+            validate(newData);
+        } catch (err) {
+            console.error("Failed to quick add part category:", err);
         }
     };
 
@@ -422,19 +670,71 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                            <Package size={14} /> Category
-                        </label>
-                        <select
-                            name="category"
-                            value={formData.category}
-                            onChange={handleChange}
-                            className={`w-full p-4 bg-black/40 border rounded-xl text-white focus:ring-2 focus:ring-primary focus:border-transparent transition-all appearance-none ${errors.category ? 'border-red-500/50' : 'border-white/10'}`}
-                        >
-                            <option value="" disabled>Select Category</option>
-                            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                        </select>
+                        <div className="flex justify-between items-center">
+                            <label className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                <Package size={14} /> Category
+                            </label>
+                            {!isAddingCategory ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddingCategory(true)}
+                                    className="text-[10px] font-black text-primary hover:text-orange-400 transition-colors uppercase tracking-wider flex items-center gap-0.5"
+                                >
+                                    <Plus size={10} /> Add Category
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddingCategory(false)}
+                                    className="text-[10px] font-black text-gray-500 hover:text-gray-400 transition-colors uppercase tracking-wider"
+                                >
+                                    Cancel
+                                </button>
+                            )}
+                        </div>
+
+                        {!isAddingCategory ? (
+                            <div className="relative">
+                                <select
+                                    name="category"
+                                    value={formData.category}
+                                    onChange={handleChange}
+                                    className={`w-full p-4 bg-black/40 border rounded-xl text-white focus:ring-2 focus:ring-primary focus:border-transparent transition-all appearance-none pr-10 ${errors.category ? 'border-red-500/50' : 'border-white/10'}`}
+                                >
+                                    <option value="" disabled>Select Category</option>
+                                    {activeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                    <ChevronDown size={18} />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex gap-2 animate-fadeIn">
+                                <input
+                                    type="text"
+                                    value={newCategoryName}
+                                    onChange={e => setNewCategoryName(e.target.value)}
+                                    placeholder="Enter new category name..."
+                                    className="flex-grow p-4 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-xs"
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleQuickAddCategory();
+                                        }
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleQuickAddCategory}
+                                    className="bg-primary hover:bg-orange-600 text-white px-4 rounded-xl transition-all flex items-center justify-center active:scale-95"
+                                >
+                                    <Check size={18} />
+                                </button>
+                            </div>
+                        )}
+                        {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
                     </div>
+
                     <div className="space-y-2">
                         <label className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
                             <Check size={14} /> Brand/Manufacturer
@@ -658,14 +958,16 @@ const AdminCatalogScreen: React.FC = () => {
     }, []);
 
     const serviceCategories = useMemo(() => {
-        if (!db?.services) return ['all'];
-        const uniqueCategories = Array.from(new Set(db.services.map(s => s.category).filter(Boolean)));
+        const configured = db?.settings?.serviceCategories || [];
+        const used = db?.services ? db.services.map(s => s.category).filter(Boolean) : [];
+        const uniqueCategories = Array.from(new Set([...configured, ...used]));
         return ['all', ...uniqueCategories];
     }, [db]);
 
     const partCategories = useMemo(() => {
-        if (!db?.parts) return ['all'];
-        const uniqueCategories = Array.from(new Set(db.parts.map(p => p.category).filter(Boolean)));
+        const configured = db?.settings?.partCategories || [];
+        const used = db?.parts ? db.parts.map(p => p.category).filter(Boolean) : [];
+        const uniqueCategories = Array.from(new Set([...configured, ...used]));
         return ['all', ...uniqueCategories];
     }, [db]);
 
@@ -673,7 +975,7 @@ const AdminCatalogScreen: React.FC = () => {
         if (!db) return [];
         let filtered = db.services.filter(s =>
             (categoryFilter === 'all' || s.category === categoryFilter) &&
-            (s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.category.toLowerCase().includes(searchQuery.toLowerCase())) &&
+            ((s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (s.category || '').toLowerCase().includes(searchQuery.toLowerCase())) &&
             (statusFilter === 'all' || (statusFilter === 'active' ? s.isActive !== false : s.isActive === false))
         );
 
@@ -704,7 +1006,7 @@ const AdminCatalogScreen: React.FC = () => {
         if (!db) return [];
         let filtered = db.parts.filter(p =>
             (categoryFilter === 'all' || p.category === categoryFilter) &&
-            (p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.sku.toLowerCase().includes(searchQuery.toLowerCase())) &&
+            ((p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (p.sku || '').toLowerCase().includes(searchQuery.toLowerCase())) &&
             (statusFilter === 'all' || (statusFilter === 'active' ? p.isActive !== false : p.isActive === false))
         );
 

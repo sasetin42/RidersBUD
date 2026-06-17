@@ -10,7 +10,7 @@ import {
     Calendar, User, Car, Shield, ChevronRight, AlertCircle,
     ArrowRight, Map as MapIcon, Mail, Hash, Palette, Gauge,
     FileText, Wrench, DollarSign, Timer, Upload, X, Image as ImageIcon, Bell,
-    CreditCard, Eye, Copy, ChevronDown, ChevronUp, Star, Award, Info
+    CreditCard, Eye, Copy, ChevronDown, ChevronUp, Star, Info
 } from 'lucide-react';
 import { BookingStatus } from '../../types';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -18,6 +18,7 @@ import { ref, set } from 'firebase/database';
 import { db as firestore, rtdb } from '../../firebase';
 import MechanicCustomerChatModal from '../../components/mechanic/MechanicCustomerChatModal';
 import DirectionsModal from '../../components/mechanic/DirectionsModal';
+import { CallButton } from '../../components/CallUI';
 
 // Default currency configuration
 const DEFAULT_CURRENCY = 'PHP';
@@ -637,17 +638,6 @@ const MechanicJobDetailScreen: React.FC = () => {
                 updatedAt: new Date().toISOString()
             });
 
-            // Notify customer
-            await addNotification({
-                title: 'Work Completed',
-                message: `Your mechanic has finished the work. Please confirm completion to release the payment.`,
-                recipientId: `customer-${booking.customerId}`,
-                type: 'info',
-                read: false,
-                timestamp: Date.now(),
-                link: `/customer-portal/booking-detail/${booking.id}`
-            });
-
             console.log('✅ Work marked as done, awaiting customer confirmation');
             setShowWorkDoneModal(true);
         } catch (error) {
@@ -967,22 +957,13 @@ const MechanicJobDetailScreen: React.FC = () => {
                         <div className="flex items-center gap-4">
                             {/* Profile Image with Online Pulsing border */}
                             <div className="relative">
-                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-orange-600/30 border-2 border-primary/40 overflow-hidden flex-shrink-0 shadow-lg">
-                                    {(customer?.picture || customer?.profileImage || customer?.imageUrl || customer?.photoUrl || booking?.customerAvatar || booking?.customerImage) ? (
-                                        <img
-                                            src={customer?.picture || customer?.profileImage || customer?.imageUrl || customer?.photoUrl || booking?.customerAvatar || booking?.customerImage}
-                                            alt={customer?.name || booking.customerName}
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                e.currentTarget.style.display = 'none';
-                                                const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                                                if (fallback) fallback.classList.remove('hidden');
-                                            }}
-                                        />
-                                    ) : null}
-                                    <div className={`w-full h-full flex items-center justify-center bg-gray-900 ${(customer?.picture || customer?.profileImage || customer?.imageUrl || customer?.photoUrl || booking?.customerAvatar || booking?.customerImage) ? 'hidden' : ''}`}>
-                                        <User size={26} className="text-gray-500" />
-                                    </div>
+                                <div className="w-16 h-16 rounded-full bg-[#151515] border-2 border-primary/40 overflow-hidden flex-shrink-0 shadow-lg">
+                                    <img
+                                        src={customer?.picture || customer?.profileImage || customer?.imageUrl || customer?.photoUrl || booking?.customerAvatar || booking?.customerImage || '/riders-logo.png'}
+                                        alt={customer?.name || booking.customerName}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                    />
                                 </div>
                                 <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-[#151515] ${customer?.isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></div>
                             </div>
@@ -992,11 +973,6 @@ const MechanicJobDetailScreen: React.FC = () => {
                                     <h3 className="text-lg font-black text-white tracking-tight leading-none">
                                         {customer?.name || booking.customerName || 'Customer'}
                                     </h3>
-                                    {customer?.registrationDate && (
-                                        <span className="text-[8px] bg-primary/10 text-primary font-black border border-primary/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                                            <Award size={8} /> VIP
-                                        </span>
-                                    )}
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-1.5 text-xs text-yellow-500">
                                     <Star size={11} className="fill-yellow-500 stroke-yellow-500" />
@@ -1009,16 +985,17 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </div>
 
                         {/* Tactical Action Bar */}
-                        <div className="flex gap-2">
-                            {(customer?.phone || booking?.customerPhone || booking?.phone) && (
+                        <div className="flex flex-col gap-2">
+                            {customer?.id && (
                                 <Tooltip content="Call Customer">
-                                    <a
-                                        href={`tel:${customer?.phone || booking?.customerPhone || booking?.phone}`}
-                                        className="px-3 py-2 bg-green-500/10 hover:bg-green-500 text-green-400 hover:text-white rounded-xl border border-green-500/20 hover:border-green-500 transition-all active:scale-95 shadow-md flex items-center gap-1.5"
-                                    >
-                                        <Phone size={14} className="stroke-[2.5] shrink-0" />
-                                        <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Call</span>
-                                    </a>
+                                    <div className="flex items-center gap-1.5 px-3 py-2 bg-green-500/10 hover:bg-green-500 text-green-400 hover:text-white rounded-xl border border-green-500/20 hover:border-green-500 transition-all active:scale-95 shadow-md">
+                                        <CallButton targetId={customer.id} targetRole="customer" targetName={customer.name || 'Customer'} targetImage={customer.picture} size="sm" className="!w-5 !h-5 !bg-transparent !border-0 !p-0 !text-inherit" />
+                                        {customer?.phone && (
+                                            <a href={`tel:${customer.phone}`} className="flex items-center gap-1">
+                                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Call</span>
+                                            </a>
+                                        )}
+                                    </div>
                                 </Tooltip>
                             )}
                             <Tooltip content="Live Chat">
@@ -1073,10 +1050,10 @@ const MechanicJobDetailScreen: React.FC = () => {
                                 <p className="text-gray-300 font-semibold leading-relaxed mb-2">
                                     {customer?.address || booking?.location?.address || 'No address specified'}
                                 </p>
-                                {customer?.lat && customer?.lng && (
+                                {customer?.lat != null && customer?.lng != null && (
                                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold tracking-wide mt-1">
                                         <Info size={11} className="text-primary" />
-                                        <span>Coordinates: {customer.lat.toFixed(6)}, {customer.lng.toFixed(6)}</span>
+                                        <span>Coordinates: {(customer.lat || 0).toFixed(6)}, {(customer.lng || 0).toFixed(6)}</span>
                                         <span className="ml-auto text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded font-black text-[8px] uppercase animate-pulse">
                                             Live Tracker Enabled
                                         </span>
@@ -1310,18 +1287,15 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </div>
 
                         {/* Actions Grid */}
-                        <div className="flex-1 flex flex-col gap-3">
-                            <div className="grid grid-cols-2 gap-2 h-24">
-                                <button onClick={() => setShowChatModal(true)} className="bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex flex-col items-center justify-center gap-1 text-primary transition-all">
-                                    <MessageSquare size={20} />
-                                    <span className="text-[9px] font-black tracking-wider whitespace-nowrap">Live Chat</span>
-                                </button>
-                                <button onClick={handleCall} className="bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex flex-col items-center justify-center gap-1 text-primary transition-all">
-                                    <Phone size={20} />
-                                    <span className="text-[9px] font-black tracking-wider whitespace-nowrap">Call</span>
-                                </button>
-
-                            </div>
+                        <div className="flex-1 flex flex-col gap-2">
+                            <button onClick={() => setShowChatModal(true)} className="w-full bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex items-center justify-center gap-2 py-3 text-primary transition-all">
+                                <MessageSquare size={16} />
+                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Live Chat</span>
+                            </button>
+                            <button onClick={handleCall} className="w-full bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex items-center justify-center gap-2 py-3 text-primary transition-all">
+                                <Phone size={16} />
+                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Call</span>
+                            </button>
 
                             <button
                                 onClick={() => {
@@ -1350,7 +1324,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                                     }
                                 }}
                                 disabled={isLoading || booking.status === 'Completed' || booking.status === 'In Progress'}
-                                className="flex-1 bg-primary hover:bg-orange-600 rounded-xl flex flex-row items-center justify-center gap-3 shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-h-[60px] p-2"
+                                className="w-full bg-primary hover:bg-orange-600 rounded-xl flex flex-row items-center justify-center gap-3 shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-h-[60px] p-2"
                             >
                                 {isLoading ? <Spinner size="sm" color="text-white" /> : (
                                     <>
@@ -1378,25 +1352,25 @@ const MechanicJobDetailScreen: React.FC = () => {
                         <button
                             onClick={() => setShowProgressModal(true)}
                             disabled={booking.status !== 'In Progress'}
-                            className="bg-transparent border border-white/10 hover:bg-white/5 text-gray-400 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="bg-[#1E1E1E] border border-white/10 hover:bg-[#252525] text-gray-300 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >
-                            <FileText size={12} />
+                            <FileText size={14} />
                             Progress
                         </button>
                         <button
                             onClick={() => setShowAdditionalCostsModal(true)}
                             disabled={booking.status !== 'In Progress'}
-                            className="bg-transparent border border-white/10 hover:bg-white/5 text-gray-400 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="bg-[#1E1E1E] border border-white/10 hover:bg-[#252525] text-gray-300 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >
-                            <DollarSign size={12} />
+                            <DollarSign size={14} />
                             Costs
                         </button>
                         <button
                             onClick={() => setShowETAModal(true)}
                             disabled={['In Progress', 'Completed', 'Cancelled'].includes(booking.status)}
-                            className="bg-transparent border border-white/10 hover:bg-white/5 text-gray-400 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="bg-[#1E1E1E] border border-white/10 hover:bg-[#252525] text-gray-300 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >
-                            <Timer size={12} />
+                            <Timer size={14} />
                             ETA
                         </button>
                     </div>

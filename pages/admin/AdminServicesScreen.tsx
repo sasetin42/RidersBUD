@@ -138,7 +138,7 @@ const AdminServicesScreen: React.FC = () => {
                             <tr key={service.id} className={`border-b border-secondary last:border-b-0 transition-colors duration-200 ${index % 2 !== 0 ? 'bg-field' : 'bg-dark-gray'} hover:bg-secondary`}>
                                 <td className="p-4 text-gray-200">{service.name}</td>
                                 <td className="p-4 text-gray-200">{service.category}</td>
-                                <td className="p-4 text-gray-200">${service.price.toFixed(2)}</td>
+                                <td className="p-4 text-gray-200">${(service.price || 0).toFixed(2)}</td>
                                 <td className="p-4">
                                     <button onClick={() => handleOpenModal(service)} className="font-semibold text-blue-400 hover:text-blue-300 mr-4">Edit</button>
                                     <button onClick={() => handleDelete(service.id)} className="font-semibold text-red-400 hover:text-red-300">Delete</button>

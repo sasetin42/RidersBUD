@@ -266,8 +266,8 @@ const AdminPayoutsScreen: React.FC = () => {
         if (!db || !db.payouts) return [];
         let filtered = db.payouts.filter(request => {
             const searchMatch = !searchQuery ||
-                request.mechanicName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                request.id.toLowerCase().includes(searchQuery.toLowerCase());
+                (request.mechanicName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (request.id || '').toLowerCase().includes(searchQuery.toLowerCase());
 
             const statusMatch = statusFilter === 'all' || request.status === statusFilter;
 

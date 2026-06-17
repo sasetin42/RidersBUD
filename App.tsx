@@ -1,42 +1,49 @@
-
-
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db as firebaseDb } from './firebase';
-import LoginScreen from './pages/LoginScreen';
-import SignUpScreen from './pages/SignUpScreen';
-import HomeScreen from './pages/HomeScreen';
-import ServicesScreen from './pages/ServicesScreen';
-import ServiceDetailScreen from './pages/ServiceDetailScreen';
-import BookingScreen from './pages/BookingScreen';
-import ProfileScreen from './pages/ProfileScreen';
-import CartScreen from './pages/CartScreen';
-import RemindersScreen from './pages/RemindersScreen';
 import BottomNav from './components/BottomNav';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
-import BookingHistoryScreen from './pages/BookingHistoryScreen';
-import PartsStoreScreen from './pages/PartsStoreScreen';
-import PartDetailScreen from './pages/PartDetailScreen';
-import WarrantyScreen from './pages/WarrantyScreen';
-// FIX: Import WishlistScreen to resolve reference error.
-import WishlistScreen from './pages/WishlistScreen';
 import { WishlistProvider } from './context/WishlistContext';
-import BookingConfirmationScreen from './pages/BookingConfirmationScreen';
-import BookingDetailScreen from './pages/BookingDetailScreen';
+import { CallProvider } from './context/CallContext';
+import { IncomingCallModal, OutgoingCallModal, ActiveCallBar } from './components/CallUI';
 import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
-import AdminLoginScreen from './pages/admin/AdminLoginScreen';
 import AdminLayout from './components/admin/AdminLayout';
-
-// Direct imports for admin screens
-import AdminDashboardScreen from './pages/admin/AdminDashboardScreen';
-import AdminCatalogScreen from './pages/admin/AdminCatalogScreen';
-import AdminBookingsScreen from './pages/admin/AdminBookingsScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 import GlobalChatListener from './components/chat/GlobalChatListener';
 import ChatOverlay from './components/chat/ChatOverlay';
+import { DatabaseProvider, useDatabase } from './context/DatabaseContext';
+import { MechanicAuthProvider, useMechanicAuth } from './context/MechanicAuthContext';
+import MechanicBottomNav from './components/mechanic/MechanicBottomNav';
+import { GlobalPayoutApprovalListener } from './components/mechanic/GlobalPayoutApprovalListener';
+import { ChatNotificationProvider, useChatNotification } from './context/ChatNotificationContext';
+import { NotificationProvider, useNotification } from './context/NotificationContext';
+import NotificationToasts from './components/NotificationToasts';
+import TourOverlay from './components/TourOverlay';
+import AppLoadingScreen from './components/AppLoadingScreen';
+import ScrollToTop from './components/ScrollToTop';
 
+const LoginScreen = React.lazy(() => import('./pages/LoginScreen'));
+const SignUpScreen = React.lazy(() => import('./pages/SignUpScreen'));
+const HomeScreen = React.lazy(() => import('./pages/HomeScreen'));
+const ServicesScreen = React.lazy(() => import('./pages/ServicesScreen'));
+const ServiceDetailScreen = React.lazy(() => import('./pages/ServiceDetailScreen'));
+const BookingScreen = React.lazy(() => import('./pages/BookingScreen'));
+const ProfileScreen = React.lazy(() => import('./pages/ProfileScreen'));
+const CartScreen = React.lazy(() => import('./pages/CartScreen'));
+const RemindersScreen = React.lazy(() => import('./pages/RemindersScreen'));
+const BookingHistoryScreen = React.lazy(() => import('./pages/BookingHistoryScreen'));
+const PartsStoreScreen = React.lazy(() => import('./pages/PartsStoreScreen'));
+const PartDetailScreen = React.lazy(() => import('./pages/PartDetailScreen'));
+const WarrantyScreen = React.lazy(() => import('./pages/WarrantyScreen'));
+const WishlistScreen = React.lazy(() => import('./pages/WishlistScreen'));
+const BookingConfirmationScreen = React.lazy(() => import('./pages/BookingConfirmationScreen'));
+const BookingDetailScreen = React.lazy(() => import('./pages/BookingDetailScreen'));
+const AdminLoginScreen = React.lazy(() => import('./pages/admin/AdminLoginScreen'));
+const AdminDashboardScreen = React.lazy(() => import('./pages/admin/AdminDashboardScreen'));
+const AdminCatalogScreen = React.lazy(() => import('./pages/admin/AdminCatalogScreen'));
+const AdminBookingsScreen = React.lazy(() => import('./pages/admin/AdminBookingsScreen'));
 const AdminMechanicsScreen = React.lazy(() => import('./pages/admin/AdminMechanicsScreen'));
 const AdminCustomersScreen = React.lazy(() => import('./pages/admin/AdminCustomersScreen'));
 const AdminSettingsScreen = React.lazy(() => import('./pages/admin/AdminSettingsScreen'));
@@ -50,40 +57,31 @@ const AdminChatScreen = React.lazy(() => import('./pages/admin/AdminChatScreen')
 const AdminGCashPaymentsScreen = React.lazy(() => import('./pages/admin/AdminGCashPaymentsScreen'));
 const AdminSatisfactionScreen = React.lazy(() => import('./pages/admin/AdminSatisfactionScreen'));
 const AdminNotificationsScreen = React.lazy(() => import('./pages/admin/AdminNotificationsScreen'));
+const ServicePaymentScreen = React.lazy(() => import('./pages/ServicePaymentScreen'));
+const ServicePaymentConfirmationScreen = React.lazy(() => import('./pages/ServicePaymentConfirmationScreen'));
+const RentCarScreen = React.lazy(() => import('./pages/RentCarScreen'));
+const HireDriverScreen = React.lazy(() => import('./pages/HireDriverScreen'));
+const SupportChatScreen = React.lazy(() => import('./pages/SupportChatScreen'));
+const PaymentScreen = React.lazy(() => import('./pages/PaymentScreen'));
+const OrderConfirmationScreen = React.lazy(() => import('./pages/OrderConfirmationScreen'));
+const NotificationSettingsScreen = React.lazy(() => import('./pages/NotificationSettingsScreen'));
+const MyGarageScreen = React.lazy(() => import('./pages/MyGarageScreen'));
+const MechanicProfileScreen = React.lazy(() => import('./pages/MechanicProfileScreen'));
+const FavoriteMechanicsScreen = React.lazy(() => import('./pages/FavoriteMechanicsScreen'));
+const OrderHistoryScreen = React.lazy(() => import('./pages/OrderHistoryScreen'));
+const FAQScreen = React.lazy(() => import('./pages/FAQScreen'));
+const MechanicDashboardScreen = React.lazy(() => import('./pages/mechanic/MechanicDashboardScreen'));
+const MechanicJobsScreen = React.lazy(() => import('./pages/mechanic/MechanicJobsScreen'));
+const MechanicEarningsScreen = React.lazy(() => import('./pages/mechanic/MechanicEarningsScreen'));
+const MechanicJobDetailScreen = React.lazy(() => import('./pages/mechanic/MechanicJobDetailScreen'));
+const MechanicProfileManagementScreen = React.lazy(() => import('./pages/mechanic/MechanicProfileManagementScreen'));
+const MechanicNotificationSettingsScreen = React.lazy(() => import('./pages/mechanic/MechanicNotificationSettingsScreen'));
+const CompleteProfileScreen = React.lazy(() => import('./pages/CompleteProfileScreen'));
 
-import { DatabaseProvider, useDatabase } from './context/DatabaseContext';
-import PaymentScreen from './pages/PaymentScreen';
-import OrderConfirmationScreen from './pages/OrderConfirmationScreen';
-
-import OrderHistoryScreen from './pages/OrderHistoryScreen';
-import { MechanicAuthProvider, useMechanicAuth } from './context/MechanicAuthContext';
-import MechanicDashboardScreen from './pages/mechanic/MechanicDashboardScreen';
-import MechanicBottomNav from './components/mechanic/MechanicBottomNav';
-import { GlobalPayoutApprovalListener } from './components/mechanic/GlobalPayoutApprovalListener';
-import MechanicProfileScreen from './pages/MechanicProfileScreen';
-import MechanicJobDetailScreen from './pages/mechanic/MechanicJobDetailScreen';
-import MechanicProfileManagementScreen from './pages/mechanic/MechanicProfileManagementScreen';
-import MechanicJobsScreen from './pages/mechanic/MechanicJobsScreen';
-import MechanicEarningsScreen from './pages/mechanic/MechanicEarningsScreen';
-import FAQScreen from './pages/FAQScreen';
+import { customerTourSteps, mechanicTourSteps } from './data/tourSteps';
 import { requestNotificationPermission } from './utils/notificationManager';
 import { Reminder, Database } from './types';
-import MyGarageScreen from './pages/MyGarageScreen';
-import NotificationSettingsScreen from './pages/NotificationSettingsScreen';
-import MechanicNotificationSettingsScreen from './pages/mechanic/MechanicNotificationSettingsScreen';
-import { ChatNotificationProvider, useChatNotification } from './context/ChatNotificationContext';
 import { ChatMessage } from './utils/chatManager';
-import FavoriteMechanicsScreen from './pages/FavoriteMechanicsScreen';
-import { NotificationProvider, useNotification } from './context/NotificationContext';
-import NotificationToasts from './components/NotificationToasts';
-import ServicePaymentScreen from './pages/ServicePaymentScreen';
-import ServicePaymentConfirmationScreen from './pages/ServicePaymentConfirmationScreen';
-import RentCarScreen from './pages/RentCarScreen';
-import HireDriverScreen from './pages/HireDriverScreen';
-import SupportChatScreen from './pages/SupportChatScreen';
-import TourOverlay from './components/TourOverlay';
-import { customerTourSteps, mechanicTourSteps } from './data/tourSteps';
-import AppLoadingScreen from './components/AppLoadingScreen';
 
 const usePrevious = <T,>(value: T) => {
     const ref = useRef<T | undefined>();
@@ -106,9 +104,6 @@ const MechanicPathRedirect: React.FC = () => {
     return <Navigate to={`/mechanic-portal${subpath}${location.search}`} replace />;
 };
 
-
-import ScrollToTop from './components/ScrollToTop';
-
 const App: React.FC = () => {
     return (
         <DatabaseProvider>
@@ -126,6 +121,13 @@ const AppInitializer: React.FC = () => {
         return () => clearTimeout(timer);
     }, []);
 
+    useEffect(() => {
+        if (dbLoading) {
+            const safetyTimer = setTimeout(() => setAppLoading(false), 8000);
+            return () => clearTimeout(safetyTimer);
+        }
+    }, [dbLoading]);
+
     if (appLoading || dbLoading) {
         return <AppLoadingScreen message={dbLoading ? 'Connecting to server...' : undefined} />;
     }
@@ -135,15 +137,17 @@ const AppInitializer: React.FC = () => {
             <AuthProvider>
                 <AdminAuthProvider>
                     <MechanicAuthProvider>
-                        <NotificationProvider>
-                            <CartProvider>
-                                <WishlistProvider>
-                                    <ChatNotificationProvider>
-                                        <AppContent />
-                                    </ChatNotificationProvider>
-                                </WishlistProvider>
-                            </CartProvider>
-                        </NotificationProvider>
+                        <CallProvider>
+                            <NotificationProvider>
+                                <CartProvider>
+                                    <WishlistProvider>
+                                        <ChatNotificationProvider>
+                                            <AppContent />
+                                        </ChatNotificationProvider>
+                                    </WishlistProvider>
+                                </CartProvider>
+                            </NotificationProvider>
+                        </CallProvider>
                     </MechanicAuthProvider>
                 </AdminAuthProvider>
             </AuthProvider>
@@ -151,7 +155,6 @@ const AppInitializer: React.FC = () => {
     );
 };
 
-import CompleteProfileScreen from './pages/CompleteProfileScreen';
 
 const AppContent: React.FC = () => {
     const location = useLocation();
@@ -184,6 +187,7 @@ const AppContent: React.FC = () => {
     const prevDb = usePrevious<Database | null>(db);
     const watchIdRef = useRef<number | null>(null);
     const isCustomerLocationUpdatingRef = useRef<boolean>(false);
+    const lastCustomerLocationUpdateRef = useRef<number>(0);
 
     // Tour / Onboarding state
     const [showTour, setShowTour] = useState(false);
@@ -388,6 +392,66 @@ const AppContent: React.FC = () => {
                     }
                 }
             });
+
+            // Order Notifications
+            if (db.orders && Array.isArray(db.orders)) {
+                db.orders.forEach(currentOrder => {
+                    // Check if it belongs to the user
+                    if (currentOrder.customerId !== user.id && currentOrder.customerName !== user.name) return;
+
+                    const oldOrder = prevDb.orders?.find(o => o.id === currentOrder.id);
+                    if (!oldOrder) {
+                        const eventKey = `new_order:${currentOrder.id}`;
+                        if (trackEventNotification(eventKey)) {
+                            addNotification({
+                                type: 'success',
+                                title: 'Order Placed Successfully',
+                                message: `Your order #${currentOrder.id.slice(-6)} has been placed.`,
+                                link: `/customer-portal/order-history?id=${currentOrder.id}`,
+                                recipientId: `customer-${user.id}`
+                            });
+                        }
+                    } else if (oldOrder.status !== currentOrder.status) {
+                        const eventKey = `order_status:${currentOrder.id}:${currentOrder.status}`;
+                        if (trackEventNotification(eventKey)) {
+                            let title = 'Order Update';
+                            let message = `Your order #${currentOrder.id.slice(-6)} status is now ${currentOrder.status}.`;
+                            let notifType: 'info' | 'success' | 'warning' | 'alert' = 'info';
+
+                            switch (currentOrder.status) {
+                                case 'Processing':
+                                    title = 'Order Processing';
+                                    message = `We are now processing your order #${currentOrder.id.slice(-6)}.`;
+                                    notifType = 'info';
+                                    break;
+                                case 'Shipped':
+                                    title = 'Order Shipped';
+                                    message = `Your order #${currentOrder.id.slice(-6)} has been shipped!`;
+                                    notifType = 'info';
+                                    break;
+                                case 'Delivered':
+                                    title = 'Order Delivered';
+                                    message = `Your order #${currentOrder.id.slice(-6)} has been delivered. Thank you!`;
+                                    notifType = 'success';
+                                    break;
+                                case 'Cancelled':
+                                    title = 'Order Cancelled';
+                                    message = `Your order #${currentOrder.id.slice(-6)} has been cancelled.`;
+                                    notifType = 'alert';
+                                    break;
+                            }
+
+                            addNotification({
+                                type: notifType,
+                                title,
+                                message,
+                                link: `/customer-portal/order-history?id=${currentOrder.id}`,
+                                recipientId: `customer-${user.id}`
+                            });
+                        }
+                    }
+                });
+            }
         }
 
         // --- MECHANIC NOTIFICATIONS ---
@@ -452,41 +516,38 @@ const AppContent: React.FC = () => {
         if (!isAuthenticated || !user || !updateCustomerLocation) return;
 
         const updateLocation = () => {
-            if (isCustomerLocationUpdatingRef.current) {
-                console.log("[Location] Customer update already in progress. Skipping duplicate call.");
+            const now = Date.now();
+            if (isCustomerLocationUpdatingRef.current || (now - lastCustomerLocationUpdateRef.current) < 25000) {
                 return;
             }
 
             if ('geolocation' in navigator) {
                 isCustomerLocationUpdatingRef.current = true;
 
+                const onComplete = () => {
+                    lastCustomerLocationUpdateRef.current = Date.now();
+                    isCustomerLocationUpdatingRef.current = false;
+                };
+
                 const handleSuccess = (position: GeolocationPosition) => {
                     updateCustomerLocation(user.id, {
                         lat: position.coords.latitude,
                         lng: position.coords.longitude
                     });
-                    isCustomerLocationUpdatingRef.current = false;
-                };
-                
-                const handleFallback = () => {
-                    // Fallback to standard accuracy on timeout/high-accuracy error
-                    navigator.geolocation.getCurrentPosition(
-                        handleSuccess,
-                        () => {
-                            isCustomerLocationUpdatingRef.current = false;
-                        }, // Silently suppress final errors/timeouts to avoid warning spam
-                        { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
-                    );
+                    onComplete();
                 };
 
                 navigator.geolocation.getCurrentPosition(
                     handleSuccess,
                     (error) => {
                         if (error.code === error.TIMEOUT) {
-                            handleFallback();
+                            navigator.geolocation.getCurrentPosition(
+                                handleSuccess,
+                                onComplete,
+                                { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+                            );
                         } else {
-                            console.warn("[Location] Customer location error:", error.message);
-                            isCustomerLocationUpdatingRef.current = false;
+                            onComplete();
                         }
                     },
                     { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
@@ -495,7 +556,7 @@ const AppContent: React.FC = () => {
         };
 
         updateLocation();
-        const intervalId = setInterval(updateLocation, 30000); // 30 seconds interval to match mechanic side
+        const intervalId = setInterval(updateLocation, 60000);
         return () => clearInterval(intervalId);
     }, [isAuthenticated, user, updateCustomerLocation]);
 
@@ -715,189 +776,196 @@ const AppContent: React.FC = () => {
             <NotificationToasts />
             <GlobalChatListener />
             <ChatOverlay />
-            <Routes>
-                {/* Admin Routes */}
-                <Route 
-                    path="/admin-login" 
-                    element={
-                        adminLoading && localStorage.getItem('ridersbud_admin_session') === 'true' ? (
-                            <AppLoadingScreen message="Verifying session..." />
-                        ) : isAdminAuthenticated ? (
-                            <Navigate to="/admin-portal/dashboard" />
-                        ) : (
-                            <AdminLoginScreen />
-                        )
-                    } 
-                />
-                <Route
-                    path="/admin-portal/*"
-                    element={
-                        adminLoading && localStorage.getItem('ridersbud_admin_session') === 'true' ? (
-                            <AppLoadingScreen message="Verifying session..." />
-                        ) : isAdminAuthenticated ? (
-                            <AdminLayout>
-                                <React.Suspense fallback={<AppLoadingScreen message="Loading..." />}>
-                                    <Routes>
-                                        <Route path="dashboard" element={<AdminDashboardScreen />} />
-                                        <Route path="catalog" element={<ErrorBoundary><AdminCatalogScreen /></ErrorBoundary>} />
-                                        <Route path="mechanics" element={<AdminMechanicsScreen />} />
-                                        <Route path="bookings" element={<ErrorBoundary><AdminBookingsScreen /></ErrorBoundary>} />
-                                        <Route path="orders" element={<AdminOrdersScreen />} />
-                                        <Route path="payouts" element={<AdminPayoutsScreen />} />
-                                        <Route path="customers" element={<AdminCustomersScreen />} />
-                                        <Route path="analytics" element={<AdminAnalyticsScreen />} />
-                                        <Route path="marketing" element={<AdminMarketingScreen />} />
-                                        <Route path="monetization" element={<AdminMonetizationScreen />} />
-                                        <Route path="users" element={<AdminUsersScreen />} />
-                                        <Route path="settings" element={<AdminSettingsScreen />} />
-                                        <Route path="chat" element={<AdminChatScreen />} />
-                                        <Route path="gcash-payments" element={<AdminGCashPaymentsScreen />} />
-                                        <Route path="satisfaction" element={<AdminSatisfactionScreen />} />
-                                        <Route path="notifications" element={<AdminNotificationsScreen />} />
-                                        <Route path="*" element={<Navigate to="/admin-portal/dashboard" />} />
-                                    </Routes>
-                                </React.Suspense>
-                            </AdminLayout>
-                        ) : (
-                            <Navigate to="/admin-login" />
-                        )
-                    }
-                />
+            <React.Suspense fallback={<AppLoadingScreen />}>
+                <Routes>
+                    {/* Admin Routes */}
+                    <Route 
+                        path="/admin-login" 
+                        element={
+                            adminLoading && localStorage.getItem('ridersbud_admin_session') === 'true' ? (
+                                <AppLoadingScreen message="Verifying session..." />
+                            ) : isAdminAuthenticated ? (
+                                <Navigate to="/admin-portal/dashboard" />
+                            ) : (
+                                <AdminLoginScreen />
+                            )
+                        } 
+                    />
+                    <Route
+                        path="/admin-portal/*"
+                        element={
+                            adminLoading && localStorage.getItem('ridersbud_admin_session') === 'true' ? (
+                                <AppLoadingScreen message="Verifying session..." />
+                            ) : isAdminAuthenticated ? (
+                                <AdminLayout>
+                                    <React.Suspense fallback={<AppLoadingScreen message="Loading..." />}>
+                                        <Routes>
+                                            <Route path="dashboard" element={<AdminDashboardScreen />} />
+                                            <Route path="catalog" element={<ErrorBoundary><AdminCatalogScreen /></ErrorBoundary>} />
+                                            <Route path="mechanics" element={<AdminMechanicsScreen />} />
+                                            <Route path="bookings" element={<ErrorBoundary><AdminBookingsScreen /></ErrorBoundary>} />
+                                            <Route path="orders" element={<AdminOrdersScreen />} />
+                                            <Route path="payouts" element={<AdminPayoutsScreen />} />
+                                            <Route path="customers" element={<AdminCustomersScreen />} />
+                                            <Route path="analytics" element={<AdminAnalyticsScreen />} />
+                                            <Route path="marketing" element={<AdminMarketingScreen />} />
+                                            <Route path="monetization" element={<AdminMonetizationScreen />} />
+                                            <Route path="users" element={<AdminUsersScreen />} />
+                                            <Route path="settings" element={<AdminSettingsScreen />} />
+                                            <Route path="chat" element={<AdminChatScreen />} />
+                                            <Route path="gcash-payments" element={<AdminGCashPaymentsScreen />} />
+                                            <Route path="satisfaction" element={<AdminSatisfactionScreen />} />
+                                            <Route path="notifications" element={<AdminNotificationsScreen />} />
+                                            <Route path="*" element={<Navigate to="/admin-portal/dashboard" />} />
+                                        </Routes>
+                                    </React.Suspense>
+                                </AdminLayout>
+                            ) : (
+                                <Navigate to="/admin-login" />
+                            )
+                        }
+                    />
 
-                {/* Mechanic Routes */}
-                <Route
-                    path="/mechanic-portal/*"
-                    element={
-                        (mechLoading || authLoading) ? (
-                            <AppLoadingScreen message="Verifying session..." />
-                        ) : isMechanicAuthenticated ? (
-                            <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
-                                <ErrorBoundary fallback={
-                                    <div className="flex flex-col items-center justify-center h-screen p-8 text-center gap-6">
-                                        <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center border border-red-500/20">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                    {/* Mechanic Routes */}
+                    <Route
+                        path="/mechanic-portal/*"
+                        element={
+                            (mechLoading || authLoading) ? (
+                                <AppLoadingScreen message="Verifying session..." />
+                            ) : isMechanicAuthenticated ? (
+                                <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
+                                    <ErrorBoundary fallback={
+                                        <div className="flex flex-col items-center justify-center h-screen p-8 text-center gap-6">
+                                            <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                                            </div>
+                                            <div>
+                                                <p className="text-lg font-black text-white tracking-tight">Something went wrong</p>
+                                                <p className="text-xs text-gray-500 mt-2 font-medium">An error occurred loading this page.</p>
+                                            </div>
+                                            <button onClick={() => window.location.reload()} className="bg-primary text-white font-black px-6 py-3 rounded-2xl text-xs tracking-widest shadow-xl shadow-primary/20">
+                                                Reload App
+                                            </button>
                                         </div>
-                                        <div>
-                                            <p className="text-lg font-black text-white tracking-tight">Something went wrong</p>
-                                            <p className="text-xs text-gray-500 mt-2 font-medium">An error occurred loading this page.</p>
-                                        </div>
-                                        <button onClick={() => window.location.reload()} className="bg-primary text-white font-black px-6 py-3 rounded-2xl text-xs tracking-widest shadow-xl shadow-primary/20">
-                                            Reload App
-                                        </button>
-                                    </div>
-                                }>
-                                    <Routes>
-                                        <Route path="dashboard" element={<MechanicDashboardScreen />} />
-                                        <Route path="jobs" element={<MechanicJobsScreen />} />
-                                        <Route path="earnings" element={<MechanicEarningsScreen />} />
-                                        <Route path="job/:bookingId" element={<MechanicJobDetailScreen />} />
-                                        <Route path="profile" element={<MechanicProfileManagementScreen />} />
-                                        <Route path="notification-settings" element={<MechanicNotificationSettingsScreen />} />
-                                        <Route path="support-chat" element={<SupportChatScreen />} />
-                                        <Route path="*" element={<Navigate to="/mechanic-portal/dashboard" />} />
-                                    </Routes>
-                                </ErrorBoundary>
-                                <MechanicBottomNav />
-                                <GlobalPayoutApprovalListener />
-                            </div>
-                        ) : (
-                            <Navigate to="/login" state={{ from: 'mechanic' }} />
-                        )
-                    }
-                />
+                                    }>
+                                        <Routes>
+                                            <Route path="dashboard" element={<MechanicDashboardScreen />} />
+                                            <Route path="jobs" element={<MechanicJobsScreen />} />
+                                            <Route path="earnings" element={<MechanicEarningsScreen />} />
+                                            <Route path="job/:bookingId" element={<MechanicJobDetailScreen />} />
+                                            <Route path="profile" element={<MechanicProfileManagementScreen />} />
+                                            <Route path="notification-settings" element={<MechanicNotificationSettingsScreen />} />
+                                            <Route path="support-chat" element={<SupportChatScreen />} />
+                                            <Route path="*" element={<Navigate to="/mechanic-portal/dashboard" />} />
+                                        </Routes>
+                                    </ErrorBoundary>
+                                    <MechanicBottomNav />
+                                    <GlobalPayoutApprovalListener />
+                                </div>
+                            ) : (
+                                <Navigate to="/login" state={{ from: 'mechanic' }} />
+                            )
+                        }
+                    />
 
-                {/* Customer App Routes */}
-                <Route
-                    path="/customer-portal/*"
-                    element={
-                        <div className={`max-w-md mx-auto bg-secondary text-white font-sans ${
-                            isMapScreen 
-                                ? 'h-screen h-[100dvh] overflow-hidden' 
-                                : isAuthenticated && !hideCustomerBottomPadding 
-                                    ? 'min-h-screen pb-20' 
-                                    : 'min-h-screen'
-                        }`}>
-                            <div className={`${isMapScreen ? 'h-full' : 'min-h-screen'} flex flex-col`}>
-                                <React.Suspense fallback={<AppLoadingScreen />}>
-                                <Routes>
-                                    {isAuthenticated ? (
-                                        isProfileIncomplete() ? (
-                                            <Route path="*" element={<Navigate to="/complete-profile" />} />
+                    {/* Customer App Routes */}
+                    <Route
+                        path="/customer-portal/*"
+                        element={
+                            <div className={`max-w-md mx-auto bg-secondary text-white font-sans ${
+                                isMapScreen 
+                                    ? 'h-screen h-[100dvh] overflow-hidden' 
+                                    : isAuthenticated && !hideCustomerBottomPadding 
+                                        ? 'min-h-screen pb-20' 
+                                        : 'min-h-screen'
+                            }`}>
+                                <div className={`${isMapScreen ? 'h-full' : 'min-h-screen'} flex flex-col`}>
+                                    <React.Suspense fallback={<AppLoadingScreen />}>
+                                    <Routes>
+                                        {isAuthenticated ? (
+                                            isProfileIncomplete() ? (
+                                                <Route path="*" element={<Navigate to="/complete-profile" />} />
+                                            ) : (
+                                                <>
+                                                    <Route path="/" element={<HomeScreen />} />
+                                                    <Route path="/services" element={<ServicesScreen />} />
+                                                    <Route path="/service/:id" element={<ServiceDetailScreen />} />
+                                                    <Route path="/parts-store" element={<PartsStoreScreen />} />
+                                                    <Route path="/part/:id" element={<PartDetailScreen />} />
+                                                    <Route path="/booking/:serviceId" element={<BookingScreen />} />
+                                                    <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
+                                                    <Route path="/booking-detail/:bookingId" element={<BookingDetailScreen />} />
+                                                    <Route path="/cart" element={<CartScreen />} />
+                                                    <Route path="/payment" element={<PaymentScreen />} />
+                                                    <Route path="/service-payment" element={<ServicePaymentScreen />} />
+                                                    <Route path="/order-confirmation" element={<OrderConfirmationScreen />} />
+                                                    <Route path="/service-payment-confirmation" element={<ServicePaymentConfirmationScreen />} />
+                                                    <Route path="/profile" element={<ProfileScreen />} />
+                                                    <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
+                                                    <Route path="/my-garage" element={<MyGarageScreen />} />
+                                                    <Route path="/mechanic-profile/:mechanicId" element={<MechanicProfileScreen />} />
+                                                    <Route path="/favorite-mechanics" element={<FavoriteMechanicsScreen />} />
+                                                    <Route path="/reminders" element={<RemindersScreen />} />
+                                                    <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
+                                                    <Route path="/order-history" element={<OrderHistoryScreen />} />
+                                                    <Route path="/warranties" element={<WarrantyScreen />} />
+                                                    <Route path="/wishlist" element={<WishlistScreen />} />
+                                                    <Route path="/faq" element={<FAQScreen />} />
+                                                    <Route path="/rent-a-car" element={<RentCarScreen />} />
+                                                    <Route path="/hire-a-driver" element={<HireDriverScreen />} />
+                                                    <Route path="/support-chat" element={<SupportChatScreen />} />
+                                                    <Route path="*" element={<Navigate to="/customer-portal/" />} />
+                                                </>
+                                            )
                                         ) : (
                                             <>
-                                                <Route path="/" element={<HomeScreen />} />
-                                                <Route path="/services" element={<ServicesScreen />} />
-                                                <Route path="/service/:id" element={<ServiceDetailScreen />} />
-                                                <Route path="/parts-store" element={<PartsStoreScreen />} />
-                                                <Route path="/part/:id" element={<PartDetailScreen />} />
-                                                <Route path="/booking/:serviceId" element={<BookingScreen />} />
-                                                <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
-                                                <Route path="/booking-detail/:bookingId" element={<BookingDetailScreen />} />
-                                                <Route path="/cart" element={<CartScreen />} />
-                                                <Route path="/payment" element={<PaymentScreen />} />
-                                                <Route path="/service-payment" element={<ServicePaymentScreen />} />
-                                                <Route path="/order-confirmation" element={<OrderConfirmationScreen />} />
-                                                <Route path="/service-payment-confirmation" element={<ServicePaymentConfirmationScreen />} />
-                                                <Route path="/profile" element={<ProfileScreen />} />
-                                                <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
-                                                <Route path="/my-garage" element={<MyGarageScreen />} />
-                                                <Route path="/mechanic-profile/:mechanicId" element={<MechanicProfileScreen />} />
-                                                <Route path="/favorite-mechanics" element={<FavoriteMechanicsScreen />} />
-                                                <Route path="/reminders" element={<RemindersScreen />} />
-                                                <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
-                                                <Route path="/order-history" element={<OrderHistoryScreen />} />
-                                                <Route path="/warranties" element={<WarrantyScreen />} />
-                                                <Route path="/wishlist" element={<WishlistScreen />} />
-                                                <Route path="/faq" element={<FAQScreen />} />
-                                                <Route path="/rent-a-car" element={<RentCarScreen />} />
-                                                <Route path="/hire-a-driver" element={<HireDriverScreen />} />
-                                                <Route path="/support-chat" element={<SupportChatScreen />} />
-                                                <Route path="*" element={<Navigate to="/customer-portal/" />} />
+                                                <Route path="/signup" element={<SignUpScreen />} />
+                                                <Route path="*" element={<LoginScreen />} />
                                             </>
-                                        )
-                                    ) : (
-                                        <>
-                                            <Route path="/signup" element={<SignUpScreen />} />
-                                            <Route path="*" element={<LoginScreen />} />
-                                        </>
-                                    )}
-                                </Routes>
-                                </React.Suspense>
+                                        )}
+                                    </Routes>
+                                    </React.Suspense>
+                                </div>
+                                {isAuthenticated && !isProfileIncomplete() && (
+                                    <BottomNav />
+                                )}
                             </div>
-                            {isAuthenticated && !isProfileIncomplete() && (
-                                <BottomNav />
-                            )}
-                        </div>
-                    }
-                />
+                        }
+                    />
 
-                {/* Complete Profile Route */}
-                <Route path="/complete-profile" element={<CompleteProfileScreen />} />
+                    {/* Complete Profile Route */}
+                    <Route path="/complete-profile" element={<CompleteProfileScreen />} />
 
-                {/* Standalone /login route */}
-                <Route
-                    path="/login"
-                    element={
-                        isMechanicAuthenticated ? (
-                            <Navigate to="/mechanic-portal/dashboard" replace />
-                        ) : isAuthenticated ? (
-                            <Navigate to="/customer-portal/" replace />
-                        ) : (
-                            <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans flex flex-col">
-                                <LoginScreen />
-                            </div>
-                        )
-                    }
-                />
+                    {/* Standalone /login route */}
+                    <Route
+                        path="/login"
+                        element={
+                            isMechanicAuthenticated ? (
+                                <Navigate to="/mechanic-portal/dashboard" replace />
+                            ) : isAuthenticated ? (
+                                <Navigate to="/customer-portal/" replace />
+                            ) : (
+                                <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans flex flex-col">
+                                    <LoginScreen />
+                                </div>
+                            )
+                        }
+                    />
 
-                {/* Root Redirects */}
-                <Route path="/admin/*" element={<AdminPathRedirect />} />
-                <Route path="/mechanic/*" element={<MechanicPathRedirect />} />
-                <Route path="/" element={
-                    isMechanicAuthenticated ? <Navigate to="/mechanic-portal/dashboard" replace /> : <Navigate to="/customer-portal" replace />
-                } />
-                <Route path="*" element={<Navigate to="/customer-portal" replace />} />
-            </Routes>
+                    {/* Root Redirects */}
+                    <Route path="/admin/*" element={<AdminPathRedirect />} />
+                    <Route path="/mechanic/*" element={<MechanicPathRedirect />} />
+                    <Route path="/" element={
+                        isMechanicAuthenticated ? <Navigate to="/mechanic-portal/dashboard" replace /> : <Navigate to="/customer-portal" replace />
+                    } />
+                    <Route path="*" element={<Navigate to="/customer-portal" replace />} />
+                </Routes>
+
+                {/* Global Call UI — always mounted */}
+                <IncomingCallModal />
+                <OutgoingCallModal />
+                <ActiveCallBar />
+            </React.Suspense>
         </>
     )
 }

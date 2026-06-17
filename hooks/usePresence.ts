@@ -13,26 +13,25 @@ export function usePresence(userId: string | null, collectionName: string) {
         if (!userId || !collectionName) return;
 
         const userRef = doc(firestoreDB, collectionName, userId);
-        updateDoc(userRef, { isOnline: true }).catch(() => {});
+        
+        // Initial online set
+        updateDoc(userRef, { 
+            isOnline: true,
+            lastActive: new Date().toISOString() 
+        }).catch(() => {});
 
-        const handleBeforeUnload = () => {
-            try {
-                const url = `https://firestore.googleapis.com/v1/projects/${firestoreDB.app.options.projectId}/databases/(default)/documents/${collectionName}/${userId}?updateMask.fieldPaths=isOnline`;
-                const data = JSON.stringify({
-                    fields: {
-                        isOnline: { booleanValue: false }
-                    }
-                });
-                navigator.sendBeacon(url, data);
-            } catch (e) {
-                // fallback: nothing
-            }
-        };
+        // Heartbeat interval every 20 seconds
+        const interval = setInterval(() => {
+            updateDoc(userRef, {
+                isOnline: true,
+                lastActive: new Date().toISOString()
+            }).catch(() => {});
+        }, 20000);
 
-        window.addEventListener('beforeunload', handleBeforeUnload);
-
+        // beforeunload is optional for online tracking; removing it avoids repeatedly
+        // attaching listeners when auth/presence hooks mount/unmount.
         return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
+            clearInterval(interval);
             updateDoc(userRef, { isOnline: false }).catch(() => {});
         };
     }, [userId, collectionName]);

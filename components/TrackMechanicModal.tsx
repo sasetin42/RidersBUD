@@ -263,7 +263,12 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
 
                     <div className="flex items-center gap-4 bg-white/5 p-4 rounded-3xl border border-white/5">
                         <div className="relative">
-                            <img src={liveMechanic.imageUrl} alt={liveMechanic.name} className="w-14 h-14 rounded-2xl object-cover" />
+                            <img 
+                                src={liveMechanic.imageUrl || '/riders-logo.png'} 
+                                alt={liveMechanic.name} 
+                                className="w-14 h-14 rounded-2xl object-cover" 
+                                onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                            />
                             <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-[#1A2230] rounded-full"></div>
                         </div>
                         <div className="flex-grow">

@@ -111,9 +111,9 @@ const AdminSatisfactionScreen: React.FC = () => {
     const filteredFeedback = useMemo(() => {
         return feedbackList.filter(item => {
             const matchesSearch = 
-                item.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (item.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                 (item.userEmail || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                item.comment.toLowerCase().includes(searchQuery.toLowerCase());
+                (item.comment || '').toLowerCase().includes(searchQuery.toLowerCase());
             
             const matchesUserType = userTypeFilter === 'all' || item.userType === userTypeFilter;
             const matchesRating = ratingFilter === 'all' || item.rating === ratingFilter;

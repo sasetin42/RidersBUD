@@ -197,7 +197,7 @@ const OrderDetailsModal: React.FC<{ order: Order; orderNumber: string; onClose: 
     // Dynamically retrieve customer profile picture
     const customerObj = useMemo(() => {
         if (!db?.customers) return null;
-        return db.customers.find(c => c.id === order.customerId || c.name.toLowerCase() === order.customerName.toLowerCase());
+        return db.customers.find(c => c.id === order.customerId || (c.name || '').toLowerCase() === (order.customerName || '').toLowerCase());
     }, [db, order]);
 
     const customerPic = customerObj?.picture || customerObj?.avatarUrl;
@@ -520,8 +520,8 @@ const AdminOrdersScreen: React.FC = () => {
         let filtered = db.orders.filter(order => {
             const seqId = orderSequences[order.id] || '';
             const searchMatch = searchQuery === '' || 
-                order.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (order.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                (order.id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                 seqId.toLowerCase().includes(searchQuery.toLowerCase());
             const statusMatch = statusFilter === 'all' || order.status === statusFilter;
             let dateMatch = true;
@@ -761,7 +761,7 @@ const AdminOrdersScreen: React.FC = () => {
                         const itemCount = order.items.reduce((acc, item) => acc + item.quantity, 0);
                         
                         // Retrieve customer info
-                        const customerObj = db.customers.find(c => c.id === order.customerId || c.name.toLowerCase() === order.customerName.toLowerCase());
+                        const customerObj = db.customers.find(c => c.id === order.customerId || (c.name || '').toLowerCase() === (order.customerName || '').toLowerCase());
                         const customerPic = customerObj?.picture || customerObj?.avatarUrl;
                         const receiptUrl = order.gcashReceiptUrl || order.receiptUrl;
 

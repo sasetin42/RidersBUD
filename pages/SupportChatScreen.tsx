@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDatabase } from '../context/DatabaseContext';
 import ChatModal from '../components/ChatModal';
+import { SupportCallButton } from '../components/CallUI';
 import { Service } from '../types';
-import { ArrowLeft, MessageSquare } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Phone } from 'lucide-react';
 
 const CHAT_CLOSED_KEY = 'support_chat_closed';
 
@@ -60,12 +61,19 @@ const SupportChatScreen: React.FC = () => {
                     </div>
                     <h2 className="text-2xl font-bold text-white mb-2">How can we help?</h2>
                     <p className="text-gray-400 mb-6">Our virtual assistant is ready to assist you.</p>
-                    <button
-                        onClick={handleOpen}
-                        className="px-6 py-3 bg-primary text-white font-bold rounded-xl"
-                    >
-                        Start Chat
-                    </button>
+<div className="flex flex-col items-center gap-4">
+                        <button
+                            onClick={handleOpen}
+                            className="px-6 py-3 bg-primary text-white font-bold rounded-xl"
+                        >
+                            Start Chat
+                        </button>
+                        <SupportCallButton 
+                            type="audio" 
+                            size="lg" 
+                            className="w-full max-w-xs justify-center"
+                        />
+                    </div>
                 </div>
             </div>
 

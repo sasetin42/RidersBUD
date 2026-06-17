@@ -6,9 +6,9 @@ import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { useAuth } from '../context/AuthContext';
 import { Notification } from '../types';
 import {
-    Bell, X, Check, CheckCheck, Trash2, Inbox,
+    Bell, X, Check, CheckCheck, Trash2,
     Info, AlertTriangle, CheckCircle, AlertOctagon,
-    Clock, ChevronRight, Filter, BellOff, Sparkles
+    Clock, ChevronRight, BellOff, Sparkles
 } from 'lucide-react';
 
 type FilterTab = 'all' | 'unread';
@@ -241,9 +241,9 @@ const NotificationBell: React.FC<{ className?: string }> = ({ className = "" }) 
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<FilterTab>('all');
+    const [isClearing, setIsClearing] = useState(false);
     const [clearConfirm, setClearConfirm] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const clearConfirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const isAdmin = localStorage.getItem('ridersbud_admin_session') === 'true';
 
@@ -281,30 +281,20 @@ const NotificationBell: React.FC<{ className?: string }> = ({ className = "" }) 
         }
     }, [isOpen]);
 
-    // Auto-cancel clear confirm after 3s
-    useEffect(() => {
-        if (clearConfirm) {
-            clearConfirmTimer.current = setTimeout(() => setClearConfirm(false), 3000);
-        }
-        return () => {
-            if (clearConfirmTimer.current) clearTimeout(clearConfirmTimer.current);
-        };
-    }, [clearConfirm]);
-
     const handleMarkAllAsRead = useCallback(() => {
         if (recipientId) markAllAsRead(recipientId);
     }, [recipientId, markAllAsRead]);
 
-    const handleClearAll = useCallback(() => {
-        if (!clearConfirm) {
-            setClearConfirm(true);
-            return;
+    const handleClearAll = useCallback(async () => {
+        if (!recipientId || isClearing) return;
+        setIsClearing(true);
+        try {
+            await clearAllNotifications(recipientId);
+        } finally {
+            // Brief delay so the spinner is visible — UI has already cleared optimistically
+            setTimeout(() => setIsClearing(false), 600);
         }
-        if (recipientId) {
-            clearAllNotifications(recipientId);
-            setClearConfirm(false);
-        }
-    }, [clearConfirm, recipientId, clearAllNotifications]);
+    }, [recipientId, clearAllNotifications, isClearing]);
 
     const handleNotificationNavigate = useCallback((notif: Notification) => {
         markAsRead(notif.id);
@@ -372,14 +362,23 @@ const NotificationBell: React.FC<{ className?: string }> = ({ className = "" }) 
                         {notifications.length > 0 && (
                             <button
                                 onClick={handleClearAll}
-                                className={`flex items-center gap-1 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black tracking-wide border transition-all active:scale-90 ${
-                                    clearConfirm
-                                        ? 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse'
+                                disabled={isClearing}
+                                className={`flex items-center gap-1 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black tracking-wide border transition-all active:scale-90 disabled:opacity-60 disabled:cursor-not-allowed ${
+                                    isClearing
+                                        ? 'bg-red-500/20 text-red-400 border-red-500/30'
                                         : 'bg-white/5 hover:bg-red-500/10 text-gray-400 hover:text-red-400 border-white/5 hover:border-red-500/20'
                                 }`}
+                                title="Clear all notifications"
                             >
-                                <Trash2 size={11} />
-                                {clearConfirm ? 'Confirm' : 'Clear'}
+                                {isClearing ? (
+                                    <svg className="animate-spin h-2.5 w-2.5 text-red-400" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                    </svg>
+                                ) : (
+                                    <Trash2 size={11} />
+                                )}
+                                {isClearing ? 'Clearing...' : 'Clear'}
                             </button>
                         )}
                         <button

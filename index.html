@@ -55,7 +55,10 @@
                     joined.includes('Firebase Auth failed') ||
                     joined.includes('identitytoolkit') ||
                     joined.includes('Cannot read properties') ||
-                    joined.includes('BloomFilter')
+                    joined.includes('BloomFilter') ||
+                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
+                    joined.includes('BLOCKED_BY_CLIENT') ||
+                    joined.includes('network-request-failed')
                 ) return;
                 originalWarn.apply(console, args);
             };
@@ -89,7 +92,10 @@
                     joined.includes('accounts:lookup') ||
                     joined.includes('default-src') ||
                     joined.includes('.well-known') ||
-                    joined.includes('Failed to load resource')
+                    joined.includes('Failed to load resource') ||
+                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
+                    joined.includes('BLOCKED_BY_CLIENT') ||
+                    joined.includes('network-request-failed')
                 ) return;
                 originalError.apply(console, args);
             };
@@ -98,7 +104,7 @@
             var originalDebug = console.debug;
             console.debug = function() {};
  
-            var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data'];
+             var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT'];
             function shouldSuppress(m) {
               if (!m) return false;
               for (var i = 0; i < suppressed.length; i++) {

@@ -10,7 +10,6 @@ import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
 import { Package, Search, X, ChevronDown } from 'lucide-react';
 import UnifiedProductCard from '../components/ui/UnifiedProductCard';
-import { responsiveGridConfig } from '../styles/cardDesignTokens';
 
 // FIX: Changed 'interface' to 'const' to define a functional component.
 const ComparisonModal: React.FC<{ items: Part[]; onClose: () => void }> = ({ items, onClose }) => {
@@ -40,7 +39,7 @@ const ComparisonModal: React.FC<{ items: Part[]; onClose: () => void }> = ({ ite
                                     <td className="p-3 text-sm font-semibold text-light-gray capitalize">{feature}</td>
                                     {items.map(item => (
                                         <td key={item.id} className="p-3 text-sm text-white">
-                                            {feature === 'price' ? `₱${item.price.toFixed(2)}` : item[feature as keyof Part]}
+                                            {feature === 'price' ? `₱${(item.price || 0).toFixed(2)}` : item[feature as keyof Part]}
                                         </td>
                                     ))}
                                 </tr>
@@ -84,13 +83,19 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
             onClick={() => navigate(`/customer-portal/part/${part.id}`)}
             className="bg-[#1E1E1E] rounded-xl overflow-hidden group border border-white/5 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 flex flex-col h-full"
         >
-            {/* Image Container - 4:3 Aspect Ratio */}
+            {/* Image Container - Square Aspect Ratio for bigger display */}
             <UnifiedProductCard
                 imageUrl={part.imageUrls[0]}
                 alt={part.name}
-                aspectRatio="threeFourths"
+                aspectRatio="square"
                 className="group relative"
             >
+                {/* Gradient overlay for depth */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
+
+                {/* Image glow border on hover */}
+                <div className="absolute inset-0 ring-1 ring-white/5 group-hover:ring-primary/30 rounded-xl transition-all duration-500 pointer-events-none" />
+
                 {/* Badges */}
                 <div className="absolute top-3 left-3 flex flex-col gap-1.5 pointer-events-auto">
                     {hasSale && (
@@ -102,21 +107,21 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
                 <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0 pointer-events-auto">
                     <button
                         onClick={handleToggleWishlist}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${isWishlisted ? 'bg-red-500 text-white' : 'bg-white text-gray-900 hover:bg-primary hover:text-white'}`}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${isWishlisted ? 'bg-red-500 text-white' : 'bg-white/90 text-gray-900 hover:bg-primary hover:text-white backdrop-blur-sm'}`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleCompare(part); }}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${isComparing ? 'bg-primary text-white' : 'bg-white text-gray-900 hover:bg-primary hover:text-white'}`}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${isComparing ? 'bg-primary text-white' : 'bg-white/90 text-gray-900 hover:bg-primary hover:text-white backdrop-blur-sm'}`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                     </button>
                 </div>
 
                 {stockStatus === 'out-of-stock' && (
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
-                        <span className="text-white font-black text-xs sm:text-sm tracking-widest border-2 border-white px-2 py-0.5 sm:px-3 sm:py-1 -rotate-12">Out of Stock</span>
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px] flex items-center justify-center pointer-events-none z-10">
+                        <span className="text-white font-black text-xs sm:text-sm tracking-widest border-2 border-white/80 px-2 py-0.5 sm:px-3 sm:py-1 -rotate-12">Out of Stock</span>
                     </div>
                 )}
             </UnifiedProductCard>
@@ -314,7 +319,7 @@ const PartsStoreScreen: React.FC = () => {
             </div>
 
             <div className="flex-grow overflow-y-auto">
-                <div className={`p-4 grid ${responsiveGridConfig.mobile} ${responsiveGridConfig.tablet} ${responsiveGridConfig.desktop} ${responsiveGridConfig.gap}`}>
+                <div className="p-4 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4 sm:gap-5">
                     {loading ? <div className="col-span-1 sm:col-span-2 lg:col-span-3 flex justify-center pt-10"><Spinner size="lg" /></div>
                         : displayedParts.length > 0 ? displayedParts.map(part => <PartCard key={part.id} part={part} onToggleCompare={handleToggleCompare} isComparing={comparisonItems.some(p => p.id === part.id)} />)
                             : <div className="col-span-1 sm:col-span-2 lg:col-span-3 flex flex-col items-center justify-center text-center h-full text-light-gray p-8"><svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-gray-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg><h3 className="text-xl font-semibold text-white">No Parts Found</h3><p className="mt-2 text-sm">Try checking your spelling or adjusting your filters.</p></div>}

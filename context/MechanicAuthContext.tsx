@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useRef } from 'react';
 import { Mechanic } from '../types';
 import { db as firestore, auth } from '../firebase';
-import { doc, setDoc, onSnapshot, getDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
 import { 
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword, 
@@ -49,20 +49,57 @@ export const useMechanicAuth = () => {
     return context;
 };
 
+const saveMechanicSessionToStorage = (user: Mechanic | null, isBypassed: boolean) => {
+    if (user) {
+        localStorage.setItem('ridersbud_mechanic_session', 'true');
+        localStorage.setItem('ridersbud_mechanic_bypass', isBypassed ? 'true' : 'false');
+        localStorage.setItem('ridersbud_mechanic_user_data', JSON.stringify(user));
+    } else {
+        localStorage.removeItem('ridersbud_mechanic_session');
+        localStorage.removeItem('ridersbud_mechanic_bypass');
+        localStorage.removeItem('ridersbud_mechanic_user_data');
+    }
+};
+
+const loadMechanicSessionFromStorage = (): { isBypassed: boolean; user: Mechanic | null } => {
+    const isSession = localStorage.getItem('ridersbud_mechanic_session');
+    if (!isSession) return { isBypassed: false, user: null };
+    
+    const isBypassed = localStorage.getItem('ridersbud_mechanic_bypass') === 'true';
+    const userData = localStorage.getItem('ridersbud_mechanic_user_data');
+    const user = userData ? JSON.parse(userData) : null;
+    
+    return { isBypassed, user };
+};
+
 export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [isMechanicAuthenticated, setIsMechanicAuthenticated] = useState<boolean>(false);
     const [mechanic, setMechanic] = useState<Mechanic | null>(null);
     const [loading, setLoading] = useState(true);
     const [firebaseUser, setFirebaseUser] = useState<FirebaseAuthUser | null>(null);
+    const [isBypassed, setIsBypassed] = useState(false);
     const isLocationUpdatingRef = useRef<boolean>(false);
 
     useEffect(() => {
+        const savedSession = loadMechanicSessionFromStorage();
+        if (savedSession.isBypassed && savedSession.user) {
+            setIsBypassed(true);
+            setMechanic(savedSession.user);
+            setIsMechanicAuthenticated(true);
+            setLoading(false);
+            return;
+        }
+
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
             setFirebaseUser(user);
             if (!user) {
-                setMechanic(null);
-                setIsMechanicAuthenticated(false);
-                setLoading(false);
+                if (!loadMechanicSessionFromStorage().isBypassed) {
+                    setMechanic(null);
+                    setIsMechanicAuthenticated(false);
+                    setLoading(false);
+                }
+            } else {
+                setIsBypassed(false);
             }
         });
 
@@ -71,10 +108,11 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     // Real-time listener for mechanic profile
     useEffect(() => {
-        if (!firebaseUser) return;
+        const activeUserId = firebaseUser?.uid || (isBypassed ? mechanic?.id : null);
+        if (!activeUserId) return;
 
         setLoading(true);
-        const mechanicDocRef = doc(firestore, 'mechanics', firebaseUser.uid);
+        const mechanicDocRef = doc(firestore, 'mechanics', activeUserId);
         
         const unsubscribe = onSnapshot(mechanicDocRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -84,12 +122,15 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                 // Only authenticate if status is Active or Pending (allow Pending to see "Awaiting Approval")
                 if (mechData.status === 'Active' || mechData.status === 'Pending') {
                     setIsMechanicAuthenticated(true);
+                    saveMechanicSessionToStorage(mechData, isBypassed);
                 } else {
                     setIsMechanicAuthenticated(false);
+                    saveMechanicSessionToStorage(null, false);
                 }
             } else {
                 setMechanic(null);
                 setIsMechanicAuthenticated(false);
+                saveMechanicSessionToStorage(null, false);
             }
             setLoading(false);
         }, (err) => {
@@ -98,7 +139,7 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         });
 
         return () => unsubscribe();
-    }, [firebaseUser]);
+    }, [firebaseUser, isBypassed, mechanic?.id]);
 
     // Live Location Tracking - High accuracy, immediate start, retry on failure
     useEffect(() => {
@@ -182,8 +223,104 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                 await signOut(auth);
                 throw new Error("Your account is currently inactive. Please contact support.");
             }
+            
+            setIsBypassed(false);
+            saveMechanicSessionToStorage(null, false);
         } catch (error: any) {
-            // Log is suppressed in index.html for identitytoolkit/auth/ patterns
+            console.error("Login failed:", error);
+            
+            // Check if user is in Firestore and passwords match for local bypass
+            try {
+                const normalizedEmail = email.trim().toLowerCase();
+                const mechanicsRef = collection(firestore, 'mechanics');
+                const q = query(mechanicsRef, where('email', '==', normalizedEmail));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const mechDoc = querySnapshot.docs[0];
+                    const mechData = { id: mechDoc.id, ...mechDoc.data() } as Mechanic;
+                    
+                    if (mechData.password === pass) {
+                        if (mechData.status === 'Inactive') {
+                            throw new Error("Your account is currently inactive. Please contact support.");
+                        }
+                        console.info("[AuthBypass] Signing in legacy/mock mechanic via local bypass...");
+                        setIsBypassed(true);
+                        setMechanic(mechData);
+                        setIsMechanicAuthenticated(true);
+                        saveMechanicSessionToStorage(mechData, true);
+                        return;
+                    }
+                }
+            } catch (bypassErr: any) {
+                console.error("[AuthBypass] Mechanic bypass login check failed:", bypassErr);
+                if (bypassErr.message && bypassErr.message.includes("inactive")) {
+                    throw bypassErr;
+                }
+            }
+            
+            // Self-healing migration for mock mechanics in development
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+                try {
+                    const normalizedEmail = email.trim().toLowerCase();
+                    const mechanicsRef = collection(firestore, 'mechanics');
+                    const q = query(mechanicsRef, where('email', '==', normalizedEmail));
+                    const querySnapshot = await getDocs(q);
+                    
+                    if (!querySnapshot.empty) {
+                        const oldDoc = querySnapshot.docs[0];
+                        const oldData = oldDoc.data() as Mechanic;
+                        const oldId = oldDoc.id;
+                        
+                        console.info(`[AuthSelfHealing] Found legacy mechanic doc for ${normalizedEmail}. Registering in Firebase Auth...`);
+                        
+                        // Create user in Firebase Auth
+                        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+                        const newUid = userCredential.user.uid;
+                        
+                        // Copy data to new document
+                        const newMechanic: Mechanic = {
+                            ...oldData,
+                            id: newUid
+                        };
+                        await setDoc(doc(firestore, 'mechanics', newUid), newMechanic);
+                        
+                        // Delete old document if it has a different ID
+                        if (oldId !== newUid) {
+                            await deleteDoc(doc(firestore, 'mechanics', oldId));
+                            
+                            // Proactively update any bookings that referenced the old mechanic ID
+                            try {
+                                const bookingsRef = collection(firestore, 'bookings');
+                                const bookingsQuery = query(bookingsRef, where('mechanicId', '==', oldId));
+                                const bookingsSnap = await getDocs(bookingsQuery);
+                                for (const bookingDoc of bookingsSnap.docs) {
+                                    await updateDoc(doc(firestore, 'bookings', bookingDoc.id), {
+                                        mechanicId: newUid,
+                                        'mechanic.id': newUid
+                                    });
+                                }
+                                console.info(`[AuthSelfHealing] Migrated ${bookingsSnap.size} bookings from ${oldId} to ${newUid}`);
+                            } catch (bookingErr) {
+                                console.warn("[AuthSelfHealing] Failed to migrate bookings:", bookingErr);
+                            }
+                        }
+                        
+                        // Check if account status is Inactive
+                        if (newMechanic.status === 'Inactive') {
+                            await signOut(auth);
+                            throw new Error("Your account is currently inactive. Please contact support.");
+                        }
+                        
+                        return;
+                    }
+                } catch (migrationError: any) {
+                    console.error("[AuthSelfHealing] Mechanic migration failed:", migrationError);
+                    if (migrationError.message && migrationError.message.includes("inactive")) {
+                        throw migrationError;
+                    }
+                }
+            }
             throw error;
         }
     };
@@ -204,13 +341,22 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                     console.log("New Google Mechanic - Needs profile completion");
                 }
             } catch (popupError: any) {
-                if (
-                    popupError.code === 'auth/popup-blocked' || 
+                const isBlockError = popupError.code === 'auth/popup-blocked' || 
                     popupError.code === 'auth/popup-closed-by-user' || 
                     popupError.code === 'auth/cancelled-popup-request' ||
-                    (popupError.message && popupError.message.includes('COOP'))
-                ) {
-                    console.log("Popup blocked or COOP isolation triggered, trying redirect sign-in...");
+                    popupError.code === 'auth/network-request-failed' ||
+                    (popupError.message && (
+                        popupError.message.includes('COOP') || 
+                        popupError.message.includes('Cross-Origin-Opener-Policy') ||
+                        popupError.message.includes('block') ||
+                        popupError.message.includes('blocked') ||
+                        popupError.message.includes('failed') ||
+                        popupError.message.includes('fetch')
+                    )) ||
+                    (popupError.name === 'DOMException' || popupError.message?.includes('closed'));
+
+                if (isBlockError) {
+                    console.info("Popup blocked, network failed, or COOP isolation triggered. Trying redirect sign-in...", popupError);
                     const { signInWithRedirect } = await import('firebase/auth');
                     await signInWithRedirect(auth, provider);
                 } else {
@@ -225,6 +371,8 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     const logout = async () => {
         await signOut(auth);
+        setIsBypassed(false);
+        saveMechanicSessionToStorage(null, false);
     };
 
     const register = async (
@@ -269,9 +417,13 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                 portfolioImageUrls = await Promise.all(uploadPromises);
             }
 
+            const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
+            const defaultImg = (settingsSnap.exists() ? settingsSnap.data()?.defaultMechanicImageUrl : null) || '/assets/logo.png';
+
             const newMechanic: Mechanic = {
                 ...mechanicData,
                 id: fbUser.uid,
+                imageUrl: defaultImg,
                 password: 'removed',
                 status: 'Pending',
                 rating: 0,

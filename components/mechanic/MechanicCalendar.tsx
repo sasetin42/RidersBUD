@@ -78,17 +78,13 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, bookings, onClose
                             {/* Client & Service Info */}
                             <div className="flex items-start gap-3 w-full">
                                 {!isPublic && (
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center relative">
-                                        {avatarUrl ? (
-                                            <img
-                                                src={avatarUrl}
-                                                alt={booking.customerName}
-                                                className="w-full h-full object-cover"
-                                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                            />
-                                        ) : (
-                                            <span className="text-xs font-black text-primary">{initials}</span>
-                                        )}
+                                    <div className="w-10 h-10 rounded-full border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center relative bg-black/20">
+                                        <img
+                                            src={avatarUrl || '/riders-logo.png'}
+                                            alt={booking.customerName}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                        />
                                     </div>
                                 )}
                                 <div className="flex-1 min-w-0">
@@ -340,17 +336,13 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
                             {/* Client & Service Section */}
                             <div className="flex items-start gap-3 pl-1.5">
                                 {!isPublic && (
-                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center relative">
-                                        {avatarUrl ? (
-                                            <img
-                                                src={avatarUrl}
-                                                alt={b.customerName}
-                                                className="w-full h-full object-cover"
-                                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                            />
-                                        ) : (
-                                            <span className="text-sm font-black text-primary">{initials}</span>
-                                        )}
+                                    <div className="w-12 h-12 rounded-full border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center relative bg-black/20">
+                                        <img
+                                            src={avatarUrl || '/riders-logo.png'}
+                                            alt={b.customerName}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                        />
                                     </div>
                                 )}
                                 <div className="flex-grow min-w-0">

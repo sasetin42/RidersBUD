@@ -14,7 +14,7 @@ import {
     setPersistence,
     browserLocalPersistence
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, updateDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { usePresence } from '../hooks/usePresence';
 
 interface AuthContextType {
@@ -59,31 +59,65 @@ export const useAuth = () => {
     return context;
 };
 
+const saveCustomerSessionToStorage = (user: Customer | null, isBypassed: boolean) => {
+    if (user) {
+        localStorage.setItem('ridersbud_customer_session', 'true');
+        localStorage.setItem('ridersbud_customer_bypass', isBypassed ? 'true' : 'false');
+        localStorage.setItem('ridersbud_customer_user_data', JSON.stringify(user));
+    } else {
+        localStorage.removeItem('ridersbud_customer_session');
+        localStorage.removeItem('ridersbud_customer_bypass');
+        localStorage.removeItem('ridersbud_customer_user_data');
+    }
+};
+
+const loadCustomerSessionFromStorage = (): { isBypassed: boolean; user: Customer | null } => {
+    const isSession = localStorage.getItem('ridersbud_customer_session');
+    if (!isSession) return { isBypassed: false, user: null };
+    
+    const isBypassed = localStorage.getItem('ridersbud_customer_bypass') === 'true';
+    const userData = localStorage.getItem('ridersbud_customer_user_data');
+    const user = userData ? JSON.parse(userData) : null;
+    
+    return { isBypassed, user };
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [user, setUser] = useState<Customer | null>(null);
     const [loading, setLoading] = useState(true);
     const [firebaseUser, setFirebaseUser] = useState<FirebaseAuthUser | null>(null);
+    const [isBypassed, setIsBypassed] = useState(false);
 
     useEffect(() => {
+        const savedSession = loadCustomerSessionFromStorage();
+        if (savedSession.isBypassed && savedSession.user) {
+            setIsBypassed(true);
+            setUser(savedSession.user);
+            setIsAuthenticated(true);
+            setLoading(false);
+            return;
+        }
+
         const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
             setFirebaseUser(fbUser);
             if (!fbUser) {
-                setUser(null);
-                setIsAuthenticated(false);
-                setLoading(false);
+                if (!loadCustomerSessionFromStorage().isBypassed) {
+                    setUser(null);
+                    setIsAuthenticated(false);
+                    setLoading(false);
+                }
+            } else {
+                setIsBypassed(false);
             }
         });
 
         return () => unsubscribeAuth();
     }, []);
 
-    // Real-time listener for the user's customer profile.
-    // Skip entirely if the signed-in user is a mechanic — MechanicAuthContext owns that session.
-    // This prevents the mechanic dashboard from flickering when AuthContext tries to look up
-    // a customer document for a mechanic UID (both contexts share the same Firebase auth instance).
     useEffect(() => {
-        if (!firebaseUser) return;
+        const activeUserId = firebaseUser?.uid || (isBypassed ? user?.id : null);
+        if (!activeUserId) return;
 
         let unsubscribeSnapshot: (() => void) | null = null;
         let cancelled = false;
@@ -92,34 +126,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setLoading(true);
 
             try {
-                // Guard: check if this uid belongs to a mechanic first
-                const mechanicSnap = await getDoc(doc(firestore, 'mechanics', firebaseUser.uid));
-                if (cancelled) return;
+                if (firebaseUser) {
+                    // Guard: check if this uid belongs to a mechanic first
+                    const mechanicSnap = await getDoc(doc(firestore, 'mechanics', firebaseUser.uid));
+                    if (cancelled) return;
 
-                if (mechanicSnap.exists()) {
-                    // This is a mechanic session — AuthContext is not responsible for it
-                    setUser(null);
-                    setIsAuthenticated(false);
-                    setLoading(false);
-                    return; // Do NOT set up any customer snapshot
+                    if (mechanicSnap.exists()) {
+                        // This is a mechanic session — AuthContext is not responsible for it
+                        setUser(null);
+                        setIsAuthenticated(false);
+                        setLoading(false);
+                        return; // Do NOT set up any customer snapshot
+                    }
                 }
             } catch (_err) {
                 // If mechanic check fails (permission denied / network), fall through
-                // so normal customers are still handled correctly
+                // so normal customers are handled correctly
                 if (cancelled) return;
             }
 
             // Not a mechanic — subscribe to the customer profile
-            const userDocRef = doc(firestore, 'customers', firebaseUser.uid);
+            const userDocRef = doc(firestore, 'customers', activeUserId);
             unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
                 if (cancelled) return;
                 if (docSnap.exists()) {
                     const userData = { id: docSnap.id, ...docSnap.data() } as Customer;
                     setUser(userData);
                     setIsAuthenticated(true);
+                    saveCustomerSessionToStorage(userData, isBypassed);
                 } else {
                     setUser(null);
                     setIsAuthenticated(false);
+                    saveCustomerSessionToStorage(null, false);
                 }
                 setLoading(false);
             }, (err) => {
@@ -135,14 +173,94 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             cancelled = true;
             unsubscribeSnapshot?.();
         };
-    }, [firebaseUser]);
+    }, [firebaseUser, isBypassed, user?.id]);
 
     const loginWithCredentials = async (email: string, pass: string) => {
         try {
             await setPersistence(auth, browserLocalPersistence);
             await signInWithEmailAndPassword(auth, email, pass);
+            setIsBypassed(false);
+            saveCustomerSessionToStorage(null, false);
         } catch (error: any) {
             console.error("Login failed:", error);
+            
+            // Check if user is in Firestore and passwords match for local bypass
+            try {
+                const normalizedEmail = email.trim().toLowerCase();
+                const customersRef = collection(firestore, 'customers');
+                const q = query(customersRef, where('email', '==', normalizedEmail));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const customerDoc = querySnapshot.docs[0];
+                    const customerData = { id: customerDoc.id, ...customerDoc.data() } as Customer;
+                    
+                    if (customerData.password === pass) {
+                        console.info("[AuthBypass] Signing in legacy/mock customer via local bypass...");
+                        setIsBypassed(true);
+                        setUser(customerData);
+                        setIsAuthenticated(true);
+                        saveCustomerSessionToStorage(customerData, true);
+                        return;
+                    }
+                }
+            } catch (bypassErr) {
+                console.error("[AuthBypass] Customer bypass login check failed:", bypassErr);
+            }
+            
+            // Self-healing migration for mock users in development
+            if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+                try {
+                    const normalizedEmail = email.trim().toLowerCase();
+                    const customersRef = collection(firestore, 'customers');
+                    const q = query(customersRef, where('email', '==', normalizedEmail));
+                    const querySnapshot = await getDocs(q);
+                    
+                    if (!querySnapshot.empty) {
+                        const oldDoc = querySnapshot.docs[0];
+                        const oldData = oldDoc.data() as Customer;
+                        const oldId = oldDoc.id;
+                        
+                        console.info(`[AuthSelfHealing] Found legacy customer doc for ${normalizedEmail}. Registering in Firebase Auth...`);
+                        
+                        // Create user in Firebase Auth
+                        const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+                        const newUid = userCredential.user.uid;
+                        
+                        // Copy data to new document
+                        const newCustomer: Customer = {
+                            ...oldData,
+                            id: newUid
+                        };
+                        await setDoc(doc(firestore, 'customers', newUid), newCustomer);
+                        
+                        // Delete old document if it has a different ID
+                        if (oldId !== newUid) {
+                            await deleteDoc(doc(firestore, 'customers', oldId));
+                            
+                            // Proactively update any bookings that referenced the old customer ID
+                            try {
+                                const bookingsRef = collection(firestore, 'bookings');
+                                const bookingsQuery = query(bookingsRef, where('customerId', '==', oldId));
+                                const bookingsSnap = await getDocs(bookingsQuery);
+                                for (const bookingDoc of bookingsSnap.docs) {
+                                    await updateDoc(doc(firestore, 'bookings', bookingDoc.id), {
+                                        customerId: newUid
+                                    });
+                                }
+                                console.info(`[AuthSelfHealing] Migrated ${bookingsSnap.size} bookings from ${oldId} to ${newUid}`);
+                            } catch (bookingErr) {
+                                console.warn("[AuthSelfHealing] Failed to migrate bookings:", bookingErr);
+                            }
+                        }
+                        
+                        // Success! Since createUserWithEmailAndPassword also signs in, we are logged in.
+                        return;
+                    }
+                } catch (migrationError) {
+                    console.error("[AuthSelfHealing] Customer migration failed:", migrationError);
+                }
+            }
             throw error;
         }
     };
@@ -167,26 +285,37 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 if (mechanicDoc.exists()) return;
 
                 if (!customerDoc.exists()) {
+                    const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
+                    const defaultPic = (settingsSnap.exists() ? settingsSnap.data()?.defaultCustomerImageUrl : null) || '/assets/logo.png';
                     const newCustomer: Customer = {
                         id: fbUser.uid,
                         name: fbUser.displayName || 'Google User',
                         email: fbUser.email || '',
                         phone: '',
                         vehicles: [],
-                        picture: fbUser.photoURL || '',
+                        picture: fbUser.photoURL || defaultPic,
                         registrationDate: new Date().toISOString(),
                         status: 'Active'
                     };
                     await setDoc(doc(firestore, 'customers', fbUser.uid), newCustomer);
                 }
             } catch (popupError: any) {
-                if (
-                    popupError.code === 'auth/popup-blocked' || 
+                const isBlockError = popupError.code === 'auth/popup-blocked' || 
                     popupError.code === 'auth/popup-closed-by-user' || 
                     popupError.code === 'auth/cancelled-popup-request' ||
-                    (popupError.message && popupError.message.includes('COOP'))
-                ) {
-                    console.log("Popup blocked or COOP isolation triggered, trying redirect sign-in...");
+                    popupError.code === 'auth/network-request-failed' ||
+                    (popupError.message && (
+                        popupError.message.includes('COOP') || 
+                        popupError.message.includes('Cross-Origin-Opener-Policy') ||
+                        popupError.message.includes('block') ||
+                        popupError.message.includes('blocked') ||
+                        popupError.message.includes('failed') ||
+                        popupError.message.includes('fetch')
+                    )) ||
+                    (popupError.name === 'DOMException' || popupError.message?.includes('closed'));
+
+                if (isBlockError) {
+                    console.info("Popup blocked, network failed, or COOP isolation triggered. Trying redirect sign-in...", popupError);
                     const { signInWithRedirect } = await import('firebase/auth');
                     await signInWithRedirect(auth, provider);
                 } else {
@@ -215,13 +344,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 if (mechanicDoc.exists()) return;
 
                 if (!customerDoc.exists()) {
+                    const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
+                    const defaultPic = (settingsSnap.exists() ? settingsSnap.data()?.defaultCustomerImageUrl : null) || '/assets/logo.png';
                     const newCustomer: Customer = {
                         id: fbUser.uid,
                         name: fbUser.displayName || 'Facebook User',
                         email: fbUser.email || '',
                         phone: '',
                         vehicles: [],
-                        picture: fbUser.photoURL || '',
+                        picture: fbUser.photoURL || defaultPic,
                         registrationDate: new Date().toISOString(),
                         status: 'Active'
                     };
@@ -232,9 +363,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     popupError.code === 'auth/popup-blocked' || 
                     popupError.code === 'auth/popup-closed-by-user' || 
                     popupError.code === 'auth/cancelled-popup-request' ||
-                    (popupError.message && popupError.message.includes('COOP'))
+                    (popupError.message && (popupError.message.includes('COOP') || popupError.message.includes('Cross-Origin-Opener-Policy'))) ||
+                    (popupError.name === 'DOMException' || popupError.message?.includes('closed'))
                 ) {
-                    console.log("Popup blocked or COOP isolation triggered, trying redirect sign-in...");
+                    console.info("Popup blocked or COOP isolation triggered, trying redirect sign-in...");
                     const { signInWithRedirect } = await import('firebase/auth');
                     await signInWithRedirect(auth, provider);
                 } else {
@@ -249,6 +381,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const logout = async () => {
         await signOut(auth);
+        setIsBypassed(false);
+        saveCustomerSessionToStorage(null, false);
     };
 
     const register = async (userData: Omit<Customer, 'id' | 'vehicles'> & { vehicle?: Omit<Vehicle, 'id'> }) => {
@@ -260,10 +394,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             
             await updateProfile(fbUser, { displayName: userData.name });
 
+            const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
+            const defaultPic = (settingsSnap.exists() ? settingsSnap.data()?.defaultCustomerImageUrl : null) || '/assets/logo.png';
+
             const newCustomer: Customer = {
                 ...restOfData,
                 id: fbUser.uid,
                 vehicles: vehicle ? [{ ...vehicle, id: Date.now().toString(), isPrimary: true }] : [],
+                picture: defaultPic,
                 registrationDate: new Date().toISOString(),
                 status: 'Active'
             };

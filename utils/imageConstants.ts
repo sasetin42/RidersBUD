@@ -13,7 +13,7 @@ export const MOCKUPS = {
     MECHANIC_BANNER: 'https://images.unsplash.com/photo-1530046339160-ce3e5b0c7a2f?auto=format&fit=crop&w=1200&q=80',
     PARTS_STORE_BANNER: 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&w=1200&q=80',
     GENUINE_PARTS_TEXTURE: 'https://images.unsplash.com/photo-1486006920555-c77dcf18193c?auto=format&fit=crop&w=800&q=80',
-    PREMIUM_SERVICE_BANNER: '/images/mockups/premium_service_garage.png',
+    PREMIUM_SERVICE_BANNER: 'https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=1200&q=80',
     TURBO_PART: '/images/mockups/brembo_brake_disc.png',
 };
 
@@ -22,8 +22,7 @@ export const MOCKUPS = {
  */
 export const getProfileImage = (url?: string, name?: string) => {
     if (url && url.trim() !== '' && !url.includes('placeholder') && !url.startsWith('blob:') && !url.startsWith('file:') && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) return url;
-    if (name) return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=FE7803&color=fff&size=256`;
-    return MOCKUPS.DEFAULT_AVATAR;
+    return '/riders-logo.png';
 };
 
 /**

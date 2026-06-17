@@ -9,7 +9,7 @@ import { useAdminAuth } from '../context/AdminAuthContext';
 import { useAdminOnlineStatus } from '../hooks/usePresence';
 import { compressAndEncodeImage } from '../utils/fileUtils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Paperclip, FileText, Trash2, MapPin, Phone, Search, Download, CheckCircle, RefreshCw, Star } from 'lucide-react';
+import { X, Paperclip, FileText, Trash2, MapPin, Phone, Search, Download, CheckCircle, RefreshCw, Star, Send } from 'lucide-react';
 import Tooltip from './ui/Tooltip';
 import { db as firestoreDB } from '../firebase';
 import { collection, addDoc, query, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
@@ -890,9 +890,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                             disabled={isLoading || (!input.trim() && !attachment) || isCompressing}
                                             className="p-3 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-orange-500/20 hover:scale-105 transition-all group"
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                            </svg>
+                                            <Send size={18} />
                                         </button>
                                     </Tooltip>
                                 </form>

@@ -386,12 +386,17 @@ const BookingConfirmationScreen: React.FC = () => {
                             <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
                                 <p className="text-[10px] font-bold text-gray-500  tracking-widest mb-3">Your Mechanic</p>
                                 <div className="flex items-center gap-3 mb-4">
-                                    <img src={mechanic.imageUrl} alt={mechanic.name} className="w-12 h-12 rounded-xl object-cover border border-primary/30" />
+                                    <img 
+                                        src={mechanic.imageUrl || '/riders-logo.png'} 
+                                        alt={mechanic.name} 
+                                        className="w-12 h-12 rounded-xl object-cover border border-primary/30" 
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                    />
                                     <div>
                                         <p className="font-bold text-white leading-tight">{mechanic.name}</p>
                                         <div className="flex items-center gap-1 text-yellow-400 text-xs mt-1">
                                             <Star size={12} className="fill-yellow-400 text-yellow-400" />
-                                            <span className="font-bold">{mechanic.rating.toFixed(1)}</span>
+                                            <span className="font-bold">{(mechanic.rating || 0).toFixed(1)}</span>
                                             <span className="text-gray-500">({mechanic.reviews} jobs)</span>
                                         </div>
                                     </div>

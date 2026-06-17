@@ -412,7 +412,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                         <div className="flex items-center justify-between bg-white/5 p-4 rounded-xl border border-white/5">
                             <div>
                                 <p className="text-[10px] text-gray-500 font-bold  tracking-widest">Coordinates</p>
-                                <p className="text-white font-mono font-bold">{booking.location.lat.toFixed(6)}, {booking.location.lng.toFixed(6)}</p>
+                                <p className="text-white font-mono font-bold">{(booking.location.lat || 0).toFixed(6)}, {(booking.location.lng || 0).toFixed(6)}</p>
                             </div>
                             <a
                                 href={`https://www.google.com/maps/search/?api=1&query=${booking.location.lat},${booking.location.lng}`}
@@ -658,7 +658,7 @@ const AdminBookingsScreen: React.FC = () => {
             const statusMatch = selectedStatus === 'all' || booking.status === selectedStatus;
             const paymentMatch = paymentFilter === 'all' || (paymentFilter === 'paid' ? booking.isPaid : !booking.isPaid);
             const searchMatch = searchQuery === '' || 
-                booking.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                (booking.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                 svcs.some(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
             let dateMatch = true;
             if (dateFilter.start && dateFilter.end) {

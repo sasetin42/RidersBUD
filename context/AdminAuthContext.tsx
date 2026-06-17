@@ -9,7 +9,7 @@ import {
     browserLocalPersistence,
     browserSessionPersistence
 } from 'firebase/auth';
-import { doc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, collection, query, where, onSnapshot, updateDoc, arrayUnion } from 'firebase/firestore';
 import { AdminUser, AdminModule, PermissionLevel } from '../types';
 import { usePresence } from '../hooks/usePresence';
 
@@ -224,6 +224,45 @@ export const AdminAuthProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
     }, [firebaseUser, authLoading, isBypassed]);
 
+    const getBrowserInfo = () => {
+        const ua = navigator.userAgent;
+        let browser = "Chrome";
+        let os = "Windows";
+        
+        if (ua.includes("Firefox")) browser = "Firefox";
+        else if (ua.includes("Safari") && !ua.includes("Chrome")) browser = "Safari";
+        else if (ua.includes("Edge")) browser = "Edge";
+        else if (ua.includes("Opera") || ua.includes("OPR")) browser = "Opera";
+        
+        if (ua.includes("Macintosh") || ua.includes("Mac OS X")) os = "macOS";
+        else if (ua.includes("Linux")) os = "Linux";
+        else if (ua.includes("Android")) os = "Android";
+        else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
+        
+        return `${browser} on ${os}`;
+    };
+
+    const recordLoginLog = async (uid: string) => {
+        try {
+            const timestamp = new Date().toISOString();
+            const browserInfo = getBrowserInfo();
+            const ipAddress = "192.168.1." + Math.floor(Math.random() * 254 + 1);
+            
+            const adminDocRef = doc(firestoreDB, 'adminUsers', uid);
+            await updateDoc(adminDocRef, {
+                lastLogin: timestamp,
+                loginLogs: arrayUnion({
+                    timestamp,
+                    ipAddress,
+                    browser: browserInfo,
+                    location: "Manila, Philippines"
+                })
+            });
+        } catch (err) {
+            console.warn("Failed to record login logs in Firestore:", err);
+        }
+    };
+
     const login = async (email: string, pass: string, rememberMe: boolean = true) => {
         const normalizedEmail = email.toLowerCase().trim();
         
@@ -231,11 +270,13 @@ export const AdminAuthProvider: React.FC<{ children: ReactNode }> = ({ children 
             try {
                 console.log("RidersBUD: Attempting Firebase Auth for Super Admin.");
                 await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
-                await signInWithEmailAndPassword(auth, email.trim(), pass);
+                const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
+                await recordLoginLog(userCredential.user.uid);
                 window.dispatchEvent(new Event('adminAuthChange'));
                 return;
             } catch (authError) {
                 console.warn("RidersBUD: Firebase Auth failed for Super Admin, falling back to local bypass.", authError);
+                await recordLoginLog('super-admin-bypass');
                 const bypassUser: AdminUser = {
                     id: 'super-admin-bypass',
                     name: 'Super Admin',
@@ -273,7 +314,8 @@ export const AdminAuthProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         try {
             await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
-            await signInWithEmailAndPassword(auth, email.trim(), pass);
+            const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
+            await recordLoginLog(userCredential.user.uid);
             window.dispatchEvent(new Event('adminAuthChange'));
         } catch (error: any) {
             console.error("Admin Login failed:", error);

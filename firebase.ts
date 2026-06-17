@@ -20,9 +20,7 @@ import { initializeFirestore, getFirestore, persistentLocalCache, persistentMult
 let dbInstance;
 try {
     dbInstance = initializeFirestore(app, {
-        localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()}),
-        experimentalForceLongPolling: true,
-        experimentalAutoDetectLongPolling: true
+        localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
     });
 } catch (e) {
     console.warn("Firestore init with settings failed, falling back to default:", e);

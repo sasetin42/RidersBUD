@@ -1,71 +1,77 @@
-# Implementation Plan - Update Customer Booking Detail Layout
+# Plan: Replicating secondaryAuth Logic & Verifying User Management Actions
 
-This plan outlines the changes required to streamline the Customer Booking Detail page layout by modifying actions, improving navigation flow, and cleaning up footer controls.
-
-## Goal
-Update the layout of the Customer Booking Detail page in `pages/BookingDetailScreen.tsx` to simplify user communications and navigation.
+This plan details the steps required to synchronize password updates for `Customer` and `Mechanic` roles initiated by Administrators using `secondaryAuth`, verify admin operations, and validate the typescript compilations.
 
 ---
 
-## Impacted Files
-- `pages/BookingDetailScreen.tsx`
+## 1. Analysis & Goals
+
+### The Problem
+Currently, in `context/DatabaseContext.tsx`, when an administrator updates an Admin User's password via `updateAdminUser`, it imports `secondaryAuth` helper utilities to sign into Firebase Authentication using a secondary auth instance and synchronize the password update in Firebase Authentication. However, this synchronization is missing for `updateCustomer` and `updateMechanic`, leading to a discrepancy between Firestore database fields and the actual Firebase Authentication credentials.
+
+### Goals
+1. Replicate the `secondaryAuth` password synchronization flow within `updateCustomer` and `updateMechanic` methods in `DatabaseContext.tsx`.
+2. Confirm the complete flow of **Edit**, **Delete**, **Suspend**, and **View Details** actions across the Admin pages (`AdminUsersScreen.tsx`, `AdminCustomersScreen.tsx`, and `AdminMechanicsScreen.tsx`).
+3. Ensure zero type compilation issues with validation via `npx tsc --noEmit`.
 
 ---
 
-## Detailed Step-by-Step Tasks
+## 2. Impacted Files
 
-### Step 1: Update Progress Timeline Actions List
-Locate the actions grid inside the Progress Timeline (around line 774):
-1. **Remove Chat Button:** Remove the button that triggers `setIsChatOpen(true)`.
-2. **Transform Phone Button:** Replace the two-column grid (`grid-cols-2`) containing Chat and Phone buttons with a single full-width button.
-   - It will display a `<Phone size={16} />` icon and the text `"Call Mechanic"`.
-   - Maintain the trigger `handleCallMechanic` on click.
-3. **Relocate "View All Bookings" Button:** Move this button from the footer into the Progress Timeline actions list, directly below the newly styled Phone button.
-   - It will navigate to `/customer-portal/booking-history` on click.
+| File Path | Description | Role / Target |
+| :--- | :--- | :--- |
+| `context/DatabaseContext.tsx` | Core Database Context holding CRUD methods | Modify `updateCustomer` and `updateMechanic` to invoke `secondaryAuth` password updates |
+| `pages/admin/AdminUsersScreen.tsx` | Admin screen managing all user categories | Verify actions: Edit, Delete, Suspend, and View Details |
+| `pages/admin/AdminCustomersScreen.tsx` | Admin screen managing customer-specific lists | Verify actions: Edit, Delete, View Details |
+| `pages/admin/AdminMechanicsScreen.tsx` | Admin screen managing mechanic-specific lists | Verify actions: Edit, Delete, View Details |
 
-*Expected structure after modification:*
-```tsx
-{/* Actions Grid */}
-<div className="flex-1 flex flex-col gap-3 justify-center">
-    {/* PIN LOCATION - Interactive Mini Map */}
-    ...
-    
-    {/* Call Mechanic (Full-Width Row) */}
-    <button 
-        onClick={handleCallMechanic} 
-        className="w-full bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex items-center justify-center gap-2 text-primary py-3.5 transition-all active:scale-95 text-xs font-bold tracking-wide uppercase"
-    >
-        <Phone size={16} />
-        Call Mechanic
-    </button>
+---
 
-    {/* View All Bookings (Moved from Footer) */}
-    <button
-        onClick={() => navigate('/customer-portal/booking-history')}
-        className="w-full bg-[#151515] border border-white/10 text-white font-bold py-3.5 rounded-xl hover:bg-white/5 transition text-xs tracking-wider uppercase active:scale-95 flex items-center justify-center gap-2"
-    >
-        <ClipboardList size={16} className="text-primary" />
-        View All Bookings
-    </button>
+## 3. Solutioning & Implementation Steps
 
-    {/* Review Service & Mechanic persistent button for Completed Status */}
-    ...
-</div>
+### Phase 1: Replicating `secondaryAuth` Logic in `DatabaseContext.tsx`
+
+#### A. In `updateCustomer`
+1. Retrieve `oldCustomerDoc` from state/cache (`db?.customers.find(c => c.id === id)`).
+2. Compare `customer.password` with `oldPassword`.
+3. If password changed, dynamically import `getSecondaryAuth` & `deleteSecondaryAuth` from `../utils/secondaryAuth`, and `signInWithEmailAndPassword` & `updatePassword` from `firebase/auth`.
+4. Run `signInWithEmailAndPassword` on the `secondaryAuth` instance using the old email and old password.
+5. Apply `updatePassword` to update the credential user to the new `customer.password`.
+6. Clean up secondary authentication instance via `deleteSecondaryAuth(secondaryApp)`.
+
+#### B. In `updateMechanic`
+1. Retrieve `oldMechanicDoc` from state/cache (`db?.mechanics.find(m => m.id === id)`).
+2. Compare `mechanic.password` with `oldPassword`.
+3. If password changed, invoke the same `secondaryAuth` update routine: sign in using secondary instance and update the password.
+4. Clean up the secondary application instance in the `finally` block.
+
+---
+
+### Phase 2: Verifying Context Actions
+
+We will systematically review the frontend event triggers to ensure they are robustly linked to context calls:
+
+1. **Edit Action**:
+   - Verify `AdminUsersScreen.tsx` maps the payload edits of customers and mechanics, invoking `updateCustomer` and `updateMechanic` appropriately.
+   - Verify `AdminCustomersScreen.tsx` invokes `updateCustomer(data)` when saved.
+   - Verify `AdminMechanicsScreen.tsx` invokes `updateMechanic(data)` when saved.
+
+2. **Delete Action**:
+   - Verify that confirming a deletion triggers `deleteCustomer(id)` or `deleteMechanic(id)` from the database context.
+   - Ensure corresponding Firestore batch processes propagate cleanly (removing sub-elements or references).
+
+3. **Suspend Action**:
+   - Verify toggling user active/suspended status resolves to `status: 'Active' | 'Suspended'` in payloads sent to `updateCustomer` and `updateMechanic`.
+
+4. **View Details Action**:
+   - Validate state bindings like `viewingUserDetail` in `AdminUsersScreen` are fully populated and rendering correctly for each specific role category (Admin, Customer, Mechanic).
+
+---
+
+### Phase 3: Validation & Quality Control
+
+Execute the TypeScript compiler in dry-run mode to verify the absence of syntax errors:
+```bash
+npx tsc --noEmit
 ```
-
-### Step 2: Remove Footer Buttons
-Locate the quick link controls container at the bottom of the main layout (around lines 830-843):
-- Remove the entire container `div` class `grid grid-cols-2 gap-3 pb-4` which contains:
-  - "View All Bookings" button (now relocated to the actions list).
-  - "Back to Home" button (removed entirely).
-
----
-
-## Verification Criteria
-- [ ] **Compilation Check:** Run `npm run build` (or equivalent build command) to verify there are no TypeScript compilation errors.
-- [ ] **UI Review:** Open the Booking Detail screen and ensure:
-  - The chat button is completely gone.
-  - The Phone button is displayed as a full-width action row with text "Call Mechanic".
-  - The "View All Bookings" button appears directly below the Phone button.
-  - The bottom footer buttons ("View All Bookings" and "Back to Home") are no longer visible.
-- [ ] **Behavior Verification:** Verify that clicking "Call Mechanic" triggers the call handler and clicking "View All Bookings" successfully redirects to `/customer-portal/booking-history`.
+This ensures types are correctly mapped and import statements resolve without compilation bugs.

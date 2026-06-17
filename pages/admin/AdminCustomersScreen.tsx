@@ -530,12 +530,12 @@ const AdminCustomersScreen: React.FC = () => {
     }, [db, customerBookingsCount, customerTotalSpent]);
 
     const filteredCustomers = useMemo(() => {
-        if (!db) return [];
+        if (!db?.customers) return [];
         let filtered = db.customers.filter(customer => {
             const searchMatch = !searchQuery ||
-                customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                customer.phone.toLowerCase().includes(searchQuery.toLowerCase());
+                (customer.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (customer.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (customer.phone || '').toLowerCase().includes(searchQuery.toLowerCase());
             const vehicleMatch = vehicleFilter === 'all' ||
                 (vehicleFilter === '0' && (customer.vehicles || []).length === 0) ||
                 (vehicleFilter === '1' && (customer.vehicles || []).length === 1) ||
@@ -551,12 +551,12 @@ const AdminCustomersScreen: React.FC = () => {
         filtered.sort((a, b) => {
             let aVal, bVal;
             switch (sortConfig.key) {
-                case 'name': aVal = a.name.toLowerCase(); bVal = b.name.toLowerCase(); break;
-                case 'email': aVal = a.email.toLowerCase(); bVal = b.email.toLowerCase(); break;
+                case 'name': aVal = (a.name || '').toLowerCase(); bVal = (b.name || '').toLowerCase(); break;
+                case 'email': aVal = (a.email || '').toLowerCase(); bVal = (b.email || '').toLowerCase(); break;
                 case 'vehicles': aVal = (a.vehicles || []).length; bVal = (b.vehicles || []).length; break;
                 case 'bookings': aVal = customerBookingsCount[a.id] || 0; bVal = customerBookingsCount[b.id] || 0; break;
                 case 'spent': aVal = customerTotalSpent[a.id] || 0; bVal = customerTotalSpent[b.id] || 0; break;
-                default: aVal = a.name; bVal = b.name;
+                default: aVal = a.name || ''; bVal = b.name || '';
             }
             if (aVal < bVal) return sortConfig.direction === 'ascending' ? -1 : 1;
             if (aVal > bVal) return sortConfig.direction === 'ascending' ? 1 : -1;
@@ -737,7 +737,7 @@ const AdminCustomersScreen: React.FC = () => {
                                                 <td className="p-4">
                                                     <div className="flex items-center gap-3">
                                                         <div className="relative flex-shrink-0">
-                                                            <img src={c.picture || 'https://picsum.photos/seed/placeholder/200/200'} alt={c.name} className="w-11 h-11 object-cover rounded-xl ring-1 ring-white/10" onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/placeholder/200/200'; }} />
+                                                            <img src={c.picture || '/riders-logo.png'} alt={c.name} className="w-11 h-11 object-cover rounded-xl ring-1 ring-white/10" onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }} />
                                                             <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#121212] ${c.isOnline ? 'bg-green-500' : c.status === 'Active' ? 'bg-gray-500' : c.status === 'Banned' ? 'bg-red-500' : 'bg-gray-400'}`} />
                                                         </div>
                                                         <div>
@@ -865,7 +865,7 @@ const AdminCustomersScreen: React.FC = () => {
                                 {/* Header */}
                                 <div className="flex items-start gap-3 mb-3">
                                     <div className="relative flex-shrink-0">
-                                        <img src={c.picture || 'https://picsum.photos/seed/placeholder/200/200'} alt={c.name} className="w-12 h-12 rounded-xl object-cover ring-2 ring-white/5" onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/placeholder/200/200'; }} />
+                                        <img src={c.picture || '/riders-logo.png'} alt={c.name} className="w-12 h-12 rounded-xl object-cover ring-2 ring-white/5" onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }} />
                                         <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#1a1a1a] ${c.isOnline ? 'bg-green-500' : c.status === 'Active' ? 'bg-gray-500' : c.status === 'Banned' ? 'bg-red-500' : 'bg-gray-400'}`}></div>
                                     </div>
                                     <div className="flex-1 min-w-0">

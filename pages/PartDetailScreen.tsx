@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../context/DatabaseContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
-import { ArrowLeft, Star, ShoppingBag, Heart, Check, Truck, ShieldCheck, Share2 } from 'lucide-react';
+import { ArrowLeft, Star, ShoppingBag, Heart, Check, Truck, ShieldCheck, Share2, Facebook, Twitter, Send, Link as LinkIcon, X } from 'lucide-react';
 import { Button, Badge } from '../components/ui';
 import AddToCartSuccessModal from '../components/AddToCartSuccessModal';
 
@@ -20,6 +20,7 @@ const PartDetailScreen: React.FC = () => {
     const [isAdded, setIsAdded] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [showShareModal, setShowShareModal] = useState(false);
 
     if (!part) return null; // Or loading state
 
@@ -30,25 +31,18 @@ const PartDetailScreen: React.FC = () => {
             url: window.location.href
         };
 
-        try {
-            if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-                await navigator.share(shareData);
-            } else {
-                await navigator.clipboard.writeText(window.location.href);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            }
-        } catch (err) {
-            console.error('Error sharing:', err);
-            // Fallback: Copy to clipboard
+        // Try using Web Share API first (supported on mobile browsers)
+        if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
             try {
-                await navigator.clipboard.writeText(window.location.href);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-            } catch (copyErr) {
-                console.error('Failed to copy to clipboard:', copyErr);
+                await navigator.share(shareData);
+                return;
+            } catch (err) {
+                console.log('Web share failed or dismissed, opening custom share modal:', err);
             }
         }
+        
+        // Show custom share modal if Web Share is not available or fails
+        setShowShareModal(true);
     };
 
     // Ensure main image is set if it wasn't initially
@@ -224,6 +218,83 @@ const PartDetailScreen: React.FC = () => {
                 item={part}
                 quantity={selectedQty}
             />
+
+            {/* Custom Share Modal */}
+            {showShareModal && (
+                <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 p-4 animate-fadeIn">
+                    <div className="bg-[#151515] rounded-[2rem] p-6 max-w-sm w-full border border-white/5 shadow-2xl relative animate-slideInUp">
+                        {/* Close button */}
+                        <button
+                            onClick={() => setShowShareModal(false)}
+                            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 border border-white/5 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                        >
+                            <X size={16} />
+                        </button>
+
+                        <h3 className="text-lg font-black text-white mb-2">Share Product</h3>
+                        <p className="text-gray-400 text-xs mb-6">
+                            Share this item with friends on social media or copy the direct product link.
+                        </p>
+
+                        {/* Social sharing grid */}
+                        <div className="grid grid-cols-4 gap-4 mb-6">
+                            <a
+                                href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-[#1877F2]/10 border border-[#1877F2]/20 hover:bg-[#1877F2]/25 transition text-[#1877F2]"
+                            >
+                                <Facebook size={20} />
+                                <span className="text-[10px] font-bold">Facebook</span>
+                            </a>
+
+                            <a
+                                href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()}`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/15 transition text-white"
+                            >
+                                <Twitter size={20} />
+                                <span className="text-[10px] font-bold">Twitter</span>
+                            </a>
+
+                            <a
+                                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()} ` + window.location.href)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-[#25D366]/10 border border-[#25D366]/20 hover:bg-[#25D366]/25 transition text-[#25D366]"
+                            >
+                                <Send size={20} />
+                                <span className="text-[10px] font-bold">WhatsApp</span>
+                            </a>
+
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        await navigator.clipboard.writeText(window.location.href);
+                                        setCopied(true);
+                                        setShowShareModal(false);
+                                        setTimeout(() => setCopied(false), 2000);
+                                    } catch (err) {
+                                        console.error('Failed to copy:', err);
+                                    }
+                                }}
+                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-primary/10 border border-primary/20 hover:bg-primary/25 transition text-primary"
+                            >
+                                <LinkIcon size={20} />
+                                <span className="text-[10px] font-bold">Copy Link</span>
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => setShowShareModal(false)}
+                            className="w-full bg-[#222] border border-white/5 text-white font-bold py-3 rounded-xl hover:bg-[#333] transition text-xs tracking-wider uppercase active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Clipboard Toast Banner */}
             {copied && (

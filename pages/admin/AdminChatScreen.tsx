@@ -16,7 +16,7 @@ const ChatUserAvatar: React.FC<{ userId: string; userType: string; avatarUrl?: s
     return (
         <div className="relative shrink-0">
             <div className="w-12 h-12 rounded-full overflow-hidden border border-white/10 bg-gray-800">
-                <img src={avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random`} alt={userName} className="w-full h-full object-cover" />
+                <img src={avatarUrl || '/riders-logo.png'} alt={userName} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }} />
             </div>
             <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-[#121212] rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
         </div>
@@ -660,10 +660,10 @@ const AdminChatScreen: React.FC = () => {
                             <div className="text-center">
                                 <div className="w-24 h-24 rounded-2xl overflow-hidden mx-auto mb-4 border-2 border-orange-500/20 shadow-2xl relative group">
                                     <img 
-                                        src={customerDetails?.picture || chats.find(c => c.id === selectedChatId)?.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(customerDetails?.name || '')}&background=random`} 
+                                        src={customerDetails?.picture || chats.find(c => c.id === selectedChatId)?.userAvatar || '/riders-logo.png'} 
                                         alt="User" 
                                         className="w-full h-full object-cover transition-transform group-hover:scale-110" 
-                                        onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(customerDetails?.name || 'User')}&background=FE7803&color=fff&size=256`; }}
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
                                     />
                                     <div className="absolute inset-0 bg-orange-500/10 mix-blend-overlay"></div>
                                 </div>

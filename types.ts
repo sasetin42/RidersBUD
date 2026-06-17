@@ -151,6 +151,10 @@ export interface Settings {
     // System
     maintenanceMode?: boolean;
 
+    // Default Profile Images
+    defaultCustomerImageUrl?: string;
+    defaultMechanicImageUrl?: string;
+
     // Support (New)
     virtualMechanicName?: string;
     virtualMechanicImageUrl?: string;
@@ -227,7 +231,7 @@ export interface Reminder {
 
 export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'catalog' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings' | 'orders' | 'monetization' | 'payouts' | 'chat' | 'gcash-payments' | 'notifications';
 export type PermissionLevel = 'none' | 'read' | 'write';
-export type RoleName = 'Super Admin' | 'Admin' | 'Editor' | 'Viewer';
+export type RoleName = 'Super Admin' | 'Admin' | 'Editor' | 'Viewer' | 'Customer' | 'Mechanic';
 
 export interface AdminUser {
     id: string;
@@ -245,6 +249,12 @@ export interface AdminUser {
     department?: string;
     phoneNumber?: string;
     notes?: string;
+    loginLogs?: {
+        timestamp: string;
+        ipAddress: string;
+        browser: string;
+        location: string;
+    }[];
 }
 
 

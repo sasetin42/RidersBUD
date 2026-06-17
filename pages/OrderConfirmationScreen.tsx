@@ -34,7 +34,7 @@ const OrderConfirmationScreen: React.FC = () => {
                 <div className="w-full max-w-sm bg-dark-gray p-4 rounded-lg text-left space-y-2">
                     <div className="flex justify-between">
                         <span className="text-light-gray">Total Paid:</span>
-                        <span className="font-bold text-primary">₱{order.total.toFixed(2)}</span>
+                        <span className="font-bold text-primary">₱{(order.total || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                         <span className="text-light-gray">Payment Method:</span>

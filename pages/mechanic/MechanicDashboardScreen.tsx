@@ -14,6 +14,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import { Phone, MapPin, MessageSquare, User, Car } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
+import { CallButton } from '../../components/CallUI';
 
 
 
@@ -240,6 +241,9 @@ const MechanicDashboardScreen: React.FC = () => {
         const myUnseenBookings = db.bookings.filter(b =>
             (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
             isBookingApprovedForMechanicView(b) &&
+            b.status !== 'Completed' &&
+            b.status !== 'Cancelled' &&
+            b.status !== 'Work Done' &&
             !notifiedBookingIds.has(b.id)
         );
 
@@ -396,19 +400,13 @@ const MechanicDashboardScreen: React.FC = () => {
                                         {/* Customer Profile Image with Real-time pulsing online status */}
                                         <div className="relative">
                                             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-orange-600/30 border-2 border-primary/40 overflow-hidden flex-shrink-0 shadow-inner">
-                                                {customer?.picture || customer?.imageUrl || customer?.avatar ? (
-                                                    <img
-                                                        src={customer.picture || customer.imageUrl || customer.avatar}
-                                                        alt={ongoingJob.customerName}
-                                                        className="w-full h-full object-cover"
-                                                        loading="lazy"
-                                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                                    />
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-primary font-black text-2xl">
-                                                        {(ongoingJob.customerName || 'Customer').charAt(0).toUpperCase()}
-                                                    </div>
-                                                )}
+                                                <img
+                                                    src={customer?.picture || customer?.imageUrl || customer?.avatar || '/riders-logo.png'}
+                                                    alt={ongoingJob.customerName}
+                                                    className="w-full h-full object-cover"
+                                                    loading="lazy"
+                                                    onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                                />
                                             </div>
                                             {/* Pulse Online Indicator */}
                                             <div className="absolute bottom-0 right-0 w-4 h-4 bg-[#121212] rounded-full flex items-center justify-center">
@@ -419,11 +417,6 @@ const MechanicDashboardScreen: React.FC = () => {
                                         <div className="flex-1">
                                             <div className="flex items-center gap-2">
                                                 <p className="text-lg font-black text-white tracking-tight leading-tight">{ongoingJob.customerName || 'Customer'}</p>
-                                                {customer?.registrationDate && (
-                                                    <span className="text-[8px] bg-white/5 text-gray-400 font-bold px-1.5 py-0.5 rounded border border-white/5">
-                                                        VIP
-                                                    </span>
-                                                )}
                                             </div>
                                             <p className="text-xs text-gray-400 font-medium mt-0.5">{customer?.phone || ongoingJob.phone || 'No phone'}</p>
                                         </div>
@@ -431,14 +424,16 @@ const MechanicDashboardScreen: React.FC = () => {
 
                                     {/* Action dial/navigate items */}
                                     <div className="flex gap-2">
-                                        {(customer?.phone || ongoingJob.phone) && (
+                                        {customer?.id && (
                                             <Tooltip content="Call Customer">
-                                                <a 
-                                                    href={`tel:${customer?.phone || ongoingJob.phone}`}
-                                                    className="p-2.5 bg-green-500/10 hover:bg-green-500 text-green-400 hover:text-white rounded-xl border border-green-500/20 hover:border-green-500 transition-all shadow-md active:scale-90"
-                                                >
-                                                    <Phone size={14} className="stroke-[2.5]" />
-                                                </a>
+                                                <div className="flex items-center">
+                                                    <CallButton targetId={customer.id} targetRole="customer" targetName={customer.name || 'Customer'} targetImage={customer.picture} size="sm" />
+                                                    {customer?.phone && (
+                                                        <a href={`tel:${customer.phone}`} className="p-2.5 bg-green-500/10 hover:bg-green-500 text-green-400 hover:text-white rounded-xl border border-green-500/20 hover:border-green-500 transition-all shadow-md active:scale-90 ml-1">
+                                                            <Phone size={14} className="stroke-[2.5]" />
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </Tooltip>
                                         )}
                                         {ongoingJob.id && (
