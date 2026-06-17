@@ -420,7 +420,6 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                 }
             },
             (error) => {
-                console.warn('Location share failed:', error.message);
             }
         );
     };

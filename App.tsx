@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db as firebaseDb } from './firebase';
@@ -196,6 +196,9 @@ const AppContent: React.FC = () => {
     // Location enforcement states
     const [isLocationBlocked, setIsLocationBlocked] = useState(false);
     const [locationChecking, setLocationChecking] = useState(false);
+    const [locationError, setLocationError] = useState<string | null>(null);
+    const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
+    const [activeInstructionTab, setActiveInstructionTab] = useState<'safari' | 'chrome' | 'native'>('chrome');
 
     useEffect(() => {
         if (isAuthenticated && user && !user.hasSeenTour) {
@@ -227,56 +230,90 @@ const AppContent: React.FC = () => {
         await markTourSeen();
     };
 
-    // Location enforcement check function
-    const checkLocationPermission = () => {
+    // Location enforcement check function wrapped in useCallback
+    const checkLocationPermission = useCallback(() => {
         if (!('geolocation' in navigator)) {
             setIsLocationBlocked(true);
+            setLocationError("Geolocation is not supported by your device/browser.");
             return;
         }
         setLocationChecking(true);
+        setLocationError(null);
 
         const handleSuccess = (position: GeolocationPosition) => {
             setIsLocationBlocked(false);
             setLocationChecking(false);
+            setLocationError(null);
+            
+            const coords = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+
             if (isAuthenticated && user && updateCustomerLocation) {
-                updateCustomerLocation(user.id, {
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                });
+                updateCustomerLocation(user.id, coords);
             } else if (isMechanicAuthenticated && mechanic && updateMechanicLocation) {
-                updateMechanicLocation(mechanic.id, {
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                });
+                updateMechanicLocation(mechanic.id, coords);
             }
         };
 
-        const handleFallback = () => {
-            navigator.geolocation.getCurrentPosition(
-                handleSuccess,
-                (error) => {
-                    console.warn("[Location] Enforcement fallback check error:", error.message);
-                    setIsLocationBlocked(true);
-                    setLocationChecking(false);
-                },
-                { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-            );
+        const handleError = (error: GeolocationPositionError) => {
+            setLocationChecking(false);
+            setIsLocationBlocked(true);
+
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    setLocationError("Permission Denied. Please allow location access in your system/browser settings.");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    setLocationError("Position Unavailable. Ensure your device GPS is turned ON and has a cellular/WiFi connection.");
+                    break;
+                case error.TIMEOUT:
+                    setLocationError("Request timed out. Please try again or step closer to a window/open area.");
+                    break;
+                default:
+                    setLocationError("Could not retrieve location. Please refresh and try again.");
+            }
         };
 
+        // Attempt fine location, fallback to coarse if timeout
         navigator.geolocation.getCurrentPosition(
             handleSuccess,
             (error) => {
                 if (error.code === error.TIMEOUT) {
-                    handleFallback();
+                    navigator.geolocation.getCurrentPosition(
+                        handleSuccess,
+                        handleError,
+                        { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+                    );
                 } else {
-                    console.warn("[Location] Enforcement check error:", error.message);
-                    setIsLocationBlocked(true);
-                    setLocationChecking(false);
+                    handleError(error);
                 }
             },
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
         );
-    };
+    }, [isAuthenticated, user, updateCustomerLocation, isMechanicAuthenticated, mechanic, updateMechanicLocation]);
+
+    // Watch permission state change if API available
+    useEffect(() => {
+        if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'geolocation' })
+                .then((status) => {
+                    setPermissionState(status.state);
+                    status.onchange = () => {
+                        setPermissionState(status.state);
+                        if (status.state === 'granted') {
+                            setIsLocationBlocked(false);
+                            setLocationError(null);
+                            checkLocationPermission();
+                        } else if (status.state === 'denied') {
+                            setIsLocationBlocked(true);
+                        }
+                    };
+                })
+                .catch(() => {});
+        }
+    }, [isAuthenticated, isMechanicAuthenticated, checkLocationPermission]);
 
     // Prompt location permissions immediately upon login/session start
     useEffect(() => {
@@ -286,7 +323,7 @@ const AppContent: React.FC = () => {
         } else {
             setIsLocationBlocked(false);
         }
-    }, [isAuthenticated, isMechanicAuthenticated]);
+    }, [isAuthenticated, isMechanicAuthenticated, checkLocationPermission]);
 
     // Profile Completion Check Logic
     // We want to redirect if:
@@ -580,9 +617,7 @@ const AppContent: React.FC = () => {
                         lng: position.coords.longitude
                     });
                 },
-                (error) => {
-                    console.warn("[Location] En Route customer location error:", error.message);
-                },
+                (error) => {},
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
             );
         } else if (!activeBooking && watchIdRef.current !== null) {
@@ -611,9 +646,7 @@ const AppContent: React.FC = () => {
                         lng: position.coords.longitude
                     }, activeJob.id);
                 },
-                (error) => {
-                    console.warn("[Location] En Route mechanic location error:", error.message);
-                },
+                (error) => {},
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
             );
         } else if (!activeJob && mechanicWatchIdRef.current !== null) {
@@ -711,52 +744,78 @@ const AppContent: React.FC = () => {
 
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A0A0A] text-white p-6">
-                <div className="max-w-md w-full text-center space-y-8">
-                    <div className="relative flex justify-center">
-                        <div className="absolute w-24 h-24 bg-primary/10 rounded-full animate-ping"></div>
-                        <div className="relative w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center border border-primary/30">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                        </div>
-                    </div>
-                    
-                    <div className="space-y-3">
-                        <h1 className="text-2xl font-black tracking-tight text-white">Live Location Required</h1>
-                        <p className="text-sm text-gray-400 leading-relaxed px-4">
-                            RidersBUD relies on real-time location to connect users with nearby mechanics and track active jobs. Please enable live location services to continue using your account.
+                <div className="max-w-sm w-full text-center space-y-5 z-10">
+                    <img src="/riders-logo.png" alt="RidersBUD" className="w-20 h-20 mx-auto mix-blend-screen" style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} />
+
+                    <div className="space-y-1.5">
+                        <h1 className="text-xl font-black tracking-tight text-white">Location Access Required</h1>
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                            Allow location access to connect with nearby mechanics and track your service in real-time.
                         </p>
                     </div>
 
-                    <div className="pt-4 space-y-4">
-                        <button
-                            onClick={checkLocationPermission}
-                            disabled={locationChecking}
-                            className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-4 rounded-xl transition duration-200 shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
-                        >
-                            {locationChecking ? (
-                                <>
-                                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                    <span>Activating GPS...</span>
-                                </>
-                            ) : (
-                                <span>Enable Location Access</span>
-                            )}
-                        </button>
-                        
-                        <div className="p-4 bg-[#1E1E1E] rounded-xl border border-white/5 text-left text-xs text-gray-500 leading-normal space-y-2">
-                            <p className="font-bold text-gray-400 uppercase tracking-wider text-[10px]">How to enable:</p>
-                            <p><strong>Mobile/Browser:</strong> Tap the lock/info icon next to the URL in the address bar, change Location setting to "Allow", and try again.</p>
+                    {locationError && (
+                        <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg text-center">
+                            <span className="text-[11px] text-red-300 font-medium">{locationError}</span>
                         </div>
+                    )}
 
-                        <button
-                            onClick={handleLogout}
-                            className="text-xs text-gray-500 hover:text-white font-semibold transition"
-                        >
-                            Sign Out Account
-                        </button>
+                    <button
+                        onClick={checkLocationPermission}
+                        disabled={locationChecking}
+                        className="w-full bg-primary hover:bg-orange-600 text-white text-sm font-bold py-3 rounded-xl transition duration-200 shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                        {locationChecking ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                <span>Getting location...</span>
+                            </>
+                        ) : (
+                            <span>Enable Location Access</span>
+                        )}
+                    </button>
+
+                    <div className="glass-card-premium rounded-xl border border-white/5 text-left overflow-hidden">
+                        <div className="flex border-b border-white/5 bg-white/5">
+                            {(['chrome', 'safari', 'native'] as const).map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setActiveInstructionTab(tab)}
+                                    className={`flex-1 py-2 text-center text-[10px] font-bold transition ${
+                                        activeInstructionTab === tab
+                                            ? 'text-primary border-b-2 border-primary bg-black/20'
+                                            : 'text-gray-400 hover:text-white'
+                                    }`}
+                                >
+                                    {tab === 'chrome' ? 'Android' : tab === 'safari' ? 'iOS' : 'App'}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="p-3 text-[11px] text-gray-400 space-y-1.5 leading-relaxed">
+                            {activeInstructionTab === 'chrome' && (
+                                <>
+                                    <p><strong className="text-white">1.</strong> Tap the <strong className="text-white">lock icon</strong> next to the address bar.</p>
+                                    <p><strong className="text-white">2.</strong> Select <strong className="text-white">Site Settings</strong> → <strong className="text-primary">Allow</strong> Location.</p>
+                                </>
+                            )}
+                            {activeInstructionTab === 'safari' && (
+                                <>
+                                    <p><strong className="text-white">1.</strong> Tap the <strong className="text-white">aA icon</strong> in the address bar.</p>
+                                    <p><strong className="text-white">2.</strong> <strong className="text-white">Website Settings</strong> → <strong className="text-primary">Allow</strong> Location.</p>
+                                </>
+                            )}
+                            {activeInstructionTab === 'native' && (
+                                <>
+                                    <p><strong className="text-white">1.</strong> Open <strong className="text-white">Settings</strong> → <strong className="text-white">Apps</strong> / Privacy.</p>
+                                    <p><strong className="text-white">2.</strong> Find <strong className="text-white">RidersBUD</strong> → enable <strong className="text-primary">Location Services</strong>.</p>
+                                </>
+                            )}
+                        </div>
                     </div>
+
+                    <button onClick={handleLogout} className="text-[11px] text-gray-500 hover:text-white font-semibold transition">
+                        Sign Out
+                    </button>
                 </div>
             </div>
         );

@@ -21,6 +21,8 @@ const EXTENSION_WARN_PATTERNS = [
   '@firebase/firestore',
   'WebChannelConnection',
   'transport errored',
+  'GeolocationPositionError',
+  'User denied Geolocation',
 ];
 
 const EXTENSION_ERROR_PATTERNS = [
@@ -36,6 +38,8 @@ const EXTENSION_ERROR_PATTERNS = [
   '@firebase/firestore',
   'WebChannelConnection',
   'transport errored',
+  'GeolocationPositionError',
+  'User denied Geolocation',
 ];
 
 const _matchesPattern = (args: any[], patterns: string[]): boolean => {

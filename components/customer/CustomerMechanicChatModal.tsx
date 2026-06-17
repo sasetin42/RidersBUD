@@ -81,7 +81,6 @@ const CustomerMechanicChatModal: React.FC<CustomerMechanicChatModalProps> = ({ b
                 sendMessage(newMessage);
             },
             (error) => {
-                console.warn('Location share failed:', error.message);
             }
         );
     };

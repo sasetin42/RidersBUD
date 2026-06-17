@@ -402,13 +402,10 @@ const BookingScreen: React.FC = () => {
             };
 
             const handleError = (error: GeolocationPositionError) => {
-                console.warn("High accuracy geolocation error (falling back to standard):", error.message);
-                
                 // Fallback to lower accuracy if high accuracy times out/fails
                 navigator.geolocation.getCurrentPosition(
                     handleSuccess,
                     (fallbackError) => {
-                        console.warn("Standard accuracy geolocation also failed:", fallbackError.message);
                         setServiceLocation(prev => {
                             if (prev === null) {
                                 // Default fallback to Manila, Philippines if GPS is completely unavailable/timed out

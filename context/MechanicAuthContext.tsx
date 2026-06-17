@@ -188,7 +188,6 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                             if (error.code === error.TIMEOUT) {
                                 handleFallback();
                             } else {
-                                console.warn("[Location] Mechanic location error:", error.message);
                                 isLocationUpdatingRef.current = false;
                             }
                         },
