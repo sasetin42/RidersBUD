@@ -23,6 +23,8 @@ const EXTENSION_WARN_PATTERNS = [
   'transport errored',
   'GeolocationPositionError',
   'User denied Geolocation',
+  'FIRESTORE INTERNAL ASSERTION FAILED',
+  'QuotaExceededError',
 ];
 
 const EXTENSION_ERROR_PATTERNS = [
@@ -40,6 +42,10 @@ const EXTENSION_ERROR_PATTERNS = [
   'transport errored',
   'GeolocationPositionError',
   'User denied Geolocation',
+  'FIRESTORE INTERNAL ASSERTION FAILED',
+  'QuotaExceededError',
+  'The above error occurred',
+  'Consider adding an error boundary',
 ];
 
 const _matchesPattern = (args: any[], patterns: string[]): boolean => {

@@ -111,6 +111,7 @@ const FIRESTORE_SUPPRESS = [
     'asynchronous response',
     'initializeFirestore',
     'FIRESTORE INTERNAL ASSERTION FAILED',
+    'QuotaExceededError',
     'Failed to load module',
     'Failed to reload',
     'Failed to fetch dynamically imported module',

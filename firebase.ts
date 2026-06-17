@@ -17,6 +17,18 @@ const app = initializeApp(firebaseConfig);
 
 import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
+// Clear stale Firestore localStorage entries to prevent QuotaExceededError
+try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('firestore_')) {
+            keysToRemove.push(key);
+        }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+} catch (_) {}
+
 let dbInstance;
 try {
     dbInstance = initializeFirestore(app, {

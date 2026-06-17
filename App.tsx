@@ -766,7 +766,7 @@ const AppContent: React.FC = () => {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A0A0A] text-white p-6">
                 <div className="max-w-sm w-full text-center space-y-5 z-10">
-                    <img src="/riders-logo.png" alt="RidersBUD" className="w-20 h-20 mx-auto mix-blend-screen" style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} />
+                    <img src="/riders-logo.png" alt="RidersBUD" className="w-20 h-20 mx-auto" style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} />
 
                     <div className="space-y-1.5">
                         <h1 className="text-xl font-black tracking-tight text-white">Location Access Required</h1>
