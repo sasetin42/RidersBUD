@@ -13,7 +13,7 @@ import Tooltip from '../components/ui/Tooltip';
 
 const HomeScreen: React.FC = () => {
     const { user, logout } = useAuth();
-    const { db, loading } = useDatabase();
+    const { db, loading, cancelBooking } = useDatabase();
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
     const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -23,6 +23,20 @@ const HomeScreen: React.FC = () => {
         tools: any[];
     }>({ services: [], products: [], tools: [] });
     const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+    const [bookingToCancel, setBookingToCancel] = useState<string | null>(null);
+    const [isCancelling, setIsCancelling] = useState(false);
+
+    const handleCancelBooking = async (bookingId: string) => {
+        setIsCancelling(true);
+        try {
+            await cancelBooking(bookingId, 'Cancelled by customer');
+            setBookingToCancel(null);
+        } catch (error) {
+            console.error('Failed to cancel booking:', error);
+        } finally {
+            setIsCancelling(false);
+        }
+    };
 
     useEffect(() => {
         if (!searchQuery.trim() || !db) {
@@ -88,6 +102,13 @@ const HomeScreen: React.FC = () => {
         b.customerName === user?.name &&
         ['En Route', 'In Progress', 'Mechanic Assigned'].includes(b.status)
     );
+
+    const upcomingBookings = React.useMemo(() => {
+        if (!db?.bookings || !user) return [];
+        return db.bookings
+            .filter(b => (b.customerId === user.id || b.customerName === user.name) && ['Upcoming', 'Booking Confirmed'].includes(b.status))
+            .sort((a, b) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
+    }, [db?.bookings, user]);
 
     // Live mechanic data lookup
     const liveMechanic = activeBooking && db?.mechanics
@@ -408,31 +429,111 @@ const HomeScreen: React.FC = () => {
                     );
                 })()}
 
-                {/* Upcoming Service Reminder */}
-                {db?.bookings.filter(b => b.customerName === user?.name && b.status === 'Upcoming').length > 0 && (
-                    <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-2xl p-4 w-full animate-slideUp">
-                        <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
-                                <Calendar size={20} className="text-yellow-400" />
+                {/* Redesigned Upcoming Service Section (Steady/Always Display) */}
+                {(() => {
+                    if (upcomingBookings.length > 0) {
+                        return (
+                            <div className="space-y-4 w-full">
+                                {upcomingBookings.map((booking) => {
+                                    const serviceImg = booking.services?.[0]?.imageUrl || booking.service?.imageUrl || getFallbackImageForCategory(booking.services?.[0]?.category || booking.service?.category || '');
+                                    const total = booking.totalAmount || booking.services?.[0]?.price || booking.service?.price || 0;
+                                    const deposit = Math.ceil(total * 0.5);
+                                    return (
+                                        <div 
+                                            key={booking.id}
+                                            className="bg-gradient-to-br from-[#1E1E1E] to-[#121212] border border-white/5 rounded-3xl p-5 relative overflow-hidden group shadow-lg w-full animate-slideUp"
+                                        >
+                                            {/* Accent glow */}
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+                                            
+                                            <div className="flex gap-4 relative z-10">
+                                                {/* Service Image */}
+                                                <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-white/10 flex-shrink-0 bg-[#1A1A1A]">
+                                                    <img 
+                                                        src={serviceImg || MOCKUPS.changeOil} 
+                                                        alt="Service" 
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = MOCKUPS.changeOil;
+                                                        }}
+                                                    />
+                                                    <span className="absolute top-2 left-2 bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full tracking-wider uppercase border border-yellow-400/20">
+                                                        Upcoming
+                                                    </span>
+                                                </div>
+
+                                                {/* Service Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex justify-between items-start">
+                                                        <h3 className="text-white font-bold text-base leading-tight truncate">
+                                                            {booking.services?.map((s: any) => s.name).join(', ') || booking.service?.name || 'Vehicle Service'}
+                                                        </h3>
+                                                        <span className="text-xs font-mono text-gray-500">#{booking.id.slice(-6).toUpperCase()}</span>
+                                                    </div>
+
+                                                    <p className="text-xs text-yellow-400 font-bold mt-1.5 flex items-center gap-1.5">
+                                                        <Calendar size={13} />
+                                                        {booking.date} · {booking.time}
+                                                    </p>
+
+                                                    <p className="text-xs text-gray-400 mt-2 font-medium">
+                                                        Vehicle: <span className="text-gray-300 font-bold">{booking.vehicle?.year} {booking.vehicle?.make} {booking.vehicle?.model}</span> · <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-gray-300">{booking.vehicle?.plateNumber}</span>
+                                                    </p>
+
+                                                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
+                                                        <div className="text-[11px] text-gray-500">
+                                                            Payment: <span className={booking.isVerified ? 'text-green-400 font-bold' : 'text-yellow-500 font-bold'}>
+                                                                {booking.isVerified ? `Deposit ₱${deposit.toLocaleString()} Verified` : 'Pending Verification'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
+                                                                className="text-xs font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-3 py-1.5 rounded-xl border border-white/5"
+                                                            >
+                                                                Details
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setBookingToCancel(booking.id)}
+                                                                className="text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors bg-red-500/5 px-3 py-1.5 rounded-xl border border-red-500/20"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                            <div className="flex-1">
-                                <h3 className="text-sm font-bold text-white mb-1">Upcoming Service</h3>
-                                <p className="text-xs text-gray-400 mb-2">
-                                    You have {db.bookings.filter(b => b.customerName === user?.name && b.status === 'Upcoming').length} upcoming service{db.bookings.filter(b => b.customerName === user?.name && b.status === 'Upcoming').length > 1 ? 's' : ''} scheduled
+                        );
+                    }
+
+                    // Steady State (display when there are no upcoming bookings and no active/ongoing booking)
+                    if (!activeBooking) {
+                        return (
+                            <div className="bg-[#1E1E1E] border border-white/5 rounded-3xl p-6 relative overflow-hidden shadow-lg w-full flex flex-col items-center text-center animate-slideUp">
+                                <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
+                                    <Calendar size={22} className="text-gray-400" />
+                                </div>
+                                <h3 className="text-white font-bold text-sm">No Upcoming Services</h3>
+                                <p className="text-xs text-gray-400 max-w-xs mt-1.5 mb-4 leading-relaxed">
+                                    Keep your ride in top shape! Book a professional maintenance or checkup service today.
                                 </p>
-                                <Tooltip content="View upcoming services">
-                                    <button
-                                        onClick={() => navigate('/customer-portal/booking-history')}
-                                        className="text-xs font-bold text-yellow-400 hover:text-yellow-300 transition-colors flex items-center gap-1"
-                                    >
-                                        View Details
-                                        <ChevronRight size={14} />
-                                    </button>
-                                </Tooltip>
+                                <button
+                                    onClick={() => navigate('/customer-portal/services')}
+                                    className="bg-primary hover:bg-primary/95 text-black font-black text-xs px-5 py-2.5 rounded-2xl transition border border-primary/20 flex items-center gap-1.5 shadow-md shadow-primary/5 hover:scale-[1.02] active:scale-95 animate-pulse"
+                                >
+                                    <Wrench size={14} />
+                                    Book a Service Now
+                                </button>
                             </div>
-                        </div>
-                    </div>
-                )}
+                        );
+                    }
+
+                    return null;
+                })()}
 
                 {/* Current Booking Widget - Moved Here */}
                 {activeBooking && (
@@ -738,6 +839,37 @@ const HomeScreen: React.FC = () => {
                 </section>
 
             </main>
+
+            {/* Cancellation Confirmation Modal */}
+            {bookingToCancel && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#1C1C1E] border border-white/10 rounded-3xl max-w-sm w-full p-6 animate-zoomIn relative">
+                        <div className="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center mb-4">
+                            <Calendar size={24} className="text-red-500" />
+                        </div>
+                        <h3 className="text-white font-extrabold text-lg">Cancel Appointment?</h3>
+                        <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                            Are you sure you want to cancel this booking? This will cancel the service schedule and notify the admin immediately.
+                        </p>
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                disabled={isCancelling}
+                                onClick={() => setBookingToCancel(null)}
+                                className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-2.5 rounded-xl border border-white/5 transition-all text-xs"
+                            >
+                                No, Keep It
+                            </button>
+                            <button
+                                disabled={isCancelling}
+                                onClick={() => handleCancelBooking(bookingToCancel)}
+                                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5"
+                            >
+                                {isCancelling ? <Spinner size="sm" /> : 'Yes, Cancel'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -624,7 +624,8 @@ const AdminGCashPaymentsScreen: React.FC = () => {
                 gcashDeclineReason: reason,
                 gcashPaymentStatus: 'declined',
                 paymentStatus: 'pending',
-                isVerified: false
+                isVerified: false,
+                status: 'Cancelled'
             });
 
             // Notify the specific customer in real-time

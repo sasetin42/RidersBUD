@@ -111,6 +111,11 @@ const BookingConfirmationScreen: React.FC = () => {
                         // UI updates via setBookings above — no navigation needed
                     }
 
+                    if (updatedBooking.gcashPaymentStatus === 'declined' || updatedBooking.status === 'Cancelled') {
+                        console.log('❌ Downpayment declined! Redirecting customer to home page...');
+                        navigate('/customer-portal/', { replace: true });
+                    }
+
                     if (
                         previousStatus === 'Upcoming' &&
                         (newStatus === 'Mechanic Assigned' ||

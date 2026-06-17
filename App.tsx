@@ -520,7 +520,13 @@ const AppContent: React.FC = () => {
         // --- MECHANIC NOTIFICATIONS ---
         if (isMechanicAuthenticated && mechanic) {
             // 1. New Unassigned Job Alerts
-            const newUnassignedJobs = db.bookings.filter(b => b.status === 'Upcoming' && !b.mechanic && !prevDb.bookings.find(pb => pb.id === b.id));
+            const newUnassignedJobs = db.bookings.filter(b => {
+                const isVerified = b.isVerified === true || b.gcashPaymentStatus === 'verified';
+                if (!isVerified) return false;
+                if (b.status !== 'Upcoming' || b.mechanic) return false;
+                const oldBooking = prevDb.bookings.find(pb => pb.id === b.id);
+                return !oldBooking || !(oldBooking.isVerified === true || oldBooking.gcashPaymentStatus === 'verified');
+            });
             newUnassignedJobs.forEach(job => {
                 const eventKey = `unassigned:${job.id}`;
                 if (trackEventNotification(eventKey)) {
@@ -536,8 +542,13 @@ const AppContent: React.FC = () => {
 
             // 2. New Assigned Job
             const newlyAssignedToMe = db.bookings.filter(b => {
+                const isVerified = b.isVerified === true || b.gcashPaymentStatus === 'verified';
+                if (!isVerified) return false;
+                if (b.mechanic?.id !== mechanic.id) return false;
                 const oldBooking = prevDb.bookings.find(pb => pb.id === b.id);
-                return b.mechanic?.id === mechanic.id && (!oldBooking?.mechanic || oldBooking.mechanic.id !== mechanic.id);
+                const newlyAssigned = !oldBooking?.mechanic || oldBooking.mechanic.id !== mechanic.id;
+                const newlyVerified = oldBooking && !(oldBooking.isVerified === true || oldBooking.gcashPaymentStatus === 'verified');
+                return newlyAssigned || newlyVerified;
             });
             newlyAssignedToMe.forEach(job => {
                 const eventKey = `assigned:${job.id}:${mechanic.id}`;
@@ -771,7 +782,7 @@ const AppContent: React.FC = () => {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A0A0A] text-white p-6">
                 <div className="max-w-sm w-full text-center space-y-5 z-10">
-                    <img src="/riders-logo.png" alt="RidersBUD" className="w-20 h-20 mx-auto" style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} />
+                    <img src="/riders-logo.png" alt="RidersBUD Logo" className="w-20 h-20 mx-auto" style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} />
 
                     <div className="space-y-1.5">
                         <h1 className="text-xl font-black tracking-tight text-white">Location Access Required</h1>

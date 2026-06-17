@@ -14,8 +14,8 @@ const SplashScreen: React.FC = () => {
         <div className="flex flex-col items-center justify-center h-screen w-screen bg-secondary">
             <img
                 src={logoUrl}
-                alt="Riders Logo"
-                className="w-64 animate-pulse mix-blend-screen"
+                alt="RidersBUD Logo"
+                className="w-56 h-auto mix-blend-screen"
                 style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.6))' }}
             />
             <p className="text-light-gray mt-4">{tagline}</p>

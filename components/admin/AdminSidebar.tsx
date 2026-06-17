@@ -115,7 +115,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isSidebarOpen, onClose, isC
                     {showFullMenu ? (
                         <div className="w-full flex flex-col items-center justify-center">
                             {logoUrl ? (
-                                <img src={logoUrl} alt="Logo" className="w-full h-14 object-contain mix-blend-screen mb-1" />
+                                <img src={logoUrl} alt="RidersBUD Logo" className="w-full h-14 object-contain mix-blend-screen mb-1" />
                             ) : (
                                 <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-primary/20">R</div>
                             )}

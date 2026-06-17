@@ -350,6 +350,13 @@ const BookingScreen: React.FC = () => {
                 navigate('/customer-portal/booking-confirmation', { state: { bookings: [booking] } });
             }, 800);
         }
+
+        // If booking is cancelled or declined, redirect to customer portal home
+        if (booking && (booking.status === 'Cancelled' || booking.gcashPaymentStatus === 'declined')) {
+            setVerifyingPayment(false);
+            setWaitingBookingId(null);
+            navigate('/customer-portal/', { replace: true });
+        }
     }, [waitingBookingId, db?.bookings, navigate]);
 
     // Bypass Step 1 if service is pre-selected and vehicle is auto-selected

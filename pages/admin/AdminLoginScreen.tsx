@@ -41,7 +41,7 @@ const AdminLoginScreen: React.FC = () => {
                 {/* Logo & Header */}
                 <div className="text-center mb-8 animate-fadeIn">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="Riders Admin Logo" className="w-60 h-auto object-contain mx-auto mb-4 mix-blend-screen" />
+                        <img src={logoUrl} alt="RidersBUD Admin Logo" className="w-60 h-auto object-contain mx-auto mb-4 mix-blend-screen" />
                     ) : (
                         <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-primary to-orange-600 rounded-2xl mb-6 shadow-lg shadow-primary/20">
                             <Shield className="w-10 h-10 text-white" />

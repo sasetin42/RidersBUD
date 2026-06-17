@@ -156,7 +156,7 @@ const parseDateTime = (dateStr: string, timeStr: string): number => {
 const BookingDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
     const navigate = useNavigate();
-    const { db, updateBookingStatus, addReview } = useDatabase();
+    const { db, updateBookingStatus, addReview, loading: dbLoading } = useDatabase();
     const { user } = useAuth();
     
     // Modal & Review States
@@ -208,14 +208,27 @@ const BookingDetailScreen: React.FC = () => {
                 break;
             }
         }
-        return seqId;
     }, [db?.bookings, bookingId]);
+
+    const mechanic = useMemo(() => {
+        if (!booking) return null;
+        const staticMechanic = booking.mechanic;
+        if (!db?.mechanics) return staticMechanic;
+        const targetId = booking.mechanicId || staticMechanic?.id;
+        return db.mechanics.find(m => m.id === targetId || m.name === booking.mechanicName || m.name === staticMechanic?.name) || staticMechanic;
+    }, [db?.mechanics, booking]);
 
     useEffect(() => {
         if (!booking || (user && booking.customerName !== user.name)) {
             // navigate('/customer-portal/booking-history'); 
         }
     }, [booking, user, navigate]);
+
+    useEffect(() => {
+        if (booking && (booking.status === 'Cancelled' || booking.gcashPaymentStatus === 'declined')) {
+            navigate('/customer-portal/', { replace: true });
+        }
+    }, [booking, navigate]);
 
     // Haversine formula to calculate distance between two points in km
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -311,21 +324,36 @@ const BookingDetailScreen: React.FC = () => {
         }
     }, [showCompleteTransactionModal]);
 
-    if (!booking || !user) {
+    if (dbLoading || (!booking && !db)) {
         return (
-            <div className="flex flex-col items-center justify-center h-full bg-[#0a0a0a]">
+            <div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0a]">
                 <Spinner size="lg" color="text-primary" />
-                <p className="text-gray-400 mt-4">Loading booking details...</p>
+                <p className="text-gray-400 mt-4 font-bold tracking-wide animate-pulse">Loading booking details...</p>
             </div>
         );
     }
 
-    const { mechanic: staticMechanic, vehicle, status, date, time, location, notes } = booking;
-    const mechanic = useMemo(() => {
-        if (!db?.mechanics) return staticMechanic;
-        const targetId = booking?.mechanicId || staticMechanic?.id;
-        return db.mechanics.find(m => m.id === targetId || m.name === booking?.mechanicName || m.name === staticMechanic?.name) || staticMechanic;
-    }, [db?.mechanics, booking, staticMechanic]);
+    if (!booking || !user) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-[#0a0a0a] p-6 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mb-4 border border-red-500/20">
+                    <Calendar size={28} className="text-red-500" />
+                </div>
+                <h3 className="text-white font-extrabold text-lg">Booking Not Found</h3>
+                <p className="text-xs text-gray-400 mt-2 max-w-xs leading-relaxed">
+                    We couldn't find this booking. It may have been cancelled, deleted, or you might not have access to view it.
+                </p>
+                <button
+                    onClick={() => navigate('/customer-portal/', { replace: true })}
+                    className="mt-6 bg-primary hover:bg-primary/90 text-black font-black text-xs px-6 py-3 rounded-2xl transition shadow-lg shadow-primary/10 hover:scale-105 duration-200"
+                >
+                    Back to Home
+                </button>
+            </div>
+        );
+    }
+
+    const { vehicle, status, date, time, location, notes } = booking;
     const services = booking.services || (booking.service ? [booking.service] : []);
     const serviceNames = services.map(s => s.name).join(', ') || 'Unknown Service';
     const serviceCategories = [...new Set(services.map(s => s.category))].filter(Boolean).join(', ');
@@ -810,23 +838,34 @@ const BookingDetailScreen: React.FC = () => {
                                 </button>
                             )}
 
-                            {/* Pay Balance Action (PAY THE BALANCE - active when requested by mechanic) */}
+                            {/* Pay Balance Action (PAY THE BALANCE / PAY NOW) */}
                             {status !== 'Completed' && !booking.isPaid && (
-                                <button
-                                    onClick={() => {
-                                        if (booking.gcashPaymentStatus === 'awaiting_payment') {
+                                !booking.isVerified && !booking.gcashReceiptUrl ? (
+                                    <button
+                                        onClick={() => {
                                             navigate('/customer-portal/service-payment', { state: { booking } });
-                                        }
-                                    }}
-                                    disabled={booking.gcashPaymentStatus !== 'awaiting_payment'}
-                                    className={`w-full font-black py-3.5 rounded-xl transition text-xs tracking-widest uppercase flex items-center justify-center gap-2 ${
-                                        booking.gcashPaymentStatus === 'awaiting_payment'
-                                            ? 'bg-primary text-white hover:bg-orange-600 shadow-lg shadow-primary/20 cursor-pointer active:scale-95'
-                                            : 'bg-white/5 border border-white/5 text-gray-500 cursor-not-allowed'
-                                    }`}
-                                >
-                                    PAY THE BALANCE
-                                </button>
+                                        }}
+                                        className="w-full bg-primary text-white hover:bg-orange-600 transition font-black py-3.5 rounded-xl text-xs tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-primary/20 cursor-pointer active:scale-95"
+                                    >
+                                        PAY NOW
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            if (booking.gcashPaymentStatus === 'awaiting_payment') {
+                                                navigate('/customer-portal/service-payment', { state: { booking } });
+                                            }
+                                        }}
+                                        disabled={booking.gcashPaymentStatus !== 'awaiting_payment'}
+                                        className={`w-full font-black py-3.5 rounded-xl transition text-xs tracking-widest uppercase flex items-center justify-center gap-2 ${
+                                            booking.gcashPaymentStatus === 'awaiting_payment'
+                                                ? 'bg-primary text-white hover:bg-orange-600 shadow-lg shadow-primary/20 cursor-pointer active:scale-95'
+                                                : 'bg-white/5 border border-white/5 text-gray-500 cursor-not-allowed'
+                                        }`}
+                                    >
+                                        PAY THE BALANCE
+                                    </button>
+                                )
                             )}
                         </div>
                     </div>

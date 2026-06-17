@@ -32,52 +32,74 @@ const JobCard: React.FC<{ booking: Booking }> = ({ booking }) => {
     const day = bookingDate.getDate();
     const month = bookingDate.toLocaleDateString('en-US', { month: 'short' });
 
+    // Use service image from first service if available, else a premium fallback
+    const serviceImage = services[0]?.imageUrl || booking.service?.imageUrl || '/assets/maintenance.png';
+
     return (
         <div
-            className="bg-[#1A1A1A] p-6 rounded-[2.5rem] border border-white/5 cursor-pointer hover:bg-[#222] transition-all group relative overflow-hidden shadow-2xl"
+            className="bg-[#1A1A1A] p-4 rounded-[2rem] border border-white/5 cursor-pointer hover:bg-[#222] transition-all group relative overflow-hidden shadow-2xl flex gap-4 items-center animate-fadeIn"
             onClick={() => navigate(`/mechanic-portal/job/${booking.id}`)}
         >
-            <div className="absolute top-0 right-0 w-40 h-40 bg-primary/5 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-primary/10 transition-all"></div>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-primary/10 transition-all"></div>
 
-            <div className="flex justify-between items-start relative z-10 mb-5">
-                <div className="flex gap-5">
-                    <div className="w-14 h-14 rounded-2xl bg-white/5 flex flex-col items-center justify-center border border-white/5 shadow-inner">
-                        <span className="text-primary text-xl font-black leading-none">{day}</span>
-                        <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest mt-1">{month}</span>
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className={`px-2 py-0.5 text-[8px] font-black rounded-full border uppercase tracking-widest ${statusColors[booking.status]}`}>
-                                {booking.status}
-                            </span>
-                            <span className="text-[10px] font-bold text-gray-600 tracking-tight flex items-center gap-1">
-                                <LucideClock size={10} /> {booking.time}
-                            </span>
-                        </div>
-                        <h3 className="text-lg font-black text-white tracking-tight leading-tight group-hover:text-primary transition-colors line-clamp-1">{serviceNames}</h3>
-                        <div className="flex items-center gap-1.5 mt-1">
-                            <LucideUser size={12} className="text-gray-600" />
-                            <p className="text-xs text-gray-500 font-bold tracking-tight">{booking.customerName}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="p-2 rounded-full bg-white/5 border border-white/5 text-gray-600 group-hover:text-white group-hover:bg-primary transition-all">
-                    <LucideChevronRight size={18} />
+            {/* Left: Service Image with Date Overlay */}
+            <div className="relative w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 bg-[#2A2A2A] border border-white/10 shadow-md">
+                <img
+                    src={serviceImage}
+                    alt={serviceNames}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/assets/maintenance.png';
+                    }}
+                />
+                <div className="absolute top-1 left-1 bg-black/75 backdrop-blur-md px-1.5 py-0.5 rounded-lg text-[9px] font-black text-primary uppercase tracking-wider leading-none shadow-sm">
+                    {month} {day}
                 </div>
             </div>
 
-            <div className="relative z-10 pt-5 border-t border-white/5 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-primary/40"></div>
-                    <p className="text-xs text-gray-400 font-bold tracking-tight">{booking.vehicle.year} {booking.vehicle.make} {booking.vehicle.model}</p>
+            {/* Middle: Complete Details */}
+            <div className="flex-grow min-w-0 pr-1">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span className={`px-2 py-0.5 text-[8px] font-black rounded-full border uppercase tracking-widest leading-none ${statusColors[booking.status]}`}>
+                        {booking.status}
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-500 tracking-tight flex items-center gap-1 leading-none">
+                        <LucideClock size={10} /> {booking.time}
+                    </span>
                 </div>
-                <div className="text-right">
+
+                <h3 className="text-sm font-black text-white tracking-tight leading-snug group-hover:text-primary transition-colors line-clamp-1">
+                    {serviceNames}
+                </h3>
+
+                <div className="flex items-center gap-1.5 mt-1 text-gray-400 flex-wrap">
+                    <span className="text-xs font-bold text-gray-300 truncate max-w-[120px]">{booking.customerName}</span>
+                    <span className="text-gray-700 font-extrabold">•</span>
+                    <span className="text-[11px] font-medium text-gray-500 truncate">
+                        {booking.vehicle.year} {booking.vehicle.make} {booking.vehicle.model}
+                    </span>
+                </div>
+
+                {booking.location?.address && (
+                    <p className="text-[9px] text-gray-500 font-black tracking-wider mt-1 line-clamp-1 uppercase">
+                        📍 {booking.location.address}
+                    </p>
+                )}
+            </div>
+
+            {/* Right: Action Arrow & Price */}
+            <div className="flex flex-col items-end justify-between self-stretch flex-shrink-0 text-right min-h-[80px]">
+                <div className="p-1.5 rounded-full bg-white/5 border border-white/5 text-gray-500 group-hover:text-white group-hover:bg-primary transition-all">
+                    <LucideChevronRight size={14} />
+                </div>
+                
+                <div>
                     {booking.status === 'Completed' ? (
-                        <p className="font-black text-xl text-green-400 tracking-tighter">
+                        <p className="font-black text-base text-green-400 tracking-tighter">
                             + ₱{(booking.totalAmount || basePrice || 0).toLocaleString()}
                         </p>
                     ) : (
-                        <p className="font-black text-lg text-white/40 tracking-tighter italic">
+                        <p className="font-black text-sm text-white/55 tracking-tighter italic">
                             ₱{(booking.totalAmount || basePrice || 0).toLocaleString()}
                         </p>
                     )}
@@ -134,7 +156,8 @@ const MechanicJobsScreen: React.FC = () => {
         }
 
         const allMyBookings = db.bookings.filter(b => 
-            b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id
+            (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
+            (b.isVerified === true || b.gcashPaymentStatus === 'verified')
         );
 
         // Categorize

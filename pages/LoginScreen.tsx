@@ -201,7 +201,7 @@ const LoginScreen: React.FC = () => {
                 {/* Logo & Header */}
                 <div className="text-center mb-8 animate-fadeIn">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="Riders Logo" className="w-64 mb-2 max-h-32 object-contain mx-auto mix-blend-screen" />
+                        <img src={logoUrl} alt="RidersBUD Logo" className="w-64 mb-2 max-h-32 object-contain mx-auto mix-blend-screen" />
                     ) : (
                         <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent mb-2">{settings.appName || 'Riders'}</h1>
                     )}

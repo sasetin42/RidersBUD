@@ -27,7 +27,7 @@ const AppLoadingScreen: React.FC<AppLoadingScreenProps> = ({
             <div className="flex flex-col items-center justify-center">
                 <img
                     src={logoUrl}
-                    alt="Riders Logo"
+                    alt="RidersBUD Logo"
                     className="w-64 animate-pulse mix-blend-screen"
                     style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.6))' }}
                 />

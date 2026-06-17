@@ -178,6 +178,7 @@ const MechanicDashboardScreen: React.FC = () => {
 
         const myJobsToday = db.bookings.filter(b => 
             (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && 
+            isBookingApprovedForMechanicView(b) &&
             b.date === todayStr
         );
 
@@ -218,6 +219,7 @@ const MechanicDashboardScreen: React.FC = () => {
 
         const completedJobs = db.bookings.filter(b => 
             (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && 
+            isBookingApprovedForMechanicView(b) &&
             b.status === 'Completed'
         );
         if (completedJobs.length === 0) return { averageJobValue: 0 };
@@ -226,7 +228,7 @@ const MechanicDashboardScreen: React.FC = () => {
         const averageJobValue = totalEarnings / completedJobs.length;
 
         return { averageJobValue };
-    }, [db, mechanic]);
+    }, [db, mechanic, isBookingApprovedForMechanicView]);
 
     // Real-time check for new UNASSIGNED job requests
     useEffect(() => {
@@ -240,7 +242,7 @@ const MechanicDashboardScreen: React.FC = () => {
 
         // Find the latest unassigned job that hasn't been declined in this session
         const latestUnassignedJob = db.bookings
-            .filter(b => b.status === 'Upcoming' && !b.mechanic && !declinedJobIds.includes(b.id))
+            .filter(b => b.status === 'Upcoming' && !b.mechanic && isBookingApprovedForMechanicView(b) && !declinedJobIds.includes(b.id))
             .sort((a, b) => b.id.localeCompare(a.id))[0]; // Get the newest one
 
         if (latestUnassignedJob && latestUnassignedJob.id !== newJobRequest?.id) {

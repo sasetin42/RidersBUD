@@ -297,7 +297,7 @@ const SignUpScreen: React.FC = () => {
                 {/* Logo & Header */}
                 <div className="text-center mb-8 animate-fadeIn">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="Riders Logo" className="w-48 mb-6 max-h-24 object-contain mx-auto mix-blend-screen" />
+                        <img src={logoUrl} alt="RidersBUD Logo" className="w-48 mb-6 max-h-24 object-contain mx-auto mix-blend-screen" />
                     ) : (
                         <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent mb-4">{settings.appName}</h1>
                     )}
