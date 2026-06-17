@@ -15,14 +15,14 @@ export const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { initializeFirestore, getFirestore, persistentLocalCache } from "firebase/firestore";
 
 // Clear stale Firestore localStorage entries to prevent QuotaExceededError
 try {
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('firestore_')) {
+        if (key && (key.startsWith('firestore_') || key.startsWith('firebase_') || key.startsWith('_firebase_'))) {
             keysToRemove.push(key);
         }
     }
@@ -32,7 +32,7 @@ try {
 let dbInstance;
 try {
     dbInstance = initializeFirestore(app, {
-        localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+        localCache: persistentLocalCache()
     });
 } catch (e) {
     console.warn("Firestore init with settings failed, falling back to default:", e);

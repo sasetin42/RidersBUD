@@ -299,6 +299,11 @@ const AppContent: React.FC = () => {
         );
     }, [isAuthenticated, user, updateCustomerLocation, isMechanicAuthenticated, mechanic, updateMechanicLocation]);
 
+    const checkLocationPermissionRef = useRef(checkLocationPermission);
+    useEffect(() => {
+        checkLocationPermissionRef.current = checkLocationPermission;
+    }, [checkLocationPermission]);
+
     // Watch permission state change if API available
     useEffect(() => {
         if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
@@ -310,7 +315,7 @@ const AppContent: React.FC = () => {
                         if (status.state === 'granted') {
                             setIsLocationBlocked(false);
                             setLocationError(null);
-                            checkLocationPermission();
+                            checkLocationPermissionRef.current();
                         } else if (status.state === 'denied') {
                             setIsLocationBlocked(true);
                         } else if (status.state === 'prompt') {
@@ -321,30 +326,30 @@ const AppContent: React.FC = () => {
                 })
                 .catch(() => {});
         }
-    }, [isAuthenticated, isMechanicAuthenticated, checkLocationPermission]);
+    }, [isAuthenticated, isMechanicAuthenticated]);
 
     // Fix 3: Visibility-change polling fallback for browsers that don't fire onchange after returning from settings
     useEffect(() => {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible' && isLocationBlocked && (isAuthenticated || isMechanicAuthenticated)) {
                 setTimeout(() => {
-                    checkLocationPermission();
+                    checkLocationPermissionRef.current();
                 }, 500);
             }
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [isLocationBlocked, isAuthenticated, isMechanicAuthenticated, checkLocationPermission]);
+    }, [isLocationBlocked, isAuthenticated, isMechanicAuthenticated]);
 
     // Prompt location permissions immediately upon login/session start
     useEffect(() => {
         const isLoggedIn = isAuthenticated || isMechanicAuthenticated;
         if (isLoggedIn) {
-            checkLocationPermission();
+            checkLocationPermissionRef.current();
         } else {
             setIsLocationBlocked(false);
         }
-    }, [isAuthenticated, isMechanicAuthenticated, checkLocationPermission]);
+    }, [isAuthenticated, isMechanicAuthenticated]);
 
     // Profile Completion Check Logic
     // We want to redirect if:

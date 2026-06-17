@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Spinner from '../components/Spinner';
 import { useAuth } from '../context/AuthContext';
@@ -825,11 +825,11 @@ const BookingScreen: React.FC = () => {
         setIsBooking(true);
         try {
             const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
-            const downPayment = Math.ceil(totalPrice * 0.5);
             const newBookingData = {
                 customerId: user.id,
                 customerName: user.name,
                 services: selectedServices,
+                service: selectedServices[0],
                 date: selectedDate.toISOString().split('T')[0],
                 time: selectedTime,
                 status: 'Upcoming' as const,
@@ -850,6 +850,7 @@ const BookingScreen: React.FC = () => {
             if (!created) throw new Error('Could not create booking.');
             sessionStorage.removeItem(BOOKING_STATE_KEY);
             setPendingBookingId(created.id);
+            setWaitingBookingId(created.id);
             setShowGCashModal(true);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred.');
@@ -859,8 +860,10 @@ const BookingScreen: React.FC = () => {
     };
 
     // Called by the modal when the Firestore listener detects isVerified=true
-    const handlePaymentVerified = () => {
+    const handlePaymentVerified = useCallback(() => {
         setShowGCashModal(false);
+        setWaitingBookingId(null);
+        setVerifyingPayment(false);
         const booking = pendingBookingId ? db?.bookings.find(b => b.id === pendingBookingId) : null;
         const settings = getNotificationSettings();
         if (settings.bookingUpdates) {
@@ -871,7 +874,7 @@ const BookingScreen: React.FC = () => {
         navigate('/customer-portal/booking-confirmation', {
             state: { bookings: booking ? [booking] : [], bookingId: pendingBookingId }
         });
-    };
+    }, [pendingBookingId, db?.bookings, navigate]);
 
     const handleServiceSelect = (serviceId: string) => {
         setSelectedServiceIds(prev => {

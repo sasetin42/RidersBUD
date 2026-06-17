@@ -454,6 +454,17 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             read: false
         } as Notification;
 
+        if (!auth.currentUser) {
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    notifications: [newNotif, ...(prev.notifications || [])]
+                };
+            });
+            return;
+        }
+
         try {
             await addDoc(collection(firestore, 'notifications'), {
                 ...notif,
@@ -730,6 +741,21 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             createdAt: new Date().toISOString(),
             statusHistory: [{ status: booking.status, timestamp: new Date().toISOString() }]
         };
+
+        if (!auth.currentUser) {
+            console.info("[DatabaseContext] Performing local mock addBooking (bypass mode)");
+            const mockId = `booking-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const bookingWithId = { id: mockId, ...newBooking } as Booking;
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    bookings: [bookingWithId, ...(prev.bookings || [])]
+                };
+            });
+            return bookingWithId;
+        }
+
         const ref = await addDoc(collection(firestore, 'bookings'), newBooking);
         // General admin booking notification
         await sendNotification({
@@ -759,6 +785,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const updateBooking = async (id: string, updates: Partial<Booking>) => {
+        if (!auth.currentUser) {
+            console.info("[DatabaseContext] Performing local mock updateBooking (bypass mode)");
+            setDb(prev => {
+                if (!prev) return null;
+                const updatedBookings = prev.bookings.map(b => b.id === id ? { ...b, ...updates } : b);
+                return { ...prev, bookings: updatedBookings };
+            });
+            return;
+        }
         try {
             await updateDoc(doc(firestore, 'bookings', id), updates);
         } catch (e) {
@@ -772,6 +807,20 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const updateBookingPayment = async (id: string, amount: number, status: 'pending' | 'partial' | 'paid') => {
+        if (!auth.currentUser) {
+            console.info("[DatabaseContext] Performing local mock updateBookingPayment (bypass mode)");
+            setDb(prev => {
+                if (!prev) return null;
+                const updatedBookings = prev.bookings.map(b => b.id === id ? { 
+                    ...b, 
+                    paymentStatus: status,
+                    isPaid: status === 'paid',
+                    paidAmount: (b.paidAmount || 0) + amount 
+                } : b);
+                return { ...prev, bookings: updatedBookings };
+            });
+            return;
+        }
         try {
             const bookingRef = doc(firestore, 'bookings', id);
             await updateDoc(bookingRef, {
@@ -1170,11 +1219,37 @@ await sendNotification({
 
     const addOrder = async (order: Omit<Order, 'id'>) => {
         const sanitizedOrder = cleanObject(order);
+        if (!auth.currentUser) {
+            console.info("[DatabaseContext] Performing local mock addOrder (bypass mode)");
+            const mockId = `order-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const orderWithId = { id: mockId, ...sanitizedOrder } as Order;
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    orders: [orderWithId, ...(prev.orders || [])]
+                };
+            });
+            return orderWithId;
+        }
         const ref = await addDoc(collection(firestore, 'orders'), sanitizedOrder);
         return { id: ref.id, ...sanitizedOrder } as Order;
     };
 
     const updateOrderStatus = async (id: string, status: OrderStatus) => {
+        if (!auth.currentUser) {
+            console.info("[DatabaseContext] Performing local mock updateOrderStatus (bypass mode)");
+            setDb(prev => {
+                if (!prev) return null;
+                const updatedOrders = prev.orders.map(o => o.id === id ? { 
+                    ...o, 
+                    status,
+                    statusHistory: [...(o.statusHistory || []), { status, timestamp: new Date().toISOString() }]
+                } : o);
+                return { ...prev, orders: updatedOrders };
+            });
+            return;
+        }
         await updateDoc(doc(firestore, 'orders', id), {
             status,
             statusHistory: arrayUnion({ status, timestamp: new Date().toISOString() })

@@ -95,13 +95,19 @@ const MechanicDashboardScreen: React.FC = () => {
     const [newJobRequest, setNewJobRequest] = useState<Booking | null>(null);
     const [newAssignedJob, setNewAssignedJob] = useState<Booking | null>(null);
     const [customerProfile, setCustomerProfile] = useState<any>(null);
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-    // Enforce offline by default when the mechanic dashboard mounts
-    useEffect(() => {
-        if (mechanic && isOnline) {
-            updateOnlineStatus(false);
+    const handleToggleStatus = async () => {
+        if (isUpdatingStatus) return;
+        setIsUpdatingStatus(true);
+        try {
+            await updateOnlineStatus(!isOnline);
+        } catch (error) {
+            console.error("Failed to update status:", error);
+        } finally {
+            setIsUpdatingStatus(false);
         }
-    }, [mechanic?.id]);
+    };
 
     const isBookingApprovedForMechanicView = useCallback((booking: Booking) => {
         const paymentMethod = (booking.paymentMethod || '').toLowerCase();
@@ -151,6 +157,16 @@ const MechanicDashboardScreen: React.FC = () => {
             b.status !== 'Cancelled'
         );
     }, [db, mechanic, isBookingApprovedForMechanicView]);
+
+    const [jobsTab, setJobsTab] = useState<'accepted' | 'completed'>('accepted');
+
+    const acceptedJobs = useMemo(() => {
+        return myBookings.filter(b => ['Accepted', 'Upcoming', 'En Route', 'In Progress'].includes(b.status));
+    }, [myBookings]);
+
+    const completedJobs = useMemo(() => {
+        return myBookings.filter(b => b.status === 'Completed');
+    }, [myBookings]);
 
 
 
@@ -338,22 +354,28 @@ const MechanicDashboardScreen: React.FC = () => {
                             <Tooltip content={isOnline ? 'Go offline' : 'Go online to receive jobs'}>
                                 <button
                                     type="button"
-                                    disabled={mechanic.verificationDocuments?.verificationStatus !== 'Approved'}
-                                    onClick={() => updateOnlineStatus(!isOnline)}
+                                    disabled={mechanic.verificationDocuments?.verificationStatus !== 'Approved' || isUpdatingStatus}
+                                    onClick={handleToggleStatus}
                                     className={`relative flex items-center justify-between gap-2.5 px-3.5 py-2 rounded-full transition-all duration-300 active:scale-95 border select-none ${
                                         isOnline 
                                             ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border-emerald-500/30 text-emerald-400 hover:from-emerald-500/30 hover:to-teal-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)] font-extrabold' 
                                             : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:border-white/10 font-bold'
-                                    } ${mechanic.verificationDocuments?.verificationStatus !== 'Approved' ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                                    } ${mechanic.verificationDocuments?.verificationStatus !== 'Approved' ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'} ${isUpdatingStatus ? 'opacity-70' : ''}`}
                                 >
-                                    <span className="relative flex h-2.5 w-2.5">
-                                        {isOnline && (
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+                                        {isUpdatingStatus ? (
+                                            <span className="w-2 h-2 rounded-full border border-current border-t-transparent animate-spin"></span>
+                                        ) : (
+                                            <>
+                                                {isOnline && (
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                )}
+                                                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? 'bg-emerald-500' : 'bg-gray-500'}`}></span>
+                                            </>
                                         )}
-                                        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? 'bg-emerald-500' : 'bg-gray-500'}`}></span>
                                     </span>
                                     <span className="text-[10px] font-black tracking-[0.18em] uppercase transition-colors leading-none">
-                                        {isOnline ? 'Online' : 'Offline'}
+                                        {isUpdatingStatus ? 'Updating...' : (isOnline ? 'Online' : 'Offline')}
                                     </span>
                                 </button>
                             </Tooltip>
@@ -603,33 +625,129 @@ const MechanicDashboardScreen: React.FC = () => {
 
 
 
-                        {analyticsData.agendaJobs.length > 0 && (
-                            <div className="animate-fadeIn">
-                                <h2 className="text-xs font-black text-gray-400  tracking-[0.25em] mb-4 px-1 leading-none">Up Next</h2>
-                                <div className="bg-[#1A1A1A] rounded-[2rem] border border-white/5 overflow-hidden shadow-2xl">
-                                    {analyticsData.agendaJobs.map((job, index) => (
-                                        <div key={job.id} onClick={() => navigate(`/mechanic-portal/job/${job.id}`)} className={`flex items-center p-5 cursor-pointer hover:bg-white/5 transition-all ${index < analyticsData.agendaJobs.length - 1 ? 'border-b border-white/5' : ''} group`}>
-                                            <div className="w-1/4 text-xs font-black text-primary  tracking-tighter leading-none">{job.time}</div>
-                                            <div className="flex-grow">
-                                                <p className="font-extrabold text-white text-sm tracking-tight">{job.service?.name || job.services?.[0]?.name || 'Service'}</p>
-                                                <p className="text-[10px] text-gray-500 font-bold  tracking-widest mt-0.5">{job.customerName}</p>
-                                            </div>
-                                            <Tooltip content="View job details">
-                                                <div className="p-2 rounded-xl bg-white/5 group-hover:bg-primary/20 group-hover:text-primary transition-all">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
-                                                </div>
-                                            </Tooltip>
-                                        </div>
-                                    ))}
+                        {/* Jobs Tab switcher */}
+                        <div className="space-y-4 animate-fadeIn">
+                            <div className="flex items-center justify-between border-b border-white/5 pb-2 px-1">
+                                <div className="flex gap-6">
+                                    <button
+                                        type="button"
+                                        onClick={() => setJobsTab('accepted')}
+                                        className={`pb-2 text-xs font-black tracking-[0.2em] uppercase transition-all border-b-2 ${
+                                            jobsTab === 'accepted'
+                                                ? 'border-primary text-primary'
+                                                : 'border-transparent text-gray-400 hover:text-white'
+                                        }`}
+                                    >
+                                        Accepted ({acceptedJobs.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setJobsTab('completed')}
+                                        className={`pb-2 text-xs font-black tracking-[0.2em] uppercase transition-all border-b-2 ${
+                                            jobsTab === 'completed'
+                                                ? 'border-primary text-primary'
+                                                : 'border-transparent text-gray-400 hover:text-white'
+                                        }`}
+                                    >
+                                        Completed ({completedJobs.length})
+                                    </button>
                                 </div>
                             </div>
-                        )}
-                    </div>
-                )}
 
-                {!ongoingJob && (!newJobRequest || !isOnline) && analyticsData?.agendaJobs.length === 0 && (
-                    <div className="text-center text-light-gray pt-16">
-                        <p>{isOnline ? "You have no jobs on your agenda. Waiting for new requests..." : "You are offline. Go online to receive jobs."}</p>
+                            <div className="bg-[#1A1A1A] rounded-[2rem] border border-white/5 overflow-hidden shadow-2xl transition-all">
+                                {jobsTab === 'accepted' ? (
+                                    acceptedJobs.length > 0 ? (
+                                        acceptedJobs.map((job, index) => (
+                                            <div
+                                                key={job.id}
+                                                onClick={() => navigate(`/mechanic-portal/job/${job.id}`)}
+                                                className={`flex items-center p-5 cursor-pointer hover:bg-white/5 transition-all ${
+                                                    index < acceptedJobs.length - 1 ? 'border-b border-white/5' : ''
+                                                } group`}
+                                            >
+                                                <div className="w-1/4 text-xs font-black text-primary tracking-tighter leading-none">
+                                                    <div>{job.date}</div>
+                                                    <div className="text-gray-500 text-[10px] mt-1">{job.time}</div>
+                                                </div>
+                                                <div className="flex-grow">
+                                                    <p className="font-extrabold text-white text-sm tracking-tight">
+                                                        {job.service?.name || job.services?.[0]?.name || 'Service'}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[10px] text-gray-500 font-bold tracking-widest">{job.customerName}</span>
+                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider ${
+                                                            job.status === 'In Progress' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                                                            job.status === 'En Route' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                                            'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                                        }`}>
+                                                            {job.status}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right flex items-center gap-3">
+                                                    <span className="text-sm font-black text-white">
+                                                        ₱{(job.service?.price || job.services?.[0]?.price || 0).toLocaleString()}
+                                                    </span>
+                                                    <Tooltip content="View job details">
+                                                        <div className="p-2 rounded-xl bg-white/5 group-hover:bg-primary/20 group-hover:text-primary transition-all">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                                                            </svg>
+                                                        </div>
+                                                    </Tooltip>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="p-8 text-center text-gray-500 text-xs font-bold">
+                                            {isOnline ? "No accepted jobs in progress. Waiting for new requests..." : "You are offline. Go online to receive jobs."}
+                                        </div>
+                                    )
+                                ) : (
+                                    completedJobs.length > 0 ? (
+                                        completedJobs.map((job, index) => (
+                                            <div
+                                                key={job.id}
+                                                onClick={() => navigate(`/mechanic-portal/job/${job.id}`)}
+                                                className={`flex items-center p-5 cursor-pointer hover:bg-white/5 transition-all ${
+                                                    index < completedJobs.length - 1 ? 'border-b border-white/5' : ''
+                                                } group`}
+                                            >
+                                                <div className="w-1/4 text-xs font-black text-emerald-400 tracking-tighter leading-none">
+                                                    <div>{job.date}</div>
+                                                    <div className="text-gray-500 text-[10px] mt-1">{job.time}</div>
+                                                </div>
+                                                <div className="flex-grow">
+                                                    <p className="font-extrabold text-white text-sm tracking-tight">
+                                                        {job.service?.name || job.services?.[0]?.name || 'Service'}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[10px] text-gray-500 font-bold tracking-widest">{job.customerName}</span>
+                                                        <span className="text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                            Completed
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right flex items-center gap-3">
+                                                    <span className="text-sm font-black text-emerald-400">
+                                                        ₱{(job.service?.price || job.services?.[0]?.price || 0).toLocaleString()}
+                                                    </span>
+                                                    <Tooltip content="View invoice & history">
+                                                        <div className="p-2 rounded-xl bg-white/5 group-hover:bg-emerald-500/20 group-hover:text-emerald-400 transition-all">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                                                            </svg>
+                                                        </div>
+                                                    </Tooltip>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="p-8 text-center text-gray-500 text-xs font-bold">No completed jobs yet.</div>
+                                    )
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
