@@ -208,14 +208,30 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     }, [isMechanicAuthenticated, mechanic?.isOnline, mechanic?.id]);
 
     const login = async (email: string, pass: string) => {
+        // First check if this email exists in customers collection
+        const normalizedEmail = email.trim().toLowerCase();
+        const customersRef = collection(firestore, 'customers');
+        const q = query(customersRef, where('email', '==', normalizedEmail));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+            throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
+        }
+
         try {
             await setPersistence(auth, browserLocalPersistence);
             const userCredential = await signInWithEmailAndPassword(auth, email, pass);
-            const mechDoc = await getDoc(doc(firestore, 'mechanics', userCredential.user.uid));
             
+            // Double check by UID
+            const customerSnap = await getDoc(doc(firestore, 'customers', userCredential.user.uid));
+            if (customerSnap.exists()) {
+                await signOut(auth);
+                throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
+            }
+
+            const mechDoc = await getDoc(doc(firestore, 'mechanics', userCredential.user.uid));
             if (!mechDoc.exists()) {
                 await signOut(auth);
-                throw new Error("Invalid mechanic credentials - Account not found in mechanics collection.");
+                throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
             }
             
             const mechData = mechDoc.data() as Mechanic;
@@ -231,13 +247,12 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
             
             // Check if user is in Firestore and passwords match for local bypass
             try {
-                const normalizedEmail = email.trim().toLowerCase();
                 const mechanicsRef = collection(firestore, 'mechanics');
-                const q = query(mechanicsRef, where('email', '==', normalizedEmail));
-                const querySnapshot = await getDocs(q);
+                const qBypass = query(mechanicsRef, where('email', '==', normalizedEmail));
+                const querySnapshotBypass = await getDocs(qBypass);
                 
-                if (!querySnapshot.empty) {
-                    const mechDoc = querySnapshot.docs[0];
+                if (!querySnapshotBypass.empty) {
+                    const mechDoc = querySnapshotBypass.docs[0];
                     const mechData = { id: mechDoc.id, ...mechDoc.data() } as Mechanic;
                     
                     if (mechData.password === pass) {
@@ -262,13 +277,12 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
             // Self-healing migration for mock mechanics in development
             if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
                 try {
-                    const normalizedEmail = email.trim().toLowerCase();
                     const mechanicsRef = collection(firestore, 'mechanics');
-                    const q = query(mechanicsRef, where('email', '==', normalizedEmail));
-                    const querySnapshot = await getDocs(q);
+                    const qMigration = query(mechanicsRef, where('email', '==', normalizedEmail));
+                    const querySnapshotMigration = await getDocs(qMigration);
                     
-                    if (!querySnapshot.empty) {
-                        const oldDoc = querySnapshot.docs[0];
+                    if (!querySnapshotMigration.empty) {
+                        const oldDoc = querySnapshotMigration.docs[0];
                         const oldData = oldDoc.data() as Mechanic;
                         const oldId = oldDoc.id;
                         
@@ -333,6 +347,13 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                 const result = await signInWithPopup(auth, provider);
                 const { user: fbUser } = result;
                 
+                // Check if they are actually a customer trying to log in under mechanic tab
+                const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
+                if (customerDoc.exists()) {
+                    await signOut(auth);
+                    throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
+                }
+
                 // Check if mechanic doc exists
                 const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
                 if (!mechanicDoc.exists()) {

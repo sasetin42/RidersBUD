@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Spinner from '../components/Spinner';
+import { getFriendlyErrorMessage } from '../utils/firebaseErrors';
 import { useDatabase } from '../context/DatabaseContext';
 import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { Wrench, Shield, Smartphone, Mail, Lock, User, MapPin, Upload, FileText, CheckCircle2, ArrowRight, ArrowLeft, Phone, Car, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
@@ -198,7 +199,7 @@ const SignUpScreen: React.FC = () => {
                 vehicle: vehicleData
             });
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -252,7 +253,7 @@ const SignUpScreen: React.FC = () => {
             );
             setIsMechanicSuccess(true);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -264,7 +265,7 @@ const SignUpScreen: React.FC = () => {
         try {
             await loginWithGoogle();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -276,7 +277,7 @@ const SignUpScreen: React.FC = () => {
         try {
             await loginWithFacebook();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }

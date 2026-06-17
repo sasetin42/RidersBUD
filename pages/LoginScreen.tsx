@@ -7,6 +7,7 @@ import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { Eye, EyeOff, Mail, Lock, User, Wrench, ArrowRight } from 'lucide-react';
 import SecurityDetailsModal from '../components/SecurityDetailsModal';
+import { getFriendlyErrorMessage } from '../utils/firebaseErrors';
 
 
 const LoginScreen: React.FC = () => {
@@ -92,7 +93,7 @@ const LoginScreen: React.FC = () => {
             if (isLikelyCustomerToMechanicError(err)) {
                 showSecurityModalFor('Mechanic');
             }
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -116,7 +117,7 @@ const LoginScreen: React.FC = () => {
                 // same modal (Mechanic)
                 showSecurityModalFor('Mechanic');
             }
-            setMechanicError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setMechanicError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -134,7 +135,7 @@ const LoginScreen: React.FC = () => {
                 await loginWithGoogle();
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -147,7 +148,7 @@ const LoginScreen: React.FC = () => {
         try {
             await loginWithFacebook();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            setError(getFriendlyErrorMessage(err));
         } finally {
             setIsLoading(false);
         }

@@ -176,9 +176,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [firebaseUser, isBypassed, user?.id]);
 
     const loginWithCredentials = async (email: string, pass: string) => {
+        // First check if this email exists in mechanics collection
+        const normalizedEmail = email.trim().toLowerCase();
+        const mechanicsRef = collection(firestore, 'mechanics');
+        const q = query(mechanicsRef, where('email', '==', normalizedEmail));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+            throw new Error("This account is not registered as a Customer. Please select the correct tab.");
+        }
+
         try {
             await setPersistence(auth, browserLocalPersistence);
-            await signInWithEmailAndPassword(auth, email, pass);
+            const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+            
+            // Double check by UID
+            const mechanicSnap = await getDoc(doc(firestore, 'mechanics', userCredential.user.uid));
+            if (mechanicSnap.exists()) {
+                await signOut(auth);
+                throw new Error("This account is not registered as a Customer. Please select the correct tab.");
+            }
+
             setIsBypassed(false);
             saveCustomerSessionToStorage(null, false);
         } catch (error: any) {
@@ -186,13 +203,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             
             // Check if user is in Firestore and passwords match for local bypass
             try {
-                const normalizedEmail = email.trim().toLowerCase();
                 const customersRef = collection(firestore, 'customers');
-                const q = query(customersRef, where('email', '==', normalizedEmail));
-                const querySnapshot = await getDocs(q);
+                const qBypass = query(customersRef, where('email', '==', normalizedEmail));
+                const querySnapshotBypass = await getDocs(qBypass);
                 
-                if (!querySnapshot.empty) {
-                    const customerDoc = querySnapshot.docs[0];
+                if (!querySnapshotBypass.empty) {
+                    const customerDoc = querySnapshotBypass.docs[0];
                     const customerData = { id: customerDoc.id, ...customerDoc.data() } as Customer;
                     
                     if (customerData.password === pass) {
@@ -211,13 +227,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             // Self-healing migration for mock users in development
             if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
                 try {
-                    const normalizedEmail = email.trim().toLowerCase();
                     const customersRef = collection(firestore, 'customers');
-                    const q = query(customersRef, where('email', '==', normalizedEmail));
-                    const querySnapshot = await getDocs(q);
+                    const qMigration = query(customersRef, where('email', '==', normalizedEmail));
+                    const querySnapshotMigration = await getDocs(qMigration);
                     
-                    if (!querySnapshot.empty) {
-                        const oldDoc = querySnapshot.docs[0];
+                    if (!querySnapshotMigration.empty) {
+                        const oldDoc = querySnapshotMigration.docs[0];
                         const oldData = oldDoc.data() as Customer;
                         const oldId = oldDoc.id;
                         
@@ -264,7 +279,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw error;
         }
     };
-
+ 
     const loginWithGoogle = async () => {
         const provider = new GoogleAuthProvider();
         try {
@@ -273,17 +288,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 const result = await signInWithPopup(auth, provider);
                 const { user: fbUser } = result;
                 
-                // If they are logging in as a mechanic, don't auto-create a customer doc
                 const hint = sessionStorage.getItem('auth_type_hint');
-                if (hint === 'mechanic') return;
-
+                if (hint === 'mechanic') {
+                    // Check if they are actually a customer trying to log in under mechanic tab
+                    const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
+                    if (customerDoc.exists()) {
+                        await signOut(auth);
+                        throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
+                    }
+                    return;
+                }
+ 
+                // Also check if they are already a mechanic trying to log in under customer tab
+                const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
+                if (mechanicDoc.exists()) {
+                    await signOut(auth);
+                    throw new Error("This account is not registered as a Customer. Please select the correct tab.");
+                }
+ 
                 // Check if customer doc exists, if not create it
                 const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
-                
-                // Also check if they are already a mechanic
-                const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
-                if (mechanicDoc.exists()) return;
-
                 if (!customerDoc.exists()) {
                     const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
                     const defaultPic = (settingsSnap.exists() ? settingsSnap.data()?.defaultCustomerImageUrl : null) || '/assets/logo.png';
@@ -313,7 +337,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         popupError.message.includes('fetch')
                     )) ||
                     (popupError.name === 'DOMException' || popupError.message?.includes('closed'));
-
+ 
                 if (isBlockError) {
                     console.info("Popup blocked, network failed, or COOP isolation triggered. Trying redirect sign-in...", popupError);
                     const { signInWithRedirect } = await import('firebase/auth');
@@ -327,7 +351,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw error;
         }
     };
-
+ 
     const loginWithFacebook = async () => {
         const provider = new FacebookAuthProvider();
         try {
@@ -337,12 +361,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 const { user: fbUser } = result;
                 
                 const hint = sessionStorage.getItem('auth_type_hint');
-                if (hint === 'mechanic') return;
-
-                const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
+                if (hint === 'mechanic') {
+                    // Check if they are actually a customer trying to log in under mechanic tab
+                    const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
+                    if (customerDoc.exists()) {
+                        await signOut(auth);
+                        throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
+                    }
+                    return;
+                }
+ 
+                // Also check if they are already a mechanic trying to log in under customer tab
                 const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
-                if (mechanicDoc.exists()) return;
-
+                if (mechanicDoc.exists()) {
+                    await signOut(auth);
+                    throw new Error("This account is not registered as a Customer. Please select the correct tab.");
+                }
+ 
+                const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
                 if (!customerDoc.exists()) {
                     const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
                     const defaultPic = (settingsSnap.exists() ? settingsSnap.data()?.defaultCustomerImageUrl : null) || '/assets/logo.png';
