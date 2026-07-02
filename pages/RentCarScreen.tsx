@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { Car } from 'lucide-react';
 import { useDatabase } from '../context/DatabaseContext';
 import Spinner from '../components/Spinner';
@@ -75,12 +75,12 @@ const RentalBookingModal: React.FC<{
                 <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="text-sm text-light-gray mb-1 block">Start Date</label>
-                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className="w-full p-2 bg-field border border-secondary rounded-md outline-none transition-all focus:border-white/20" />
+                            <label htmlFor="rent-start-date" className="text-sm text-light-gray mb-1 block">Start Date</label>
+                            <input id="rent-start-date" name="rent-start-date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className="w-full p-2 bg-field border border-secondary rounded-md outline-none transition-all focus:border-white/20" />
                         </div>
                         <div>
-                            <label className="text-sm text-light-gray mb-1 block">End Date</label>
-                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} min={startDate || new Date().toISOString().split('T')[0]} className="w-full p-2 bg-field border border-secondary rounded-md outline-none transition-all focus:border-white/20" />
+                            <label htmlFor="rent-end-date" className="text-sm text-light-gray mb-1 block">End Date</label>
+                            <input id="rent-end-date" name="rent-end-date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} min={startDate || new Date().toISOString().split('T')[0]} className="w-full p-2 bg-field border border-secondary rounded-md outline-none transition-all focus:border-white/20" />
                         </div>
                     </div>
                     {duration > 0 && (
@@ -154,7 +154,7 @@ const RentCarScreen: React.FC = () => {
     if (loading || !db) {
         return (
             <div className="flex flex-col h-full bg-secondary">
-                <Header title="Rent a Car" showBackButton icon={<Car size={22} />} />
+                <CustomerHeader title="Rent a Car" showBackButton icon={<Car size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
                 </div>
@@ -164,7 +164,7 @@ const RentCarScreen: React.FC = () => {
     
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title="Rent a Car" showBackButton icon={<Car size={22} />} />
+            <CustomerHeader title="Rent a Car" showBackButton icon={<Car size={22} />} />
             <main className="flex-grow overflow-y-auto p-4 space-y-4">
                 {db.rentalCars.map(car => (
                     <RentalCarCard key={car.id} car={car} onRent={setSelectedCar} />

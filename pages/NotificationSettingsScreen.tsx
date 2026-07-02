@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { Bell, CheckCircle, Smartphone, Wifi } from 'lucide-react';
 import {
     getNotificationSettings,
@@ -18,7 +18,6 @@ import Spinner from '../components/Spinner';
 interface ExtendedCustomer extends Customer {
     notificationSettings?: NotificationSettings;
 }
-
 const ToggleSwitch: React.FC<{
     label: string;
     description: string;
@@ -37,11 +36,18 @@ const ToggleSwitch: React.FC<{
                 type="button"
                 role="switch"
                 aria-checked={enabled}
-                className={`${enabled ? 'bg-primary' : 'bg-[#333]'} relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                className={`${enabled ? 'bg-primary' : 'bg-[#333]'} relative inline-flex flex-shrink-0 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-primary/50`}
+                style={{ width: '44px', height: '24px' }}
                 onClick={() => onChange(!enabled)}
             >
                 <span
-                    className={`${enabled ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm`}
+                    className="absolute rounded-full bg-white transition-all duration-200 shadow-sm shrink-0"
+                    style={{
+                        width: '16px',
+                        height: '16px',
+                        top: '4px',
+                        left: enabled ? '24px' : '4px'
+                    }}
                 />
             </button>
         </div>
@@ -127,7 +133,7 @@ const NotificationSettingsScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-[#121212] text-white font-sans">
-            <Header title="Notification Settings" showBackButton icon={<Bell size={22} />} />
+            <CustomerHeader title="Notification Settings" showBackButton icon={<Bell size={22} />} />
 
             <div className="flex-grow p-5 space-y-7 overflow-y-auto pb-8">
 
@@ -172,17 +178,12 @@ const NotificationSettingsScreen: React.FC = () => {
                                     id="reminder-lead-time"
                                     value={settings.reminderLeadTime}
                                     onChange={(e) => handleSettingChange('reminderLeadTime', e.target.value as NotificationSettings['reminderLeadTime'])}
-                                    className="w-full px-4 py-3 bg-[#121212] border border-white/10 rounded-xl text-white appearance-none focus:outline-none focus:border-primary/50 transition-all text-sm"
+                                    className="w-full px-4 py-3 bg-[#121212] border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 transition-all text-sm"
                                 >
                                     <option value="1-hour">1 Hour Before</option>
                                     <option value="1-day">1 Day Before</option>
                                     <option value="2-days">2 Days Before</option>
                                 </select>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </div>
                             </div>
                         </div>
 

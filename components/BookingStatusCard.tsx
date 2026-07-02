@@ -33,16 +33,16 @@ const RescheduleModal: React.FC<{
                 <p className="text-sm text-gray-400 mb-6">Propose a new date and time for your '{booking.services && booking.services.length > 0 ? booking.services.map(s => s.name).join(', ') : booking.service?.name || 'Service'}' service.</p>
                 <div className="space-y-4">
                     <div>
-                        <label className="text-xs text-gray-500 font-bold  tracking-wider mb-1 block">New Date</label>
-                        <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className="w-full p-3 bg-[#242424] border border-white/5 rounded-xl text-white outline-none focus:border-primary/50" />
+                        <label htmlFor="reschedule-date" className="text-xs text-gray-500 font-bold  tracking-wider mb-1 block">New Date</label>
+                        <input id="reschedule-date" name="reschedule-date" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className="w-full p-3 bg-[#242424] border border-white/5 rounded-xl text-white outline-none focus:border-primary/50" />
                     </div>
                     <div>
-                        <label className="text-xs text-gray-500 font-bold  tracking-wider mb-1 block">New Time</label>
-                        <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full p-3 bg-[#242424] border border-white/5 rounded-xl text-white outline-none focus:border-primary/50" />
+                        <label htmlFor="reschedule-time" className="text-xs text-gray-500 font-bold  tracking-wider mb-1 block">New Time</label>
+                        <input id="reschedule-time" name="reschedule-time" type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full p-3 bg-[#242424] border border-white/5 rounded-xl text-white outline-none focus:border-primary/50" />
                     </div>
                     <div>
-                        <label className="text-xs text-gray-500 font-bold  tracking-wider mb-1 block">Reason</label>
-                        <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason for request..." rows={3} className="w-full p-3 bg-[#242424] border border-white/5 rounded-xl text-white outline-none focus:border-primary/50" />
+                        <label htmlFor="reschedule-reason" className="text-xs text-gray-500 font-bold  tracking-wider mb-1 block">Reason</label>
+                        <textarea id="reschedule-reason" name="reschedule-reason" value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason for request..." rows={3} className="w-full p-3 bg-[#242424] border border-white/5 rounded-xl text-white outline-none focus:border-primary/50" />
                     </div>
                     {error && <p className="text-red-400 text-xs text-center">{error}</p>}
                 </div>
@@ -98,6 +98,7 @@ const CancellationModal: React.FC<{
                 <h2 className="text-xl font-bold text-white mb-2">Cancel Booking</h2>
                 <p className="text-gray-400 text-sm mb-6">Are you sure you want to cancel <span className="text-white font-bold">{booking.services && booking.services.length > 0 ? booking.services.map(s => s.name).join(', ') : booking.service?.name || 'Service'}</span>?</p>
                 <textarea
+                    id="cancel-reason" name="cancel-reason"
                     value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for cancellation..." rows={4}
                     className="w-full p-3 bg-[#242424] border border-white/5 rounded-xl text-white outline-none focus:border-red-500/50"
                 />

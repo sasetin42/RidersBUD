@@ -149,6 +149,7 @@ interface MechanicCalendarProps {
 }
 
 const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailableDates, isPublic }) => {
+    const navigate = useNavigate();
     const { db } = useDatabase();
     const [view, setView] = useState<CalendarView>('day');
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -229,7 +230,13 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
                 <button
                     key={day}
                     disabled={dayBookings.length === 0}
-                    onClick={() => dayBookings.length > 0 && setViewingBookings({ date, bookings: dayBookings })}
+                    onClick={() => {
+                        if (dayBookings.length === 1 && !isPublic) {
+                            navigate(`/mechanic-portal/job/${dayBookings[0].id}`);
+                        } else if (dayBookings.length > 0) {
+                            setViewingBookings({ date, bookings: dayBookings });
+                        }
+                    }}
                     className={`p-2 border-r border-t border-white/5 min-h-[90px] sm:min-h-[110px] text-left align-top transition-all relative group ${isTimeOff ? 'bg-red-500/10' : 'bg-[#1A1A1A]'} ${dayBookings.length > 0 ? 'cursor-pointer hover:bg-white/5' : 'cursor-default'}`}
                 >
                     <div className="flex justify-between items-center mb-1">
@@ -301,7 +308,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
         return (
             <div className="space-y-3 animate-fadeIn">
                 {dayBookings.length > 0 ? dayBookings.map(b => {
-                    const payout = b.service?.price || b.services?.[0]?.price || b.totalAmount || 0;
+                    const payout = b.totalAmount || b.service?.price || b.services?.[0]?.price || 0;
                     const vehicleLabel = b.vehicle
                         ? `${b.vehicle.year || ''} ${b.vehicle.make || ''} ${b.vehicle.model || ''}`.trim()
                         : '';
@@ -313,7 +320,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
                     return (
                         <div 
                             key={b.id} 
-                            onClick={() => !isPublic && setViewingBookings({ date: currentDate, bookings: [b] })} 
+                            onClick={() => !isPublic && navigate(`/mechanic-portal/job/${b.id}`)} 
                             className="bg-[#1A1A1A] p-4 rounded-3xl flex flex-col gap-3.5 cursor-pointer hover:bg-white/[0.04] transition-all border border-white/5 hover:border-primary/20 shadow-lg group relative overflow-hidden"
                         >
                             {/* Accent Glow */}
@@ -437,7 +444,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
                                 dayBookings.map(b => (
                                     <div
                                         key={b.id}
-                                        onClick={() => setViewingBookings({ date, bookings: dayBookings })}
+                                        onClick={() => !isPublic && navigate(`/mechanic-portal/job/${b.id}`)}
                                         className="flex items-center gap-3 p-3 bg-white/[0.02] hover:bg-white/[0.05] rounded-xl border border-white/5 cursor-pointer transition-all group"
                                     >
                                         <div className="w-16 text-[10px] font-bold text-primary shrink-0">{b.time}</div>

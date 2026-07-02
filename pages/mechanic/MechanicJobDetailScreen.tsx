@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
+import NotificationBell from '../../components/NotificationBell';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useMechanicAuth } from '../../context/MechanicAuthContext';
 import Spinner from '../../components/Spinner';
@@ -10,7 +11,7 @@ import {
     Calendar, User, Car, Shield, ChevronRight, AlertCircle,
     ArrowRight, Map as MapIcon, Mail, Hash, Palette, Gauge,
     FileText, Wrench, DollarSign, Timer, Upload, X, Image as ImageIcon, Bell,
-    CreditCard, Eye, Copy, ChevronDown, ChevronUp, Star, Info
+    CreditCard, Eye, Copy, ChevronDown, ChevronUp, Star, Info, ExternalLink
 } from 'lucide-react';
 import { BookingStatus } from '../../types';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -19,6 +20,8 @@ import { db as firestore, rtdb } from '../../firebase';
 import MechanicCustomerChatModal from '../../components/mechanic/MechanicCustomerChatModal';
 import DirectionsModal from '../../components/mechanic/DirectionsModal';
 import { CallButton } from '../../components/CallUI';
+import { getFallbackImageForCategory } from '../../utils/fallbackImages';
+import { useCall } from '../../context/CallContext';
 
 // Default currency configuration
 const DEFAULT_CURRENCY = 'PHP';
@@ -155,7 +158,8 @@ const parseDateTime = (dateStr: string, timeStr: string): number => {
 const MechanicJobDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
     const navigate = useNavigate();
-    const { db, updateBookingStatus, assignMechanicToBooking, addNotification } = useDatabase();
+    const { db, updateBookingStatus, assignMechanicToBooking, addNotification, updateBooking } = useDatabase();
+    const { startCall, callStatus } = useCall();
 
     const bookingSequenceId = useMemo(() => {
         if (!db?.bookings || !bookingId) return '';
@@ -213,6 +217,8 @@ const MechanicJobDetailScreen: React.FC = () => {
     const [showPaymentSuccessModal, setShowPaymentSuccessModal] = useState(false);
     const [confettiPieces, setConfettiPieces] = useState<any[]>([]);
     const [showCustomerDetails, setShowCustomerDetails] = useState(false);
+    const [showReceiptModal, setShowReceiptModal] = useState(false);
+    const [activeReceiptTab, setActiveReceiptTab] = useState<'downpayment' | 'balance'>('downpayment');
 
     // Progress Report State
     const [progressReport, setProgressReport] = useState({ before: '', after: '', notes: '' });
@@ -359,13 +365,13 @@ const MechanicJobDetailScreen: React.FC = () => {
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => { try { unsubscribe(); } catch (_) {} };
     }, [bookingId]);
 
     if (loading || !booking) {
         return (
             <div className="flex flex-col h-full bg-[#0a0a0a]">
-                <Header title="Job Details" showBack icon={<Wrench size={22} />} />
+                <Header title="Job Details" showBack rightAction={<NotificationBell />} icon={<Wrench size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
                 </div>
@@ -373,12 +379,27 @@ const MechanicJobDetailScreen: React.FC = () => {
         );
     }
 
+    const getStepTime = (status: string) => {
+        if (status === 'Booking Confirmed' || status === 'Upcoming') {
+            const entry = booking.statusHistory?.find((h: any) => h.status === 'Booking Confirmed' || h.status === 'Upcoming' || h.status === 'Pending');
+            if (entry) return new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return booking.createdAt ? new Date(booking.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+        }
+        if (status === 'Completed') {
+            const entry = booking.statusHistory?.find((h: any) => h.status === 'Completed' || h.status === 'Work Done');
+            if (entry) return new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return booking.completedAt ? new Date(booking.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+        }
+        const entry = booking.statusHistory?.find((h: any) => h.status === status);
+        return entry ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined;
+    };
+
     const steps: { status: BookingStatus; label: string; time?: string }[] = [
-        { status: booking.status === 'Booking Confirmed' ? 'Booking Confirmed' : 'Upcoming', label: 'Booking Confirmed', time: booking.createdAt ? new Date(booking.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined },
-        { status: 'Mechanic Assigned', label: 'Mechanic Assigned' },
-        { status: 'En Route', label: 'En Route' },
-        { status: 'In Progress', label: 'In Progress' },
-        { status: 'Completed', label: 'Completed' },
+        { status: booking.status === 'Booking Confirmed' ? 'Booking Confirmed' : 'Upcoming', label: 'Booking Confirmed', time: getStepTime('Booking Confirmed') },
+        { status: 'Mechanic Assigned', label: 'Mechanic Assigned', time: getStepTime('Mechanic Assigned') },
+        { status: 'En Route', label: 'En Route', time: getStepTime('En Route') },
+        { status: 'In Progress', label: 'In Progress', time: getStepTime('In Progress') },
+        { status: 'Completed', label: 'Completed', time: getStepTime('Completed') },
     ];
 
     const currentStepIndex = steps.findIndex(s => s.status === booking.status);
@@ -506,7 +527,6 @@ const MechanicJobDetailScreen: React.FC = () => {
         if (!booking || !progressReport.before || !progressReport.after) return;
         setIsLoading(true);
         try {
-            const bookingRef = doc(firestore, 'bookings', booking.id);
             const progressEntry = {
                 timestamp: new Date().toISOString(),
                 before: progressReport.before,
@@ -518,7 +538,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                 mechanicName: mechanic?.name
             };
 
-            await updateDoc(bookingRef, {
+            await updateBooking(booking.id, {
                 progressHistory: [...(booking.progressHistory || []), progressEntry],
                 updatedAt: new Date().toISOString()
             });
@@ -539,8 +559,7 @@ const MechanicJobDetailScreen: React.FC = () => {
         if (!booking) return;
         setIsLoading(true);
         try {
-            const bookingRef = doc(firestore, 'bookings', booking.id);
-            await updateDoc(bookingRef, {
+            await updateBooking(booking.id, {
                 eta: etaMinutes,
                 etaUpdatedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -558,12 +577,13 @@ const MechanicJobDetailScreen: React.FC = () => {
         if (!booking) return;
         setIsLoading(true);
         try {
-            const servicePrice = booking.service?.price || 0;
+            const servicePrice = booking.services && booking.services.length > 0
+                ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                : (booking.service?.price || 0);
             const additionalTotal = updatedCosts.reduce((sum, cost) => sum + (Number(cost.price) || 0), 0);
             const newTotal = servicePrice + additionalTotal;
 
-            const bookingRef = doc(firestore, 'bookings', booking.id);
-            await updateDoc(bookingRef, {
+            await updateBooking(booking.id, {
                 additionalCosts: updatedCosts,
                 totalAmount: newTotal,
                 updatedAt: new Date().toISOString()
@@ -599,6 +619,7 @@ const MechanicJobDetailScreen: React.FC = () => {
         const updatedCosts = [...currentCosts, {
             id: Date.now().toString(),
             description: newCostDescription,
+            item: newCostDescription, // Support both Admin ('item') and Customer ('description')
             price: price
         }];
 
@@ -628,8 +649,7 @@ const MechanicJobDetailScreen: React.FC = () => {
         // Payment is confirmed, proceed with completion (Set to Work Done for Escrow)
         setIsLoading(true);
         try {
-            const bookingRef = doc(firestore, 'bookings', booking.id);
-            await updateDoc(bookingRef, {
+            await updateBooking(booking.id, {
                 status: 'Work Done', // Changed from 'Completed' for Escrow
                 paymentStatus: 'Paid',
                 paymentMethod: 'Cash',
@@ -657,8 +677,7 @@ const MechanicJobDetailScreen: React.FC = () => {
             const remainingAmount = totalAmount - paidAmount;
 
             // Update booking in Firestore to awaiting_payment
-            const bookingRef = doc(firestore, 'bookings', booking.id);
-            await updateDoc(bookingRef, {
+            await updateBooking(booking.id, {
                 gcashPaymentStatus: 'awaiting_payment',
                 updatedAt: new Date().toISOString()
             });
@@ -688,8 +707,7 @@ const MechanicJobDetailScreen: React.FC = () => {
         if (!booking) return;
         setIsLoading(true);
         try {
-            const bookingRef = doc(firestore, 'bookings', booking.id);
-            await updateDoc(bookingRef, {
+            await updateBooking(booking.id, {
                 paymentStatus: 'paid',
                 gcashPaymentStatus: 'verified',
                 isPaid: true,
@@ -719,32 +737,39 @@ const MechanicJobDetailScreen: React.FC = () => {
         }
     };
 
-    // Actions
     const handleCall = () => {
-        const phone = customer?.phone || booking.customerPhone;
-        if (phone) {
-            window.location.href = `tel:${phone}`;
+        if (customer && callStatus === 'idle') {
+            startCall({
+                targetId: customer.id || booking.customerId || 'support-customer',
+                targetRole: 'customer',
+                targetName: customer.name || booking.customerName || 'Customer',
+                targetImage: customer.picture || customer.imageUrl || booking.customerImage,
+                type: 'audio'
+            });
+        } else if (callStatus !== 'idle') {
+            alert('A call is already active.');
         } else {
-            alert('No phone number available for this customer.');
+            alert('No customer information available to start a call.');
         }
     };
 
 
     const handleNavigation = () => {
-        // Prefer customer location if available, otherwise just search
-        if (customer?.lat && customer?.lng) {
-            window.open(`https://www.google.com/maps/dir/?api=1&destination=${customer.lat},${customer.lng}`, '_blank');
-        } else if (booking.location?.address) {
-            window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.location.address)}`, '_blank');
+        const lat = booking.location?.lat || customer?.lat;
+        const lng = booking.location?.lng || customer?.lng;
+        if (lat && lng) {
+            window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank');
+        } else if (booking.location?.address || customer?.address) {
+            window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.location?.address || customer?.address || '')}`, '_blank');
         } else {
             alert('No location details available.');
         }
     };
 
     const handleDirectNavigation = () => {
-        const lat = customer?.lat || booking.location?.lat;
-        const lng = customer?.lng || booking.location?.lng;
-        const address = booking.location?.address;
+        const lat = booking.location?.lat || customer?.lat;
+        const lng = booking.location?.lng || customer?.lng;
+        const address = booking.location?.address || customer?.address;
 
         if (lat && lng) {
             // Direct Google Maps navigation with coordinates
@@ -766,13 +791,29 @@ const MechanicJobDetailScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-[#0a0a0a] text-white overflow-hidden font-sans">
-            <Header title={`JOB #${bookingSequenceId || booking.id.slice(-6)}`} showBack icon={<Wrench size={22} />} />
+            <Header title={`JOB #${bookingSequenceId || booking.id.slice(-6)}`} showBack rightAction={<NotificationBell />} icon={<Wrench size={22} />} />
 
             <main className="flex-grow overflow-y-auto p-4 space-y-4 pb-32">
 
                 {/* Service & Work Details Card */}
                 <div className="relative overflow-hidden rounded-[2rem] p-6 bg-[#121212] border border-primary/20 shadow-[0_8px_32px_rgba(0,0,0,0.3)] animate-slideInUp">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-16 translate-x-16 blur-2xl opacity-50" />
+                    {/* Background image overlay */}
+                    {(() => {
+                        const serviceImg = booking.services?.[0]?.imageUrl || booking.service?.imageUrl || getFallbackImageForCategory(booking.services?.[0]?.category || booking.service?.category || '');
+                        return (
+                            <div className="absolute inset-0 z-0 opacity-[0.07] pointer-events-none">
+                                <img 
+                                    src={serviceImg} 
+                                    alt="" 
+                                    className="w-full h-full object-cover filter blur-[1px]" 
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.services?.[0]?.category || booking.service?.category || '');
+                                    }}
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-transparent to-[#121212]/80" />
+                            </div>
+                        );
+                    })()}
                     
                     <div className="relative z-10">
                         {/* Copyable full booking ID */}
@@ -801,30 +842,48 @@ const MechanicJobDetailScreen: React.FC = () => {
                             {booking.services && booking.services.length > 0 ? (
                                 <div className="space-y-2.5">
                                     {booking.services.map((svc: any, idx: number) => (
-                                        <div key={svc.id || idx} className="flex justify-between items-center bg-black/30 p-3.5 rounded-2xl border border-white/5">
-                                            <div className="min-w-0">
-                                                <p className="text-sm font-black text-white leading-tight truncate">{svc.name}</p>
-                                                {svc.estimatedTime && (
-                                                    <p className="text-[10px] text-gray-500 font-bold tracking-tight mt-0.5 flex items-center gap-1">
-                                                        <Timer size={10} className="text-blue-400" />
-                                                        {svc.estimatedTime}
-                                                    </p>
-                                                )}
+                                        <div key={svc.id || idx} className="flex justify-between items-center bg-black/35 p-3.5 rounded-2xl border border-white/5">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="w-10 h-10 rounded-full bg-[#1A1A1D] border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                                                    {svc.imageUrl || svc.image ? (
+                                                        <img src={svc.imageUrl || svc.image} alt={svc.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <Wrench size={16} className="text-gray-500" />
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-black text-white leading-tight truncate">{svc.name}</p>
+                                                    {svc.estimatedTime && (
+                                                        <p className="text-[10px] text-gray-500 font-bold tracking-tight mt-0.5 flex items-center gap-1">
+                                                            <Timer size={10} className="text-blue-400" />
+                                                            {svc.estimatedTime}
+                                                        </p>
+                                                    )}
+                                                </div>
                                             </div>
                                             <span className="text-base font-black text-white shrink-0 ml-4">{formatCurrency(svc.price || 0)}</span>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
-                                <div className="flex justify-between items-center bg-black/30 p-3.5 rounded-2xl border border-white/5">
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-black text-white leading-tight truncate">{booking.service?.name || 'Service'}</p>
-                                        {booking.service?.estimatedTime && (
-                                            <p className="text-[10px] text-gray-500 font-bold tracking-tight mt-0.5 flex items-center gap-1">
-                                                <Timer size={10} className="text-blue-400" />
-                                                {booking.service.estimatedTime}
-                                            </p>
-                                        )}
+                                <div className="flex justify-between items-center bg-black/35 p-3.5 rounded-2xl border border-white/5">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-10 h-10 rounded-full bg-[#1A1A1D] border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                                            {booking.service?.imageUrl || booking.service?.image ? (
+                                                <img src={booking.service?.imageUrl || booking.service?.image} alt={booking.service?.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <Wrench size={16} className="text-gray-500" />
+                                            )}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-black text-white leading-tight truncate">{booking.service?.name || 'Service'}</p>
+                                            {booking.service?.estimatedTime && (
+                                                <p className="text-[10px] text-gray-500 font-bold tracking-tight mt-0.5 flex items-center gap-1">
+                                                    <Timer size={10} className="text-blue-400" />
+                                                    {booking.service.estimatedTime}
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
                                     <span className="text-base font-black text-white shrink-0 ml-4">{formatCurrency(booking.service?.price || 0)}</span>
                                 </div>
@@ -832,18 +891,18 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </div>
 
                         {/* Bottom Row: Date, Time, Status Badge */}
-                        <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-white/[0.05]">
-                            <div className="flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-xl border border-white/5">
-                                <Calendar size={13} className="text-primary" />
-                                <span className="text-xs font-bold text-gray-200">
+                        <div className="flex items-center justify-between gap-1.5 pt-3 border-t border-white/[0.05] overflow-x-auto no-scrollbar flex-nowrap">
+                            <div className="flex items-center gap-1 bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/5 flex-shrink-0">
+                                <Calendar size={11} className="text-primary" />
+                                <span className="text-[10px] font-bold text-gray-200">
                                     {new Date(booking.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                 </span>
                             </div>
-                            <div className="flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-xl border border-white/5">
-                                <Clock size={13} className="text-primary" />
-                                <span className="text-xs font-bold text-gray-200">{booking.time}</span>
+                            <div className="flex items-center gap-1 bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/5 flex-shrink-0">
+                                <Clock size={11} className="text-primary" />
+                                <span className="text-[10px] font-bold text-gray-200">{booking.time}</span>
                             </div>
-                            <div className={`px-3 py-1.5 rounded-xl text-[10px] font-black tracking-widest border shadow-lg shadow-black/20 ${getStatusColor(booking.status)}`}>
+                            <div className={`px-2.5 py-1.5 rounded-xl text-[9px] font-black tracking-widest border shadow-lg shadow-black/20 flex-shrink-0 ${getStatusColor(booking.status)}`}>
                                 {booking.status}
                             </div>
                         </div>
@@ -891,15 +950,13 @@ const MechanicJobDetailScreen: React.FC = () => {
                             </div>
 
                             {booking.gcashReceiptUrl && (
-                                <a 
-                                    href={booking.gcashReceiptUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                <button 
+                                    onClick={() => setShowReceiptModal(true)}
                                     className="flex items-center justify-center gap-3 w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-xl py-4 text-xs font-black tracking-widest leading-none transition-all group"
                                 >
                                     <Eye size={16} className="group-hover:scale-110 transition-transform" />
                                     View GCash Receipt
-                                </a>
+                                </button>
                             )}
 
                             {booking.paymentStatus === 'partial' && booking.gcashPaymentStatus === 'balance_receipt_uploaded' && (
@@ -970,7 +1027,7 @@ const MechanicJobDetailScreen: React.FC = () => {
 
                             <div className="flex flex-col">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-lg font-black text-white tracking-tight leading-none">
+                                    <h3 className="text-[12px] font-black text-white tracking-tight leading-none">
                                         {customer?.name || booking.customerName || 'Customer'}
                                     </h3>
                                 </div>
@@ -986,16 +1043,16 @@ const MechanicJobDetailScreen: React.FC = () => {
 
                         {/* Tactical Action Bar */}
                         <div className="flex flex-col gap-2">
-                            {customer?.id && (
+                            {customer && (
                                 <Tooltip content="Call Customer">
-                                    <div className="flex items-center gap-1.5 px-3 py-2 bg-green-500/10 hover:bg-green-500 text-green-400 hover:text-white rounded-xl border border-green-500/20 hover:border-green-500 transition-all active:scale-95 shadow-md">
-                                        <CallButton targetId={customer.id} targetRole="customer" targetName={customer.name || 'Customer'} targetImage={customer.picture} size="sm" className="!w-5 !h-5 !bg-transparent !border-0 !p-0 !text-inherit" />
-                                        {customer?.phone && (
-                                            <a href={`tel:${customer.phone}`} className="flex items-center gap-1">
-                                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Call</span>
-                                            </a>
-                                        )}
-                                    </div>
+                                    <button
+                                        onClick={handleCall}
+                                        disabled={callStatus !== 'idle'}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-green-500/10 hover:bg-green-500 text-green-400 hover:text-white rounded-xl border border-green-500/20 hover:border-green-500 transition-all active:scale-95 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <Phone size={14} className="stroke-[2.5] shrink-0" />
+                                        <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Call</span>
+                                    </button>
                                 </Tooltip>
                             )}
                             <Tooltip content="Live Chat">
@@ -1048,12 +1105,12 @@ const MechanicJobDetailScreen: React.FC = () => {
                             <div className="bg-black/35 p-3 rounded-2xl border border-white/5">
                                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-wider mb-1">Service Location</p>
                                 <p className="text-gray-300 font-semibold leading-relaxed mb-2">
-                                    {customer?.address || booking?.location?.address || 'No address specified'}
+                                    {booking?.location?.address || customer?.address || 'No address specified'}
                                 </p>
-                                {customer?.lat != null && customer?.lng != null && (
+                                {(booking.location?.lat || customer?.lat) != null && (booking.location?.lng || customer?.lng) != null && (
                                     <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold tracking-wide mt-1">
                                         <Info size={11} className="text-primary" />
-                                        <span>Coordinates: {(customer.lat || 0).toFixed(6)}, {(customer.lng || 0).toFixed(6)}</span>
+                                        <span>Coordinates: {(booking.location?.lat || customer?.lat || 0).toFixed(6)}, {(booking.location?.lng || customer?.lng || 0).toFixed(6)}</span>
                                         <span className="ml-auto text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded font-black text-[8px] uppercase animate-pulse">
                                             Live Tracker Enabled
                                         </span>
@@ -1082,8 +1139,8 @@ const MechanicJobDetailScreen: React.FC = () => {
                         Vehicle Information
                     </h2>
 
-                    <div className="flex items-start gap-4 mb-4">
-                        <div className="w-32 h-24 rounded-xl bg-gradient-to-br from-white/5 to-white/10 border-2 border-white/20 overflow-hidden relative flex-shrink-0 group shadow-lg">
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="w-16 h-16 rounded-full bg-[#151515] border-2 border-white/10 overflow-hidden relative flex-shrink-0 group shadow-lg">
                             {(() => {
                                 // Real-time vehicle image from customer garage
                                 const vehicleImage =
@@ -1135,7 +1192,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                             })()}
                         </div>
                         <div>
-                            <h3 className="text-lg font-bold text-white leading-tight">
+                            <h3 className="text-[12px] font-bold text-white leading-tight">
                                 {booking.vehicle?.year || booking.year || ''} {booking.vehicle?.make || booking.make || ''} {booking.vehicle?.model || booking.model || 'Unknown Vehicle'}
                             </h3>
                             <div className="flex items-center gap-1.5 mt-1.5">
@@ -1193,67 +1250,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* PIN LOCATION - Interactive Google Maps Button */}
-                        <button
-                            onClick={handleDirectNavigation}
-                            disabled={!(customer?.lat && customer?.lng) && !(booking.location?.lat && booking.location?.lng) && !booking.location?.address}
-                            className="w-32 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] rounded-xl border-2 border-primary/30 relative overflow-hidden flex-shrink-0 group cursor-pointer hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:border-white/10"
-                            title={(customer?.lat && customer?.lng) || (booking.location?.lat && booking.location?.lng) ? "Open in Google Maps" : "Location not available"}
-                        >
-                            {(customer?.lat && customer?.lng) || (booking.location?.lat && booking.location?.lng) ? (
-                                <>
-                                    {/* Interactive Mini Map */}
-                                    <MiniMap
-                                        lat={customer?.lat || booking.location?.lat}
-                                        lng={customer?.lng || booking.location?.lng}
-                                    />
 
-                                    {/* Gradient Overlay */}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
-
-                                    {/* Content */}
-                                    <div className="relative h-full flex flex-col items-center justify-center p-3 py-4">
-                                        {/* Animated Pin Icon */}
-                                        <div className="relative mb-2">
-                                            <MapPin size={28} className="text-primary drop-shadow-[0_2px_8px_rgba(249,115,22,0.6)] animate-bounce" />
-                                            <div className="absolute inset-0 bg-primary/30 blur-xl animate-pulse"></div>
-                                        </div>
-
-                                        {/* Label */}
-                                        <span className="text-[10px] font-black text-center leading-tight text-white  tracking-wider drop-shadow-lg">
-                                            PIN<br />LOCATION
-                                        </span>
-
-                                        {/* Status Badge */}
-                                        <div className="mt-1.5 px-2 py-0.5 bg-green-500/20 border border-green-500/30 rounded-full">
-                                        <span className="text-[7px] font-bold text-green-400  tracking-wide">
-                                                {customer?.lat ? 'LIVE' : 'ACTIVE'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    {/* Default Map Background */}
-                                    <div 
-                                        className="absolute inset-0 bg-cover bg-center opacity-20"
-                                        style={{ 
-                                            backgroundImage: "url('https://api.mapbox.com/styles/v1/mapbox/dark-v10/static/121.05,14.58,12,0/260x200?access_token=" + 
-                                                "pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ." + 
-                                                "0_vEybvOf6uclH6S3S3XJA')" 
-                                        }}
-                                    ></div>
-
-                                    {/* Content */}
-                                    <div className="relative h-full flex flex-col items-center justify-center p-3 py-4">
-                                        <MapPin size={24} className="text-gray-500 mb-2" />
-                                        <span className="text-[9px] font-bold text-center leading-tight text-gray-500  tracking-wide">
-                                            Location<br />Unavailable
-                                        </span>
-                                    </div>
-                                </>
-                            )}
-                        </button>
                     </div>
                 </div>
 
@@ -1261,7 +1258,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                 <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5 flex flex-col h-full min-h-[300px]">
                     <h2 className="text-[10px] font-bold  tracking-widest text-gray-500 mb-4 flex items-center gap-2">
                         <Clock size={14} />
-                        Job Timeline
+                        Job Timeline {booking.date ? `• ${booking.date}` : ''}
                     </h2>
 
                     <div className="flex gap-4 flex-grow">
@@ -1280,6 +1277,11 @@ const MechanicJobDetailScreen: React.FC = () => {
                                             <p className={`text-[10px] font-bold leading-tight ${isCurrent ? 'text-primary' : isCompleted ? 'text-white' : 'text-gray-600'}`}>
                                                 {step.label}
                                             </p>
+                                            {step.time && (
+                                                <p className="text-[8px] text-gray-500 font-medium mt-0.5">
+                                                    {step.time}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -1288,11 +1290,19 @@ const MechanicJobDetailScreen: React.FC = () => {
 
                         {/* Actions Grid */}
                         <div className="flex-1 flex flex-col gap-2">
-                            <button onClick={() => setShowChatModal(true)} className="w-full bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex items-center justify-center gap-2 py-3 text-primary transition-all">
+                            <button 
+                                onClick={handleDirectNavigation}
+                                disabled={!(booking.location?.lat && booking.location?.lng) && !(customer?.lat && customer?.lng) && !(booking.location?.address || customer?.address)}
+                                className="w-full bg-red-500 hover:bg-red-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed border-0"
+                            >
+                                <MapPin size={16} />
+                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Pin Location</span>
+                            </button>
+                            <button onClick={() => setShowChatModal(true)} className="w-full bg-blue-500 hover:bg-blue-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-blue-500/20 transition-all border-0">
                                 <MessageSquare size={16} />
                                 <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Live Chat</span>
                             </button>
-                            <button onClick={handleCall} className="w-full bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 flex items-center justify-center gap-2 py-3 text-primary transition-all">
+                            <button onClick={handleCall} className="w-full bg-green-500 hover:bg-green-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-green-500/20 transition-all border-0">
                                 <Phone size={16} />
                                 <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Call</span>
                             </button>
@@ -1324,23 +1334,19 @@ const MechanicJobDetailScreen: React.FC = () => {
                                     }
                                 }}
                                 disabled={isLoading || booking.status === 'Completed' || booking.status === 'In Progress'}
-                                className="w-full bg-primary hover:bg-orange-600 rounded-xl flex flex-row items-center justify-center gap-3 shadow-lg shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed min-h-[60px] p-2"
+                                className="w-full bg-primary hover:bg-orange-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed border-0"
                             >
                                 {isLoading ? <Spinner size="sm" color="text-white" /> : (
                                     <>
-                                        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                                            <CheckCircle size={16} className="text-white" />
-                                        </div>
-                                        <div className="flex flex-col items-start leading-none">
-                                            <span className="text-xs font-black tracking-wider text-left whitespace-nowrap">
-                                                {(booking.status === 'Upcoming' || booking.status === 'Booking Confirmed') && 'Accept Job'}
-                                                {booking.status === 'Mechanic Assigned' && 'Start Travel'}
-                                                {booking.status === 'En Route' && 'Arrived'}
-                                                {booking.status === 'In Progress' && 'Complete Job'}
-                                                {booking.status === 'Completed' && 'Completed'}
-                                                {!['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(booking.status) && 'Update Status'}
-                                            </span>
-                                        </div>
+                                        <CheckCircle size={16} className="text-white" />
+                                        <span className="text-[10px] font-black tracking-wider whitespace-nowrap">
+                                            {(booking.status === 'Upcoming' || booking.status === 'Booking Confirmed') && 'Accept Job'}
+                                            {booking.status === 'Mechanic Assigned' && 'Start Travel'}
+                                            {booking.status === 'En Route' && 'Arrived'}
+                                            {booking.status === 'In Progress' && 'Complete Job'}
+                                            {booking.status === 'Completed' && 'Completed'}
+                                            {!['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(booking.status) && 'Update Status'}
+                                        </span>
                                     </>
                                 )}
                             </button>
@@ -1352,25 +1358,25 @@ const MechanicJobDetailScreen: React.FC = () => {
                         <button
                             onClick={() => setShowProgressModal(true)}
                             disabled={booking.status !== 'In Progress'}
-                            className="bg-[#1E1E1E] border border-white/10 hover:bg-[#252525] text-gray-300 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="bg-[#26262F] hover:bg-[#32323D] text-white py-3 rounded-xl text-[9px] font-black tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
-                            <FileText size={14} />
+                            <FileText size={14} className="text-blue-400" />
                             Progress
                         </button>
                         <button
                             onClick={() => setShowAdditionalCostsModal(true)}
                             disabled={booking.status !== 'In Progress'}
-                            className="bg-[#1E1E1E] border border-white/10 hover:bg-[#252525] text-gray-300 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="bg-[#26262F] hover:bg-[#32323D] text-white py-3 rounded-xl text-[9px] font-black tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
-                            <DollarSign size={14} />
+                            <DollarSign size={14} className="text-primary" />
                             Costs
                         </button>
                         <button
                             onClick={() => setShowETAModal(true)}
                             disabled={['In Progress', 'Completed', 'Cancelled'].includes(booking.status)}
-                            className="bg-[#1E1E1E] border border-white/10 hover:bg-[#252525] text-gray-300 hover:text-white py-3 rounded-xl text-[9px] font-bold  tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="bg-[#26262F] hover:bg-[#32323D] text-white py-3 rounded-xl text-[9px] font-black tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
-                            <Timer size={14} />
+                            <Timer size={14} className="text-emerald-400" />
                             ETA
                         </button>
                     </div>
@@ -1405,6 +1411,200 @@ const MechanicJobDetailScreen: React.FC = () => {
                     customer={customer}
                     onClose={() => setShowDirectionsModal(false)}
                 />
+            )}
+
+            {showReceiptModal && (booking.gcashReceiptUrl || booking.gcashDownpaymentReceiptUrl || booking.gcashBalanceReceiptUrl) && (
+                <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-[#15151A]/95 border border-white/10 rounded-3xl p-5 max-w-md w-full space-y-4 shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh] backdrop-blur-xl">
+                        
+                        {/* Orange decorative glow background */}
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-[50px] rounded-full translate-x-10 -translate-y-10"></div>
+                        
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-white/5 pb-3 relative z-10">
+                            <h3 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+                                <span className="w-1.5 h-3.5 bg-primary rounded-full animate-pulse" />
+                                GCash Receipt Details
+                            </h3>
+                            <button 
+                                onClick={() => setShowReceiptModal(false)}
+                                className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+                            >
+                                <X size={14} className="text-white/60 hover:text-white" />
+                            </button>
+                        </div>
+
+                        {/* Content Body (Scrollable) */}
+                        <div className="flex-1 overflow-y-auto space-y-4 pr-1 relative z-10 custom-scrollbar">
+                            
+                            {/* Calculation Details */}
+                            <div className="bg-white/5 rounded-2xl p-3.5 space-y-2.5 text-[11px]">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-400 font-bold">Booking ID</span>
+                                    <span className="text-white font-mono font-bold uppercase">{bookingSequenceId || booking.id.slice(-6).toUpperCase()}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-400 font-bold">Customer</span>
+                                    <span className="text-white font-bold">{customer?.name || booking.customerName}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-400 font-bold">Date & Time</span>
+                                    <span className="text-white font-bold">{booking.date} at {booking.time}</span>
+                                </div>
+
+                                <div className="h-px bg-white/5 my-2"></div>
+
+                                {(() => {
+                                    const originalServicesFee = booking.services && booking.services.length > 0
+                                        ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                                        : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+                                    const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
+                                    const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                                    const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                                    const totalBalanceToPay = serviceBalance + additionalCostsTotal;
+
+                                    return (
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-400 font-bold">Base Service Fee</span>
+                                                <span className="text-white font-bold">₱{originalServicesFee.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-400 font-bold">Downpayment (Paid)</span>
+                                                <span className="text-primary font-black">₱{paidDownpayment.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-400 font-bold">Service Balance</span>
+                                                <span className="text-white font-bold">₱{serviceBalance.toLocaleString()}</span>
+                                            </div>
+
+                                            {booking.additionalCosts && booking.additionalCosts.length > 0 && (
+                                                <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5">
+                                                    <span className="text-primary font-bold uppercase tracking-wider text-[9px] block font-mono">Additional Cost Details:</span>
+                                                    {booking.additionalCosts.map((cost: any, idx: number) => (
+                                                        <div key={idx} className="flex justify-between text-[10px]">
+                                                            <span className="text-gray-400 font-medium">• {cost.description}</span>
+                                                            <span className="text-white font-bold">₱{Number(cost.price).toLocaleString()}</span>
+                                                        </div>
+                                                    ))}
+                                                    <div className="flex justify-between font-bold text-[10px] pt-1">
+                                                        <span className="text-gray-400 font-mono">Additional Total</span>
+                                                        <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div className="h-px bg-white/10 my-2"></div>
+
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-white font-black uppercase">Grand Total Amount</span>
+                                                <span className="text-sm font-black text-emerald-400">₱{(originalServicesFee + additionalCostsTotal).toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-white font-black uppercase">Final Balance to Pay</span>
+                                                <span className="text-sm font-black text-emerald-400">₱{totalBalanceToPay.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* Reference Display */}
+                            {booking.gcashReference && (
+                                <div className="bg-white/5 rounded-2xl p-3.5 flex justify-between items-center text-xs font-mono">
+                                    <span className="text-gray-400 font-bold">Reference No.</span>
+                                    <span className="text-white font-black">{booking.gcashReference}</span>
+                                </div>
+                            )}
+
+                            {/* Tabs Header */}
+                            <div className="flex border-b border-white/10 mb-4">
+                                <button
+                                    onClick={() => setActiveReceiptTab('downpayment')}
+                                    className={`flex-1 pb-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 text-center ${
+                                        activeReceiptTab === 'downpayment'
+                                            ? 'border-primary text-primary font-black'
+                                            : 'border-transparent text-gray-500 hover:text-white'
+                                    }`}
+                                >
+                                    1st Payment
+                                </button>
+                                {booking.gcashBalanceReceiptUrl && (
+                                    <button
+                                        onClick={() => setActiveReceiptTab('balance')}
+                                        className={`flex-1 pb-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 text-center ${
+                                            activeReceiptTab === 'balance'
+                                                ? 'border-primary text-primary font-black'
+                                                : 'border-transparent text-gray-500 hover:text-white'
+                                        }`}
+                                    >
+                                        2nd Payment
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Tab Content */}
+                            {activeReceiptTab === 'downpayment' ? (
+                                <div className="space-y-2">
+                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">1st Payment / Downpayment Receipt</h4>
+                                    <div className="rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 p-2 flex items-center justify-center group relative min-h-[120px]">
+                                        <img
+                                            src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
+                                            alt="GCash Downpayment Receipt"
+                                            className="max-h-[220px] w-auto object-contain rounded-xl transition-all duration-300 group-hover:opacity-95"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = '/assets/receipt_mockup.png';
+                                            }}
+                                        />
+                                        <a
+                                            href={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 gap-1.5 text-white font-black text-[10px] tracking-widest uppercase font-mono"
+                                        >
+                                            <ExternalLink size={14} />
+                                            Open Full Size
+                                        </a>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <h4 className="text-[10px] font-bold text-primary uppercase tracking-widest font-mono">Final / Balance Payment Receipt</h4>
+                                    <div className="rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 p-2 flex items-center justify-center group relative min-h-[120px]">
+                                        <img
+                                            src={booking.gcashBalanceReceiptUrl}
+                                            alt="GCash Balance Receipt"
+                                            className="max-h-[220px] w-auto object-contain rounded-xl transition-all duration-300 group-hover:opacity-95"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = '/assets/receipt_mockup.png';
+                                            }}
+                                        />
+                                        <a
+                                            href={booking.gcashBalanceReceiptUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 gap-1.5 text-white font-black text-[10px] tracking-widest uppercase font-mono"
+                                        >
+                                            <ExternalLink size={14} />
+                                            Open Full Size
+                                        </a>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex gap-2 pt-2 border-t border-white/5 relative z-10">
+                            <button
+                                onClick={() => setShowReceiptModal(false)}
+                                className="w-full py-3.5 bg-primary hover:bg-orange-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-orange-950/20 text-xs"
+                            >
+                                Close Details
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
             )}
 
             {/* ETA Update Modal */}
@@ -1457,8 +1657,10 @@ const MechanicJobDetailScreen: React.FC = () => {
                             {/* Text Input Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-white font-bold text-sm mb-2 block">Before (Issue/Problem)</label>
+                                    <label htmlFor="job-before-issue" className="text-white font-bold text-sm mb-2 block">Before (Issue/Problem)</label>
                                     <textarea
+                                        id="job-before-issue"
+                                        name="job-before-issue"
                                         value={progressReport.before}
                                         onChange={(e) => setProgressReport({ ...progressReport, before: e.target.value })}
                                         className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white resize-none outline-none transition-all focus:border-white/20 text-sm"
@@ -1467,8 +1669,10 @@ const MechanicJobDetailScreen: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-white font-bold text-sm mb-2 block">After (Solution/Fix)</label>
+                                    <label htmlFor="job-after-fix" className="text-white font-bold text-sm mb-2 block">After (Solution/Fix)</label>
                                     <textarea
+                                        id="job-after-fix"
+                                        name="job-after-fix"
                                         value={progressReport.after}
                                         onChange={(e) => setProgressReport({ ...progressReport, after: e.target.value })}
                                         className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white resize-none outline-none transition-all focus:border-white/20 text-sm"
@@ -1555,8 +1759,10 @@ const MechanicJobDetailScreen: React.FC = () => {
 
                             {/* Notes - Full Width */}
                             <div>
-                                <label className="text-white font-bold text-sm mb-2 block">Additional Notes</label>
+                                <label htmlFor="job-notes" className="text-white font-bold text-sm mb-2 block">Additional Notes</label>
                                 <textarea
+                                    id="job-notes"
+                                    name="job-notes"
                                     value={progressReport.notes}
                                     onChange={(e) => setProgressReport({ ...progressReport, notes: e.target.value })}
                                     className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white resize-none outline-none transition-all focus:border-white/20 text-xs"
@@ -1632,315 +1838,401 @@ const MechanicJobDetailScreen: React.FC = () => {
 
 
             {/* Payment Reminder Modal - Shown when customer hasn't paid */}
-            {showPaymentReminderModal && (
-                <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-3 animate-fadeIn">
-                    <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] rounded-2xl p-4 max-w-sm w-full border-2 border-yellow-500/30 shadow-2xl shadow-yellow-500/10 animate-scaleUp">
-                        {booking.gcashPaymentStatus === 'awaiting_payment' ? (
-                            /* Awaiting Payment Screen */
-                            <div>
-                                {/* Header */}
-                                <div className="flex flex-col items-center text-center gap-3 mb-4">
-                                    <div className="w-16 h-16 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-full flex items-center justify-center relative">
-                                        <div className="absolute inset-0 bg-yellow-500/20 rounded-full animate-ping"></div>
-                                        <Clock size={32} className="text-yellow-400 animate-pulse" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-lg font-black text-white leading-tight">
-                                            Awaiting Final Payment
-                                        </h3>
-                                        <p className="text-gray-400 text-xs mt-1 leading-relaxed">
-                                            The payment request notification has been sent. Waiting for the customer to confirm and upload the remaining balance receipt. This screen updates in real-time.
-                                        </p>
-                                    </div>
-                                </div>
+            {showPaymentReminderModal && (() => {
+                const originalServicesFee = booking.services && booking.services.length > 0
+                    ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                    : (Number(booking.service?.price) || 0);
+                const paidDownpayment = Number(booking.paidAmount) || 0;
+                const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                const totalBalanceToPay = serviceBalance + additionalCostsTotal;
 
-                                {/* Pricing Breakdown */}
-                                <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-3 mb-4 space-y-1.5 text-xs">
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-400">Total Amount:</span>
-                                        <span className="text-white font-bold">{formatCurrency(booking.totalAmount || booking.service?.price || 0)}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-400">Paid Amount:</span>
-                                        <span className="text-green-400 font-bold">{formatCurrency(booking.paidAmount || 0)}</span>
-                                    </div>
-                                    <div className="flex justify-between pt-1.5 border-t border-yellow-500/20">
-                                        <span className="text-white font-bold">Remaining:</span>
-                                        <span className="text-yellow-400 font-black text-sm">
-                                            {formatCurrency((booking.totalAmount || booking.service?.price || 0) - (booking.paidAmount || 0))}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Close Button */}
-                                <button
-                                    onClick={() => setShowPaymentReminderModal(false)}
-                                    className="w-full bg-white/5 hover:bg-white/10 active:bg-white/15 text-white py-2.5 rounded-xl font-bold transition-all border border-white/10 text-xs tracking-wide"
-                                >
-                                    Close
-                                </button>
-                            </div>
-                        ) : booking.gcashPaymentStatus === 'balance_receipt_uploaded' ? (
-                            /* Verification Screen */
-                            <div>
-                                {/* Header */}
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className="w-10 h-10 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                                        <CheckCircle size={20} className="text-green-400" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-base font-black text-white leading-tight">
-                                            Verify Final Payment
-                                        </h3>
-                                        <p className="text-gray-400 text-xs">
-                                            The customer has uploaded the final payment receipt. Please review and verify to complete the job.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* GCash receipt preview image */}
-                                {booking.gcashReceiptUrl && (
-                                    <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40 p-2 mb-4">
-                                        <img
-                                            src={booking.gcashReceiptUrl}
-                                            alt="GCash Balance Receipt"
-                                            className="w-full h-auto max-h-48 object-contain cursor-pointer rounded-lg animate-fadeIn"
-                                            onClick={() => window.open(booking.gcashReceiptUrl, '_blank')}
-                                        />
-                                        <p className="text-[9px] text-gray-500 text-center mt-2 font-bold">Tap image to view in new tab</p>
-                                    </div>
-                                )}
-
-                                {/* Action Buttons */}
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setShowPaymentReminderModal(false)}
-                                        className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 text-white py-2.5 rounded-xl font-bold transition-all border border-white/10 text-xs tracking-wide"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={handleVerifyBalancePayment}
-                                        disabled={isLoading}
-                                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white py-2.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-500/20 text-xs tracking-wide flex items-center justify-center gap-1.5"
-                                    >
-                                        {isLoading ? (
-                                            <>
-                                                <Spinner size="sm" color="text-white" />
-                                                Verifying...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <CheckCircle size={13} />
-                                                Verify Balance Payment
-                                            </>
-                                        )}
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
-                            /* Default / Pre-notification Screen */
-                            <div>
-                                {/* Header */}
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className="w-10 h-10 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-full flex items-center justify-center flex-shrink-0 relative">
-                                        <div className="absolute inset-0 bg-yellow-500/20 rounded-full animate-ping"></div>
-                                        <AlertCircle size={20} className="text-yellow-400 relative z-10" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-base font-black text-white leading-tight">
-                                            {booking.paymentMethod === 'GCash' ? 'GCash Verification' : 'Payment Required'}
-                                        </h3>
-                                        <p className="text-gray-400 text-xs">
-                                            {booking.paymentMethod === 'GCash' ? 'Please verify the GCash receipt' : 'Customer must complete payment first'}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Payment Status */}
-                                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
-                                    <div className="flex items-start gap-2">
-                                        <DollarSign className="text-yellow-400 flex-shrink-0 mt-0.5" size={15} />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-yellow-400 font-bold text-xs mb-1.5">Payment Status ({booking.paymentMethod || 'Cash'})</p>
-                                            <div className="space-y-1 text-xs">
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-400">Total Amount:</span>
-                                                    <span className="text-white font-bold">{formatCurrency(booking.totalAmount || booking.service?.price || 0)}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-gray-400">{booking.paymentMethod === 'GCash' ? 'Paid via GCash:' : 'Paid (Deposit):'}</span>
-                                                    <span className="text-green-400 font-bold">{formatCurrency(booking.paidAmount || 0)}</span>
-                                                </div>
-                                                {booking.paymentMethod === 'GCash' && booking.gcashReference && (
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-400">GCash Ref:</span>
-                                                        <span className="text-white font-mono font-bold truncate max-w-[120px]">{booking.gcashReference}</span>
-                                                    </div>
-                                                )}
-                                                <div className="flex justify-between pt-1.5 border-t border-yellow-500/20">
-                                                    <span className="text-white font-bold">Remaining:</span>
-                                                    <span className="text-yellow-400 font-black text-sm">
-                                                        {formatCurrency((booking.totalAmount || booking.service?.price || 0) - (booking.paidAmount || 0))}
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            {booking.paymentMethod === 'GCash' && booking.gcashReceiptUrl && (
-                                                <div className="mt-2 rounded-lg border border-white/10 overflow-hidden bg-black/40">
-                                                    <img
-                                                        src={booking.gcashReceiptUrl}
-                                                        alt="GCash Receipt"
-                                                        className="w-full h-auto max-h-28 object-contain cursor-pointer"
-                                                        onClick={() => window.open(booking.gcashReceiptUrl, '_blank')}
-                                                    />
-                                                    <p className="text-[8px] text-gray-500 text-center py-0.5 font-bold bg-black/60">Tap to enlarge receipt</p>
-                                                </div>
-                                            )}
+                return (
+                    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-3 animate-fadeIn">
+                        <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] rounded-2xl p-4 max-w-sm w-full border-2 border-yellow-500/30 shadow-2xl shadow-yellow-500/10 animate-scaleUp">
+                            {booking.gcashPaymentStatus === 'awaiting_payment' ? (
+                                /* Awaiting Payment Screen */
+                                <div>
+                                    {/* Header */}
+                                    <div className="flex flex-col items-center text-center gap-3 mb-4">
+                                        <div className="w-16 h-16 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-full flex items-center justify-center relative">
+                                            <div className="absolute inset-0 bg-yellow-500/20 rounded-full animate-ping"></div>
+                                            <Clock size={32} className="text-yellow-400 animate-pulse" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-lg font-black text-white leading-tight">
+                                                Awaiting Final Payment
+                                            </h3>
+                                            <p className="text-gray-400 text-xs mt-1 leading-relaxed">
+                                                The payment request notification has been sent. Waiting for the customer to confirm and upload the remaining balance receipt. This screen updates in real-time.
+                                            </p>
                                         </div>
                                     </div>
-                                </div>
 
-                                {/* Info Message */}
-                                <div className="bg-white/5 rounded-lg p-2.5 mb-3">
-                                    <p className="text-gray-300 text-[11px] leading-relaxed">
-                                        The customer needs to pay the <strong className="text-white">remaining balance</strong> before you can mark this booking as completed.
-                                        You can send a payment reminder notification to the customer.
-                                    </p>
-                                </div>
+                                    {/* Pricing Breakdown */}
+                                    <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-3 mb-4 space-y-1.5 text-xs">
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-400">Total Services Fee:</span>
+                                            <span className="text-white font-bold">{formatCurrency(originalServicesFee)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-400">Paid Downpayment (50%):</span>
+                                            <span className="text-green-400 font-bold">-{formatCurrency(paidDownpayment)}</span>
+                                        </div>
+                                        <div className="flex justify-between pt-1 border-t border-white/5">
+                                            <span className="text-gray-400 font-bold">Service Balance:</span>
+                                            <span className="text-white font-bold">{formatCurrency(serviceBalance)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-400">Additional Costs:</span>
+                                            <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
+                                        </div>
+                                        <div className="flex justify-between pt-1.5 border-t border-yellow-500/20">
+                                            <span className="text-white font-bold">Remaining Balance:</span>
+                                            <span className="text-yellow-400 font-black text-sm">
+                                                {formatCurrency(totalBalanceToPay)}
+                                            </span>
+                                        </div>
+                                    </div>
 
-                                {/* Action Buttons */}
-                                <div className="flex gap-2">
+                                    {/* Close Button */}
                                     <button
                                         onClick={() => setShowPaymentReminderModal(false)}
-                                        className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 text-white py-2.5 rounded-xl font-bold transition-all border border-white/10 text-xs tracking-wide"
+                                        className="w-full bg-white/5 hover:bg-white/10 active:bg-white/15 text-white py-2.5 rounded-xl font-bold transition-all border border-white/10 text-xs tracking-wide"
                                     >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            handleSendPaymentReminder();
-                                        }}
-                                        disabled={isLoading}
-                                        className="flex-1 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white py-2.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-yellow-500/20 text-xs tracking-wide flex items-center justify-center gap-1.5"
-                                    >
-                                        {isLoading ? (
-                                            <>
-                                                <Spinner size="sm" color="text-white" />
-                                                Sending...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Bell size={13} />
-                                                Notify Customer
-                                            </>
-                                        )}
+                                        Close
                                     </button>
                                 </div>
-                            </div>
-                        )}
+                            ) : booking.gcashPaymentStatus === 'balance_receipt_uploaded' ? (
+                                /* Verification Screen */
+                                <div>
+                                    {/* Header */}
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-10 h-10 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                                            <CheckCircle size={20} className="text-green-400" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black text-white leading-tight">
+                                                Verify Final Payment
+                                            </h3>
+                                            <p className="text-gray-400 text-xs">
+                                                The customer has uploaded the final payment receipt. Please review and verify to complete the job.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Pricing Breakdown */}
+                                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 mb-3 space-y-1.5 text-xs">
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-400">Total Services Fee:</span>
+                                            <span className="text-white font-bold">{formatCurrency(originalServicesFee)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-400">Paid Downpayment (50%):</span>
+                                            <span className="text-green-400 font-bold">-{formatCurrency(paidDownpayment)}</span>
+                                        </div>
+                                        <div className="flex justify-between pt-1 border-t border-white/5">
+                                            <span className="text-gray-400 font-bold">Service Balance:</span>
+                                            <span className="text-white font-bold">{formatCurrency(serviceBalance)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-400">Additional Costs:</span>
+                                            <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
+                                        </div>
+                                        <div className="flex justify-between pt-1.5 border-t border-white/10">
+                                            <span className="text-white font-bold">Remaining Balance:</span>
+                                            <span className="text-green-400 font-black text-sm">
+                                                {formatCurrency(totalBalanceToPay)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* GCash receipt preview image */}
+                                    {booking.gcashReceiptUrl && (
+                                        <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40 p-2 mb-4">
+                                            <img
+                                                src={booking.gcashReceiptUrl}
+                                                alt="GCash Balance Receipt"
+                                                className="w-full h-auto max-h-48 object-contain cursor-pointer rounded-lg animate-fadeIn"
+                                                onClick={() => window.open(booking.gcashReceiptUrl, '_blank')}
+                                            />
+                                            <p className="text-[9px] text-gray-500 text-center mt-2 font-bold">Tap image to view in new tab</p>
+                                        </div>
+                                    )}
+
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setShowPaymentReminderModal(false)}
+                                            className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 text-white py-2.5 rounded-xl font-bold transition-all border border-white/10 text-xs tracking-wide"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleVerifyBalancePayment}
+                                            disabled={isLoading}
+                                            className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white py-2.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-500/20 text-xs tracking-wide flex items-center justify-center gap-1.5"
+                                        >
+                                            {isLoading ? (
+                                                <>
+                                                    <Spinner size="sm" color="text-white" />
+                                                    Verifying...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CheckCircle size={13} />
+                                                    Verify Balance Payment
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Default / Pre-notification Screen */
+                                <div>
+                                    {/* Header */}
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-10 h-10 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 rounded-full flex items-center justify-center flex-shrink-0 relative">
+                                            <div className="absolute inset-0 bg-yellow-500/20 rounded-full animate-ping"></div>
+                                            <AlertCircle size={20} className="text-yellow-400 relative z-10" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black text-white leading-tight">
+                                                {booking.paymentMethod === 'GCash' ? 'GCash Verification' : 'Payment Required'}
+                                            </h3>
+                                            <p className="text-gray-400 text-xs">
+                                                {booking.paymentMethod === 'GCash' ? 'Please verify the GCash receipt' : 'Customer must complete payment first'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Payment Status */}
+                                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
+                                        <div className="flex items-start gap-2">
+                                            <DollarSign className="text-yellow-400 flex-shrink-0 mt-0.5" size={15} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-yellow-400 font-bold text-xs mb-1.5 font-mono">Payment Status ({booking.paymentMethod || 'Cash'})</p>
+                                                <div className="space-y-1 text-xs">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-400">Total Services Fee:</span>
+                                                        <span className="text-white font-bold">{formatCurrency(originalServicesFee)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-400">Paid Downpayment (50%):</span>
+                                                        <span className="text-green-400 font-bold">-{formatCurrency(paidDownpayment)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between pt-1 border-t border-yellow-500/20">
+                                                        <span className="text-gray-400 font-bold">Service Balance:</span>
+                                                        <span className="text-white font-bold">{formatCurrency(serviceBalance)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-gray-400">Additional Costs:</span>
+                                                        <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
+                                                    </div>
+                                                    {booking.paymentMethod === 'GCash' && booking.gcashReference && (
+                                                        <div className="flex justify-between">
+                                                            <span className="text-gray-400 font-medium">GCash Ref:</span>
+                                                            <span className="text-white font-mono font-bold truncate max-w-[120px]">{booking.gcashReference}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between pt-1.5 border-t border-yellow-500/20">
+                                                        <span className="text-white font-bold">Remaining Balance:</span>
+                                                        <span className="text-yellow-400 font-black text-sm">
+                                                            {formatCurrency(totalBalanceToPay)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {booking.paymentMethod === 'GCash' && booking.gcashReceiptUrl && (
+                                                    <div className="mt-2 rounded-lg border border-white/10 overflow-hidden bg-black/40">
+                                                        <img
+                                                            src={booking.gcashReceiptUrl}
+                                                            alt="GCash Receipt"
+                                                            className="w-full h-auto max-h-28 object-contain cursor-pointer"
+                                                            onClick={() => window.open(booking.gcashReceiptUrl, '_blank')}
+                                                        />
+                                                        <p className="text-[8px] text-gray-500 text-center py-0.5 font-bold bg-black/60">Tap to enlarge receipt</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Info Message */}
+                                    <div className="bg-white/5 rounded-lg p-2.5 mb-3">
+                                        <p className="text-gray-300 text-[11px] leading-relaxed">
+                                            The customer needs to pay the <strong className="text-white">remaining balance</strong> before you can mark this booking as completed.
+                                            You can send a payment reminder notification to the customer.
+                                        </p>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setShowPaymentReminderModal(false)}
+                                            className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 text-white py-2.5 rounded-xl font-bold transition-all border border-white/10 text-xs tracking-wide"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                handleSendPaymentReminder();
+                                            }}
+                                            disabled={isLoading}
+                                            className="flex-1 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white py-2.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-yellow-500/20 text-xs tracking-wide flex items-center justify-center gap-1.5"
+                                        >
+                                            {isLoading ? (
+                                                <>
+                                                    <Spinner size="sm" color="text-white" />
+                                                    Sending...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Bell size={13} />
+                                                    Notify Customer
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
 
             {/* Additional Costs Modal */}
-            {showAdditionalCostsModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-md w-full border border-white/10 shadow-2xl animate-scaleUp">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                <DollarSign className="text-primary" />
-                                Additional Costs
-                            </h3>
-                            <button 
-                                onClick={() => setShowAdditionalCostsModal(false)}
-                                className="text-gray-400 hover:text-white"
-                            >
-                                <X size={24} />
-                            </button>
-                        </div>
+            {showAdditionalCostsModal && (() => {
+                const originalServicesFee = booking.services && booking.services.length > 0
+                    ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                    : (Number(booking.service?.price) || 0);
+                const paidDownpayment = Number(booking.paidAmount) || 0;
+                const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                const totalBalanceToPay = serviceBalance + additionalCostsTotal;
 
-                        {/* Add New Cost Form */}
-                        <div className="space-y-4 mb-6 bg-black/30 p-4 rounded-xl border border-white/5">
-                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Add New Item</h4>
-                            <div className="space-y-3">
-                                <input
-                                    type="text"
-                                    placeholder="Item description (e.g., Brake Pads)"
-                                    value={newCostDescription}
-                                    onChange={(e) => setNewCostDescription(e.target.value)}
-                                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-primary/50 transition-all"
-                                />
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">₱</span>
-                                        <input
-                                            type="number"
-                                            placeholder="Price"
-                                            value={newCostPrice}
-                                            onChange={(e) => setNewCostPrice(e.target.value)}
-                                            className="w-full bg-black/50 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-white text-sm outline-none focus:border-primary/50 transition-all"
-                                        />
-                                    </div>
-                                    <button
-                                        onClick={handleAddCost}
-                                        disabled={isLoading || !newCostDescription || !newCostPrice}
-                                        className="bg-primary hover:bg-orange-600 text-white px-6 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center"
-                                    >
-                                        Add
-                                    </button>
-                                </div>
+                return (
+                    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-[100] flex items-center justify-center p-3 animate-fadeIn">
+                        <div className="bg-[#15151A]/95 rounded-2xl p-4 max-w-sm w-full border border-white/10 shadow-2xl animate-scaleUp backdrop-blur-xl">
+                            <div className="flex items-center justify-between mb-3.5">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-1.5">
+                                    <DollarSign size={18} className="text-primary" />
+                                    Additional Costs
+                                </h3>
+                                <button 
+                                    onClick={() => setShowAdditionalCostsModal(false)}
+                                    className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-1.5 rounded-lg transition-all"
+                                >
+                                    <X size={16} />
+                                </button>
                             </div>
-                        </div>
 
-                        {/* Costs List */}
-                        <div className="space-y-3 max-h-60 overflow-y-auto mb-6 pr-2 custom-scrollbar">
-                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Itemized List</h4>
-                            <div className="flex justify-between items-center text-xs py-2 px-3 bg-white/5 rounded-lg border border-white/5">
-                                <span className="text-gray-400">Base Service Fee</span>
-                                <span className="text-white font-bold">{formatCurrency(booking.service?.price || 0)}</span>
-                            </div>
-                            
-                            {booking.additionalCosts && booking.additionalCosts.length > 0 ? (
-                                booking.additionalCosts.map((cost: any) => (
-                                    <div key={cost.id} className="flex justify-between items-center text-sm py-2 px-3 bg-black/20 rounded-lg group border border-white/5">
-                                        <div className="flex flex-col">
-                                            <span className="text-white font-medium">{cost.description}</span>
-                                            <span className="text-primary font-bold text-xs">{formatCurrency(cost.price)}</span>
+                            {/* Add New Cost Form */}
+                            <div className="space-y-2 mb-3.5 bg-white/[0.02] p-3 rounded-xl border border-white/5">
+                                <h4 className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Add New Item</h4>
+                                <div className="space-y-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Item description (e.g., Brake Pads)"
+                                        value={newCostDescription}
+                                        onChange={(e) => setNewCostDescription(e.target.value)}
+                                        className="w-full h-9 bg-black/40 border border-white/10 rounded-lg px-3 text-xs text-white outline-none focus:border-primary/50 transition-all font-medium"
+                                    />
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">₱</span>
+                                            <input
+                                                type="number"
+                                                placeholder="Price"
+                                                value={newCostPrice}
+                                                onChange={(e) => setNewCostPrice(e.target.value)}
+                                                className="w-full h-9 bg-black/40 border border-white/10 rounded-lg pl-6 pr-3 text-xs text-white outline-none focus:border-primary/50 transition-all font-bold"
+                                            />
                                         </div>
                                         <button
-                                            onClick={() => handleRemoveCost(cost.id)}
-                                            className="text-red-500 p-2 hover:bg-red-500/10 rounded-lg transition-all"
+                                            onClick={handleAddCost}
+                                            disabled={isLoading || !newCostDescription || !newCostPrice}
+                                            className="bg-primary hover:bg-orange-600 text-white px-5 h-9 rounded-lg font-bold text-xs transition-all disabled:opacity-50 flex items-center justify-center shadow-lg shadow-primary/10"
                                         >
-                                            <X size={16} />
+                                            Add
                                         </button>
                                     </div>
-                                ))
-                            ) : (
-                                <p className="text-center text-gray-600 text-xs py-4">No additional costs added yet.</p>
-                            )}
-                        </div>
-
-                        {/* Summary */}
-                        <div className="border-t border-white/10 pt-4 mb-6">
-                            <div className="flex justify-between items-center">
-                                <span className="text-white font-bold">Total Job Cost</span>
-                                <span className="text-green-400 font-black text-2xl">
-                                    {formatCurrency(booking.totalAmount || booking.service?.price || 0)}
-                                </span>
+                                </div>
                             </div>
-                        </div>
 
-                        <button
-                            onClick={() => setShowAdditionalCostsModal(false)}
-                            className="w-full bg-white/5 hover:bg-white/10 text-white py-4 rounded-xl font-bold transition-all border border-white/10"
-                        >
-                            Done
-                        </button>
+                            {/* Costs List */}
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto mb-3.5 pr-1 custom-scrollbar">
+                                <h4 className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1">Itemized List</h4>
+                                
+                                {booking.services && booking.services.length > 0 ? (
+                                    booking.services.map((svc: any, idx: number) => (
+                                        <div key={svc.id || idx} className="flex justify-between items-center text-[11px] py-1.5 px-2.5 bg-white/5 rounded-lg border border-white/5">
+                                            <span className="text-gray-400 font-medium">{svc.name}</span>
+                                            <span className="text-white font-bold">{formatCurrency(svc.price || 0)}</span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="flex justify-between items-center text-[11px] py-1.5 px-2.5 bg-white/5 rounded-lg border border-white/5">
+                                        <span className="text-gray-400 font-medium">{booking.service?.name || 'Base Service Fee'}</span>
+                                        <span className="text-white font-bold">{formatCurrency(booking.service?.price || 0)}</span>
+                                    </div>
+                                )}
+                                
+                                {booking.additionalCosts && booking.additionalCosts.length > 0 ? (
+                                    booking.additionalCosts.map((cost: any) => (
+                                        <div key={cost.id} className="flex justify-between items-center text-xs py-1.5 px-2.5 bg-black/35 rounded-lg group border border-white/5">
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="text-white font-medium truncate text-xs">{cost.description}</span>
+                                                <span className="text-primary font-bold text-[10px]">{formatCurrency(cost.price)}</span>
+                                            </div>
+                                            <button
+                                                onClick={() => handleRemoveCost(cost.id)}
+                                                className="text-red-400 hover:text-red-500 p-1 hover:bg-red-500/10 rounded transition-all"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                    ))
+                                ) : null}
+                            </div>
+
+                            {/* Summary Calculation Breakdown */}
+                            <div className="border-t border-white/10 pt-2.5 mb-3.5 space-y-1.5">
+                                <div className="flex justify-between text-[11px]">
+                                    <span className="text-gray-400 font-medium">Total Services Fee</span>
+                                    <span className="text-white font-bold">{formatCurrency(originalServicesFee)}</span>
+                                </div>
+                                <div className="flex justify-between text-[11px]">
+                                    <span className="text-gray-400 font-medium">Paid Downpayment (50%)</span>
+                                    <span className="text-green-400 font-bold">-{formatCurrency(paidDownpayment)}</span>
+                                </div>
+                                <div className="flex justify-between text-[11px] border-t border-white/5 pt-1">
+                                    <span className="text-gray-400 font-bold">Service Balance</span>
+                                    <span className="text-white font-bold">{formatCurrency(serviceBalance)}</span>
+                                </div>
+                                <div className="flex justify-between text-[11px]">
+                                    <span className="text-gray-400 font-medium">Additional Costs</span>
+                                    <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
+                                </div>
+                                <div className="flex justify-between items-center border-t border-white/10 pt-2 mt-0.5">
+                                    <span className="text-white font-bold text-xs">Total Balance to Pay</span>
+                                    <span className="text-green-400 font-black text-xl">
+                                        {formatCurrency(totalBalanceToPay)}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => setShowAdditionalCostsModal(false)}
+                                className="w-full bg-primary hover:bg-orange-600 text-white py-2.5 rounded-xl font-bold transition-all text-xs shadow-md shadow-primary/10 border-0"
+                            >
+                                Done
+                            </button>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Custom Work Done Success celebration modal with confetti */}
             {showWorkDoneModal && (
@@ -2122,6 +2414,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                         <button
                             onClick={() => {
                                 setShowPaymentSuccessModal(false);
+                                navigate('/mechanic-portal/dashboard');
                             }}
                             className="w-full py-4 rounded-xl font-bold bg-[#FE7803] hover:bg-[#e06902] text-white transition-all shadow-lg shadow-orange-500/10 hover:shadow-orange-500/20 active:scale-[0.98]"
                         >

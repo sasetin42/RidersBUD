@@ -60,23 +60,23 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
     return (
         <form onSubmit={handleSubmit} className="space-y-4 text-gray-800">
             <div>
-                <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Part Name" className={`w-full p-2 bg-gray-100 border rounded ${errors.name ? 'border-red-500' : 'border-gray-300'}`} />
+                <input type="text" id="part-name" name="name" value={formData.name} onChange={handleChange} placeholder="Part Name" className={`w-full p-2 bg-gray-100 border rounded ${errors.name ? 'border-red-500' : 'border-gray-300'}`} />
                 {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
             </div>
             <div>
-                <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Description" className={`w-full p-2 bg-gray-100 border rounded ${errors.description ? 'border-red-500' : 'border-gray-300'}`} />
+                <textarea id="part-description" name="description" value={formData.description} onChange={handleChange} placeholder="Description" className={`w-full p-2 bg-gray-100 border rounded ${errors.description ? 'border-red-500' : 'border-gray-300'}`} />
                 {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description}</p>}
             </div>
             <div>
-                <input type="number" name="price" value={formData.price} onChange={handleChange} placeholder="Price" className={`w-full p-2 bg-gray-100 border rounded ${errors.price ? 'border-red-500' : 'border-gray-300'}`} />
+                <input type="number" id="part-price" name="price" value={formData.price} onChange={handleChange} placeholder="Price" className={`w-full p-2 bg-gray-100 border rounded ${errors.price ? 'border-red-500' : 'border-gray-300'}`} />
                 {errors.price && <p className="text-red-500 text-xs mt-1">{errors.price}</p>}
             </div>
             <div>
-                <input type="text" name="category" value={formData.category} onChange={handleChange} placeholder="Category" className={`w-full p-2 bg-gray-100 border rounded ${errors.category ? 'border-red-500' : 'border-gray-300'}`} />
+                <input type="text" id="part-category" name="category" value={formData.category} onChange={handleChange} placeholder="Category" className={`w-full p-2 bg-gray-100 border rounded ${errors.category ? 'border-red-500' : 'border-gray-300'}`} />
                 {errors.category && <p className="text-red-500 text-xs mt-1">{errors.category}</p>}
             </div>
             <div>
-                <input type="text" name="sku" value={formData.sku} onChange={handleChange} placeholder="SKU" className={`w-full p-2 bg-gray-100 border rounded ${errors.sku ? 'border-red-500' : 'border-gray-300'}`} />
+                <input type="text" id="part-sku" name="sku" value={formData.sku} onChange={handleChange} placeholder="SKU" className={`w-full p-2 bg-gray-100 border rounded ${errors.sku ? 'border-red-500' : 'border-gray-300'}`} />
                 {errors.sku && <p className="text-red-500 text-xs mt-1">{errors.sku}</p>}
             </div>
             <div className="flex justify-end gap-4 mt-6">

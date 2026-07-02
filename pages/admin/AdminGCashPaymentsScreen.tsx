@@ -592,7 +592,6 @@ const AdminGCashPaymentsScreen: React.FC = () => {
         setProcessing(true);
         try {
             await verifyBookingPayment(selectedBooking.id);
-            addNotification({ type: 'success', title: 'Payment Approved', message: `GCash deposit for ${selectedBooking.customerName} has been verified.`, recipientId: 'admin' });
             setSelectedBooking(null);
         } catch (e) {
             addNotification({ type: 'error', title: 'Approval Failed', message: (e as Error).message, recipientId: 'admin' });
@@ -605,7 +604,6 @@ const AdminGCashPaymentsScreen: React.FC = () => {
         setProcessing(true);
         try {
             await verifyBookingPayment(booking.id);
-            addNotification({ type: 'success', title: 'Payment Approved', message: `GCash deposit for ${booking.customerName} has been verified.`, recipientId: 'admin' });
             setLightboxBooking(null);
             setSelectedBooking(null);
         } catch (e) {
@@ -639,7 +637,6 @@ const AdminGCashPaymentsScreen: React.FC = () => {
                 link: '/customer-portal/booking-history'
             });
 
-            addNotification({ type: 'error', title: 'Payment Declined', message: `GCash receipt for ${selectedBooking.customerName} has been declined.`, recipientId: 'admin' });
             setShowDeclineModal(false);
             setSelectedBooking(null);
         } catch (e) {
@@ -652,18 +649,6 @@ const AdminGCashPaymentsScreen: React.FC = () => {
     const handleApproveStoreOrder = async (order: StoreOrder) => {
         setProcessing(true);
         try {
-            await updateBooking(order.id, {} as any);
-        } catch {}
-        try {
-            await (useDatabase() as any).updateOrderStatus?.(order.id, 'Processing');
-        } catch {}
-        try {
-            await (useDatabase() as any).addOrder?.({} as any);
-        } catch {}
-        try {
-            await (useDatabase() as any);
-        } catch {}
-        try {
             const { doc, updateDoc } = await import('firebase/firestore');
             const { db: firestore } = await import('../../firebase');
             await updateDoc(doc(firestore, 'orders', order.id), {
@@ -673,12 +658,6 @@ const AdminGCashPaymentsScreen: React.FC = () => {
                 paymentStatus: 'paid',
                 isPaid: true,
                 status: order.status === 'Pending' ? 'Processing' : (order.status || 'Processing')
-            });
-            addNotification({
-                type: 'success',
-                title: 'Store Payment Approved',
-                message: `GCash payment for ${order.customerName || 'Customer'} was approved.`,
-                recipientId: 'admin'
             });
             setSelectedOrder(null);
             setLightboxOrder(null);
@@ -709,12 +688,6 @@ const AdminGCashPaymentsScreen: React.FC = () => {
                 date: new Date().toISOString(),
                 read: false,
                 link: '/customer-portal/order-history'
-            });
-            addNotification({
-                type: 'error',
-                title: 'Store Payment Declined',
-                message: `GCash receipt for ${order.customerName || 'Customer'} was declined.`,
-                recipientId: 'admin'
             });
             setShowDeclineModal(false);
             setSelectedOrder(null);
@@ -975,7 +948,6 @@ const AdminGCashPaymentsScreen: React.FC = () => {
                                                                 setProcessing(true);
                                                                 try {
                                                                     await verifyBookingPayment(booking.id);
-                                                                    addNotification({ type: 'success', title: 'Payment Approved', message: `${booking.customerName} deposit verified.`, recipientId: 'admin' });
                                                                 } catch (e) {
                                                                     addNotification({ type: 'error', title: 'Error', message: (e as Error).message, recipientId: 'admin' });
                                                                 } finally {

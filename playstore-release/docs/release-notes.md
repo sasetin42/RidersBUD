@@ -1,10 +1,13 @@
-# Release Notes: RidersBUD v1.0.0 (Build 1)
+# RidersBUD Release Notes
 
-Welcome to the initial launch version of RidersBUD on Android!
+## Version 1.0.0 (Build 1)
+**Release Date**: June 20, 2026
 
-## What's New
-- **On-Demand Mechanic Booking**: Easily locate and book verified mobile mechanics based on real-time location.
-- **Live GCash Workflows & Tracking**: Safe balance payment reminders, GCash receipt uploads, and real-time verification processing.
-- **Online/Offline Availability Switch**: Real-time capsule status toggles for mechanics on the job dashboard.
-- **Rating & Reviews System**: Detailed ratings and quick feedback tag reviews for completed orders.
-- **Performance Optimization**: Fast, mobile-responsive layout built with React, Tailwind, and Capacitor.
+We are excited to present the production-ready release of **RidersBUD**, your companion app for riders and roadside assistance.
+
+### What's New
+- **Reliable Geolocation Tracking**: Completely overhauled location access flow. Fixed the redundant location blocker screen issue by adding robust high-accuracy/coarse-accuracy fallbacks and cache-recovery for Capacitor native wrappers.
+- **Real-Time Map updates**: Improved GPS accuracy and coordinate syncing for live location tracking.
+- **Offline Location Failbacks**: Automatically retrieves last-known location coordinates when network signal or indoor GPS is degraded.
+- **Signing & Security**: Built using the latest secure signing guidelines with Proguard minification enabled for optimal bundle size and reverse-engineering protection.
+- **Performance**: Optimized load times and UI transition responsiveness.

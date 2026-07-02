@@ -61,7 +61,7 @@ const SignUpScreen: React.FC = () => {
     }
 
     const { settings } = db;
-    const logoUrl = settings.authLogoUrl || "/riders-logo.png";
+    const logoUrl = settings.authLogoUrl || "";
 
     // Validation
     const validateCustomerField = (fieldName: string, value: any) => {
@@ -383,12 +383,13 @@ const SignUpScreen: React.FC = () => {
                                     <div className="space-y-4 animate-fadeIn">
                                         {/* Name */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Full Name</label>
+                                            <label htmlFor="customer-name" className="block text-sm font-medium text-gray-300">Full Name</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <User className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="customer-name"
                                                     type="text"
                                                     name="name"
                                                     placeholder="John Doe"
@@ -402,12 +403,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Email */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Email</label>
+                                            <label htmlFor="customer-email" className="block text-sm font-medium text-gray-300">Email</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <Mail className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="customer-email"
                                                     type="email"
                                                     name="email"
                                                     placeholder="you@example.com"
@@ -421,12 +423,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Phone */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Phone Number</label>
+                                            <label htmlFor="customer-phone" className="block text-sm font-medium text-gray-300">Phone Number</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <Phone className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="customer-phone"
                                                     type="tel"
                                                     name="phone"
                                                     placeholder="+1 (555) 000-0000"
@@ -440,12 +443,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Password */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Password</label>
+                                            <label htmlFor="customer-password" className="block text-sm font-medium text-gray-300">Password</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <Lock className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="customer-password"
                                                     type={showPassword ? "text" : "password"}
                                                     name="password"
                                                     placeholder="••••••••"
@@ -466,12 +470,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Confirm Password */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Confirm Password</label>
+                                            <label htmlFor="customer-confirm-password" className="block text-sm font-medium text-gray-300">Confirm Password</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <CheckCircle2 className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="customer-confirm-password"
                                                     type={showConfirmPassword ? "text" : "password"}
                                                     name="confirmPassword"
                                                     placeholder="••••••••"
@@ -499,8 +504,9 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Plate Number */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Plate Number</label>
+                                            <label htmlFor="customer-plate" className="block text-sm font-medium text-gray-300">Plate Number</label>
                                             <input
+                                                id="customer-plate"
                                                 type="text"
                                                 name="plateNumber"
                                                 placeholder="ABC-1234"
@@ -514,8 +520,9 @@ const SignUpScreen: React.FC = () => {
                                         <div className="grid grid-cols-2 gap-3">
                                             {/* Make */}
                                             <div className="space-y-2">
-                                                <label className="block text-sm font-medium text-gray-300">Brand / Make</label>
+                                                <label htmlFor="customer-brand" className="block text-sm font-medium text-gray-300">Brand / Make</label>
                                                 <input
+                                                    id="customer-brand"
                                                     type="text"
                                                     name="make"
                                                     placeholder="Honda"
@@ -528,8 +535,9 @@ const SignUpScreen: React.FC = () => {
 
                                             {/* Model */}
                                             <div className="space-y-2">
-                                                <label className="block text-sm font-medium text-gray-300">Model</label>
+                                                <label htmlFor="customer-model" className="block text-sm font-medium text-gray-300">Model</label>
                                                 <input
+                                                    id="customer-model"
                                                     type="text"
                                                     name="model"
                                                     placeholder="Civic"
@@ -543,8 +551,9 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Year */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Year</label>
+                                            <label htmlFor="customer-year" className="block text-sm font-medium text-gray-300">Year</label>
                                             <input
+                                                id="customer-year"
                                                 type="number"
                                                 name="year"
                                                 placeholder="2024"
@@ -632,12 +641,13 @@ const SignUpScreen: React.FC = () => {
                                     <div className="space-y-4 animate-fadeIn">
                                         {/* Mechanic Name */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Full Name</label>
+                                            <label htmlFor="mechanic-name" className="block text-sm font-medium text-gray-300">Full Name</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <User className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="mechanic-name"
                                                     type="text"
                                                     name="name"
                                                     placeholder="John Mechanic"
@@ -652,12 +662,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Mechanic Email */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Email Address</label>
+                                            <label htmlFor="mechanic-email" className="block text-sm font-medium text-gray-300">Email Address</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <Mail className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="mechanic-email"
                                                     type="email"
                                                     name="email"
                                                     placeholder="mechanic@example.com"
@@ -672,12 +683,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Mechanic Phone */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Phone Number</label>
+                                            <label htmlFor="mechanic-phone" className="block text-sm font-medium text-gray-300">Phone Number</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <Phone className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="mechanic-phone"
                                                     type="tel"
                                                     name="phone"
                                                     placeholder="+1 (555) 000-0000"
@@ -692,12 +704,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Mechanic Password */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Password</label>
+                                            <label htmlFor="mechanic-password" className="block text-sm font-medium text-gray-300">Password</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <Lock className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="mechanic-password"
                                                     type={showPassword ? "text" : "password"}
                                                     name="password"
                                                     placeholder="••••••••"
@@ -719,12 +732,13 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Mechanic Confirm Password */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Confirm Password</label>
+                                            <label htmlFor="mechanic-confirm-password" className="block text-sm font-medium text-gray-300">Confirm Password</label>
                                             <div className="relative group">
                                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                                     <CheckCircle2 className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
                                                 </div>
                                                 <input
+                                                    id="mechanic-confirm-password"
                                                     type={showConfirmPassword ? "text" : "password"}
                                                     name="confirmPassword"
                                                     placeholder="••••••••"
@@ -748,8 +762,9 @@ const SignUpScreen: React.FC = () => {
                                     <div className="space-y-6 animate-fadeIn">
                                         {/* Bio */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Professional Bio</label>
+                                            <label htmlFor="mechanic-bio" className="block text-sm font-medium text-gray-300">Professional Bio</label>
                                             <textarea
+                                                id="mechanic-bio"
                                                 name="bio"
                                                 rows={3}
                                                 placeholder="Tell us about your experience..."
@@ -762,7 +777,7 @@ const SignUpScreen: React.FC = () => {
 
                                         {/* Specializations */}
                                         <div className="space-y-2">
-                                            <label className="block text-sm font-medium text-gray-300">Specializations</label>
+                                            <label htmlFor="mechanic-specializations" className="block text-sm font-medium text-gray-300">Specializations</label>
                                             <div className="flex flex-wrap gap-2">
                                                 {commonSpecializations.map(spec => (
                                                     <button

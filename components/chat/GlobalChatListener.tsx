@@ -103,7 +103,7 @@ const GlobalChatListener: React.FC = () => {
     useEffect(() => {
         return () => {
             Object.values(listenersRef.current).forEach(unsub => {
-                if (typeof unsub === 'function') unsub();
+                if (typeof unsub === 'function') { try { unsub(); } catch (_) {} }
             });
             listenersRef.current = {};
         };

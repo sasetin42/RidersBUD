@@ -39,7 +39,10 @@ const COLLECTIONS = [
     'rentalCars',
     'subscriptions',
     'promoCodes',
-    'settings'
+    'settings',
+    'liaisonStaff',
+    'liaisonBranches',
+    'liaisonBookings'
 ];
 
 interface CollectionData {

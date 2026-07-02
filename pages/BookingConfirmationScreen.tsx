@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { CheckCircle2, Clock, ShieldCheck, Star } from 'lucide-react';
 import { Booking } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -45,12 +45,20 @@ const BookingConfirmationScreen: React.FC = () => {
         getDoc(bookingRef).then(snapshot => {
             if (snapshot.exists()) {
                 const fetchedBooking = { id: snapshot.id, ...snapshot.data() } as Booking;
-                setBookings([fetchedBooking]);
+                if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(fetchedBooking.status)) {
+                    navigate(`/customer-portal/booking-detail/${fetchedBooking.id}`, { replace: true });
+                } else {
+                    setBookings([fetchedBooking]);
+                }
             } else {
                 if (isLocalhost) {
                     const localBooking = liveData.bookings.find(b => b.id === locationState.bookingId);
                     if (localBooking) {
-                        setBookings([localBooking as unknown as Booking]);
+                        if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(localBooking.status)) {
+                            navigate(`/customer-portal/booking-detail/${localBooking.id}`, { replace: true });
+                        } else {
+                            setBookings([localBooking as unknown as Booking]);
+                        }
                     } else {
                         navigate('/customer-portal/');
                     }
@@ -62,7 +70,11 @@ const BookingConfirmationScreen: React.FC = () => {
             if (isLocalhost) {
                 const localBooking = liveData.bookings.find(b => b.id === locationState.bookingId);
                 if (localBooking) {
-                    setBookings([localBooking as unknown as Booking]);
+                    if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(localBooking.status)) {
+                        navigate(`/customer-portal/booking-detail/${localBooking.id}`, { replace: true });
+                    } else {
+                        setBookings([localBooking as unknown as Booking]);
+                    }
                 } else {
                     navigate('/customer-portal/');
                 }
@@ -117,19 +129,18 @@ const BookingConfirmationScreen: React.FC = () => {
                     }
 
                     if (
-                        previousStatus === 'Upcoming' &&
+                        previousStatus !== newStatus &&
                         (newStatus === 'Mechanic Assigned' ||
                             newStatus === 'En Route' ||
                             newStatus === 'In Progress' ||
                             newStatus === 'Completed')
                     ) {
-                        console.log('✅ Mechanic accepted! Auto-redirecting to booking history...');
+                        console.log('✅ Mechanic accepted! Auto-redirecting to track status...');
                         setShowRedirectNotification(true);
                         setTimeout(() => {
-                            navigate('/customer-portal/booking-history', {
+                            navigate(`/customer-portal/booking-detail/${booking.id}`, {
                                 replace: true,
                                 state: {
-                                    highlightBookingId: booking.id,
                                     message: 'Your mechanic has accepted the job!'
                                 }
                             });
@@ -149,8 +160,7 @@ const BookingConfirmationScreen: React.FC = () => {
         });
 
         return () => {
-            console.log('🧹 Cleaning up booking listeners');
-            unsubscribers.forEach(unsubscribe => unsubscribe());
+            unsubscribers.forEach(unsubscribe => { try { unsubscribe(); } catch (_) {} });
         };
     }, [bookings.length, navigate]);
 
@@ -232,7 +242,7 @@ const BookingConfirmationScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title={`Booking #${primaryBooking.id.slice(-6)}`} icon={<CheckCircle2 size={22} />} />
+            <CustomerHeader title={`Booking #${primaryBooking.id.slice(-6)}`} icon={<CheckCircle2 size={22} />} />
             <div className="flex-grow flex flex-col p-4 space-y-6 overflow-y-auto pb-6">
 
                 {/* Mechanic Accepted - Auto Redirect Notification */}
@@ -246,7 +256,7 @@ const BookingConfirmationScreen: React.FC = () => {
                             </div>
                             <div className="flex-1">
                                 <h3 className="text-white font-black text-lg mb-1">🎉 Mechanic Accepted!</h3>
-                                <p className="text-white/90 text-sm">Redirecting you to booking history...</p>
+                                <p className="text-white/90 text-sm">Redirecting you to track status...</p>
                             </div>
                         </div>
                     </div>
@@ -353,38 +363,7 @@ const BookingConfirmationScreen: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Location */}
-                        {serviceLocation && (
-                            <div className="bg-[#151515] rounded-xl overflow-hidden border border-white/5">
-                                <div className="relative h-40 w-full bg-gray-800">
-                                    <MapComponent
-                                        center={[serviceLocation.lat, serviceLocation.lng]}
-                                        zoom={15}
-                                        markers={mapMarkers}
-                                        disableScrollZoom={true}
-                                    />
-                                    <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent p-3 pointer-events-none z-[400]">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-md bg-green-500/20 flex items-center justify-center text-green-400">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                            </div>
-                                            <span className="text-white font-bold text-xs">Service Location</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-3">
-                                    <a
-                                        href={googleMapsLink}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center justify-center gap-2 w-full bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 hover:border-blue-500 font-bold py-2.5 rounded-lg transition-all"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                        <span className="text-xs">Open in Google Maps</span>
-                                    </a>
-                                </div>
-                            </div>
-                        )}
+
 
                         {/* Mechanic */}
                         {mechanic && (
@@ -423,6 +402,9 @@ const BookingConfirmationScreen: React.FC = () => {
                                             src={vehicle.imageUrls[0]}
                                             alt={`${vehicle.make} ${vehicle.model}`}
                                             className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                            }}
                                         />
                                     ) : (
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" /></svg>
@@ -462,30 +444,12 @@ const BookingConfirmationScreen: React.FC = () => {
                 </div>
 
                 {/* Bottom Actions */}
-                <div className="grid grid-cols-2 gap-3 pb-8">
-                    <button
-                        onClick={() => navigate('/customer-portal/booking-history')}
-                        className="col-span-1 bg-[#151515] border border-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/5 transition text-sm"
-                    >
-                        View History
-                    </button>
+                <div className="pb-8">
                     <button
                         onClick={() => navigate(`/customer-portal/booking-detail/${primaryBooking.id}`)}
-                        className="col-span-1 bg-primary text-white font-bold py-3 rounded-xl hover:bg-orange-600 transition text-sm shadow-lg shadow-primary/20"
+                        className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-orange-600 transition text-sm shadow-lg shadow-primary/20"
                     >
                         Track Status
-                    </button>
-                    <button
-                        onClick={handleBookAgain}
-                        className="col-span-2 bg-white/5 text-gray-300 font-bold py-3 rounded-xl hover:bg-white/10 transition text-sm border border-white/5"
-                    >
-                        Book Another Service
-                    </button>
-                    <button
-                        onClick={handleSetReminder}
-                        className="col-span-2 bg-blue-500/10 text-blue-400 font-bold py-3 rounded-xl hover:bg-blue-500/20 transition text-sm border border-blue-500/20"
-                    >
-                        Set Maintenance Reminder
                     </button>
                 </div>
             </div>

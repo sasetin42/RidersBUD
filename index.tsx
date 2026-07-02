@@ -51,7 +51,9 @@ const EXTENSION_ERROR_PATTERNS = [
 const _matchesPattern = (args: any[], patterns: string[]): boolean => {
   const joined = args.map(arg => {
     try {
-      return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+      if (arg instanceof Error) return arg.message || arg.stack || String(arg);
+      if (typeof arg === 'object') return String(arg.message || JSON.stringify(arg));
+      return String(arg);
     } catch {
       return String(arg);
     }

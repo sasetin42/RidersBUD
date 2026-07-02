@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { ShieldCheck } from 'lucide-react';
 import { Warranty } from '../types';
 import Spinner from '../components/Spinner';
@@ -55,8 +55,10 @@ const AddWarrantyModal: React.FC<{
                             {errors.itemName && <p className="text-red-400 text-xs mt-1">{errors.itemName}</p>}
                         </div>
                         <div>
-                            <label className="text-sm text-light-gray mb-1 block">Purchase Date</label>
+                            <label htmlFor="warranty-purchase-date" className="text-sm text-light-gray mb-1 block">Purchase Date</label>
                             <input
+                                id="warranty-purchase-date"
+                                name="warranty-purchase-date"
                                 type="date"
                                 value={purchaseDate}
                                 onChange={(e) => setPurchaseDate(e.target.value)}
@@ -67,8 +69,10 @@ const AddWarrantyModal: React.FC<{
                              {errors.purchaseDate && <p className="text-red-400 text-xs mt-1">{errors.purchaseDate}</p>}
                         </div>
                         <div>
-                            <label className="text-sm text-light-gray mb-1 block">Expiry Date</label>
+                            <label htmlFor="warranty-expiry-date" className="text-sm text-light-gray mb-1 block">Expiry Date</label>
                             <input
+                                id="warranty-expiry-date"
+                                name="warranty-expiry-date"
                                 type="date"
                                 value={expiryDate}
                                 onChange={(e) => setExpiryDate(e.target.value)}
@@ -149,7 +153,7 @@ const WarrantyScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title="Warranty Tracking" showBackButton icon={<ShieldCheck size={22} />} />
+            <CustomerHeader title="Warranty Tracking" showBackButton icon={<ShieldCheck size={22} />} />
             
             <main className="flex-grow overflow-y-auto p-4">
                 {loading ? (

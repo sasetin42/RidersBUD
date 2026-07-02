@@ -92,8 +92,8 @@ const MarketingBanner = () => {
                                 </div>
                                 <span className="text-[10px] font-black  tracking-widest text-white/90 bg-white/10 px-3 py-1 rounded-full border border-white/10 backdrop-blur-sm">Featured</span>
                             </div>
-                            <h3 className="text-2xl sm:text-3xl font-black text-white leading-tight mb-2 drop-shadow-lg line-clamp-2">{slide.title}</h3>
-                            <p className="text-sm text-gray-200 font-medium mb-5 line-clamp-2 drop-shadow-md opacity-90">{slide.subtitle}</p>
+                            <h3 className="text-[20px] font-black text-white leading-tight mb-2 drop-shadow-lg line-clamp-2">{slide.title}</h3>
+                            <p className="text-[12px] text-gray-200 font-medium mb-5 line-clamp-2 drop-shadow-md opacity-90">{slide.subtitle}</p>
 
                             <Link
                                 to={slide.link}

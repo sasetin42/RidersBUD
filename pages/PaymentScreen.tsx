@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
@@ -19,7 +19,7 @@ const PaymentScreen: React.FC = () => {
     const { db, addOrder } = useDatabase();
     const { user } = useAuth();
 
-    const [selectedMethod, setSelectedMethod] = useState('');
+    const [selectedMethod, setSelectedMethod] = useState('GCash');
     const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '' });
     const [cardErrors, setCardErrors] = useState<{ [key: string]: string }>({});
     const [isProcessing, setIsProcessing] = useState(false);
@@ -95,6 +95,28 @@ const PaymentScreen: React.FC = () => {
 
     const [processingStep, setProcessingStep] = useState<string>('');
     const [isSuccess, setIsSuccess] = useState(false);
+    const [confettiPieces, setConfettiPieces] = useState<any[]>([]);
+
+    React.useEffect(() => {
+        if (isSuccess) {
+            const colors = ['#FE7803', '#22C55E', '#3B82F6', '#EAB308', '#EC4899', '#A855F7', '#14B8A6'];
+            const shapes = ['circle', 'square', 'triangle'];
+            const pieces = Array.from({ length: 150 }).map((_, i) => ({
+                id: i,
+                x: Math.random() * 100,
+                y: -10 - Math.random() * 20,
+                size: 6 + Math.random() * 8,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                shape: shapes[Math.floor(Math.random() * shapes.length)],
+                delay: Math.random() * 2.5,
+                duration: 2.0 + Math.random() * 2.5,
+                rotation: Math.random() * 360
+            }));
+            setConfettiPieces(pieces);
+        } else {
+            setConfettiPieces([]);
+        }
+    }, [isSuccess]);
 
     // Handle return from HitPay redirect (Credit Card flow)
     React.useEffect(() => {
@@ -264,15 +286,10 @@ const PaymentScreen: React.FC = () => {
         }
     };
 
-    const paymentMethods = [
-        { id: 'Credit Card', name: 'Credit Card', icon: <CreditCard size={20} />, description: 'Pay securely via HitPay' },
-        { id: 'GCash', name: 'GCash', icon: <Wallet size={20} />, description: 'Pay via HitPay (GCash)' },
-    ];
-
 
     return (
         <div className="flex flex-col h-screen h-[100dvh] bg-[#0F0F0F] text-white font-sans overflow-hidden">
-            <Header title="CHECKOUT" showBackButton icon={<CreditCard size={22} />} />
+            <CustomerHeader title="CHECKOUT" showBackButton icon={<CreditCard size={22} />} />
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pb-64">
                 {/* Order Summary */}
@@ -331,8 +348,10 @@ const PaymentScreen: React.FC = () => {
                     </h2>
                     <div className="bg-[#1A1A1A] rounded-[1.25rem] p-5 shadow-lg space-y-4">
                         <div>
-                            <label className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Full Name *</label>
+                            <label htmlFor="payment-fullname" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Full Name *</label>
                             <input
+                                id="payment-fullname"
+                                name="payment-fullname"
                                 type="text"
                                 className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors"
                                 placeholder="Recipient's Name"
@@ -341,8 +360,10 @@ const PaymentScreen: React.FC = () => {
                             />
                         </div>
                         <div>
-                            <label className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Phone Number *</label>
+                            <label htmlFor="payment-phone" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Phone Number *</label>
                             <input
+                                id="payment-phone"
+                                name="payment-phone"
                                 type="tel"
                                 className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white transition-colors"
                                 placeholder="e.g. 0917 123 4567"
@@ -351,8 +372,10 @@ const PaymentScreen: React.FC = () => {
                             />
                         </div>
                         <div>
-                            <label className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Address Line 1 *</label>
+                            <label htmlFor="payment-address" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Address Line 1 *</label>
                             <input
+                                id="payment-address"
+                                name="payment-address"
                                 type="text"
                                 className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-primary/50 transition-colors"
                                 placeholder="House Number, Street Name"
@@ -362,8 +385,10 @@ const PaymentScreen: React.FC = () => {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">City *</label>
+                                <label htmlFor="payment-city" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">City *</label>
                                 <input
+                                    id="payment-city"
+                                    name="payment-city"
                                     type="text"
                                     className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors"
                                     placeholder="City"
@@ -372,8 +397,10 @@ const PaymentScreen: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Zip Code</label>
+                                <label htmlFor="payment-zip" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Zip Code</label>
                                 <input
+                                    id="payment-zip"
+                                    name="payment-zip"
                                     type="text"
                                     className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white transition-colors"
                                     placeholder="Optional"
@@ -416,29 +443,17 @@ const PaymentScreen: React.FC = () => {
                         </svg>
                         PAYMENT METHOD
                     </h2>
-                    <div className="grid grid-cols-2 gap-3">
-                        {paymentMethods.map(method => (
-                            <div
-                                key={method.id}
-                                onClick={() => !isProcessing && setSelectedMethod(method.id)}
-                                className={`group relative p-5 rounded-[1.25rem] transition-all cursor-pointer flex flex-col items-center justify-center text-center h-[110px]
-                                    ${selectedMethod === method.id
-                                        ? 'bg-[#222222] border border-primary/30 shadow-[0_4px_20px_rgba(254,120,3,0.1)]'
-                                        : 'bg-[#1A1A1A] border border-transparent hover:bg-[#222222]'
-                                    } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            >
-                                <div className={`mb-3 transition-colors ${selectedMethod === method.id ? 'text-primary' : 'text-gray-300'}`}>
-                                    {method.icon}
-                                </div>
-                                <h3 className={`font-bold text-[13px] ${selectedMethod === method.id ? 'text-white' : 'text-gray-300'}`}>{method.name}</h3>
-                                <p className="text-[9px] text-gray-500 font-medium mt-1 leading-tight">{method.description}</p>
-
-                                <div className={`absolute top-3 right-3 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all
-                                    ${selectedMethod === method.id ? 'border-primary' : 'border-[#333333]'}`}>
-                                    {selectedMethod === method.id && <div className="w-2 h-2 bg-primary rounded-full" />}
-                                </div>
-                            </div>
-                        ))}
+                    <div className="bg-[#1A1A1A] border border-primary/20 rounded-[1.25rem] p-5 flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                            <Wallet size={20} />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-[13px] text-white">GCash</h3>
+                            <p className="text-[10px] text-gray-400 mt-0.5">Pay via HitPay (GCash)</p>
+                        </div>
+                        <div className="ml-auto bg-primary/10 text-primary border border-primary/20 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase">
+                            Mandated
+                        </div>
                     </div>
                 </section>
 
@@ -451,7 +466,7 @@ const PaymentScreen: React.FC = () => {
             </div>
 
             {/* Sticky Bottom Bar */}
-            <div className="fixed bottom-0 left-0 right-0 px-6 py-5 bg-[#121212] border-t border-white/5 z-50 animate-slideUp">
+            <div className="fixed bottom-0 left-0 right-0 px-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 bg-gradient-to-t from-[#0F0F0F] via-[#0F0F0F]/95 to-transparent z-50 animate-slideUp">
                 <div className="max-w-2xl mx-auto w-full space-y-4">
                     {/* Error Message */}
                     {error && (
@@ -481,8 +496,8 @@ const PaymentScreen: React.FC = () => {
                             disabled={isProcessing || !selectedMethod}
                             className={`w-full py-4 rounded-[1.25rem] font-bold text-sm transition-all flex items-center justify-center gap-2
                                 ${!selectedMethod
-                                    ? 'bg-[#2A2A2A] text-gray-500'
-                                    : 'bg-[#333333] hover:bg-[#404040] text-white shadow-lg'}`}
+                                    ? 'bg-[#2A2A2A] text-gray-500 cursor-not-allowed'
+                                    : 'bg-primary hover:bg-orange-600 active:scale-[0.98] text-white shadow-lg shadow-primary/20'}`}
                         >
                             Pay Now <ChevronRight size={16} />
                         </button>
@@ -493,7 +508,46 @@ const PaymentScreen: React.FC = () => {
             {/* Success Modal */}
             {isSuccess && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-                    <div className="bg-[#1A1A1A] w-full max-w-sm rounded-[2rem] border border-white/5 p-8 flex flex-col items-center text-center shadow-2xl animate-scaleUp">
+                    {/* CSS Confetti Rain Overlay */}
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                        <style>{`
+                            @keyframes confetti-fall {
+                                0% {
+                                    transform: translateY(0) rotate(0deg);
+                                    opacity: 1;
+                                }
+                                80% {
+                                    opacity: 1;
+                                }
+                                100% {
+                                    transform: translateY(105vh) rotate(720deg);
+                                    opacity: 0;
+                                }
+                            }
+                        `}</style>
+                        {confettiPieces.map((piece) => (
+                            <div
+                                key={piece.id}
+                                style={{
+                                    position: 'absolute',
+                                    left: `${piece.x}%`,
+                                    top: `${piece.y}%`,
+                                    width: `${piece.size}px`,
+                                    height: piece.shape === 'triangle' ? '0' : `${piece.size}px`,
+                                    backgroundColor: piece.shape === 'triangle' ? 'transparent' : piece.color,
+                                    borderLeft: piece.shape === 'triangle' ? `${piece.size / 2}px solid transparent` : undefined,
+                                    borderRight: piece.shape === 'triangle' ? `${piece.size / 2}px solid transparent` : undefined,
+                                    borderBottom: piece.shape === 'triangle' ? `${piece.size}px solid ${piece.color}` : undefined,
+                                    borderRadius: piece.shape === 'circle' ? '50%' : undefined,
+                                    transform: `rotate(${piece.rotation}deg)`,
+                                    animation: `confetti-fall ${piece.duration}s linear ${piece.delay}s infinite`,
+                                    zIndex: 10,
+                                }}
+                            />
+                        ))}
+                    </div>
+
+                    <div className="bg-[#1A1A1A] w-full max-w-sm rounded-[2rem] border border-white/5 p-8 flex flex-col items-center text-center shadow-2xl animate-scaleUp z-20">
                         <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mb-6">
                             <CheckCircle2 size={40} className="text-green-500" />
                         </div>

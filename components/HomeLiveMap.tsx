@@ -33,8 +33,17 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
     const mechanicsRef = useRef(mechanics);
     mechanicsRef.current = mechanics;
 
+    const [retryTrigger, setRetryTrigger] = React.useState(0);
+
     useEffect(() => {
         if (!mapRef.current || mapInstanceRef.current || typeof L === 'undefined') return;
+
+        if (!L.MarkerClusterGroup) {
+            const timer = setTimeout(() => {
+                setRetryTrigger(prev => prev + 1);
+            }, 100);
+            return () => clearTimeout(timer);
+        }
 
         mapInstanceRef.current = L.map(mapRef.current, {
             center: [14.58, 121.05], // Centered on Metro Manila
@@ -51,7 +60,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
         }).addTo(mapInstanceRef.current);
 
 
-        markersLayerRef.current = L.markerClusterGroup({
+        markersLayerRef.current = new L.MarkerClusterGroup({
             disableClusteringAtZoom: 16,
             spiderfyOnMaxZoom: true,
             iconCreateFunction: function (cluster: any) {
@@ -122,7 +131,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
             markersLayerRef.current = null;
             markersRef.current = {};
         };
-    }, [navigate]); // navigate is stable, so this effect runs only once.
+    }, [navigate, retryTrigger]); // rerun if retryTrigger changes to retry initialization
 
     useEffect(() => {
         if (!markersLayerRef.current || !mechanics) return;

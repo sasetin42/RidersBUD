@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest, RentalCar, RentalBooking, Subscription, PromoCode, Notification } from '../types';
+import { Service, Part, Mechanic, Booking, Customer, Settings, BookingStatus, Order, Review, Banner, FAQCategory, AdminUser, Role, Task, Database, OrderStatus, PayoutRequest, RentalCar, RentalBooking, HireDriver, Subscription, PromoCode, Notification, AppService, ServiceRequest, ServiceProvider, ServicePricing, ServiceActivityLog, LiaisonBranch, LiaisonStaff, LiaisonBooking } from '../types';
 import { db as firestore, rtdb, storage } from '../firebase';
+import { seedRentalCars, seedHireDrivers } from '../data/mockData';
 import { ref as rtdbRef, set as rtdbSet } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
@@ -17,12 +18,14 @@ import {
     increment,
     Timestamp,
     query,
-    where
+    where,
+    getDoc
 } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import liveData from '../data/liveData.json';
 import { paymentService } from '../services/PaymentService';
+import { sendEmail } from '../services/emailService';
 
 interface DatabaseContextType {
     db: Database | null;
@@ -51,6 +54,8 @@ interface DatabaseContextType {
     updateCustomerLocation: (customerId: string, location: { lat: number; lng: number }) => Promise<void>;
     addOrder: (order: Omit<Order, 'id'>) => Promise<Order | null>;
     updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
+    deleteOrder: (orderId: string) => Promise<void>;
+    deleteAllOrders: () => Promise<void>;
     addBanner: (banner: Omit<Banner, 'id'>, imageFile?: File) => Promise<void>;
     updateBanner: (banner: Banner, imageFile?: File) => Promise<void>;
     deleteBanner: (id: string) => Promise<void>;
@@ -70,7 +75,7 @@ interface DatabaseContextType {
     // Accept a new job request (mechanic self-assigns)
     acceptJobRequest: (bookingId: string, mechanic?: Mechanic) => Promise<void>;
     // Notifications
-    addNotification: (notification: Omit<Notification, 'id'>) => Promise<void>;
+    addNotification: (notification: Omit<Notification, 'id' | 'status' | 'createdAt' | 'createdBy' | 'recipientRole'> & Partial<Pick<Notification, 'status' | 'createdAt' | 'createdBy' | 'recipientRole'>>) => Promise<void>;
     markNotificationAsRead: (notificationId: string) => Promise<void>;
     markAllNotificationsAsRead: (recipientId: string) => Promise<void>;
     deleteNotification: (notificationId: string) => Promise<void>;
@@ -88,6 +93,29 @@ interface DatabaseContextType {
     updateMultipleTasksStatus: (taskIds: string[], isComplete: boolean) => Promise<void>;
     updateUserNotificationSettings: (userId: string, settings: Customer['notificationSettings']) => Promise<void>;
     updateMechanicNotificationSettings: (mechanicId: string, settings: Mechanic['notificationSettings']) => Promise<void>;
+    // RidersBud Services
+    addAppService: (appService: Omit<AppService, 'id'>) => Promise<void>;
+    updateAppService: (appService: AppService) => Promise<void>;
+    deleteAppService: (id: string) => Promise<void>;
+    addServiceProvider: (provider: Omit<ServiceProvider, 'id'>) => Promise<void>;
+    updateServiceProvider: (provider: ServiceProvider) => Promise<void>;
+    deleteServiceProvider: (id: string) => Promise<void>;
+    addServicePricing: (pricing: Omit<ServicePricing, 'id'>) => Promise<void>;
+    updateServicePricing: (pricing: ServicePricing) => Promise<void>;
+    deleteServicePricing: (id: string) => Promise<void>;
+    addServiceRequest: (request: Omit<ServiceRequest, 'id'>) => Promise<void>;
+    updateServiceRequestStatus: (id: string, status: string, notes?: string) => Promise<void>;
+    // Rental Fleet
+    addRentalCar: (car: Omit<RentalCar, 'id'>) => Promise<void>;
+    updateRentalCar: (car: RentalCar) => Promise<void>;
+    deleteRentalCar: (id: string) => Promise<void>;
+    // Hire Drivers
+    addHireDriver: (driver: Omit<HireDriver, 'id'>) => Promise<void>;
+    updateHireDriver: (driver: HireDriver) => Promise<void>;
+    deleteHireDriver: (id: string) => Promise<void>;
+    // Liaison Services
+    addLiaisonBooking: (booking: Omit<LiaisonBooking, 'id'>) => Promise<void>;
+    updateLiaisonBookingStatus: (id: string, status: LiaisonBooking['status'], notes?: string, officerName?: string) => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
@@ -162,30 +190,45 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
 
 
 export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const initialSettings: Settings = {
-        appName: 'RidersBUD',
-        sidebarColor: '#1A1A1A',
-        accentColor: '#FE7803',
-        appLogoUrl: '',
-        faviconUrl: '',
-        gcashEnabled: false,
-        gcashNumber: '',
-        gcashAccountName: '',
-        gcashQrCodeUrl: '',
-        defaultCustomerImageUrl: '/assets/logo.png',
-        defaultMechanicImageUrl: '/assets/logo.png'
+    const getCachedSettings = (): Settings => {
+        try {
+            const cached = localStorage.getItem('ridersbud_settings_cache');
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        } catch (e) {}
+        return {
+            appName: 'RidersBUD',
+            sidebarColor: '#1A1A1A',
+            accentColor: '#FE7803',
+            appLogoUrl: '',
+            faviconUrl: '',
+            gcashEnabled: false,
+            gcashNumber: '',
+            gcashAccountName: '',
+            gcashQrCodeUrl: '',
+            defaultCustomerImageUrl: '/assets/logo.png',
+            defaultMechanicImageUrl: '/assets/logo.png'
+        };
     };
+
+    const initialSettings: Settings = getCachedSettings();
 
     const [db, setDb] = useState<Database | null>({
         services: [], parts: [], mechanics: [], bookings: [], customers: [], orders: [],
         banners: [], settings: initialSettings, faqs: [], adminUsers: [], roles: [],
-        tasks: [], payouts: [], notifications: [], rentalCars: [], rentalBookings: [],
-        subscriptions: [], promoCodes: []
+        tasks: [], payouts: [], notifications: [], rentalCars: [], rentalBookings: [], hireDrivers: [],
+        subscriptions: [], promoCodes: [],
+        appServices: [], serviceRequests: [], serviceProviders: [], servicePricing: [], serviceActivityLogs: [],
+        liaisonBookings: [], liaisonStaff: [], liaisonBranches: []
     });
     const [loading, setLoading] = useState(true);
 
     // Initial Data Seeding and Realtime Listeners
     useEffect(() => {
+        let currentSubscribedId = '';
+        let currentSubscribedRole = ''; // 'admin' | 'mechanic' | 'customer' | 'none'
+
         // Separate public and private (user-specific) unsub arrays.
         // Public listeners are set up once and never torn down on auth changes.
         // Private listeners are torn down and re-established whenever the auth user changes.
@@ -213,10 +256,29 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
         };
 
+        // Public load synchronization tracker to avoid premature loading=false
+        let loadedCollectionsCount = 0;
+        const expectedPublicCollectionsCount = 17; // settings + 16 subscribePublic calls
+        let safetyTimer: any = null;
+
+        const markPublicCollectionLoaded = () => {
+            loadedCollectionsCount++;
+            if (loadedCollectionsCount >= expectedPublicCollectionsCount) {
+                if (safetyTimer) clearTimeout(safetyTimer);
+                setLoading(false);
+            }
+        };
+
+        // Safety timeout to guarantee the loading screen goes away even if network hangs
+        safetyTimer = setTimeout(() => {
+            setLoading(false);
+        }, 1500);
+
         const safeOnSnapshot = <T,>(
             ref: any,
             onNext: (data: T[]) => void,
-            label: string
+            label: string,
+            onDone?: () => void
         ): (() => void) => {
             try {
                 return onSnapshot(ref,
@@ -229,22 +291,26 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         } catch (innerErr) {
                             console.warn(`Error processing snapshot for ${label}:`, innerErr);
                         }
+                        if (onDone) onDone();
                     },
                     (err) => {
-                        if (err?.code === 'permission-denied') {
-                            // On localhost with bypass login, try liveData.json as a read fallback
+                        const errCode = err?.code || '';
+                        if (errCode === 'permission-denied' || errCode === 'unavailable') {
+                            // On localhost with bypass login or when offline/unavailable, try liveData.json as a read fallback
                             if (isLocalhost) {
                                 loadLocalFallback<T>(label, onNext);
                             } else {
-                                console.warn(`Permission denied for ${label} — continuing without data`);
+                                console.warn(`Error for ${label}: ${errCode} — continuing without data`);
                             }
                         } else {
-                            console.warn(`Snapshot error for ${label}:`, err?.code || err?.message || err);
+                            console.warn(`Snapshot error for ${label}:`, errCode || err?.message || err);
                         }
+                        if (onDone) onDone();
                     }
                 );
             } catch (setupErr) {
                 console.warn(`Failed to set up snapshot listener for ${label}:`, setupErr);
+                if (onDone) onDone();
                 return () => {};
             }
         };
@@ -253,8 +319,258 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             const q = collection(firestore, colName);
             const unsubscribe = safeOnSnapshot<T>(
                 q,
-                (data) => setDb(prev => prev ? { ...prev, [stateKey]: data } : null),
-                colName
+                (data) => {
+                    setDb(prev => prev ? { ...prev, [stateKey]: data } : null);
+                    // Auto-seed if collection is empty
+                    if (data.length === 0) {
+                        if (colName === 'rentalCars') {
+                            console.info("[DatabaseContext] Seeding rentalCars collection...");
+                            seedRentalCars.forEach(car => {
+                                const { id, ...carData } = car;
+                                addDoc(collection(firestore, 'rentalCars'), carData).catch(err => 
+                                    console.warn("Failed to seed car:", err)
+                                );
+                            });
+                        } else if (colName === 'hireDrivers') {
+                            console.info("[DatabaseContext] Seeding hireDrivers collection...");
+                            seedHireDrivers.forEach(driver => {
+                                const { id, ...driverData } = driver;
+                                addDoc(collection(firestore, 'hireDrivers'), driverData).catch(err => 
+                                    console.warn("Failed to seed driver:", err)
+                                );
+                            });
+                        } else if (colName === 'liaisonStaff') {
+                            console.info("[DatabaseContext] Seeding liaisonStaff collection...");
+                            const staffToSeed = [
+                                {
+                                    id: 'liaison-juan',
+                                    name: 'Juan Dela Cruz',
+                                    phone: '09181234567',
+                                    imageUrl: '/assets/logo.png',
+                                    rating: 4.8,
+                                    assignedBranches: ['lto-qc', 'lto-pasay'],
+                                    isAvailable: true,
+                                    description: 'Experienced Liaison Officer specializing in registration and license renewals.',
+                                    totalJobs: 24
+                                },
+                                {
+                                    id: 'liaison-maria',
+                                    name: 'Maria Santos',
+                                    phone: '09182345678',
+                                    imageUrl: '/assets/logo.png',
+                                    rating: 4.9,
+                                    assignedBranches: ['lto-makati', 'lto-pasay'],
+                                    isAvailable: true,
+                                    description: 'Efficient and professional, handling LTO documents with care.',
+                                    totalJobs: 18
+                                },
+                                {
+                                    id: 'liaison-ramon',
+                                    name: 'Ramon Valenzuela',
+                                    phone: '09183456789',
+                                    imageUrl: '/assets/logo.png',
+                                    rating: 4.7,
+                                    assignedBranches: ['lto-qc', 'lto-makati'],
+                                    isAvailable: true,
+                                    description: 'Dedicated officer with deep knowledge of LTO policies and procedures.',
+                                    totalJobs: 15
+                                }
+                            ];
+                            staffToSeed.forEach(staff => {
+                                setDoc(doc(firestore, 'liaisonStaff', staff.id), staff).catch(err =>
+                                    console.warn("Failed to seed staff:", err)
+                                );
+                            });
+                        }
+                    }
+
+                    if (colName === 'liaisonBranches' && data.length < 20) {
+                        console.info("[DatabaseContext] Seeding/Syncing liaisonBranches collection with coordinates...");
+                        const branchesToSeed = [
+                            { id: 'lto-qc', name: 'LTO Quezon City District Office', address: 'East Avenue, Diliman, Quezon City', city: 'Quezon City', phone: '09171234567', isAvailable: true, lat: 14.6441, lng: 121.0483 },
+                            { id: 'lto-pasay', name: 'LTO Pasay District Office', address: 'Domestic Road, Pasay City', city: 'Pasay City', phone: '09172345678', isAvailable: true, lat: 14.5441, lng: 120.9942 },
+                            { id: 'lto-makati', name: 'LTO Makati District Office', address: 'Pililia Street, Brgy. Valenzuela, Makati City', city: 'Makati City', phone: '09173456789', isAvailable: true, lat: 14.5613, lng: 121.0180 },
+                            { id: 'lto-manila', name: 'LTO Manila Central Office', address: 'San Marcelino St, Ermita, Manila', city: 'Manila', phone: '09174561111', isAvailable: true, lat: 14.5888, lng: 120.9856 },
+                            { id: 'lto-taguig', name: 'LTO Taguig Extension Office', address: 'SM Aura Premier, McKinley Parkway, Taguig', city: 'Taguig', phone: '09174562222', isAvailable: true, lat: 14.5469, lng: 121.0543 },
+                            { id: 'lto-paranaque', name: 'LTO Parañaque District Office', address: 'Olivares Plaza, Sucat Road, Parañaque', city: 'Parañaque', phone: '09174563333', isAvailable: true, lat: 14.4792, lng: 121.0194 },
+                            { id: 'lto-cebu', name: 'LTO Cebu City District Office', address: 'N. Bacalso Avenue, Cebu City', city: 'Cebu City', phone: '09174567890', isAvailable: true, lat: 10.3060, lng: 123.9056 },
+                            { id: 'lto-mandaue', name: 'LTO Mandaue District Office', address: 'J.C. De Veyra St, Mandaue City', city: 'Mandaue', phone: '09174564444', isAvailable: true, lat: 10.3308, lng: 123.9372 },
+                            { id: 'lto-lapulapu', name: 'LTO Lapu-Lapu District Office', address: 'Pajo, Lapu-Lapu City', city: 'Lapu-Lapu', phone: '09174565555', isAvailable: true, lat: 10.3167, lng: 123.9667 },
+                            { id: 'lto-bacolod', name: 'LTO Bacolod District Office', address: 'Cottage Road, Bacolod City', city: 'Bacolod', phone: '09174566666', isAvailable: true, lat: 10.6763, lng: 122.9511 },
+                            { id: 'lto-iloilo', name: 'LTO Iloilo District Office', address: 'El 98 Street, Jaro, Iloilo City', city: 'Iloilo City', phone: '09179123456', isAvailable: true, lat: 10.6978, lng: 122.5855 },
+                            { id: 'lto-tacloban', name: 'LTO Tacloban District Office', address: 'Real Street, Tacloban City', city: 'Tacloban', phone: '09174567777', isAvailable: true, lat: 11.2333, lng: 125.0000 },
+                            { id: 'lto-davao', name: 'LTO Davao City District Office', address: 'Quimpo Boulevard, Davao City', city: 'Davao City', phone: '09175678901', isAvailable: true, lat: 7.0863, lng: 125.6144 },
+                            { id: 'lto-gensan', name: 'LTO General Santos District Office', address: 'Bulaong Road, General Santos City', city: 'GenSan', phone: '09174568888', isAvailable: true, lat: 6.1228, lng: 125.1724 },
+                            { id: 'lto-cdo', name: 'LTO Cagayan de Oro District Office', address: 'M.H. Del Pilar Street, Cagayan de Oro City', city: 'Cagayan de Oro', phone: '09178901234', isAvailable: true, lat: 8.4822, lng: 124.6472 },
+                            { id: 'lto-zamboanga', name: 'LTO Zamboanga District Office', address: 'Veterans Avenue, Zamboanga City', city: 'Zamboanga City', phone: '09179012345', isAvailable: true, lat: 6.9080, lng: 122.0620 },
+                            { id: 'lto-butuan', name: 'LTO Butuan District Office', address: 'J.C. Aquino Ave, Butuan City', city: 'Butuan', phone: '09174569999', isAvailable: true, lat: 8.9475, lng: 125.5406 },
+                            { id: 'lto-baguio', name: 'LTO Baguio District Office', address: 'Governor Pack Road, Baguio City', city: 'Baguio City', phone: '09176789012', isAvailable: true, lat: 16.4076, lng: 120.5978 },
+                            { id: 'lto-angeles', name: 'LTO Angeles District Office', address: 'McArthur Highway, Angeles City, Pampanga', city: 'Angeles', phone: '09174560000', isAvailable: true, lat: 15.1432, lng: 120.5883 },
+                            { id: 'lto-naga', name: 'LTO Naga District Office', address: 'Concepcion Grande, Naga City', city: 'Naga', phone: '09174560011', isAvailable: true, lat: 13.6218, lng: 123.1948 },
+                            { id: 'lto-dagupan', name: 'LTO Dagupan District Office', address: 'Caranglaan Road, Dagupan City', city: 'Dagupan', phone: '09174560022', isAvailable: true, lat: 16.0433, lng: 120.3433 }
+                        ];
+                        branchesToSeed.forEach(branch => {
+                            setDoc(doc(firestore, 'liaisonBranches', branch.id), branch).catch(err =>
+                                console.warn("Failed to seed branch:", err)
+                            );
+                        });
+                    }
+
+                    if (colName === 'liaisonStaff' && data.length < 5) {
+                        console.info("[DatabaseContext] Seeding/Syncing liaisonStaff collection with 5 mockup agents...");
+                        const staffToSeed = [
+                            {
+                                id: 'liaison-juan',
+                                name: 'Juan Dela Cruz',
+                                phone: '09181234567',
+                                imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+                                rating: 4.8,
+                                assignedBranches: ['lto-qc', 'lto-pasay'],
+                                isAvailable: true,
+                                description: 'Experienced Liaison Officer specializing in registration and license renewals.',
+                                totalJobs: 24
+                            },
+                            {
+                                id: 'liaison-maria',
+                                name: 'Maria Santos',
+                                phone: '09182345678',
+                                imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
+                                rating: 4.9,
+                                assignedBranches: ['lto-makati', 'lto-pasay', 'lto-manila'],
+                                isAvailable: true,
+                                description: 'Efficient and professional, handling LTO documents with care.',
+                                totalJobs: 18
+                            },
+                            {
+                                id: 'liaison-ramon',
+                                name: 'Ramon Valenzuela',
+                                phone: '09183456789',
+                                imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
+                                rating: 4.7,
+                                assignedBranches: ['lto-angeles', 'lto-pampanga', 'lto-dagupan'],
+                                isAvailable: true,
+                                description: 'Dedicated officer with deep knowledge of LTO policies and procedures.',
+                                totalJobs: 15
+                            },
+                            {
+                                id: 'liaison-sarah',
+                                name: 'Sarah Geronimo',
+                                phone: '09184567890',
+                                imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200',
+                                rating: 4.95,
+                                assignedBranches: ['lto-cebu', 'lto-mandaue', 'lto-lapulapu'],
+                                isAvailable: true,
+                                description: 'Visayas regional coordinator, handles all document liaisons with premium efficiency.',
+                                totalJobs: 32
+                            },
+                            {
+                                id: 'liaison-michael',
+                                name: 'Michael Dinglasan',
+                                phone: '09185678901',
+                                imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200',
+                                rating: 4.85,
+                                assignedBranches: ['lto-davao', 'lto-gensan'],
+                                isAvailable: true,
+                                description: 'Mindanao document handling specialist, fast processing speed and highly reliable.',
+                                totalJobs: 21
+                            }
+                        ];
+                        staffToSeed.forEach(staff => {
+                            setDoc(doc(firestore, 'liaisonStaff', staff.id), staff).catch(err =>
+                                console.warn("Failed to seed staff:", err)
+                            );
+                        });
+                    }
+
+                    if (colName === 'appServices') {
+                        // Clean up duplicate services in Firestore if they exist using slugs
+                        const seenSlugs = new Set<string>();
+                        const cleanData: any[] = [];
+                        (data as any[]).forEach(service => {
+                            const serviceSlug = service.slug || service.name?.toLowerCase().replace(/\s+/g, '-');
+                            if (seenSlugs.has(serviceSlug)) {
+                                console.info(`[DatabaseContext] Deleting duplicate appService: ${service.name} (${service.id})`);
+                                deleteDoc(doc(firestore, 'appServices', service.id)).catch(err =>
+                                    console.warn("Failed to delete duplicate appService:", err)
+                                );
+                            } else {
+                                seenSlugs.add(serviceSlug);
+                                cleanData.push(service);
+                            }
+                        });
+
+                        const defaultServices = [
+                            {
+                                name: 'Rent a Car',
+                                slug: 'rent-a-car',
+                                description: 'Browse and rent from our collection of well-maintained vehicles for your personal or business needs.',
+                                isActive: true,
+                                category: 'Special Services',
+                                imageUrl: '/images/services/rent_a_car.png',
+                                features: ['Well-maintained Vehicles', 'Affordable Rates', 'Flexible Terms'],
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString(),
+                                order: 1
+                            },
+                            {
+                                name: 'Driver for Hire',
+                                slug: 'driver-for-hire',
+                                description: 'Professional and reliable drivers for your special trips, errands, or emergencies.',
+                                isActive: true,
+                                category: 'Special Services',
+                                imageUrl: '/images/services/driver_for_hire.png',
+                                features: ['Professional Drivers', 'Flexible Hours', 'Safe Travel'],
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString(),
+                                order: 2
+                            },
+                            {
+                                name: 'Registration Assistance',
+                                slug: 'registration-assistance',
+                                description: 'Hassle-free LTO car registration, license renewal, and transfer of ownership services.',
+                                isActive: true,
+                                category: 'Special Services',
+                                imageUrl: '/images/services/registration_assistance.png',
+                                features: ['Fast Processing', 'No Long Lines', 'Document Verification'],
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString(),
+                                order: 3
+                            },
+                            {
+                                name: 'Towing',
+                                slug: 'towing',
+                                description: 'Reliable and fast towing service to get your vehicle to a safe location or partner shop.',
+                                isActive: true,
+                                category: 'Special Services',
+                                imageUrl: '/images/services/towing.png',
+                                features: ['24/7 Availability', 'Quick Response', 'Safe Vehicle Handling'],
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString(),
+                                order: 4
+                            }
+                        ];
+
+                        defaultServices.forEach(defaultService => {
+                            const existing = cleanData.find(s => s.slug === defaultService.slug || s.name?.toLowerCase() === defaultService.name.toLowerCase());
+                            if (!existing) {
+                                console.info(`[DatabaseContext] Seeding missing appService: ${defaultService.name}`);
+                                addDoc(collection(firestore, 'appServices'), defaultService).catch(err =>
+                                    console.warn(`Failed to seed appService ${defaultService.name}:`, err)
+                                );
+                            } else if (existing.category !== defaultService.category || existing.order !== defaultService.order) {
+                                console.info(`[DatabaseContext] Updating existing appService category/order: ${defaultService.name}`);
+                                updateDoc(doc(firestore, 'appServices', existing.id), {
+                                    category: defaultService.category,
+                                    order: defaultService.order
+                                }).catch(err =>
+                                    console.warn(`Failed to update appService ${defaultService.name}:`, err)
+                                );
+                            }
+                        });
+                    }
+                },
+                colName,
+                markPublicCollectionLoaded
             );
             publicUnsubs.push(unsubscribe);
         };
@@ -284,20 +600,28 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 (docSnap) => {
                     try {
                         if (docSnap.exists()) {
-                            setDb(prev => prev ? { ...prev, settings: docSnap.data() as Settings } : null);
+                            const newSettings = docSnap.data() as Settings;
+                            localStorage.setItem('ridersbud_settings_cache', JSON.stringify(newSettings));
+                            setDb(prev => prev ? { ...prev, settings: newSettings } : null);
                         } else {
                             setDoc(doc(firestore, 'settings', 'main'), initialSettings).catch(() => {});
+                            localStorage.setItem('ridersbud_settings_cache', JSON.stringify(initialSettings));
                             setDb(prev => prev ? { ...prev, settings: initialSettings } : null);
                         }
                     } catch (innerErr) {
                         console.warn("Error processing settings snapshot:", innerErr);
                     }
+                    markPublicCollectionLoaded();
                 },
-                (err) => console.warn("Settings subscription error, using defaults:", err?.code || err?.message || err)
+                (err) => {
+                    console.warn("Settings subscription error, using defaults:", err?.code || err?.message || err);
+                    markPublicCollectionLoaded();
+                }
             );
             publicUnsubs.push(unsubSettings);
         } catch (setupErr) {
             console.warn("Failed to set up settings listener:", setupErr);
+            markPublicCollectionLoaded();
         }
 
         try {
@@ -310,34 +634,45 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             subscribePublic('promoCodes', 'promoCodes');
             subscribePublic('roles', 'roles');
             subscribePublic('rentalCars', 'rentalCars');
+            subscribePublic('hireDrivers', 'hireDrivers');
             subscribePublic('subscriptions', 'subscriptions');
+            subscribePublic('appServices', 'appServices');
+            subscribePublic('serviceProviders', 'serviceProviders');
+            subscribePublic('servicePricing', 'servicePricing');
+            subscribePublic<LiaisonBranch>('liaisonBranches', 'liaisonBranches');
+            subscribePublic<LiaisonStaff>('liaisonStaff', 'liaisonStaff');
         } catch (err) {
             console.warn("Error setting up public Firestore listeners:", err);
-        } finally {
-            setLoading(false);
         }
 
         // --- PRIVATE listeners (torn down and re-built on every auth change / admin bypass login) ---
         const checkAndSubscribe = async (user: any) => {
-            privateUnsubs.forEach(fn => fn());
-            privateUnsubs = [];
-
-            // Clear old private states to avoid notification history leakage when logging in/out or changing accounts
-            setDb(prev => prev ? { 
-                ...prev, 
-                bookings: [], 
-                customers: [], 
-                orders: [], 
-                tasks: [], 
-                payouts: [], 
-                notifications: [], 
-                rentalBookings: [] 
-            } : null);
-
             const isAdminSession = localStorage.getItem('ridersbud_admin_session') === 'true';
+            const isCustomerSession = localStorage.getItem('ridersbud_customer_session') === 'true';
+            const isMechanicSession = localStorage.getItem('ridersbud_mechanic_session') === 'true';
 
-            if (!user && !isAdminSession) {
-                return;
+            let bypassCustomer: any = null;
+            if (isCustomerSession) {
+                try {
+                    const userDataStr = localStorage.getItem('ridersbud_customer_user_data');
+                    if (userDataStr) {
+                        bypassCustomer = JSON.parse(userDataStr);
+                    }
+                } catch (e) {
+                    console.warn("Error parsing customer bypass user data in DatabaseContext:", e);
+                }
+            }
+
+            let bypassMechanic: any = null;
+            if (isMechanicSession) {
+                try {
+                    const userDataStr = localStorage.getItem('ridersbud_mechanic_user_data');
+                    if (userDataStr) {
+                        bypassMechanic = JSON.parse(userDataStr);
+                    }
+                } catch (e) {
+                    console.warn("Error parsing mechanic bypass user data in DatabaseContext:", e);
+                }
             }
 
             let isAdmin = isAdminSession;
@@ -355,17 +690,67 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 }
             }
 
+            // Determine target identity and role
+            let targetId = '';
+            let targetRole = 'none';
+
+            if (isAdmin) {
+                targetId = 'admin';
+                targetRole = 'admin';
+            } else if (isMechanic && user) {
+                targetId = user.uid;
+                targetRole = 'mechanic';
+            } else if (isMechanicSession && bypassMechanic) {
+                targetId = bypassMechanic.id;
+                targetRole = 'mechanic';
+            } else if (user || bypassCustomer) {
+                targetId = user?.uid || bypassCustomer?.id || '';
+                targetRole = 'customer';
+            }
+
+            // Guard: If we are already subscribed to this session, bypass resubscription
+            if (currentSubscribedId === targetId && currentSubscribedRole === targetRole) {
+                return;
+            }
+
+            // Update tracked subscription session
+            currentSubscribedId = targetId;
+            currentSubscribedRole = targetRole;
+
+            privateUnsubs.forEach(fn => fn());
+            privateUnsubs = [];
+
+            // Clear old private states to avoid notification history leakage when logging in/out or changing accounts
+            setDb(prev => prev ? { 
+                ...prev, 
+                bookings: [], 
+                customers: [], 
+                orders: [], 
+                tasks: [], 
+                payouts: [], 
+                notifications: [], 
+                rentalBookings: [],
+                serviceRequests: [],
+                serviceActivityLogs: [],
+                liaisonBookings: []
+            } : null);
+
+            if (targetRole === 'none') {
+                return;
+            }
+
             if (isAdmin) {
                 subscribePrivate('bookings', 'bookings');
                 subscribePrivate('customers', 'customers');
                 subscribePrivate('orders', 'orders');
                 subscribePrivate('tasks', 'tasks');
                 subscribePrivate('payouts', 'payouts');
-                // Admin notifications: only get admin-specific and 'all' broadcast notifications
-                subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                    where('recipientId', 'in', ['admin', 'all'])
-                ), 'notifications');
+                // Admin notifications: subscribe to all notifications to display customer and mechanic alerts
+                subscribePrivate('notifications', 'notifications');
                 subscribePrivate('rentalBookings', 'rentalBookings');
+                subscribePrivate('serviceRequests', 'serviceRequests');
+                subscribePrivate('serviceActivityLogs', 'serviceActivityLogs');
+                subscribePrivate<LiaisonBooking>('liaisonBookings', 'liaisonBookings');
             } else if (isMechanic && user) {
                 subscribePrivate('bookings', 'bookings');
                 subscribePrivate('customers', 'customers');
@@ -373,25 +758,42 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', user.uid)), 'payouts');
                 // Mechanic notifications: only their own + broadcast 'all'
                 subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                    where('recipientId', 'in', [`mechanic-${user.uid}`, 'all'])
+                    where('recipientId', 'in', [user.uid, 'all'])
                 ), 'notifications');
                 setDb(prev => prev ? { ...prev, orders: [], rentalBookings: [] } : null);
-            } else if (user) {
-                // Standard Customer
-                const unsubCustomer = safeOnSnapshot(
-                    doc(firestore, 'customers', user.uid),
-                    (data) => setDb(prev => prev ? { ...prev, customers: data } : null),
-                    'customer'
-                );
-                privateUnsubs.push(unsubCustomer);
-
-                subscribePrivateQuery(query(collection(firestore, 'bookings'), where('customerId', '==', user.uid)), 'bookings');
-                subscribePrivateQuery(query(collection(firestore, 'orders'), where('customerId', '==', user.uid)), 'orders');
-                subscribePrivateQuery(query(collection(firestore, 'rentalBookings'), where('customerId', '==', user.uid)), 'rentalBookings');
-                // Customer notifications: only their own + broadcast 'all'
+            } else if (isMechanicSession && bypassMechanic) {
+                const mechanicId = bypassMechanic.id;
+                subscribePrivate('bookings', 'bookings');
+                subscribePrivate('customers', 'customers');
+                subscribePrivateQuery(query(collection(firestore, 'tasks'), where('mechanicId', '==', mechanicId)), 'tasks');
+                subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', mechanicId)), 'payouts');
+                // Mechanic notifications: only their own + broadcast 'all'
                 subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                    where('recipientId', 'in', [`customer-${user.uid}`, 'all'])
+                    where('recipientId', 'in', [mechanicId, 'all'])
                 ), 'notifications');
+                setDb(prev => prev ? { ...prev, orders: [], rentalBookings: [] } : null);
+            } else if (user || bypassCustomer) {
+                // Standard Customer
+                const customerId = user?.uid || bypassCustomer?.id;
+                if (customerId) {
+                    const unsubCustomer = safeOnSnapshot(
+                        doc(firestore, 'customers', customerId),
+                        (data) => setDb(prev => prev ? { ...prev, customers: data } : null),
+                        'customer'
+                    );
+                    privateUnsubs.push(unsubCustomer);
+
+                    subscribePrivateQuery(query(collection(firestore, 'bookings'), where('customerId', '==', customerId)), 'bookings');
+                    subscribePrivateQuery(query(collection(firestore, 'orders'), where('customerId', '==', customerId)), 'orders');
+                    subscribePrivateQuery(query(collection(firestore, 'rentalBookings'), where('customerId', '==', customerId)), 'rentalBookings');
+                    subscribePrivateQuery(query(collection(firestore, 'serviceRequests'), where('customerId', '==', customerId)), 'serviceRequests');
+                    subscribePrivateQuery(query(collection(firestore, 'serviceActivityLogs'), where('customerId', '==', customerId)), 'serviceActivityLogs');
+                    subscribePrivateQuery(query(collection(firestore, 'liaisonBookings'), where('customerId', '==', customerId)), 'liaisonBookings');
+                    // Customer notifications: only their own + broadcast 'all'
+                    subscribePrivateQuery(query(collection(firestore, 'notifications'),
+                        where('recipientId', 'in', [customerId, 'all'])
+                    ), 'notifications');
+                }
                 setDb(prev => prev ? { ...prev, tasks: [], payouts: [] } : null);
             }
         };
@@ -403,17 +805,20 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             checkAndSubscribe(auth.currentUser);
         };
         window.addEventListener('adminAuthChange', handleAdminAuthChange);
+        window.addEventListener('customerAuthChange', handleAdminAuthChange);
         window.addEventListener('storage', handleAdminAuthChange);
 
         // Run initial check
         checkAndSubscribe(auth.currentUser);
 
         return () => {
+            if (safetyTimer) clearTimeout(safetyTimer);
             authUnsub();
             window.removeEventListener('adminAuthChange', handleAdminAuthChange);
+            window.removeEventListener('customerAuthChange', handleAdminAuthChange);
             window.removeEventListener('storage', handleAdminAuthChange);
-            publicUnsubs.forEach(u => u());
-            privateUnsubs.forEach(u => u());
+            publicUnsubs.forEach(u => { try { u(); } catch (_) {} });
+            privateUnsubs.forEach(u => { try { u(); } catch (_) {} });
         };
     }, []);
 
@@ -446,12 +851,30 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     // Note: React 18 / Firestore auto-updates via the listeners above. 
     // We just write to Firestore here.
 
-    const sendNotification = async (notif: Omit<Notification, 'id'>) => {
+    const sendNotification = async (notif: Omit<Notification, 'id' | 'status' | 'createdAt' | 'createdBy' | 'recipientRole'> & Partial<Pick<Notification, 'status' | 'createdAt' | 'createdBy' | 'recipientRole'>>) => {
+        let recipientId = notif.recipientId || 'all';
+        let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined;
+
+        if (recipientId.startsWith('mechanic-')) {
+            recipientId = recipientId.replace('mechanic-', '');
+            recipientRole = 'mechanic';
+        } else if (recipientId.startsWith('customer-')) {
+            recipientId = recipientId.replace('customer-', '');
+            recipientRole = 'customer';
+        } else if (recipientId === 'admin') {
+            recipientRole = 'admin';
+        }
+
         const newNotif = {
             ...notif,
+            recipientId,
+            recipientRole: notif.recipientRole || recipientRole,
             id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             timestamp: Date.now(),
-            read: false
+            status: 'unread',
+            read: false,
+            createdAt: notif.createdAt || new Date().toISOString(),
+            createdBy: notif.createdBy || auth.currentUser?.uid || 'system'
         } as Notification;
 
         if (!auth.currentUser) {
@@ -468,8 +891,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         try {
             await addDoc(collection(firestore, 'notifications'), {
                 ...notif,
+                recipientId,
+                recipientRole: notif.recipientRole || recipientRole,
                 timestamp: Date.now(),
-                read: false
+                status: 'unread',
+                read: false,
+                createdAt: notif.createdAt || new Date().toISOString(),
+                createdBy: notif.createdBy || auth.currentUser?.uid || 'system'
             });
         } catch (e) {
             console.warn("Failed to send notification to Firestore, using local fallback:", e);
@@ -503,6 +931,170 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const deleteService = async (id: string) => {
         await deleteDoc(doc(firestore, 'services', id));
+    };
+
+    const addAppService = async (appService: Omit<AppService, 'id'>) => {
+        await addDoc(collection(firestore, 'appServices'), appService);
+    };
+
+    const updateAppService = async (appService: AppService) => {
+        const { id, ...data } = appService;
+        await updateDoc(doc(firestore, 'appServices', id), data);
+    };
+
+    const deleteAppService = async (id: string) => {
+        await deleteDoc(doc(firestore, 'appServices', id));
+    };
+
+    const addServiceProvider = async (provider: Omit<ServiceProvider, 'id'>) => {
+        await addDoc(collection(firestore, 'serviceProviders'), provider);
+    };
+
+    const updateServiceProvider = async (provider: ServiceProvider) => {
+        const { id, ...data } = provider;
+        await updateDoc(doc(firestore, 'serviceProviders', id), data);
+    };
+
+    const deleteServiceProvider = async (id: string) => {
+        await deleteDoc(doc(firestore, 'serviceProviders', id));
+    };
+
+    const addServicePricing = async (pricing: Omit<ServicePricing, 'id'>) => {
+        await addDoc(collection(firestore, 'servicePricing'), pricing);
+    };
+
+    const updateServicePricing = async (pricing: ServicePricing) => {
+        const { id, ...data } = pricing;
+        await updateDoc(doc(firestore, 'servicePricing', id), data);
+    };
+
+    const deleteServicePricing = async (id: string) => {
+        await deleteDoc(doc(firestore, 'servicePricing', id));
+    };
+
+    const addServiceRequest = async (request: Omit<ServiceRequest, 'id'>) => {
+        const docRef = await addDoc(collection(firestore, 'serviceRequests'), request);
+        
+        await addDoc(collection(firestore, 'serviceActivityLogs'), {
+            requestId: docRef.id,
+            customerId: request.customerId,
+            statusTo: request.status || 'Pending',
+            notes: 'Request created',
+            updatedBy: request.customerId,
+            updatedAt: new Date().toISOString()
+        });
+
+        await sendNotification({
+            recipientId: 'admin',
+            title: 'New Service Request',
+            message: `${request.customerName} requested ${request.serviceName}`,
+            type: 'info',
+            date: new Date().toISOString(),
+            read: false,
+            link: '/admin/services/requests'
+        });
+    };
+
+    // --- Rental Car CRUD ---
+    const addRentalCar = async (car: Omit<RentalCar, 'id'>) => {
+        await addDoc(collection(firestore, 'rentalCars'), car);
+    };
+
+    const updateRentalCar = async (car: RentalCar) => {
+        const { id, ...data } = car;
+        await updateDoc(doc(firestore, 'rentalCars', id), data);
+    };
+
+    const deleteRentalCar = async (id: string) => {
+        await deleteDoc(doc(firestore, 'rentalCars', id));
+    };
+
+    // --- Hire Driver CRUD ---
+    const addHireDriver = async (driver: Omit<HireDriver, 'id'>) => {
+        await addDoc(collection(firestore, 'hireDrivers'), driver);
+    };
+
+    const updateHireDriver = async (driver: HireDriver) => {
+        const { id, ...data } = driver;
+        await updateDoc(doc(firestore, 'hireDrivers', id), data);
+    };
+
+    const deleteHireDriver = async (id: string) => {
+        await deleteDoc(doc(firestore, 'hireDrivers', id));
+    };
+
+    // --- Liaison Booking CRUD ---
+    const addLiaisonBooking = async (booking: Omit<LiaisonBooking, 'id'>) => {
+        await addDoc(collection(firestore, 'liaisonBookings'), booking);
+        await sendNotification({
+            recipientId: 'admin',
+            title: 'New Liaison Booking',
+            message: `New booking received for LTO ${booking.serviceType} from ${booking.customerName}`,
+            type: 'info',
+            date: new Date().toISOString(),
+            read: false,
+            link: '/admin/liaison/bookings'
+        });
+    };
+
+    const updateLiaisonBookingStatus = async (id: string, status: LiaisonBooking['status'], notes?: string, officerName?: string) => {
+        const bookingRef = doc(firestore, 'liaisonBookings', id);
+        const bookingSnap = await getDoc(bookingRef);
+        if (!bookingSnap.exists()) return;
+        const bookingData = bookingSnap.data() as LiaisonBooking;
+        const newHistoryItem = {
+            status,
+            timestamp: new Date().toISOString(),
+            officerName: officerName || bookingData.liaisonName || 'System',
+            notes: notes || `Status changed to ${status}`
+        };
+        await updateDoc(bookingRef, {
+            status,
+            statusHistory: arrayUnion(newHistoryItem)
+        });
+
+        await sendNotification({
+            recipientId: bookingData.customerId,
+            title: 'Liaison Booking Updated',
+            message: `Your Liaison booking status is now: ${status}`,
+            type: 'booking_status',
+            date: new Date().toISOString(),
+            read: false,
+            link: '/customer-portal/liaison-bookings'
+        });
+    };
+
+    const updateServiceRequestStatus = async (id: string, status: string, notes?: string) => {
+        const reqDoc = await getDoc(doc(firestore, 'serviceRequests', id));
+        if (!reqDoc.exists()) return;
+        
+        const reqData = reqDoc.data() as ServiceRequest;
+        const oldStatus = reqData.status;
+
+        await updateDoc(doc(firestore, 'serviceRequests', id), {
+            status,
+            updatedAt: new Date().toISOString()
+        });
+
+        await addDoc(collection(firestore, 'serviceActivityLogs'), {
+            requestId: id,
+            customerId: reqData.customerId,
+            statusFrom: oldStatus,
+            statusTo: status,
+            notes: notes || `Status changed to ${status}`,
+            updatedBy: auth.currentUser?.uid || 'admin',
+            updatedAt: new Date().toISOString()
+        });
+
+        await sendNotification({
+            recipientId: reqData.customerId,
+            title: 'Service Request Updated',
+            message: `Your request for ${reqData.serviceName} is now: ${status}`,
+            type: 'booking_status',
+            date: new Date().toISOString(),
+            read: false,
+            link: '/customer-portal/requests'
+        });
     };
 
     const addPart = async (part: Omit<Part, 'id'>) => {
@@ -714,11 +1306,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const updateMechanicLocation = async (id: string, location: { lat: number; lng: number }, bookingId?: string) => {
         // 1. Update Firestore for persistent record and general discovery
-        await updateDoc(doc(firestore, 'mechanics', id), { 
-            lat: location.lat, 
-            lng: location.lng, 
-            lastLocationUpdate: new Date().toISOString() 
-        });
+        try {
+            await updateDoc(doc(firestore, 'mechanics', id), { 
+                lat: location.lat, 
+                lng: location.lng, 
+                lastLocationUpdate: new Date().toISOString() 
+            });
+        } catch (_) {}
 
         // 2. Update RTDB for low-latency live tracking if there's an active booking
         if (bookingId) {
@@ -768,6 +1362,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             link: '/admin-portal/bookings'
         });
 
+        if (db?.settings?.emailOnNewBooking && db.settings.smtpHost) {
+            sendEmail(
+                db.settings.contactEmail || 'admin@ridersbud.com',
+                'New Booking Received - RidersBUD',
+                `A new booking has been received from ${booking.customerName} for ${booking.services[0]?.name || 'Service'}.`,
+                db.settings
+            ).catch(err => console.error("Failed to send SMTP email", err));
+        }
+
         return { id: ref.id, ...newBooking } as Booking;
     };
 
@@ -807,6 +1410,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const updateBookingPayment = async (id: string, amount: number, status: 'pending' | 'partial' | 'paid') => {
+        const booking = db?.bookings.find(b => b.id === id);
+
         if (!auth.currentUser) {
             console.info("[DatabaseContext] Performing local mock updateBookingPayment (bypass mode)");
             setDb(prev => {
@@ -819,31 +1424,43 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 } : b);
                 return { ...prev, bookings: updatedBookings };
             });
-            return;
-        }
-        try {
-            const bookingRef = doc(firestore, 'bookings', id);
-            await updateDoc(bookingRef, {
-                paymentStatus: status,
-                isPaid: status === 'paid',
-                paidAmount: increment(amount)
-            });
-        } catch (e) {
-            console.warn(`[Firestore Write Failed] updateBookingPayment for ${id} failed, falling back to local update:`, e);
-            setDb(prev => {
-                if (!prev) return null;
-                const updatedBookings = prev.bookings.map(b => {
-                    if (b.id === id) {
-                        return {
-                            ...b,
-                            paymentStatus: status,
-                            isPaid: status === 'paid',
-                            paidAmount: (b.paidAmount || 0) + amount
-                        };
-                    }
-                    return b;
+        } else {
+            try {
+                const bookingRef = doc(firestore, 'bookings', id);
+                await updateDoc(bookingRef, {
+                    paymentStatus: status,
+                    isPaid: status === 'paid',
+                    paidAmount: increment(amount)
                 });
-                return { ...prev, bookings: updatedBookings };
+            } catch (e) {
+                console.warn(`[Firestore Write Failed] updateBookingPayment for ${id} failed, falling back to local update:`, e);
+                setDb(prev => {
+                    if (!prev) return null;
+                    const updatedBookings = prev.bookings.map(b => {
+                        if (b.id === id) {
+                            return {
+                                ...b,
+                                paymentStatus: status,
+                                isPaid: status === 'paid',
+                                paidAmount: (b.paidAmount || 0) + amount
+                            };
+                        }
+                        return b;
+                    });
+                    return { ...prev, bookings: updatedBookings };
+                });
+            }
+        }
+
+        if (booking?.customerId && status !== 'pending' && booking.paymentStatus !== status) {
+            await sendNotification({
+                recipientId: `customer-${booking.customerId}`,
+                title: '✅ Payment Updated',
+                message: `Your payment has been successfully recorded and your booking is confirmed.`,
+                type: 'success',
+                link: `/customer-portal/booking-detail/${id}`,
+                date: new Date().toISOString(),
+                read: false
             });
         }
     };
@@ -883,6 +1500,31 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
 
         if (booking) {
+            if (booking.customerId && booking.status !== status) {
+                await sendNotification({
+                    recipientId: `customer-${booking.customerId}`,
+                    title: '🔄 Booking Status Updated',
+                    message: `Your booking status has been updated to: ${status}.`,
+                    type: 'info',
+                    link: `/customer-portal/booking-detail/${id}`,
+                    date: new Date().toISOString(),
+                    read: false
+                });
+            }
+
+            // Notify mechanic on status change (covers admin/system-initiated updates)
+            if (booking.mechanicId && booking.status !== status) {
+                await sendNotification({
+                    recipientId: `mechanic-${booking.mechanicId}`,
+                    title: '🔄 Booking Status Updated',
+                    message: `Booking #${id.slice(-6)} status changed to: ${status}.`,
+                    type: 'info',
+                    link: `/mechanic-portal/job/${id}`,
+                    date: new Date().toISOString(),
+                    read: false
+                });
+            }
+
             // Phase 3: Live Payments & Escrow Release (50% split for Completed job)
             if (status === 'Completed' && booking.mechanicId) {
                 const amount = booking.totalAmount || booking.services?.[0]?.price || booking.service?.price || 0;
@@ -933,13 +1575,44 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 name: mechanic.name,
                 email: mechanic.email,
                 phone: mechanic.phone,
-                imageUrl: mechanic.imageUrl,
-                rating: mechanic.rating,
-                reviews: mechanic.reviews
+                imageUrl: mechanic.imageUrl || '',
+                rating: mechanic.rating || 0,
+                reviews: mechanic.reviews || 0
             },
             status: 'Mechanic Assigned' as BookingStatus
         });
 
+        let booking = db?.bookings.find(b => b.id === bookingId);
+        if (!booking) {
+            const docSnap = await getDoc(doc(firestore, 'bookings', bookingId));
+            if (docSnap.exists()) {
+                booking = { id: docSnap.id, ...docSnap.data() } as Booking;
+            }
+        }
+
+        if (booking?.customerId) {
+            await sendNotification({
+                recipientId: `customer-${booking.customerId}`,
+                title: '👨‍🔧 Mechanic Assigned',
+                message: `${mechanic.name} has accepted your job and will be handling your service.`,
+                type: 'info',
+                link: `/customer-portal/booking-detail/${bookingId}`,
+                date: new Date().toISOString(),
+                read: false
+            });
+        }
+
+        // Notify the mechanic of the assignment
+        const serviceName = booking?.services?.[0]?.name || booking?.service?.name || 'Service';
+        await sendNotification({
+            recipientId: `mechanic-${mechanic.id}`,
+            title: '🔧 You Have a New Job',
+            message: `You've been assigned to ${serviceName} for ${booking?.customerName || 'a customer'}.`,
+            type: 'success',
+            link: `/mechanic-portal/job/${bookingId}`,
+            date: new Date().toISOString(),
+            read: false
+        });
     };
 
     const cancelBooking = async (bookingId: string, reason: string) => {
@@ -959,6 +1632,41 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 date: new Date().toISOString(),
                 read: false
             });
+
+            // Notify the customer
+            if (booking.customerId) {
+                await sendNotification({
+                    recipientId: `customer-${booking.customerId}`,
+                    title: '❌ Booking Cancelled',
+                    message: `Your booking for ${serviceName} has been cancelled. Reason: ${reason}`,
+                    type: 'alert',
+                    date: new Date().toISOString(),
+                    read: false,
+                    link: `/customer-portal/booking-history`
+                });
+            }
+
+            // Notify mechanic if one was assigned (MAIN FIX)
+            if (booking.mechanicId) {
+                await sendNotification({
+                    recipientId: `mechanic-${booking.mechanicId}`,
+                    title: '🚨 Booking Cancelled',
+                    message: `Booking for "${serviceName}" from ${booking.customerName || 'Customer'} has been cancelled.`,
+                    type: 'alert',
+                    date: new Date().toISOString(),
+                    read: false,
+                    link: `/mechanic-portal/jobs`
+                });
+            }
+
+            if (db?.settings?.emailOnCancellation && db.settings.smtpHost) {
+                sendEmail(
+                    db.settings.contactEmail || 'admin@ridersbud.com',
+                    'Booking Cancelled - RidersBUD',
+                    `The booking for ${serviceName} from ${booking.customerName} was cancelled. Reason: ${reason}.`,
+                    db.settings
+                ).catch(err => console.error("Failed to send SMTP email", err));
+            }
         }
     };
 
@@ -1210,11 +1918,13 @@ await sendNotification({
     };
 
     const updateCustomerLocation = async (id: string, loc: { lat: number; lng: number }) => {
-        await updateDoc(doc(firestore, 'customers', id), {
-            lat: loc.lat,
-            lng: loc.lng,
-            lastLocationUpdate: new Date().toISOString()
-        });
+        try {
+            await updateDoc(doc(firestore, 'customers', id), {
+                lat: loc.lat,
+                lng: loc.lng,
+                lastLocationUpdate: new Date().toISOString()
+            });
+        } catch (_) {}
     };
 
     const addOrder = async (order: Omit<Order, 'id'>) => {
@@ -1254,6 +1964,39 @@ await sendNotification({
             status,
             statusHistory: arrayUnion({ status, timestamp: new Date().toISOString() })
         });
+    };
+
+    const deleteOrder = async (id: string) => {
+        if (!auth.currentUser) {
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    orders: prev.orders.filter(o => o.id !== id)
+                };
+            });
+            return;
+        }
+        await deleteDoc(doc(firestore, 'orders', id));
+    };
+
+    const deleteAllOrders = async () => {
+        if (!auth.currentUser) {
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    orders: []
+                };
+            });
+            return;
+        }
+        const batch = writeBatch(firestore);
+        const ordersSnapshot = await getDocs(collection(firestore, 'orders'));
+        ordersSnapshot.forEach((docSnap) => {
+            batch.delete(doc(firestore, 'orders', docSnap.id));
+        });
+        await batch.commit();
     };
 
     const uploadFile = async (file: File, path: string): Promise<string> => {
@@ -1540,15 +2283,22 @@ await sendNotification({
                 email: mechanicDoc.email,
                 phone: mechanicDoc.phone,
                 imageUrl: mechanicDoc.imageUrl || '',
-                rating: mechanicDoc.rating,
-                reviews: mechanicDoc.reviews
+                rating: mechanicDoc.rating || 0,
+                reviews: mechanicDoc.reviews || 0
             },
             status: 'Mechanic Assigned' as BookingStatus,
             statusHistory: arrayUnion({ status: 'Mechanic Assigned', timestamp: new Date().toISOString() })
         });
 
-        const booking = db?.bookings.find(b => b.id === bookingId);
-        if (booking) {
+        let booking = db?.bookings.find(b => b.id === bookingId);
+        if (!booking) {
+            const docSnap = await getDoc(doc(firestore, 'bookings', bookingId));
+            if (docSnap.exists()) {
+                booking = { id: docSnap.id, ...docSnap.data() } as Booking;
+            }
+        }
+
+        if (booking?.customerId) {
             const serviceName = booking.services?.[0]?.name || booking.service?.name || 'service';
             await sendNotification({
                 recipientId: `customer-${booking.customerId}`,
@@ -1560,33 +2310,65 @@ await sendNotification({
                 link: `/customer-portal/booking-detail/${bookingId}`
             });
         }
+
+        // Notify the mechanic confirming their acceptance
+        const svcName = booking?.services?.[0]?.name || booking?.service?.name || 'Service';
+        await sendNotification({
+            recipientId: `mechanic-${mechanicDoc.id}`,
+            title: '✅ You Accepted This Job',
+            message: `You've accepted the ${svcName} request for ${booking?.customerName || 'Customer'}.`,
+            type: 'success',
+            link: `/mechanic-portal/job/${bookingId}`,
+            date: new Date().toISOString(),
+            read: false
+        });
     };
 
     const addNotification = async (notification: Omit<Notification, 'id'>) => {
         try {
-            await addDoc(collection(firestore, 'notifications'), notification);
+            await addDoc(collection(firestore, 'notifications'), {
+                ...notification,
+                createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system'
+            });
         } catch (e) {
             console.warn("[Notification] addNotification failed:", e);
+            // Local fallback
+            const newNotif = {
+                ...notification,
+                createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system',
+                id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            } as Notification;
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    notifications: [newNotif, ...(prev.notifications || [])]
+                };
+            });
         }
     };
 
     const markNotificationAsRead = async (id: string) => {
         try {
-            await updateDoc(doc(firestore, 'notifications', id), { read: true });
+            await updateDoc(doc(firestore, 'notifications', id), { read: true, status: 'read' });
         } catch (e) {
             console.warn("[Notification] markNotificationAsRead failed:", e);
         }
     };
 
     const markAllNotificationsAsRead = async (recipientId: string) => {
+        let cleanId = recipientId;
+        if (cleanId.startsWith('customer-')) cleanId = cleanId.replace('customer-', '');
+        else if (cleanId.startsWith('mechanic-')) cleanId = cleanId.replace('mechanic-', '');
+
         try {
             const batch = writeBatch(firestore);
             // Only mark user's own notifications as read, NEVER mark 'all' broadcasts
             const unread = db?.notifications.filter(n =>
-                n.recipientId === recipientId && n.recipientId !== 'all' && !n.read
+                (n.recipientId === cleanId || n.recipientId === recipientId) && n.recipientId !== 'all' && !n.read
             ) || [];
             unread.forEach(n => {
-                batch.update(doc(firestore, 'notifications', n.id), { read: true });
+                batch.update(doc(firestore, 'notifications', n.id), { read: true, status: 'read' });
             });
             if (unread.length > 0) {
                 await batch.commit();
@@ -1605,12 +2387,16 @@ await sendNotification({
     };
 
     const clearAllNotifications = async (recipientId: string) => {
+        let cleanId = recipientId;
+        if (cleanId.startsWith('customer-')) cleanId = cleanId.replace('customer-', '');
+        else if (cleanId.startsWith('mechanic-')) cleanId = cleanId.replace('mechanic-', '');
+
         try {
             const batch = writeBatch(firestore);
             // Only delete notifications where recipientId EXACTLY matches current user
             // NEVER delete or modify 'all' broadcast notifications (they belong to everyone)
             const myNotifs = db?.notifications.filter(n =>
-                n.recipientId === recipientId && n.recipientId !== 'all'
+                (n.recipientId === cleanId || n.recipientId === recipientId) && n.recipientId !== 'all'
             ) || [];
             myNotifs.forEach(n => {
                 batch.delete(doc(firestore, 'notifications', n.id));
@@ -1626,8 +2412,13 @@ await sendNotification({
     const clearAllNotificationsByPrefix = async (prefix: string) => {
         try {
             const batch = writeBatch(firestore);
+            const isCustomer = prefix === 'customer-';
+            const isMechanic = prefix === 'mechanic-';
             const matched = db?.notifications.filter(n =>
-                n.recipientId?.startsWith(prefix) && n.recipientId !== 'all'
+                (n.recipientId?.startsWith(prefix) || 
+                 (isCustomer && n.recipientRole === 'customer') || 
+                 (isMechanic && n.recipientRole === 'mechanic')) && 
+                n.recipientId !== 'all'
             ) || [];
             matched.forEach(n => {
                 batch.delete(doc(firestore, 'notifications', n.id));
@@ -1643,11 +2434,16 @@ await sendNotification({
     const markAllNotificationsAsReadByPrefix = async (prefix: string) => {
         try {
             const batch = writeBatch(firestore);
+            const isCustomer = prefix === 'customer-';
+            const isMechanic = prefix === 'mechanic-';
             const matched = db?.notifications.filter(n =>
-                n.recipientId?.startsWith(prefix) && n.recipientId !== 'all' && !n.read
+                (n.recipientId?.startsWith(prefix) || 
+                 (isCustomer && n.recipientRole === 'customer') || 
+                 (isMechanic && n.recipientRole === 'mechanic')) && 
+                n.recipientId !== 'all' && !n.read
             ) || [];
             matched.forEach(n => {
-                batch.update(doc(firestore, 'notifications', n.id), { read: true });
+                batch.update(doc(firestore, 'notifications', n.id), { read: true, status: 'read' });
             });
             if (matched.length > 0) {
                 await batch.commit();
@@ -1658,7 +2454,17 @@ await sendNotification({
     };
 
     const addReview = async (bookingId: string, reviewData: Omit<Review, 'id' | 'date'>) => {
-        const booking = db?.bookings.find(b => b.id === bookingId);
+        let booking = db?.bookings.find(b => b.id === bookingId);
+        if (!booking) {
+            try {
+                const bookingSnap = await getDoc(doc(firestore, 'bookings', bookingId));
+                if (bookingSnap.exists()) {
+                    booking = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
+                }
+            } catch (e) {
+                console.warn("[addReview] Fallback fetch failed:", e);
+            }
+        }
         if (!booking) throw new Error('Booking not found');
 
         const review: Review = {
@@ -1706,7 +2512,17 @@ await sendNotification({
     };
 
     const updateReview = async (bookingId: string, updatedReview: Review) => {
-        const booking = db?.bookings.find(b => b.id === bookingId);
+        let booking = db?.bookings.find(b => b.id === bookingId);
+        if (!booking) {
+            try {
+                const bookingSnap = await getDoc(doc(firestore, 'bookings', bookingId));
+                if (bookingSnap.exists()) {
+                    booking = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
+                }
+            } catch (e) {
+                console.warn("[updateReview] Fallback fetch failed:", e);
+            }
+        }
         if (!booking || !booking.review) throw new Error('Booking or review not found');
         const oldReview = booking.review;
 
@@ -1787,6 +2603,17 @@ await sendNotification({
             addService,
             updateService,
             deleteService,
+            addAppService,
+            updateAppService,
+            deleteAppService,
+            addServiceProvider,
+            updateServiceProvider,
+            deleteServiceProvider,
+            addServicePricing,
+            updateServicePricing,
+            deleteServicePricing,
+            addServiceRequest,
+            updateServiceRequestStatus,
             addPart,
             updatePart,
             deletePart,
@@ -1811,6 +2638,8 @@ await sendNotification({
             updateCustomerLocation,
             addOrder,
             updateOrderStatus,
+            deleteOrder,
+            deleteAllOrders,
             addPayoutRequest,
             updatePayoutStatus,
             addBanner,
@@ -1843,7 +2672,15 @@ await sendNotification({
             deleteMultipleTasks,
             updateMultipleTasksStatus,
             updateUserNotificationSettings,
-            updateMechanicNotificationSettings
+            updateMechanicNotificationSettings,
+            addRentalCar,
+            updateRentalCar,
+            deleteRentalCar,
+            addHireDriver,
+            updateHireDriver,
+            deleteHireDriver,
+            addLiaisonBooking,
+            updateLiaisonBookingStatus,
         }}>
             {children}
         </DatabaseContext.Provider>

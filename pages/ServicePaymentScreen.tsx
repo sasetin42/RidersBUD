@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { CreditCard } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
@@ -183,8 +183,8 @@ const ServicePaymentScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title={isDeposit ? "Pay Deposit (50%)" : "Pay Remaining Balance"} showBackButton icon={<CreditCard size={22} />} />
-            <div className="flex-grow p-4 space-y-4 overflow-y-auto">
+            <CustomerHeader title={isDeposit ? "Pay Deposit (50%)" : "Pay Remaining Balance"} showBackButton icon={<CreditCard size={22} />} />
+            <div className="flex-grow p-4 pb-32 space-y-4 overflow-y-auto">
                 {/* Service Summary */}
                 <div className="bg-dark-gray p-4 rounded-lg">
                     <h3 className="font-semibold text-lg text-white mb-2">Service Summary</h3>
@@ -233,13 +233,13 @@ const ServicePaymentScreen: React.FC = () => {
             </div>
 
             {/* Footer */}
-            <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray space-y-3">
+            <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3">
                 {error && <p className="text-red-400 text-xs text-center">{error}</p>}
                 <div className="flex justify-between items-center text-lg">
                     <span className="text-light-gray">Amount to Pay:</span>
                     <span className="font-bold text-2xl text-primary">₱{amountToPay.toFixed(2)}</span>
                 </div>
-                <button onClick={handleProcessPayment} disabled={isProcessing || !selectedMethod} className="w-full bg-primary text-white font-bold py-3 rounded-lg hover:bg-orange-600 transition flex items-center justify-center disabled:opacity-50">
+                <button onClick={handleProcessPayment} disabled={isProcessing || !selectedMethod} className="w-full bg-primary text-white font-bold py-4 rounded-2xl hover:bg-orange-600 transition flex items-center justify-center disabled:opacity-50 shadow-lg shadow-primary/20">
                     {isProcessing ? <Spinner size="sm" /> : `Pay with HitPay`}
                 </button>
             </div>

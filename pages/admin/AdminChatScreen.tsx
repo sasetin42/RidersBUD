@@ -50,7 +50,7 @@ interface ChatSession {
 }
 
 const AdminChatScreen: React.FC = () => {
-    const { isAdminAuthenticated } = useAdminAuth();
+    const { isAdminAuthenticated, adminUser } = useAdminAuth();
     const { db } = useDatabase();
     const [chats, setChats] = useState<ChatSession[]>([]);
     const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -89,7 +89,7 @@ const AdminChatScreen: React.FC = () => {
             setChats(sessions);
         });
 
-        return () => unsubscribe();
+        return () => { try { unsubscribe(); } catch (_) {} };
     }, []);
 
     // Load Messages and Profile Data (Realtime)
@@ -186,10 +186,10 @@ const AdminChatScreen: React.FC = () => {
         setupProfileListeners();
 
         return () => {
-            unsubscribeMessages();
-            if (unsubscribeCustomer) unsubscribeCustomer();
-            if (unsubscribeBookings) unsubscribeBookings();
-            if (unsubscribeOrders) unsubscribeOrders();
+            try { unsubscribeMessages(); } catch (_) {}
+            try { if (unsubscribeCustomer) unsubscribeCustomer(); } catch (_) {}
+            try { if (unsubscribeBookings) unsubscribeBookings(); } catch (_) {}
+            try { if (unsubscribeOrders) unsubscribeOrders(); } catch (_) {}
         };
     }, [selectedChatId, chats]);
 
@@ -212,6 +212,7 @@ const AdminChatScreen: React.FC = () => {
             // Send a system message that the chat is completed
             await addDoc(collection(firestoreDB, 'support_chats', selectedChatId, 'messages'), {
                 sender: 'admin',
+                senderName: 'System',
                 text: 'This support session has been completed and marked as resolved.',
                 timestamp: serverTimestamp()
             });
@@ -237,6 +238,8 @@ const AdminChatScreen: React.FC = () => {
         try {
             await addDoc(collection(firestoreDB, 'support_chats', selectedChatId, 'messages'), {
                 sender: 'admin',
+                senderName: adminUser?.name || 'Support Agent',
+                senderAvatar: adminUser?.avatarUrl || adminUser?.avatar || null,
                 text: textToSend,
                 timestamp: serverTimestamp()
             });
@@ -245,7 +248,10 @@ const AdminChatScreen: React.FC = () => {
                 lastMessage: textToSend,
                 lastTimestamp: serverTimestamp(),
                 unread: false,
-                unreadByUser: true
+                unreadByUser: true,
+                adminId: adminUser?.id || null,
+                adminName: adminUser?.name || 'Support Agent',
+                adminAvatar: adminUser?.avatarUrl || adminUser?.avatar || null
             });
         } catch (error) {
             console.error("Error sending message:", error);
@@ -370,6 +376,8 @@ const AdminChatScreen: React.FC = () => {
 
                 await addDoc(collection(firestoreDB, 'support_chats', selectedChatId, 'messages'), {
                     sender: 'admin',
+                    senderName: adminUser?.name || 'Support Agent',
+                    senderAvatar: adminUser?.avatarUrl || adminUser?.avatar || null,
                     text: '',
                     attachment: attachment,
                     timestamp: serverTimestamp()
@@ -379,7 +387,10 @@ const AdminChatScreen: React.FC = () => {
                     lastMessage: attachment.type === 'image' ? '[Image]' : '[File]',
                     lastTimestamp: serverTimestamp(),
                     unread: false,
-                    unreadByUser: true
+                    unreadByUser: true,
+                    adminId: adminUser?.id || null,
+                    adminName: adminUser?.name || 'Support Agent',
+                    adminAvatar: adminUser?.avatarUrl || adminUser?.avatar || null
                 });
 
             } catch (error) {

@@ -25,10 +25,13 @@ const AdminNotificationsScreen: React.FC = () => {
     const [customerConfirm, setCustomerConfirm] = useState(false);
     const [mechanicConfirm, setMechanicConfirm] = useState(false);
     const [sortAsc, setSortAsc] = useState(false);
+    const [customerPage, setCustomerPage] = useState(1);
+    const [mechanicPage, setMechanicPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
 
     const customerNotifications = useMemo(() => {
         if (!db?.notifications) return [];
-        let filtered = db.notifications.filter(n => n.recipientId?.startsWith('customer-'));
+        let filtered = db.notifications.filter(n => n.recipientRole === 'customer' || n.recipientId?.startsWith('customer-') || n.recipientId === 'all');
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             filtered = filtered.filter(n => n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q));
@@ -40,7 +43,7 @@ const AdminNotificationsScreen: React.FC = () => {
 
     const mechanicNotifications = useMemo(() => {
         if (!db?.notifications) return [];
-        let filtered = db.notifications.filter(n => n.recipientId?.startsWith('mechanic-'));
+        let filtered = db.notifications.filter(n => n.recipientRole === 'mechanic' || n.recipientId?.startsWith('mechanic-') || n.recipientId === 'all');
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             filtered = filtered.filter(n => n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q));
@@ -96,58 +99,113 @@ const AdminNotificationsScreen: React.FC = () => {
     if (!db) return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
 
     const renderNotificationTable = (
-        notifications: typeof customerNotifications,
-        unreadCount: number,
+        allNotifications: typeof customerNotifications,
+        currentPage: number,
+        setCurrentPage: React.Dispatch<React.SetStateAction<number>>,
         type: 'customer' | 'mechanic'
-    ) => (
-        <div className="overflow-x-auto">
-            <table className="w-full text-left">
-                <thead className="bg-white/5">
-                    <tr>
-                        <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Status</th>
-                        <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Type</th>
-                        <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Title</th>
-                        <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500 hidden md:table-cell">Message</th>
-                        <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Date</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                    {notifications.length > 0 ? notifications.map(n => {
-                        const config = typeConfig[n.type] || typeConfig.info;
-                        const IconComponent = config.icon;
-                        return (
-                            <tr key={n.id} className="hover:bg-white/5 transition-colors group">
-                                <td className="px-4 py-3">
-                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${n.read ? 'text-gray-600 bg-white/5' : 'text-primary bg-primary/10'}`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full ${n.read ? 'bg-gray-600' : 'bg-primary animate-pulse'}`} />
-                                        {n.read ? 'Read' : 'New'}
-                                    </span>
-                                </td>
-                                <td className="px-4 py-3">
-                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold ${config.bg} ${config.text} border border-white/5`}>
-                                        <IconComponent size={12} />
-                                        {n.type}
-                                    </span>
-                                </td>
-                                <td className="px-4 py-3 text-sm font-bold text-white">{n.title}</td>
-                                <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell max-w-[300px] truncate">{n.message}</td>
-                                <td className="px-4 py-3 text-[11px] text-gray-500 font-mono whitespace-nowrap">{formatDate(n.timestamp ?? n.date)}</td>
+    ) => {
+        const totalPages = Math.max(1, Math.ceil(allNotifications.length / ITEMS_PER_PAGE));
+        const validPage = Math.min(currentPage, totalPages);
+        const startIndex = (validPage - 1) * ITEMS_PER_PAGE;
+        const pageNotifications = allNotifications.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+        return (
+            <div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead className="bg-white/5">
+                            <tr>
+                                <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Status</th>
+                                <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Type</th>
+                                <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Title</th>
+                                <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500 hidden md:table-cell">Message</th>
+                                <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Date</th>
                             </tr>
-                        );
-                    }) : (
-                        <tr>
-                            <td colSpan={5} className="py-16 text-center">
-                                <div className="flex flex-col items-center gap-3 text-gray-500">
-                                    <BellOff size={32} />
-                                    <p className="font-bold text-sm">No {type} notifications</p>
-                                </div>
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
-        </div>
-    );
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                            {pageNotifications.length > 0 ? pageNotifications.map(n => {
+                                const config = typeConfig[n.type] || typeConfig.info;
+                                const IconComponent = config.icon;
+                                return (
+                                    <tr key={n.id} className="hover:bg-white/5 transition-colors group">
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${n.read ? 'text-gray-600 bg-white/5' : 'text-primary bg-primary/10'}`}>
+                                                <span className={`w-1.5 h-1.5 rounded-full ${n.read ? 'bg-gray-600' : 'bg-primary animate-pulse'}`} />
+                                                {n.read ? 'Read' : 'New'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold ${config.bg} ${config.text} border border-white/5`}>
+                                                <IconComponent size={12} />
+                                                {n.type}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm font-bold text-white">{n.title}</td>
+                                        <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell max-w-[300px] truncate">{n.message}</td>
+                                        <td className="px-4 py-3 text-[11px] text-gray-500 font-mono whitespace-nowrap">{formatDate(n.timestamp ?? n.date)}</td>
+                                    </tr>
+                                );
+                            }) : (
+                                <tr>
+                                    <td colSpan={5} className="py-16 text-center">
+                                        <div className="flex flex-col items-center gap-3 text-gray-500">
+                                            <BellOff size={32} />
+                                            <p className="font-bold text-sm">No {type} notifications</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Pagination Controls */}
+                {allNotifications.length > ITEMS_PER_PAGE && (
+                    <div className="px-6 py-4 bg-white/[0.02] border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <p className="text-xs text-gray-500 font-bold">
+                            Showing <span className="text-gray-300">{startIndex + 1}</span> to <span className="text-gray-300">{Math.min(startIndex + ITEMS_PER_PAGE, allNotifications.length)}</span> of <span className="text-gray-300">{allNotifications.length}</span>
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                disabled={validPage === 1}
+                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-bold transition-all border border-white/5 disabled:opacity-30 disabled:pointer-events-none"
+                            >
+                                Previous
+                            </button>
+                            <div className="flex items-center gap-1">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
+                                    // Only render a subset of pages if totalPages is large
+                                    if (totalPages > 5 && Math.abs(p - validPage) > 2 && p !== 1 && p !== totalPages) {
+                                        if (p === 2 || p === totalPages - 1) {
+                                            return <span key={p} className="text-gray-600 text-xs px-1">...</span>;
+                                        }
+                                        return null;
+                                    }
+                                    return (
+                                        <button
+                                            key={p}
+                                            onClick={() => setCurrentPage(p)}
+                                            className={`w-7 h-7 rounded-lg text-xs font-black transition-all flex items-center justify-center border ${p === validPage ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 border-white/5 text-gray-400 hover:text-white hover:border-white/10'}`}
+                                        >
+                                            {p}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={validPage === totalPages}
+                                className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-lg text-xs font-bold transition-all border border-white/5 disabled:opacity-30 disabled:pointer-events-none"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-8 animate-fadeIn max-w-[1600px] mx-auto">
@@ -164,9 +222,15 @@ const AdminNotificationsScreen: React.FC = () => {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
                         <input
                             type="text"
+                            id="notification-search"
+                            name="notification-search"
                             placeholder="Search notifications..."
                             value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
+                            onChange={e => {
+                                setSearchQuery(e.target.value);
+                                setCustomerPage(1);
+                                setMechanicPage(1);
+                            }}
                             className="w-full bg-white/5 border border-white/5 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white font-medium placeholder-gray-600 outline-none transition-all focus:border-primary/50"
                         />
                     </div>
@@ -211,7 +275,7 @@ const AdminNotificationsScreen: React.FC = () => {
                         </button>
                     </div>
                 </div>
-                {renderNotificationTable(customerNotifications, customerUnread, 'customer')}
+                {renderNotificationTable(customerNotifications, customerPage, setCustomerPage, 'customer')}
             </div>
 
             {/* Mechanic Notifications */}
@@ -249,7 +313,7 @@ const AdminNotificationsScreen: React.FC = () => {
                         </button>
                     </div>
                 </div>
-                {renderNotificationTable(mechanicNotifications, mechanicUnread, 'mechanic')}
+                {renderNotificationTable(mechanicNotifications, mechanicPage, setMechanicPage, 'mechanic')}
             </div>
         </div>
     );

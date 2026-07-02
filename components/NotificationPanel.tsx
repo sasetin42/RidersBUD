@@ -4,6 +4,18 @@ import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { Notification } from '../types';
+import { CheckCircle, Info, AlertTriangle, AlertOctagon, Briefcase } from 'lucide-react';
+
+const getTypeIcon = (type?: string) => {
+    switch (type) {
+        case 'success': return <CheckCircle size={16} className="text-emerald-500" />;
+        case 'warning': return <AlertTriangle size={16} className="text-amber-500" />;
+        case 'alert': return <AlertOctagon size={16} className="text-red-500" />;
+        case 'job': return <Briefcase size={16} className="text-[#FE7803]" />;
+        case 'info':
+        default: return <Info size={16} className="text-blue-500" />;
+    }
+};
 
 const NotificationPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { notifications, markAsRead, clearAllNotifications } = useNotification();
@@ -40,9 +52,9 @@ const NotificationPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         if (isAdmin) {
             clearAllNotifications('admin');
         } else if (mechanic?.id) {
-            clearAllNotifications(`mechanic-${mechanic.id}`);
+            clearAllNotifications(mechanic.id);
         } else if (user?.id) {
-            clearAllNotifications(`customer-${user.id}`);
+            clearAllNotifications(user.id);
         }
     };
 
@@ -62,11 +74,16 @@ const NotificationPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             <div
                                 key={notif.id}
                                 onClick={() => handleClick(notif)}
-                                className={`p-3 border-b border-field hover:bg-field cursor-pointer ${!notif.read ? 'bg-primary/10' : ''}`}
+                                className={`p-3 border-b border-field hover:bg-field cursor-pointer flex items-start gap-3 ${notif.status === 'unread' || notif.read === false ? 'bg-primary/5' : ''}`}
                             >
-                                <p className="font-semibold text-white text-sm">{notif.title}</p>
-                                <p className="text-xs text-light-gray">{notif.message}</p>
-                                <p className="text-[10px] text-gray-500 mt-1">{timeSince(notif.timestamp)}</p>
+                                <div className="mt-0.5 flex-shrink-0">
+                                    {getTypeIcon(notif.type)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-semibold text-white text-sm">{notif.title}</p>
+                                    <p className="text-xs text-light-gray mt-0.5 line-clamp-2">{notif.message}</p>
+                                    <p className="text-[10px] text-gray-500 mt-1">{timeSince(notif.timestamp)}</p>
+                                </div>
                             </div>
                         ))
                     ) : (

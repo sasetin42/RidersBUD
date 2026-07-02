@@ -1,18 +1,21 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Booking, BookingStatus, Customer, Mechanic } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
 import { useNotification } from '../../context/NotificationContext';
-import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink, X, Wrench } from 'lucide-react';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
 import MapComponent, { MapMarker } from '../../components/MapComponent';
+import { ref, onValue } from 'firebase/database';
+import { rtdb } from '../../firebase';
+import { getFallbackImageForCategory } from '../../utils/fallbackImages';
+import { getProfileImage } from '../../utils/imageConstants';
+import Tooltip from '../../components/ui/Tooltip';
 
 declare const L: any;
-
-import Tooltip from '../../components/ui/Tooltip';
 
 type SortableKeys = 'id' | 'customerName' | 'mechanicName' | 'date' | 'price';
 
@@ -77,6 +80,19 @@ const parseDateTime = (dateStr: string, timeStr: string): number => {
     return new Date(year, month, day, hours, minutes).getTime();
 };
 
+const getTimelineData = (status: BookingStatus, statusHistory?: { status: BookingStatus; timestamp: string }[]) => {
+    const history = statusHistory ? [...statusHistory] : [];
+    const lastEntry = history[history.length - 1];
+    if (!lastEntry || lastEntry.status !== status) {
+        history.push({
+            status,
+            timestamp: new Date().toISOString()
+        });
+    }
+    return history;
+};
+
+
 
 
 // Quick Action Button Component
@@ -135,7 +151,7 @@ const BookingDetailsModal: React.FC<{ booking: Booking; customer?: Customer, onC
                                         <p className="text-3xl font-black text-white tracking-tight">{svcs[0]?.name || 'Unknown Service'}</p>
                                     )}
                                     <div className="flex items-baseline gap-3 mt-2">
-                                        <p className="text-5xl font-black text-primary">₱{total.toLocaleString()}</p>
+                                        <p className="text-5xl font-black text-primary">{total > 0 ? `₱${total.toLocaleString()}` : 'For Quotation'}</p>
                                         <span className="text-gray-400 font-bold text-sm">Est: {dur}</span>
                                     </div>
                                 </>
@@ -284,8 +300,219 @@ const BookingDetailsModal: React.FC<{ booking: Booking; customer?: Customer, onC
                 )}
             </div>
         </Modal>
-    )
-}
+    );
+};
+
+const PriceBreakdownModal: React.FC<{
+    booking: Booking;
+    onClose: () => void;
+}> = ({ booking, onClose }) => {
+    const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+    const originalServicesTotal = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0);
+    const paidDownpayment = Number(booking.paidAmount) || (originalServicesTotal * 0.5);
+    const serviceBalance = Math.max(0, originalServicesTotal - paidDownpayment);
+    
+    const additionalCosts = (booking as any).additionalCosts || [];
+    const additionalCostsTotal = additionalCosts.reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+    
+    const totalAmount = originalServicesTotal + additionalCostsTotal;
+    const remainingBalance = serviceBalance + additionalCostsTotal;
+
+    const downpaymentReceipt = booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl || (booking as any).downpaymentReceiptUrl;
+    const downpaymentRef = booking.gcashDownpaymentReference || booking.gcashReference || (booking as any).downpaymentReference;
+    const finalReceipt = booking.gcashBalanceReceiptUrl || (booking as any).balanceReceiptUrl;
+    const finalRef = booking.gcashBalanceReference;
+
+    return (
+        <Modal 
+            title={
+                <div className="flex flex-col gap-0.5">
+                    <h2 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+                        Price Breakdown
+                        <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full font-mono text-gray-300">
+                            #{booking.id.slice(-6).toUpperCase()}
+                        </span>
+                    </h2>
+                    <span className="text-[9px] text-gray-500 font-bold tracking-widest uppercase mt-0.5">
+                        Booking Status: {booking.status}
+                    </span>
+                </div>
+            }
+            isOpen={true} 
+            onClose={onClose}
+            compact={true}
+        >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Column: Services & Additional Costs */}
+                <div className="space-y-4">
+                    {/* Original Services */}
+                    <div className="border border-white/5 bg-white/[0.01] rounded-xl p-3.5">
+                        <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Original Services</h4>
+                        <div className="space-y-2">
+                            {svcs.map((svc, idx) => (
+                                <div key={idx} className="flex justify-between items-center bg-white/5 p-2.5 rounded-lg border border-white/5 text-xs">
+                                    <div className="flex items-center gap-3">
+                                        {svc.imageUrl ? (
+                                            <img 
+                                                src={svc.imageUrl} 
+                                                alt={svc.name} 
+                                                className="w-8 h-8 rounded-lg object-cover" 
+                                            />
+                                        ) : (
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center border border-white/5 text-gray-500 shrink-0">
+                                                <Wrench size={14} />
+                                            </div>
+                                        )}
+                                        <span className="text-gray-300 font-bold">{svc.name}</span>
+                                    </div>
+                                    <span className="text-white font-mono">{svc.price > 0 ? `₱${svc.price.toLocaleString()}` : 'For Quotation'}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Additional Costs */}
+                    <div className="border border-white/5 bg-white/[0.01] rounded-xl p-3.5">
+                        {additionalCosts.length > 0 ? (
+                            <div>
+                                <h4 className="text-[10px] font-black text-primary uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                    <Wrench size={10} /> Additional Costs Added by Mechanic
+                                </h4>
+                                <div className="space-y-2">
+                                    {additionalCosts.map((cost: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between items-center bg-primary/5 p-2.5 rounded-lg border border-primary/10 text-xs">
+                                            <span className="text-gray-300 font-bold">{cost.description || 'Additional Item'}</span>
+                                            <span className="text-primary font-mono font-bold">₱{Number(cost.price).toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div>
+                                <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                    <Wrench size={10} /> Additional Costs
+                                </h4>
+                                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-lg text-center">
+                                    <span className="text-[10px] text-gray-500 font-bold">No additional costs added by mechanic.</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Right Column: GCash Receipts & Totals */}
+                <div className="space-y-4">
+                    {booking.paymentMethod === 'GCash' && (
+                        <div className="space-y-2 border border-white/5 bg-white/[0.01] rounded-xl p-3.5">
+                            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                                GCash Payment Receipts
+                            </h4>
+                            <div className="grid grid-cols-2 gap-3.5">
+                                {/* Downpayment Card */}
+                                <div className="border border-white/5 bg-[#121212] rounded-lg p-2.5 flex flex-col items-center justify-center text-center gap-2">
+                                    <span className="text-[9px] text-gray-400 font-bold">Downpayment (50%)</span>
+                                    {downpaymentReceipt ? (
+                                        <a 
+                                            href={downpaymentReceipt} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="group relative w-full aspect-video rounded bg-white/5 overflow-hidden border border-white/10 flex items-center justify-center"
+                                        >
+                                            <img 
+                                                src={downpaymentReceipt} 
+                                                alt="Downpayment Receipt" 
+                                                className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                            />
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-[8px] font-bold text-white">
+                                                View Original
+                                            </div>
+                                        </a>
+                                    ) : (
+                                        <div className="w-full aspect-video rounded bg-white/5 border border-dashed border-white/10 flex flex-col items-center justify-center">
+                                            <span className="text-[8px] text-gray-600 font-bold">Awaiting Upload</span>
+                                        </div>
+                                    )}
+                                    {downpaymentRef && (
+                                        <span className="text-[8px] font-mono text-gray-500 bg-white/5 px-1.5 py-0.5 rounded select-all truncate max-w-full">
+                                            Ref: {downpaymentRef}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Final Payment Card */}
+                                <div className="border border-white/5 bg-[#121212] rounded-lg p-2.5 flex flex-col items-center justify-center text-center gap-2">
+                                    <span className="text-[9px] text-gray-400 font-bold">Final Payment</span>
+                                    {finalReceipt ? (
+                                        <a 
+                                            href={finalReceipt} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="group relative w-full aspect-video rounded bg-white/5 overflow-hidden border border-white/10 flex items-center justify-center"
+                                        >
+                                            <img 
+                                                src={finalReceipt} 
+                                                alt="Final Payment Receipt" 
+                                                className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                            />
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-[8px] font-bold text-white">
+                                                View Original
+                                            </div>
+                                        </a>
+                                    ) : (
+                                        <div className="w-full aspect-video rounded bg-[#181818] border border-dashed border-white/10 flex flex-col items-center justify-center">
+                                            <span className="text-[8px] text-gray-600 font-bold">Awaiting Upload</span>
+                                        </div>
+                                    )}
+                                    {finalRef && (
+                                        <span className="text-[8px] font-mono text-gray-500 bg-white/5 px-1.5 py-0.5 rounded select-all truncate max-w-full">
+                                            Ref: {finalRef}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Summary Totals */}
+                    <div className="border border-white/5 bg-white/[0.01] rounded-xl p-3.5 space-y-2.5">
+                        <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Totals Summary</h4>
+                        <div className="flex justify-between text-xs font-medium pt-1">
+                                <span className="text-gray-400">Services Subtotal</span>
+                                <span className="text-white">{originalServicesTotal > 0 ? `₱${originalServicesTotal.toLocaleString()}` : 'For Quotation'}</span>
+                            </div>
+                            {additionalCostsTotal > 0 && (
+                                <div className="flex justify-between text-xs font-medium">
+                                    <span className="text-gray-400">Additional Costs Total</span>
+                                    <span className="text-primary font-bold">+₱{additionalCostsTotal.toLocaleString()}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between items-center bg-white/5 p-2.5 rounded-xl border border-white/5">
+                                <span className="text-[10px] font-black uppercase text-white tracking-wider">Grand Total Price</span>
+                                <span className="text-sm font-black text-white">{totalAmount > 0 ? `₱${totalAmount.toLocaleString()}` : 'For Quotation'}</span>
+                            </div>
+
+                            <div className="h-px bg-white/5 my-2"></div>
+
+                            <div className="flex justify-between text-xs font-medium">
+                                <span className="text-gray-400">Paid Down Payment (50% Deposit)</span>
+                                <span className="text-green-400">{paidDownpayment > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}</span>
+                            </div>
+                            <div className="flex justify-between items-center bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
+                                <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Final Payment Due</span>
+                                <span className="text-sm font-black text-emerald-400">{remainingBalance > 0 ? `₱${remainingBalance.toLocaleString()}` : 'For Quotation'}</span>
+                            </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-white/5 mt-4">
+                <button onClick={onClose} className="bg-admin-border text-white font-bold py-2 px-6 rounded-xl hover:bg-gray-600 transition text-xs">
+                    Close
+                </button>
+            </div>
+        </Modal>
+    );
+};
 
 const CancellationModal: React.FC<{
     booking: Booking;
@@ -309,6 +536,8 @@ const CancellationModal: React.FC<{
             <div className="space-y-4">
                 <p>Please provide a reason for cancelling the booking for <span className="font-bold text-admin-accent">{booking.customerName}</span>.</p>
                 <textarea
+                    id="cancellationReason"
+                    name="cancellationReason"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     placeholder="e.g., Customer request, mechanic unavailable..."
@@ -333,34 +562,64 @@ const MechanicAssignmentModal: React.FC<{
     onAssign: (mechanic: Mechanic) => void;
 }> = ({ booking, mechanics, onClose, onAssign }) => {
     return (
-        <Modal title={`Assign Mechanic to Booking #${booking.id.slice(-6)}`} isOpen={true} onClose={onClose}>
-            <div className="space-y-6">
-                <p className="text-sm text-gray-400">Select a professional to handle this service for <span className="text-white font-bold">{booking.customerName}</span>.</p>
-                <div className="grid grid-cols-1 gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+        <Modal title={`Assign Mechanic to Booking #${booking.id.slice(-6)}`} isOpen={true} onClose={onClose} compact={true}>
+            <div className="space-y-4">
+                <p className="text-xs text-gray-400">Select a professional to handle this service for <span className="text-white font-bold">{booking.customerName}</span>.</p>
+                <div className="grid grid-cols-1 gap-3 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar">
                     {mechanics.filter(m => m.status === 'Active').map(mechanic => (
                         <div
                             key={mechanic.id}
-                            className="bg-white/5 border border-white/5 p-4 rounded-2xl hover:bg-white/10 hover:border-primary/50 transition-all cursor-pointer group"
-                            onClick={() => onAssign(mechanic)}
+                            className="bg-white/5 border border-white/5 p-3 rounded-xl hover:bg-white/10 hover:border-primary/50 transition-all group relative"
                         >
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center text-xl font-black text-primary">
-                                    {mechanic.name.charAt(0)}
+                            <div className="flex items-center gap-3.5">
+                                <div className="relative shrink-0">
+                                    {mechanic.imageUrl ? (
+                                        <img 
+                                            src={getProfileImage(mechanic.imageUrl, 'mechanic')} 
+                                            alt={mechanic.name} 
+                                            className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0" 
+                                        />
+                                    ) : (
+                                        <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center text-lg font-black text-primary shrink-0">
+                                            {mechanic.name.charAt(0)}
+                                        </div>
+                                    )}
+                                    <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-[#121212] ${mechanic.isOnline ? 'bg-green-500' : 'bg-gray-500'}`} />
                                 </div>
-                                <div className="flex-1">
-                                    <p className="font-bold text-white group-hover:text-primary transition-colors">{mechanic.name}</p>
-                                    <p className="text-[10px] text-gray-500 font-bold  tracking-widest">{mechanic.specialization || 'Professional Mechanic'}</p>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-bold text-white group-hover:text-primary transition-colors text-sm truncate">{mechanic.name}</p>
+                                        {mechanic.verificationStatus === 'verified' && (
+                                            <span className="bg-primary/20 text-primary border border-primary/20 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded">Verified</span>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 font-bold tracking-wide truncate mt-0.5">
+                                        {mechanic.specializations?.join(', ') || mechanic.specialties?.join(', ') || 'Professional Mechanic'}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-1 text-[9px] text-gray-500 font-bold">
+                                        <span>{mechanic.phone}</span>
+                                        <span>•</span>
+                                        <span className="truncate">{mechanic.email}</span>
+                                    </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-yellow-400 font-black text-xs">⭐ {mechanic.rating}</p>
-                                    <p className="text-[10px] text-gray-600 font-bold ">{mechanic.reviews} Reviews</p>
+                                <div className="flex flex-col items-end shrink-0 gap-1.5">
+                                    <div className="text-right">
+                                        <p className="text-yellow-400 font-black text-xs">⭐ {Number(mechanic.rating || 0).toFixed(1)}</p>
+                                        <p className="text-[9px] text-gray-500 font-bold">{mechanic.reviews || 0} Reviews</p>
+                                    </div>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onAssign(mechanic); }}
+                                        className="px-3 py-1.5 bg-[#FF7903] hover:bg-[#e06800] text-white text-[9px] font-black tracking-widest uppercase rounded-lg transition-all"
+                                    >
+                                        Assign
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     ))}
                 </div>
-                <div className="flex justify-end pt-4 border-t border-white/5">
-                    <button onClick={onClose} className="px-6 py-3 bg-white/5 text-gray-400 font-black  tracking-widest text-[10px] rounded-xl hover:bg-white/10 hover:text-white transition-all">Cancel</button>
+                <div className="flex justify-end pt-3 border-t border-white/5">
+                    <button onClick={onClose} className="px-5 py-2.5 bg-white/5 text-gray-400 font-black tracking-widest text-[9px] rounded-lg hover:bg-white/10 hover:text-white transition-all">Cancel</button>
                 </div>
             </div>
         </Modal>
@@ -437,6 +696,231 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
     );
 };
 
+interface LiveMapCardProps {
+    booking: Booking;
+}
+
+const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
+    const { db } = useDatabase();
+    const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number, lng: number } | null>(null);
+    const [mechanicLiveLocation, setMechanicLiveLocation] = useState<{ lat: number, lng: number } | null>(null);
+    const [time, setTime] = useState<number>(0);
+
+    const customerObj = useMemo(() => {
+        return db.customers.find(c => c.name === booking.customerName || c.id === booking.customerId);
+    }, [db.customers, booking.customerName, booking.customerId]);
+
+    const mechanicObj = useMemo(() => {
+        return db.mechanics.find(m => m.id === booking.mechanicId || (booking.mechanic && m.id === booking.mechanic.id));
+    }, [db.mechanics, booking.mechanicId, booking.mechanic]);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setTime(prev => prev + 1000);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
+        if (!booking.id) return;
+        const customerRef = ref(rtdb, `tracking/${booking.id}/customerLocation`);
+        const mechanicRef = ref(rtdb, `tracking/${booking.id}/mechanicLocation`);
+
+        const unsubCustomer = onValue(customerRef, (snapshot) => {
+            const val = snapshot.val();
+            if (val) {
+                const lat = Number(val.lat);
+                const lng = Number(val.lng);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    setCustomerLiveLocation({ lat, lng });
+                }
+            }
+        });
+
+        const unsubMechanic = onValue(mechanicRef, (snapshot) => {
+            const val = snapshot.val();
+            if (val) {
+                const lat = Number(val.lat);
+                const lng = Number(val.lng);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    setMechanicLiveLocation({ lat, lng });
+                }
+            }
+        });
+
+        return () => {
+            unsubCustomer();
+            unsubMechanic();
+        };
+    }, [booking.id]);
+
+    const mapMarkers = useMemo(() => {
+        const markers: MapMarker[] = [];
+        if (typeof L === 'undefined') return markers;
+
+        const customerPic = customerObj?.picture || '';
+        const mechanicPic = mechanicObj?.imageUrl || booking.mechanic?.imageUrl || '';
+
+        const customerHtml = `
+            <div class="rb-map-pin-wrapper">
+                <div class="rb-pin-circle" style="border: 2.5px solid #3B82F6; background: #121212; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);">
+                    ${customerPic ? `
+                        <img src="${customerPic}" alt="Customer" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
+                    ` : `
+                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:#3B82F6;">
+                            ${(booking.customerName || 'C').charAt(0)}
+                        </div>
+                    `}
+                </div>
+                <div class="rb-pin-stem" style="background: #3B82F6;"></div>
+                <div class="rb-pin-dot" style="background: #3B82F6; box-shadow: 0 0 6px #3B82F6;"></div>
+            </div>
+        `;
+
+        const customerIcon = L.divIcon({
+            html: customerHtml,
+            className: 'rb-leaflet-icon',
+            iconSize: [42, 68],
+            iconAnchor: [21, 68],
+            popupAnchor: [0, -72]
+        });
+
+        const mechanicHtml = `
+            <div class="rb-map-pin-wrapper pulse-available">
+                <div class="rb-pin-circle" style="border: 2.5px solid #FE7803; background: #121212; box-shadow: 0 4px 12px rgba(254, 120, 3, 0.4);">
+                    ${mechanicPic ? `
+                        <img src="${mechanicPic}" alt="Mechanic" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
+                    ` : `
+                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:#FE7803;">
+                            M
+                        </div>
+                    `}
+                </div>
+                <div class="rb-pin-stem" style="background: #FE7803;"></div>
+                <div class="rb-pin-dot" style="background: #FE7803; box-shadow: 0 0 6px #FE7803;"></div>
+            </div>
+        `;
+
+        const mechanicIcon = L.divIcon({
+            html: mechanicHtml,
+            className: 'rb-leaflet-icon',
+            iconSize: [42, 68],
+            iconAnchor: [21, 68],
+            popupAnchor: [0, -72]
+        });
+
+        // Base customer service location
+        let baseLat = NaN;
+        let baseLng = NaN;
+        if (booking.location) {
+            baseLat = Number(booking.location.lat);
+            baseLng = Number(booking.location.lng);
+        }
+
+        if (!isNaN(baseLat) && !isNaN(baseLng)) {
+            markers.push({
+                id: 'serviceLocation',
+                position: [baseLat, baseLng],
+                popupContent: `Service Location: ${booking.customerName || 'Customer'}`,
+                icon: customerIcon
+            });
+        }
+
+        // Live customer location
+        if (customerLiveLocation) {
+            const lat = Number(customerLiveLocation.lat);
+            const lng = Number(customerLiveLocation.lng);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                markers.push({
+                    id: 'customerLive',
+                    position: [lat, lng],
+                    popupContent: `Customer (Live)`,
+                    icon: customerIcon
+                });
+            }
+        }
+
+        // Live mechanic location (simulated movement)
+        if (mechanicLiveLocation) {
+            const lat = Number(mechanicLiveLocation.lat);
+            const lng = Number(mechanicLiveLocation.lng);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                const simulatedLat = lat + Math.sin(time / 5000) * 0.0005;
+                const simulatedLng = lng + Math.cos(time / 5000) * 0.0005;
+                markers.push({
+                    id: 'mechanicLive',
+                    position: [simulatedLat, simulatedLng],
+                    popupContent: `Mechanic (Live): ${booking.mechanic?.name || 'Assigned'}`,
+                    icon: mechanicIcon
+                });
+            }
+        } else if ((booking.status === 'En Route' || booking.status === 'In Progress') && !isNaN(baseLat) && !isNaN(baseLng)) {
+            // If no live location but status is active, simulate one starting from customer location + offset
+            const simBaseLat = baseLat + 0.003;
+            const simBaseLng = baseLng + 0.003;
+            const simulatedLat = simBaseLat + Math.sin(time / 5000) * 0.0005;
+            const simulatedLng = simBaseLng + Math.cos(time / 5000) * 0.0005;
+            markers.push({
+                id: 'mechanicSimulated',
+                position: [simulatedLat, simulatedLng],
+                popupContent: `Mechanic (Simulated): ${booking.mechanic?.name || 'Assigned'}`,
+                icon: mechanicIcon
+            });
+        } else if (booking.status === 'Completed' && !isNaN(baseLat) && !isNaN(baseLng)) {
+            if (!markers.some(m => m.id === 'serviceLocation')) {
+                markers.push({
+                    id: 'serviceLocation',
+                    position: [baseLat, baseLng],
+                    popupContent: `Service Location: ${booking.customerName || 'Customer'}`,
+                    icon: customerIcon
+                });
+            }
+            markers.push({
+                id: 'mechanicCompleted',
+                position: [baseLat + 0.00015, baseLng + 0.00015],
+                popupContent: `Mechanic: ${booking.mechanic?.name || 'Assigned'}`,
+                icon: mechanicIcon
+            });
+        }
+
+        return markers;
+    }, [booking, customerLiveLocation, mechanicLiveLocation, time, customerObj, mechanicObj]);
+
+    const centerPoint: [number, number] = useMemo(() => {
+        if (booking.location) {
+            const lat = Number(booking.location.lat);
+            const lng = Number(booking.location.lng);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                return [lat, lng];
+            }
+        }
+        return [14.5995, 120.9842]; // Fallback to Manila
+    }, [booking.location]);
+
+    return (
+        <div className="w-full h-full min-h-[140px] rounded-2xl bg-[#101010] relative overflow-hidden border border-white/5">
+            <MapComponent 
+                center={centerPoint} 
+                zoom={14} 
+                markers={mapMarkers} 
+                disableScrollZoom={true}
+            />
+        </div>
+    );
+};
+
+
+const formatTimeToAmPm = (timeStr: string): string => {
+    if (!timeStr) return '';
+    const parts = timeStr.split(':');
+    if (parts.length < 2) return timeStr;
+    let hour = parseInt(parts[0], 10);
+    const minute = parts[1];
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    hour = hour ? hour : 12;
+    return `${hour}:${minute} ${ampm}`;
+};
 
 const AdminBookingsScreen: React.FC = () => {
     const navigate = useNavigate();
@@ -454,6 +938,16 @@ const AdminBookingsScreen: React.FC = () => {
     const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
     const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
     const [viewingMapBooking, setViewingMapBooking] = useState<Booking | null>(null);
+    const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [previewImageLoading, setPreviewImageLoading] = useState<boolean>(true);
+
+    useEffect(() => {
+        if (previewImageUrl) {
+            setPreviewImageLoading(true);
+        }
+    }, [previewImageUrl]);
+
+    const [priceDetailsBooking, setPriceDetailsBooking] = useState<Booking | null>(null);
     const [assigningBooking, setAssigningBooking] = useState<Booking | null>(null);
     const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
     const [isDeletingAll, setIsDeletingAll] = useState(false);
@@ -868,6 +1362,8 @@ const AdminBookingsScreen: React.FC = () => {
                             <div className="flex-1 relative">
                                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
                                 <input
+                                    id="adminSearchQuery"
+                                    name="adminSearchQuery"
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -877,6 +1373,8 @@ const AdminBookingsScreen: React.FC = () => {
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 <select
+                                    id="selectedMechanicId"
+                                    name="selectedMechanicId"
                                     value={selectedMechanicId}
                                     onChange={(e) => setSelectedMechanicId(e.target.value)}
                                     className="bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 text-white text-xs font-bold outline-none focus:border-primary"
@@ -887,6 +1385,8 @@ const AdminBookingsScreen: React.FC = () => {
                                     ))}
                                 </select>
                                 <select
+                                    id="selectedStatus"
+                                    name="selectedStatus"
                                     value={selectedStatus}
                                     onChange={(e) => setSelectedStatus(e.target.value as any)}
                                     className="bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 text-white text-xs font-bold outline-none focus:border-primary"
@@ -898,6 +1398,8 @@ const AdminBookingsScreen: React.FC = () => {
                                     ))}
                                 </select>
                                 <select
+                                    id="paymentFilter"
+                                    name="paymentFilter"
                                     value={paymentFilter}
                                     onChange={(e) => setPaymentFilter(e.target.value as any)}
                                     className="bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 text-white text-xs font-bold outline-none focus:border-primary"
@@ -930,6 +1432,8 @@ const AdminBookingsScreen: React.FC = () => {
 
                             <div className="flex items-center gap-2 ml-auto">
                                 <input
+                                    id="dateFilterStart"
+                                    name="dateFilterStart"
                                     type="date"
                                     value={dateFilter.start}
                                     onChange={e => { setDateFilter(prev => ({ ...prev, start: e.target.value })); setDatePreset('custom'); }}
@@ -937,6 +1441,8 @@ const AdminBookingsScreen: React.FC = () => {
                                 />
                                 <span className="text-gray-600">-</span>
                                 <input
+                                    id="dateFilterEnd"
+                                    name="dateFilterEnd"
                                     type="date"
                                     value={dateFilter.end}
                                     min={dateFilter.start}
@@ -968,45 +1474,38 @@ const AdminBookingsScreen: React.FC = () => {
                     <table className="w-full text-left border-collapse min-w-[1200px]">
                         <thead>
                             <tr className="bg-white/5 border-b border-white/5">
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px]">
-                                    <Tooltip content="Sort by ID">
-                                        <button onClick={() => requestSort('id')} className="flex items-center gap-2 hover:text-white transition-colors group">
-                                            ID {getSortIndicator('id')}
-                                        </button>
-                                    </Tooltip>
-                                </th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px] w-12"></th>
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">
                                     <Tooltip content="Sort by customer name">
                                         <button onClick={() => requestSort('customerName')} className="flex items-center gap-2 hover:text-white transition-colors group">
                                             Customer {getSortIndicator('customerName')}
                                         </button>
                                     </Tooltip>
                                 </th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px]">Service</th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px] hidden lg:table-cell">Vehicle</th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Service</th>
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px] hidden lg:table-cell">Vehicle</th>
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">
                                     <Tooltip content="Sort by mechanic name">
                                         <button onClick={() => requestSort('mechanicName')} className="flex items-center gap-2 hover:text-white transition-colors group">
                                             Mechanic {getSortIndicator('mechanicName')}
                                         </button>
                                     </Tooltip>
                                 </th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">
                                     <Tooltip content="Sort by date">
                                         <button onClick={() => requestSort('date')} className="flex items-center gap-2 hover:text-white transition-colors group">
                                             Date {getSortIndicator('date')}
                                         </button>
                                     </Tooltip>
                                 </th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px] text-right">
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px] text-right">
                                     <Tooltip content="Sort by price">
                                         <button onClick={() => requestSort('price')} className="flex items-center gap-2 hover:text-white ml-auto transition-colors group">
                                             Price {getSortIndicator('price')}
                                         </button>
                                     </Tooltip>
                                 </th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px]">Payment</th>
-                                <th className="py-2.5 px-3 font-black text-gray-500  tracking-[0.2em] text-[10px]">Status</th>
+                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Status</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
@@ -1017,20 +1516,12 @@ const AdminBookingsScreen: React.FC = () => {
                                             onClick={() => toggleRow(booking.id)}
                                             className={`transition-all duration-200 hover:bg-white/[0.02] group cursor-pointer ${index % 2 === 0 ? '' : 'bg-white/[0.01]'} ${expandedBookingId === booking.id ? 'bg-primary/5 border-l-4 border-l-primary' : ''}`}
                                         >
-                                            <td className="py-2 px-3 text-[10px] font-black  tracking-widest text-gray-500 flex items-center gap-3">
+                                            <td className="py-2 px-3 text-center">
                                                 <Tooltip content={expandedBookingId === booking.id ? 'Collapse details' : 'Expand details'}>
-                                                    <ChevronDown size={14} className={`transition-transform duration-300 ${expandedBookingId === booking.id ? 'rotate-180 text-primary' : 'text-gray-600'}`} />
+                                                    <div className="flex justify-center">
+                                                        <ChevronDown size={14} className={`transition-transform duration-300 ${expandedBookingId === booking.id ? 'rotate-180 text-primary' : 'text-gray-600'}`} />
+                                                    </div>
                                                 </Tooltip>
-                                                <div className="flex items-center gap-1.5">
-                                                    <span>{bookingSequences[booking.id] || booking.id}</span>
-                                                    {(((booking.createdAt && (new Date().getTime() - new Date(booking.createdAt).getTime()) < 24 * 60 * 60 * 1000) || 
-                                                      (!booking.createdAt && booking.date === new Date().toISOString().split('T')[0])) && 
-                                                      booking.status !== 'Completed' && booking.status !== 'Cancelled') && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-gradient-to-r from-orange-500 to-red-500 text-white text-[8px] font-black uppercase tracking-wider animate-pulse shrink-0">
-                                                            New
-                                                        </span>
-                                                    )}
-                                                </div>
                                             </td>
                                             <td className="py-2 px-3">
                                                 {(() => {
@@ -1048,9 +1539,21 @@ const AdminBookingsScreen: React.FC = () => {
                                                                     {booking.customerName.charAt(0)}
                                                                 </div>
                                                             )}
-                                                            <span className="font-black text-white text-sm truncate" title={booking.customerName}>
-                                                                {booking.customerName}
-                                                            </span>
+                                                            <div className="flex flex-col min-w-0">
+                                                                <span className="font-black text-white text-[11px] truncate leading-tight" title={booking.customerName}>
+                                                                    {booking.customerName}
+                                                                </span>
+                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                    <span className="text-[9px] text-gray-500 font-black font-mono tracking-wider">{bookingSequences[booking.id] || booking.id}</span>
+                                                                    {(((booking.createdAt && (new Date().getTime() - new Date(booking.createdAt).getTime()) < 24 * 60 * 60 * 1000) || 
+                                                                      (!booking.createdAt && booking.date === new Date().toISOString().split('T')[0])) && 
+                                                                      booking.status !== 'Completed' && booking.status !== 'Cancelled') && (
+                                                                        <span className="px-1 py-[1px] rounded bg-gradient-to-r from-orange-500 to-red-500 text-white text-[6px] font-black uppercase tracking-wider animate-pulse shrink-0">
+                                                                            New
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     );
                                                 })()}
@@ -1105,62 +1608,64 @@ const AdminBookingsScreen: React.FC = () => {
                                             <td className="py-2 px-3 whitespace-nowrap">
                                                 <div>
                                                     <p className="font-bold text-white text-xs">{booking.date}</p>
-                                                    <p className="text-[10px] text-gray-500 font-bold  tracking-widest mt-0.5">{booking.time}</p>
+                                                    <p className="text-[9px] text-gray-500 font-bold tracking-widest mt-0.5">{formatTimeToAmPm(booking.time)}</p>
                                                 </div>
                                             </td>
-                                            <td className="py-2 px-3 text-right font-black text-green-400 text-sm">
+                                            <td className="py-2 px-3 text-right">
                                                 {(() => {
                                                     const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
                                                     const total = booking.totalAmount ?? svcs.reduce((s, svc) => s + svc.price, 0);
-                                                    return <>₱{total.toLocaleString()}</>;
-                                                })()}
-                                            </td>
-                                            <td className="py-2 px-3">
-                                                {(() => {
                                                     const isGcash = booking.paymentMethod === 'GCash';
                                                     const hasReceipt = !!booking.gcashReceiptUrl;
                                                     const isVerified = booking.isVerified;
                                                     const isDeclined = !!booking.gcashDeclineReason;
- 
+                                                    
+                                                    let paymentBadge = null;
                                                     if (booking.isPaid) {
-                                                        return (
-                                                            <span className="px-3 py-1.5 bg-green-500/10 text-green-400 rounded-lg text-[10px] font-black tracking-widest border border-green-500/20 whitespace-nowrap">
+                                                        paymentBadge = (
+                                                            <span className="inline-block mt-1 px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded border border-green-500/20 text-[8px] font-black tracking-widest uppercase whitespace-nowrap">
                                                                 Fully Paid
                                                             </span>
                                                         );
-                                                    }
-                                                    if (isGcash) {
+                                                    } else if (isGcash) {
                                                         if (isVerified) {
-                                                            return (
-                                                                <span className="px-3 py-1.5 bg-green-500/10 text-green-400 rounded-lg text-[10px] font-black tracking-widest border border-green-500/20 whitespace-nowrap">
+                                                            paymentBadge = (
+                                                                <span className="inline-block mt-1 px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded border border-green-500/20 text-[8px] font-black tracking-widest uppercase whitespace-nowrap">
                                                                     Deposit Confirmed (50%)
                                                                 </span>
                                                             );
-                                                        }
-                                                        if (isDeclined) {
-                                                            return (
-                                                                <span className="px-3 py-1.5 bg-red-500/10 text-red-400 rounded-lg text-[10px] font-black tracking-widest border border-red-500/20 whitespace-nowrap">
+                                                        } else if (isDeclined) {
+                                                            paymentBadge = (
+                                                                <span className="inline-block mt-1 px-1.5 py-0.5 bg-red-500/10 text-red-400 rounded border border-red-500/20 text-[8px] font-black tracking-widest uppercase whitespace-nowrap">
                                                                     Deposit Declined
                                                                 </span>
                                                             );
-                                                        }
-                                                        if (hasReceipt) {
-                                                            return (
-                                                                <span className="px-3 py-1.5 bg-orange-500/10 text-orange-400 rounded-lg text-[10px] font-black tracking-widest border border-orange-500/20 animate-pulse whitespace-nowrap">
+                                                        } else if (hasReceipt) {
+                                                            paymentBadge = (
+                                                                <span className="inline-block mt-1 px-1.5 py-0.5 bg-orange-500/10 text-orange-400 rounded border border-orange-500/20 text-[8px] font-black tracking-widest uppercase animate-pulse whitespace-nowrap">
                                                                     Pending Approval (50%)
                                                                 </span>
                                                             );
+                                                        } else {
+                                                            paymentBadge = (
+                                                                <span className="inline-block mt-1 px-1.5 py-0.5 bg-yellow-500/10 text-yellow-400 rounded border border-yellow-500/20 text-[8px] font-black tracking-widest uppercase whitespace-nowrap">
+                                                                    Unpaid (GCash)
+                                                                </span>
+                                                            );
                                                         }
-                                                        return (
-                                                            <span className="px-3 py-1.5 bg-yellow-500/10 text-yellow-400 rounded-lg text-[10px] font-black tracking-widest border border-yellow-500/20 whitespace-nowrap">
-                                                                Unpaid (GCash)
+                                                    } else {
+                                                        paymentBadge = (
+                                                            <span className="inline-block mt-1 px-1.5 py-0.5 bg-yellow-500/10 text-yellow-400 rounded border border-yellow-500/20 text-[8px] font-black tracking-widest uppercase whitespace-nowrap">
+                                                                Unpaid
                                                             </span>
                                                         );
                                                     }
+
                                                     return (
-                                                        <span className="px-3 py-1.5 bg-yellow-500/10 text-yellow-400 rounded-lg text-[10px] font-black tracking-widest border border-yellow-500/20 whitespace-nowrap">
-                                                            Unpaid
-                                                        </span>
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="font-black text-green-400 text-sm">{total > 0 ? `₱${total.toLocaleString()}` : 'For Quotation'}</span>
+                                                            {paymentBadge}
+                                                        </div>
                                                     );
                                                 })()}
                                             </td>
@@ -1175,171 +1680,246 @@ const AdminBookingsScreen: React.FC = () => {
                                                 <td colSpan={9} className="p-3.5 border-b border-white/10 bg-gradient-to-b from-primary/5 to-transparent">
                                                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
                                                         {/* CUSTOMER & VEHICLE CARD */}
-                                                        <div className="space-y-4">
-                                                            <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all group/card h-full">
+                                                        <div className="flex flex-col h-full">
+                                                            <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all group/card h-full flex flex-col">
                                                                 <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
                                                                     <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
                                                                         <Users size={14} />
                                                                     </div>
                                                                     Customer Profile
                                                                 </h4>
-                                                                <div className="space-y-4">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center text-lg font-black text-white shadow-lg shadow-primary/20">
-                                                                            {booking.customerName.charAt(0)}
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-white font-black text-base leading-snug">{booking.customerName}</p>
-                                                                            <p className="text-xs text-gray-500 font-bold">{db.customers.find(c => c.name === booking.customerName)?.phone || 'No phone'}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="p-2.5 bg-white/[0.03] rounded-lg border border-white/5 space-y-1.5">
-                                                                        <div className="flex justify-between items-center text-xs">
-                                                                            <span className="text-gray-500 font-bold  tracking-widest">Vehicle</span>
-                                                                            <span className="text-white font-black">{booking.vehicle?.year || ''} {booking.vehicle?.make || ''}</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center text-xs">
-                                                                            <span className="text-gray-500 font-bold  tracking-widest">Model</span>
-                                                                            <span className="text-white font-black">{booking.vehicle?.model || 'N/A'}</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center">
-                                                                            <span className="text-gray-500 font-bold  tracking-widest text-[10px]">Plate Num</span>
-                                                                            <span className="bg-primary/20 text-primary px-2.5 py-0.5 rounded-md font-mono text-[10px] font-black border border-primary/20">{booking.vehicle?.plateNumber || 'N/A'}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="pt-3 mt-auto border-t border-white/5">
-                                                                        <h4 className="text-[10px] font-black  tracking-widest text-gray-600 mb-2 ml-1">Payment Status</h4>
-                                                                        <div className="flex flex-col gap-2">
-                                                                            <div className="flex items-center justify-between p-2.5 bg-white/5 rounded-lg border border-white/5">
-                                                                                <div>
-                                                                                    {(() => {
-                                                                                        const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
-                                                                                        const total = booking.totalAmount ?? svcs.reduce((s, svc) => s + svc.price, 0);
-                                                                                        return <p className="text-lg font-black text-white">₱{total.toLocaleString()}</p>;
-                                                                                    })()}
-                                                                                    <p className="text-[9px] font-black text-gray-600  tracking-widest mt-0.5">
-                                                                                        {booking.paymentMethod === 'GCash' ? `GCash (${booking.paymentStatus})` : 
-                                                                                         booking.isPaid ? 'Payment Confirmed' : 'Awaiting Payment'}
-                                                                                    </p>
-                                                                                </div>
-                                                                                {!booking.isPaid && booking.paymentMethod !== 'GCash' && (
-                                                                                    <Tooltip content="Mark as fully paid">
-                                                                                        <button
-                                                                                            onClick={(e) => { e.stopPropagation(); handleMarkPaid(booking.id); }}
-                                                                                            className="p-2.5 bg-green-500/10 text-green-400 rounded-lg hover:bg-green-50 hover:text-white transition-all border border-green-500/20"
-                                                                                        >
-                                                                                            <DollarSign size={16} />
-                                                                                        </button>
-                                                                                    </Tooltip>
+                                                                <div className="space-y-4 flex-1 flex flex-col">
+                                                                    {(() => {
+                                                                        const customerObj = db.customers.find(c => c.name === booking.customerName || c.id === booking.customerId);
+                                                                        return (
+                                                                            <div className="flex items-center gap-3">
+                                                                                {customerObj?.picture ? (
+                                                                                    <img 
+                                                                                        src={customerObj.picture} 
+                                                                                        alt={booking.customerName} 
+                                                                                        className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0" 
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center text-lg font-black text-white shadow-lg shadow-primary/20 shrink-0">
+                                                                                        {booking.customerName.charAt(0)}
+                                                                                    </div>
                                                                                 )}
-                                                                                {booking.isPaid && <Tooltip content="Payment confirmed"><div className="p-2.5 bg-green-500/10 text-green-400 rounded-lg border border-green-500/20"><CheckCircle size={16} /></div></Tooltip>}
-                                                                            </div>
-                                
-                                                                            {booking.paymentMethod === 'GCash' && (booking.gcashReference || booking.gcashReceiptUrl) && !booking.isVerified && (
-                                                                                <div className="p-2.5 bg-blue-500/5 rounded-lg border border-blue-500/20 space-y-1.5">
-                                                                                    <div className="flex justify-between items-center text-xs">
-                                                                                        <span className="text-[10px] font-black tracking-widest text-blue-400">GCash Ref</span>
-                                                                                        {booking.gcashReference && <span className="text-white font-mono font-black text-xs">{booking.gcashReference}</span>}
-                                                                                    </div>
-                                                                                    
-                                                                                    {booking.gcashReceiptUrl && (
-                                                                                        <div className="mt-1 rounded-lg border border-white/10 overflow-hidden bg-black/40">
-                                                                                            <img 
-                                                                                                src={booking.gcashReceiptUrl} 
-                                                                                                alt="GCash Receipt" 
-                                                                                                className="w-full h-auto max-h-32 object-contain cursor-pointer transition-transform duration-300 group-hover:scale-105"
-                                                                                                onClick={() => window.open(booking.gcashReceiptUrl, '_blank')}
-                                                                                            />
-                                                                                        </div>
-                                                                                    )}
-                                
-                                                                                    <div className="flex flex-col gap-1.5 pt-1">
-                                                                                        <Tooltip content="Verify GCash downpayment">
-                                                                                            <button
-                                                                                                onClick={(e) => { e.stopPropagation(); verifyBookingPayment(booking.id); }}
-                                                                                                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-black tracking-widest text-[9px] rounded-lg transition-all shadow-lg flex items-center justify-center gap-1.5"
-                                                                                            >
-                                                                                                <ShieldCheck size={12} /> Verify
-                                                                                            </button>
-                                                                                        </Tooltip>
-                                                                                        <Tooltip content="Open GCash payments portal">
-                                                                                            <button
-                                                                                                onClick={(e) => { e.stopPropagation(); navigate('/admin-portal/gcash-payments'); }}
-                                                                                                className="w-full py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white font-black tracking-widest text-[9px] border border-white/10 rounded-lg transition-all flex items-center justify-center gap-1.5"
-                                                                                            >
-                                                                                                <ExternalLink size={12} /> Portal
-                                                                                            </button>
-                                                                                        </Tooltip>
-                                                                                    </div>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="text-white font-black text-sm leading-tight truncate">{booking.customerName}</p>
+                                                                                    <p className="text-[10px] text-gray-500 font-bold mt-1">{db.customers.find(c => c.name === booking.customerName)?.phone || 'No phone'}</p>
+                                                                                    <p className="text-[9px] text-gray-600 font-bold mt-0.5 truncate">{customerObj?.email || 'No email'}</p>
                                                                                 </div>
-                                                                            )}
-                                                                            
-                                                                            {booking.paymentMethod === 'GCash' && booking.isVerified && (
-                                                                                 <div className="p-2.5 bg-green-500/5 rounded-lg border border-green-500/20 flex flex-col gap-1.5">
-                                                                                     <div className="flex items-center gap-2">
-                                                                                         <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
-                                                                                             <ShieldCheck size={12} />
-                                                                                         </div>
-                                                                                         <div>
-                                                                                             <p className="text-[9px] font-black text-green-400  tracking-widest">GCash Verified</p>
-                                                                                             <p className="text-xs text-white font-mono font-black">{booking.gcashReference || 'Verified'}</p>
-                                                                                         </div>
-                                                                                     </div>
-                                                                                 </div>
-                                                                            )}
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+                                                                    <div className="pt-3 mt-auto border-t border-white/5">
+                                                                        <h4 className="text-[10px] font-black tracking-widest text-gray-600 mb-2 ml-1">Payment Status</h4>
+                                                                        <div className="flex flex-col gap-2">
+                                                                            <div className="p-3 bg-white/5 rounded-lg border border-white/5">
+                                                                                <div className="flex items-center justify-between">
+                                                                                    <div>
+                                                                                        {(() => {
+                                                                                            const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+                                                                                            const total = booking.totalAmount ?? svcs.reduce((s, svc) => s + svc.price, 0);
+                                                                                            return (
+                                                                                                <div 
+                                                                                                    className="flex items-baseline gap-2 cursor-pointer group/price hover:opacity-80 transition-opacity"
+                                                                                                    onClick={() => setPriceDetailsBooking(booking)}
+                                                                                                    title="Click to view price breakdown"
+                                                                                                >
+                                                                                                    <span className="text-lg font-black text-white group-hover/price:text-primary transition-colors">{total > 0 ? `₱${total.toLocaleString()}` : 'For Quotation'}</span>
+                                                                                                    <span className="text-[9px] font-black text-gray-400 tracking-widest uppercase border-b border-dashed border-gray-500 pb-0.5">
+                                                                                                        {booking.paymentMethod === 'GCash' ? 'Services Price' : 
+                                                                                                         booking.isPaid ? 'Payment Confirmed' : 'Awaiting Payment'}
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                            );
+                                                                                        })()}
+                                                                                    </div>
+                                                                                    {!booking.isPaid && booking.paymentMethod !== 'GCash' && (
+                                                                                        <Tooltip content="Mark as fully paid">
+                                                                                            <button
+                                                                                                onClick={(e) => { e.stopPropagation(); handleMarkPaid(booking.id); }}
+                                                                                                className="p-2 bg-green-500/10 text-green-400 rounded-lg hover:bg-green-50 hover:text-white transition-all border border-green-500/20"
+                                                                                            >
+                                                                                                <DollarSign size={14} />
+                                                                                            </button>
+                                                                                        </Tooltip>
+                                                                                    )}
+                                                                                    {booking.isPaid && <Tooltip content="Payment confirmed"><div className="p-2 bg-green-500/10 text-green-400 rounded-lg border border-green-500/20"><CheckCircle size={14} /></div></Tooltip>}
+                                                                                </div>
+
+                                                                                {booking.paymentMethod === 'GCash' && (
+                                                                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                                            {/* Down Payment Receipt */}
+                                                                                            <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5 flex flex-col justify-between min-h-[140px]">
+                                                                                                {(() => {
+                                                                                                    const originalServicesFee = booking.services && booking.services.length > 0
+                                                                                                        ? booking.services.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0)
+                                                                                                        : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+                                                                                                    const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
+                                                                                                    return (
+                                                                                                        <div>
+                                                                                                            <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-0.5">Down Payment</p>
+                                                                                                            <p className="text-[11px] font-black text-primary mt-0.5">{originalServicesFee > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}</p>
+                                                                                                            {booking.isVerified && (
+                                                                                                                <span className="inline-flex items-center gap-0.5 bg-green-500/10 text-green-400 border border-green-500/20 text-[7px] font-black uppercase tracking-wider px-1 py-0.5 rounded mt-1">
+                                                                                                                    <ShieldCheck size={10} /> Verified
+                                                                                                                </span>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    );
+                                                                                                })()}
+                                                                                                {(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) ? (
+                                                                                                    <div 
+                                                                                                        className="mt-1.5 rounded-lg border border-white/10 overflow-hidden bg-black/40 h-16 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl)}
+                                                                                                    >
+                                                                                                        <img 
+                                                                                                            src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl} 
+                                                                                                            alt="Down Payment" 
+                                                                                                            className="w-full h-full object-contain"
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                ) : (
+                                                                                                    <div className="mt-1.5 rounded-lg border border-white/5 border-dashed h-16 flex flex-col items-center justify-center text-center p-1 bg-black/20">
+                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting Upload</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+
+                                                                                            {/* Final Payment Receipt */}
+                                                                                            <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5 flex flex-col justify-between min-h-[140px]">
+                                                                                                {(() => {
+                                                                                                    const originalServicesFee = booking.services && booking.services.length > 0
+                                                                                                        ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                                                                                                        : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+                                                                                                    const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
+                                                                                                    const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                                                                                                    const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                                                                                                    const finalPaymentAmount = serviceBalance + additionalCostsTotal;
+                                                                                                    return (
+                                                                                                        <div>
+                                                                                                            <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-0.5">Final Payment</p>
+                                                                                                            <p className="text-[11px] font-black text-primary mt-0.5">{finalPaymentAmount > 0 ? `₱${finalPaymentAmount.toLocaleString()}` : 'For Quotation'}</p>
+                                                                                                            {booking.isPaid && (
+                                                                                                                <span className="inline-flex items-center gap-0.5 bg-green-500/10 text-green-400 border border-green-500/20 text-[7px] font-black uppercase tracking-wider px-1 py-0.5 rounded mt-1">
+                                                                                                                    <ShieldCheck size={10} /> Verified
+                                                                                                                </span>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    );
+                                                                                                })()}
+                                                                                                {booking.gcashBalanceReceiptUrl ? (
+                                                                                                    <div 
+                                                                                                        className="mt-1.5 rounded-lg border border-white/10 overflow-hidden bg-black/40 h-16 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashBalanceReceiptUrl)}
+                                                                                                    >
+                                                                                                        <img 
+                                                                                                            src={booking.gcashBalanceReceiptUrl} 
+                                                                                                            alt="Final Payment" 
+                                                                                                            className="w-full h-full object-contain"
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                ) : (
+                                                                                                    <div className="mt-1.5 rounded-lg border border-white/5 border-dashed h-16 flex flex-col items-center justify-center text-center p-1 bg-black/20">
+                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting Upload</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+
+                                                                                        {!booking.isVerified && (booking.gcashReference || booking.gcashReceiptUrl) && (
+                                                                                            <div className="pt-1">
+                                                                                                <Tooltip content="Verify GCash payment" className="w-full">
+                                                                                                    <button
+                                                                                                        onClick={(e) => { e.stopPropagation(); verifyBookingPayment(booking.id); }}
+                                                                                                        className="w-full h-9 py-2 bg-[#FF7903] hover:bg-[#e06800] text-white font-black tracking-widest text-[9px] rounded-lg transition-all shadow-lg flex items-center justify-center gap-1.5"
+                                                                                                    >
+                                                                                                        <ShieldCheck size={11} /> Verify Payment
+                                                                                                    </button>
+                                                                                                </Tooltip>
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                            {/* Legacy GCash Verified card removed */}
                                                                         </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                         </div>
                                                                         {/* SERVICE & MANAGEMENT CARD */}
-                                                        <div className="space-y-4">
-                                                            <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full">
+                                                        <div className="flex flex-col h-full">
+                                                            <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full flex flex-col">
                                                                 <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
                                                                     <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
                                                                         <Edit size={14} />
                                                                     </div>
                                                                     Service & Management
                                                                 </h4>
-                                                                <div className="space-y-3">
-                                                                    <div>
-                                                                        <p className="text-primary font-black text-sm">{booking.service?.name || 'Unknown Service'}</p>
-                                                                        <p className="text-[10px] text-gray-500 mt-1 leading-relaxed line-clamp-2">{booking.service?.description || 'No description.'}</p>
-                                                                    </div>
-                                 
-                                                                    <div className="grid grid-cols-2 gap-2">
-                                                                        <div className="bg-white/5 p-2 rounded-lg border border-white/5 text-center">
-                                                                            <Clock size={14} className="text-primary mx-auto mb-1.5" />
-                                                                            <p className="text-[9px] font-black text-gray-500  tracking-widest">Duration</p>
-                                                                            <p className="text-[11px] font-black text-white mt-0.5">{booking.service?.estimatedTime || 'N/A'}</p>
-                                                                        </div>
-                                                                        <div className="bg-white/5 p-2 rounded-lg border border-white/5 text-center">
-                                                                            <Calendar size={14} className="text-primary mx-auto mb-1.5" />
-                                                                            <p className="text-[9px] font-black text-gray-500  tracking-widest">Scheduled</p>
-                                                                            <p className="text-[11px] font-black text-white mt-0.5">{booking.date}</p>
+                                                                <div className="space-y-3 flex-1 flex flex-col">
+                                                                    <div className="flex gap-3 items-start">
+                                                                        <img 
+                                                                            src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)} 
+                                                                            alt={booking.service?.name || 'Service'} 
+                                                                            className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
+                                                                            onError={(e) => {
+                                                                                (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category);
+                                                                            }}
+                                                                        />
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <p className="text-primary font-black text-sm leading-tight truncate">{booking.service?.name || 'Unknown Service'}</p>
+                                                                            <p className="text-[10px] text-gray-500 mt-1 leading-normal line-clamp-2">{booking.service?.description || 'No description.'}</p>
                                                                         </div>
                                                                     </div>
-                                 
-                                                                    <div className="pt-2 border-t border-white/5">
-                                                                        <h4 className="text-[9px] font-black  tracking-widest text-gray-600 mb-2 ml-1">Assigned Mechanic</h4>
-                                                                        {booking.mechanic ? (
-                                                                            <div className="flex items-center gap-2.5 bg-white/5 p-2.5 rounded-lg border border-white/5">
-                                                                                <div className="w-8 h-8 bg-primary/20 rounded-xl flex items-center justify-center text-sm font-black text-primary">
-                                                                                    {booking.mechanic.name.charAt(0)}
-                                                                                </div>
-                                                                                <div>
-                                                                                    <p className="font-black text-white text-xs">{booking.mechanic.name}</p>
-                                                                                    <p className="text-[9px] text-gray-500 font-bold">Elite Professional</p>
-                                                                                </div>
-                                                                <Tooltip content="Reassign mechanic">
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
-                                                                        className="ml-auto p-1.5 text-gray-500 hover:text-primary transition-colors"
-                                                                    >
-                                                                        <Edit size={14} />
-                                                                    </button>
-                                                                </Tooltip>
-                                                                            </div>
+                                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                                        <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                            <Clock size={14} className="text-primary shrink-0" />
+                                                                                            <div>
+                                                                                                <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Duration</p>
+                                                                                                <p className="text-[11px] font-black text-white mt-0.5">{booking.service?.estimatedTime || 'N/A'}</p>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                            <Calendar size={14} className="text-primary shrink-0" />
+                                                                                            <div>
+                                                                                                <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Scheduled</p>
+                                                                                                <p className="text-[11px] font-black text-white mt-0.5">{booking.date}</p>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div className="pt-2 border-t border-white/5 mt-auto">
+                                                                                        <h4 className="text-[9px] font-black tracking-widest text-gray-600 mb-2 ml-1">Assigned Mechanic</h4>
+                                                                                        {booking.mechanic ? (
+                                                                                            <div className="flex items-center gap-2.5 bg-white/5 p-2.5 rounded-lg border border-white/5">
+                                                                                                {booking.mechanic.imageUrl ? (
+                                                                                                    <img
+                                                                                                        src={getProfileImage(booking.mechanic.imageUrl, 'mechanic')}
+                                                                                                        alt={booking.mechanic.name}
+                                                                                                        className="w-8 h-8 rounded-xl object-cover border border-white/10 shrink-0"
+                                                                                                    />
+                                                                                                ) : (
+                                                                                                    <div className="w-8 h-8 bg-primary/20 rounded-xl flex items-center justify-center text-sm font-black text-primary shrink-0">
+                                                                                                        {booking.mechanic.name.charAt(0)}
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                <div>
+                                                                                                    <p className="font-black text-white text-xs">{booking.mechanic.name}</p>
+                                                                                                    <p className="text-[9px] text-gray-500 font-bold">Elite Professional</p>
+                                                                                                </div>
+                                                                                                <Tooltip content="Reassign mechanic">
+                                                                                                    <button
+                                                                                                        onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
+                                                                                                        className="ml-auto p-1.5 text-gray-500 hover:text-primary transition-colors"
+                                                                                                    >
+                                                                                                        <Edit size={14} />
+                                                                                                    </button>
+                                                                                                </Tooltip>
+                                                                                            </div>
                                                                         ) : (
                                                                             <Tooltip content="Assign a mechanic to this booking">
                                                                                 <button
@@ -1356,12 +1936,11 @@ const AdminBookingsScreen: React.FC = () => {
                                                                         <h4 className="text-[9px] font-black  tracking-widest text-gray-600 ml-1">Update Status</h4>
                                                                         <div className="flex gap-2">
                                                                             <div className="flex-1 relative group/select">
-                                                                                <label className="absolute -top-2 left-3 px-1.5 bg-[#151515] text-[8px] font-black  tracking-widest text-gray-600 z-10">Select Status</label>
-                                                                                <select
+                                                                                <select id={`booking-status-${booking.id}`} name={`booking-status-${booking.id}`}
                                                                                     value={booking.status}
                                                                                     onChange={(e) => handleStatusChange(booking, e.target.value as BookingStatus)}
                                                                                     onClick={e => e.stopPropagation()}
-                                                                                    className="w-full bg-white/5 border border-white/10 py-2 px-3 rounded-lg text-[10px] font-black  tracking-widest text-white hover:border-primary transition-all outline-none appearance-none cursor-pointer"
+                                                                                    className="w-full bg-white/5 border border-white/10 py-2.5 px-3 rounded-lg text-[10px] font-black  tracking-widest text-white hover:border-primary transition-all outline-none appearance-none cursor-pointer"
                                                                                 >
                                                                                     {bookingStatuses.slice(1).map(s => <option key={s} value={s} className="bg-[#121212]">{s}</option>)}
                                                                                 </select>
@@ -1371,7 +1950,7 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                 <Tooltip content="Cancel this booking">
                                                                                     <button
                                                                                         onClick={(e) => { e.stopPropagation(); setCancellingBooking(booking); }}
-                                                                                        className="px-4 py-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-500/20 font-black  tracking-widest text-[9px]"
+                                                                                        className="px-4 py-2.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-500/20 font-black  tracking-widest text-[9px]"
                                                                                     >
                                                                                         Cancel
                                                                                     </button>
@@ -1384,7 +1963,7 @@ const AdminBookingsScreen: React.FC = () => {
                                                         </div>
                                  
                                                         {/* TIMELINE CARD */}
-                                                        <div className="space-y-4">
+                                                        <div className="flex flex-col h-full">
                                                             <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full overflow-hidden flex flex-col">
                                                                 <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
                                                                     <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
@@ -1394,43 +1973,37 @@ const AdminBookingsScreen: React.FC = () => {
                                                                 </h4>
                                                                 <div className="flex-1 space-y-2 relative pl-3">
                                                                     <div className="absolute left-[19px] top-2 bottom-6 w-0.5 bg-gradient-to-b from-primary via-primary/20 to-transparent"></div>
-                                                                    {booking.statusHistory && booking.statusHistory.length > 0 ? (
-                                                                        booking.statusHistory.map((s, i) => (
-                                                                            <div key={i} className="flex gap-3 relative group/step">
-                                                                                <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black z-10 transition-all duration-300 ${i === booking.statusHistory!.length - 1 ? 'bg-primary text-white shadow-lg' : 'bg-[#202020] text-gray-600 border border-white/5'}`}>
-                                                                                    {i + 1}
-                                                                                </div>
-                                                                                <div className="pt-0.5">
-                                                                                    <p className={`text-xs font-black  tracking-widest transition-colors ${i === booking.statusHistory!.length - 1 ? 'text-white' : 'text-gray-600'}`}>{s.status}</p>
-                                                                                    <div className="flex items-center gap-1 mt-0.5">
-                                                                                        <Clock size={8} className="text-gray-700" />
-                                                                                        <p className="text-[8px] text-gray-700 font-black  tracking-widest">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                    {(() => {
+                                                                        const timelineData = getTimelineData(booking.status, booking.statusHistory);
+                                                                        return timelineData.length > 0 ? (
+                                                                            timelineData.map((s, i) => (
+                                                                                <div key={i} className="flex gap-3 relative group/step">
+                                                                                    <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black z-10 transition-all duration-300 ${i === timelineData.length - 1 ? 'bg-primary text-white shadow-lg' : 'bg-[#202020] text-gray-600 border border-white/5'}`}>
+                                                                                        {i + 1}
+                                                                                    </div>
+                                                                                    <div className="pt-0.5">
+                                                                                        <p className={`text-xs font-black  tracking-widest transition-colors ${i === timelineData.length - 1 ? 'text-white' : 'text-gray-600'}`}>{s.status}</p>
+                                                                                        <div className="flex items-center gap-1 mt-0.5">
+                                                                                            <Clock size={8} className="text-gray-700" />
+                                                                                            <p className="text-[8px] text-gray-700 font-black  tracking-widest">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                                        </div>
                                                                                     </div>
                                                                                 </div>
+                                                                            ))
+                                                                        ) : (
+                                                                            <div className="flex flex-col items-center justify-center h-full text-center space-y-2 py-6">
+                                                                                <Clock size={18} className="text-gray-700" />
+                                                                                <p className="text-[10px] text-gray-600 font-bold tracking-wider">No timeline history recorded.</p>
                                                                             </div>
-                                                                        ))
-                                                                    ) : (
-                                                                        <div className="flex flex-col items-center justify-center h-full text-center space-y-2 py-6">
-                                                                            <Clock size={18} className="text-gray-700" />
-                                                                            <p className="text-[10px] text-gray-600 font-bold tracking-wider">No timeline history recorded.</p>
-                                                                        </div>
-                                                                    )}
+                                                                        );
+                                                                    })()}
                                                                 </div>
-                                                                <div className="mt-3 pt-3 border-t border-white/5">
-                                                                    <Tooltip content="View full booking details">
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); setViewingBooking(booking); }}
-                                                                            className="w-full py-2 bg-white/5 hover:bg-white/10 text-white font-black  tracking-widest text-[9px] rounded-lg border border-white/5 transition-all text-center flex items-center justify-center gap-1.5"
-                                                                        >
-                                                                            <Eye size={12} className="text-primary" /> Full JSON View
-                                                                        </button>
-                                                                    </Tooltip>
-                                                                </div>
+
                                                             </div>
                                                         </div>
                                  
                                                         {/* LIVE MAP CARD */}
-                                                        <div className="space-y-4">
+                                                        <div className="flex flex-col h-full">
                                                             <div className="bg-[#151515] p-2 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full relative overflow-hidden flex flex-col">
                                                                 <div className="p-4 pb-1">
                                                                     <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 flex items-center gap-3">
@@ -1441,63 +2014,9 @@ const AdminBookingsScreen: React.FC = () => {
                                                                     </h4>
                                                                 </div>
                                                                 <div className="flex-1 p-3">
-                                                                    <div className="w-full h-full min-h-[130px] rounded-2xl bg-[#101010] relative overflow-hidden border border-white/5 group/map">
-                                                                        {/* Simulated Map Background */}
-                                                                        <div className="absolute inset-0 opacity-40 group-hover:opacity-60 transition-opacity">
-                                                                            <div 
-                                                                                className="absolute inset-0 bg-cover bg-center" 
-                                                                                style={{ 
-                                                                                    backgroundImage: "url('https://api.mapbox.com/styles/v1/mapbox/dark-v10/static/121.05,14.58,12,0/800x600?access_token=" + 
-                                                                                        "pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ." + 
-                                                                                        "0_vEybvOf6uclH6S3S3XJA')" 
-                                                                                }}
-                                                                            ></div>
-                                                                            <div className="absolute inset-0 bg-gradient-to-t from-[#101010] via-transparent to-transparent"></div>
-                                                                        </div>
-                                 
-                                                                        {/* Animated Tracking Pulse for Customer */}
-                                                                        <div className="absolute top-[40%] left-[45%] -translate-x-1/2 -translate-y-1/2 z-20">
-                                                                            <div className="relative">
-                                                                                <div className="absolute inset-0 w-6 h-6 bg-blue-500 rounded-full animate-ping opacity-25"></div>
-                                                                                <div className="w-6 h-6 bg-blue-500 rounded-full border-2 border-[#101010] shadow-lg flex items-center justify-center text-white">
-                                                                                    <Users size={10} fill="currentColor" />
-                                                                                </div>
-                                                                                <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black/80 backdrop-blur-md px-2 py-0.5 rounded border border-white/10 text-[8px] font-black text-white  tracking-wider">
-                                                                                    Customer
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                 
-                                                                        {/* Service Mechanic Position (Moving simulation) */}
-                                                                        {booking.status === 'En Route' || booking.status === 'In Progress' ? (
-                                                                            <div className="absolute top-[55%] left-[60%] -translate-x-1/2 -translate-y-1/2 z-20 animate-pulse transition-all">
-                                                                                <div className="relative">
-                                                                                    <div className="absolute inset-0 w-8 h-8 bg-primary rounded-full animate-ping opacity-20"></div>
-                                                                                    <div className="w-8 h-8 bg-primary rounded-full border-2 border-[#101010] shadow-2xl flex items-center justify-center text-white rotate-12">
-                                                                                        <div className="animate-bounce"><Search size={10} fill="currentColor" /></div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div className="absolute inset-0 flex items-center justify-center backdrop-blur-[1px] bg-black/40">
-                                                                                <div className="text-center p-4 space-y-2">
-                                                                                    <Search size={18} className="text-gray-600 mx-auto" />
-                                                                                    <p className="text-[9px] font-black text-white  tracking-widest">Tracking Offline</p>
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
+                                                                    <LiveMapCard booking={booking} />
                                                                 </div>
-                                                                <div className="p-3 pt-0">
-                                                                    <Tooltip content="View service location on map">
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); handleViewMap(booking); }}
-                                                                            className="w-full py-2.5 bg-primary text-white font-black  tracking-widest text-[9px] rounded-lg hover:bg-orange-600 transition-all shadow-lg flex items-center justify-center gap-1.5"
-                                                                        >
-                                                                            Open Detailed Map
-                                                                        </button>
-                                                                    </Tooltip>
-                                                                </div>
+
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1570,7 +2089,7 @@ const AdminBookingsScreen: React.FC = () => {
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Price</p>
-                                                <p className="font-black text-green-400 text-sm mt-0.5">₱{total.toLocaleString()}</p>
+                                                <p className="font-black text-green-400 text-sm mt-0.5">{total > 0 ? `₱${total.toLocaleString()}` : 'For Quotation'}</p>
                                             </div>
                                         </div>
 
@@ -1656,16 +2175,16 @@ const AdminBookingsScreen: React.FC = () => {
                                                                 </button>
                                                             </Tooltip>
                                                         )}
-                                                        {booking.paymentMethod === 'GCash' && (booking.gcashReference || booking.gcashReceiptUrl) && !booking.isVerified && (
+                                                        {booking.paymentMethod === 'GCash' && (booking.gcashDownpaymentReference || booking.gcashReference || booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) && !booking.isVerified && (
                                                             <div className="p-2.5 bg-blue-500/5 rounded-lg border border-blue-500/20 space-y-2">
                                                                 <div className="flex justify-between items-center text-xs">
                                                                     <span className="text-blue-400 font-bold">GCash Ref:</span>
-                                                                    <span className="text-white font-mono font-black">{booking.gcashReference || 'Pending'}</span>
+                                                                    <span className="text-white font-mono font-black">{booking.gcashDownpaymentReference || booking.gcashReference || 'Pending'}</span>
                                                                 </div>
-                                                                {booking.gcashReceiptUrl && (
+                                                                {(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) && (
                                                                     <div className="rounded-lg overflow-hidden border border-white/10 bg-black/40">
                                                                         <img 
-                                                                            src={booking.gcashReceiptUrl} 
+                                                                            src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl} 
                                                                             alt="Receipt" 
                                                                             className="w-full h-auto max-h-32 object-contain"
                                                                         />
@@ -1692,9 +2211,17 @@ const AdminBookingsScreen: React.FC = () => {
                                                     Service & Management
                                                 </h4>
                                                 <div className="space-y-3">
-                                                    <div>
-                                                        <p className="text-primary font-black text-sm">{booking.service?.name || 'Unknown Service'}</p>
-                                                        <p className="text-[10px] text-gray-500 mt-1">{booking.service?.estimatedTime || 'N/A'}</p>
+                                                    <div className="flex items-center gap-3">
+                                                        <img 
+                                                            src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)} 
+                                                            alt={booking.service?.name || 'Service'} 
+                                                            className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
+                                                            onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category); }}
+                                                        />
+                                                        <div>
+                                                            <p className="text-primary font-black text-sm">{booking.service?.name || 'Unknown Service'}</p>
+                                                            <p className="text-[10px] text-gray-500 mt-1">{booking.service?.estimatedTime || 'N/A'}</p>
+                                                        </div>
                                                     </div>
 
                                                     <div className="pt-1.5">
@@ -1733,7 +2260,7 @@ const AdminBookingsScreen: React.FC = () => {
                                                     {/* Status Controls */}
                                                     <div className="flex gap-2 pt-1.5">
                                                         <div className="flex-1 relative">
-                                                            <select
+                                                            <select id={`booking-status-${booking.id}`} name={`booking-status-${booking.id}`}
                                                                 value={booking.status}
                                                                 onChange={(e) => handleStatusChange(booking, e.target.value as BookingStatus)}
                                                                 onClick={e => e.stopPropagation()}
@@ -1765,21 +2292,24 @@ const AdminBookingsScreen: React.FC = () => {
                                                 </h4>
                                                 <div className="space-y-2.5 relative pl-3">
                                                     <div className="absolute left-[19px] top-2 bottom-6 w-0.5 bg-gradient-to-b from-primary/50 to-transparent"></div>
-                                                    {booking.statusHistory && booking.statusHistory.length > 0 ? (
-                                                        booking.statusHistory.map((s, i) => (
-                                                            <div key={i} className="flex gap-3 relative">
-                                                                <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black z-10 ${i === booking.statusHistory!.length - 1 ? 'bg-primary text-white' : 'bg-white/5 text-gray-500'}`}>
-                                                                    {i + 1}
+                                                    {(() => {
+                                                        const timelineData = getTimelineData(booking.status, booking.statusHistory);
+                                                        return timelineData.length > 0 ? (
+                                                            timelineData.map((s, i) => (
+                                                                <div key={i} className="flex gap-3 relative">
+                                                                    <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black z-10 ${i === timelineData.length - 1 ? 'bg-primary text-white' : 'bg-white/5 text-gray-500'}`}>
+                                                                        {i + 1}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className={`text-xs font-black ${i === timelineData.length - 1 ? 'text-white' : 'text-gray-500'}`}>{s.status}</p>
+                                                                        <p className="text-[8px] text-gray-600 font-bold mt-0.5">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                    </div>
                                                                 </div>
-                                                                <div>
-                                                                    <p className={`text-xs font-black ${i === booking.statusHistory!.length - 1 ? 'text-white' : 'text-gray-500'}`}>{s.status}</p>
-                                                                    <p className="text-[8px] text-gray-600 font-bold mt-0.5">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                                                </div>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        <p className="text-[10px] text-gray-600 font-bold pl-2 py-2">No history recorded yet.</p>
-                                                    )}
+                                                            ))
+                                                        ) : (
+                                                            <p className="text-[10px] text-gray-600 font-bold pl-2 py-2">No history recorded yet.</p>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
@@ -1805,6 +2335,61 @@ const AdminBookingsScreen: React.FC = () => {
             {cancellingBooking && (<CancellationModal booking={cancellingBooking} onClose={() => setCancellingBooking(null)} onConfirm={handleConfirmCancellation} />)}
             {viewingBooking && (<BookingDetailsModal booking={viewingBooking} customer={viewingCustomer} onClose={() => setViewingBooking(null)} />)}
             {viewingMapBooking && (<BookingLocationModal booking={viewingMapBooking} onClose={() => setViewingMapBooking(null)} />)}
+            {priceDetailsBooking && (
+                <PriceBreakdownModal
+                    booking={priceDetailsBooking}
+                    onClose={() => setPriceDetailsBooking(null)}
+                />
+            )}
+            {previewImageUrl && (
+                <div className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setPreviewImageUrl(null)}>
+                    <div className="relative max-w-4xl w-full bg-[#151515] rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+                        {/* Header bar */}
+                        <div className="flex items-center justify-between p-4 border-b border-white/5 bg-black/20">
+                            <span className="text-xs font-black tracking-widest text-gray-400 uppercase">GCash Receipt Preview</span>
+                            <div className="flex items-center gap-3">
+                                <a 
+                                    href={previewImageUrl} 
+                                    download="gcash_receipt.png" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white font-black tracking-widest text-[9px] uppercase rounded-lg border border-white/10 transition-all"
+                                >
+                                    <Download size={12} /> Download
+                                </a>
+                                <button 
+                                    onClick={() => window.open(previewImageUrl, '_blank')} 
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white font-black tracking-widest text-[9px] uppercase rounded-lg border border-white/10 transition-all"
+                                >
+                                    <ExternalLink size={12} /> Open Original
+                                </button>
+                                <button 
+                                    onClick={() => setPreviewImageUrl(null)} 
+                                    className="p-2 bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white rounded-full transition-all border border-red-500/30 flex items-center justify-center shadow-lg shadow-red-500/10 shrink-0"
+                                    aria-label="Close preview"
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Image body container */}
+                        <div className="p-6 flex flex-col items-center justify-center bg-black/40 min-h-[300px] md:min-h-[500px] max-h-[70vh] overflow-y-auto relative">
+                            {previewImageLoading && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[2px] z-10">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
+                                </div>
+                            )}
+                            <img 
+                                src={previewImageUrl} 
+                                alt="Receipt Preview" 
+                                className={`max-w-full max-h-[60vh] object-contain rounded-xl border border-white/5 shadow-2xl transition-opacity duration-300 ${previewImageLoading ? 'opacity-0' : 'opacity-100'}`}
+                                onLoad={() => setPreviewImageLoading(false)}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
             {showDeleteAllConfirm && (
                 <Modal title="Delete All Bookings" isOpen={true} onClose={() => setShowDeleteAllConfirm(false)}>
                     <div className="space-y-4">

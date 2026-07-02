@@ -29,3 +29,10 @@ dist-ssr
 
 # Scratch files
 scratch/
+
+# Play Store Release Keystore files
+playstore-release/keystore/*.jks
+playstore-release/keystore/*.keystore
+playstore-release/keystore/keystore-passwords.txt
+android/local.properties
+android/variables.gradle

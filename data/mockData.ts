@@ -1,4 +1,4 @@
-import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory, AdminUser, Role, Task, PayoutRequest, RentalCar, Subscription, PromoCode } from '../types';
+import { Service, Mechanic, Booking, Part, Customer, Settings, Vehicle, Order, Banner, FAQCategory, AdminUser, Role, Task, PayoutRequest, RentalCar, HireDriver, Subscription, PromoCode } from '../types';
 
 // This file now acts as a "seeder" for the database on the first run.
 // It provides the initial state if no data is found in localStorage.
@@ -169,7 +169,7 @@ export const seedServices: Service[] = [
         description: 'Full synthetic oil change with filter replacement. Recommended every 5,000 miles.',
         price: 2500,
         estimatedTime: '45 mins',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_oil_change.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l-6-2m6 2l-3 1m-3-1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>'
     },
@@ -179,7 +179,7 @@ export const seedServices: Service[] = [
         description: 'Complete battery health check, terminal cleaning, and replacement if necessary. Ensures reliable starts.',
         price: 4000,
         estimatedTime: '30 mins',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_battery.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Repair',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12V8a2 2 0 00-2-2H6a2 2 0 00-2 2v4m16 0h-2.586a1 1 0 01-.707-.293l-3.414-3.414a1 1 0 00-.707-.293H10.5a1 1 0 00-.707.293L6.379 11.707A1 1 0 015.672 12H4m16 0h-2m-2 0h-2m-2 0h-2m2 0v4m-4-4v4m8-4v4" /></svg>'
     },
@@ -189,7 +189,7 @@ export const seedServices: Service[] = [
         description: 'Reliable and fast towing service to get your vehicle to a safe location or one of our partner shops.',
         price: 3500,
         estimatedTime: 'N/A',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_towing.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Emergency',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2 2h8a1 1 0 001-1z" /><path stroke-linecap="round" stroke-linejoin="round" d="M18 11h3M15 11h1" /></svg>'
     },
@@ -199,7 +199,7 @@ export const seedServices: Service[] = [
         description: 'Comprehensive diagnostic scan using OBD-II tools to identify and troubleshoot engine and electronic issues.',
         price: 1200,
         estimatedTime: '1 hour',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_diagnostics.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Diagnostics',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>'
     },
@@ -209,7 +209,7 @@ export const seedServices: Service[] = [
         description: 'Professional body repair for dents, scratches, and collision damage. Request a quote for pricing.',
         price: 0,
         estimatedTime: 'Quote Required',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_body_repair.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Repair',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v2a2 2 0 01-2 2H5zM14 21V5a2 2 0 00-2-2h-1m3 9v7m0-7h7v4a2 2 0 01-2 2h-5" /></svg>'
     },
@@ -219,7 +219,7 @@ export const seedServices: Service[] = [
         description: 'Air conditioning system check, freon recharge, and leak detection to keep you cool.',
         price: 1800,
         estimatedTime: '1.5 hours',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_aircon.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m8.364-8.364h-1M2.636 12h1m14.092-5.636l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707m0 11.314l.707-.707m12.021-.707l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" /></svg>'
     },
@@ -229,7 +229,7 @@ export const seedServices: Service[] = [
         description: 'Professional and reliable drivers for your special trips, errands, or emergencies. Choose from hourly, daily, or specific trip rates.',
         price: 800,
         estimatedTime: 'Per Hour',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_driver_hire.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Specialty Services',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21V9a4 4 0 00-4-4H9" /></svg>'
     },
@@ -239,7 +239,7 @@ export const seedServices: Service[] = [
         description: 'Comprehensive interior and exterior cleaning, polishing, and waxing to make your car look brand new.',
         price: 3000,
         estimatedTime: '4 hours',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_detailing.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Cleaning & Detailing',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>'
     },
@@ -249,17 +249,17 @@ export const seedServices: Service[] = [
         description: 'Hassle-free LTO car registration, license renewal, and transfer of ownership services. Let our liason handle the paperwork and long lines for you.',
         price: 2500,
         estimatedTime: 'Varies',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_lto.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Liason Services',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>'
     },
     {
         id: '10',
         name: 'Rent a Car',
-        description: 'Browse and rent from our collection of well-maintained vehicles for your personal or business needs. Redirects to the rental page.',
+        description: 'Browse and rent from our collection of well-maintained vehicles for your personal or business needs.',
         price: 0,
         estimatedTime: 'N/A',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_rent_car.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Rentals',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" /></svg>'
     },
@@ -269,7 +269,7 @@ export const seedServices: Service[] = [
         description: 'Includes inspection of pads, rotors, and brake fluid. Replacement of pads if necessary.',
         price: 3200,
         estimatedTime: '1.5 hours',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_brakes.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>'
     },
@@ -279,7 +279,7 @@ export const seedServices: Service[] = [
         description: 'Rotate tires to ensure even wear and balance them to prevent vibrations. Improves tire life and ride quality.',
         price: 1500,
         estimatedTime: '1 hour',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_tires.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5" /><path stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 018-8v0a8 8 0 018 8v0a8 8 0 01-8 8v0a8 8 0 01-8-8v0z" /></svg>'
     },
@@ -289,7 +289,7 @@ export const seedServices: Service[] = [
         description: 'Comprehensive engine check, spark plug replacement, and performance optimization for better fuel efficiency and power.',
         price: 2800,
         estimatedTime: '2 hours',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_engine.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>'
     },
@@ -299,7 +299,7 @@ export const seedServices: Service[] = [
         description: 'Comprehensive diagnostic scan using OBD-II tools to identify and troubleshoot engine and electronic issues.',
         price: 1200,
         estimatedTime: '1 hour',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/service_diagnostics.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         category: 'Diagnostics',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>'
     }
@@ -375,7 +375,7 @@ export const seedRentalCars: RentalCar[] = [
         type: 'Sedan',
         pricePerDay: 2200,
         seats: 5,
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         isAvailable: true,
     },
     {
@@ -386,7 +386,7 @@ export const seedRentalCars: RentalCar[] = [
         type: 'SUV',
         pricePerDay: 3500,
         seats: 7,
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         isAvailable: true,
     },
     {
@@ -397,7 +397,7 @@ export const seedRentalCars: RentalCar[] = [
         type: 'Van',
         pricePerDay: 4000,
         seats: 12,
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/rental_van_white.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         isAvailable: false,
     },
     {
@@ -408,8 +408,62 @@ export const seedRentalCars: RentalCar[] = [
         type: 'Luxury',
         pricePerDay: 8000,
         seats: 4,
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/rental_mustang_red.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         isAvailable: true,
+    }
+];
+
+export const seedHireDrivers: HireDriver[] = [
+    {
+        id: 'hd1',
+        name: 'Danilo Santos',
+        phone: '0917-123-4567',
+        licenseType: 'Professional',
+        licenseNumber: 'N01-12-345678',
+        experience: '5+ years',
+        geoLimit: 'Within City',
+        pricePerHour: 150,
+        pricePerDay: 1200,
+        isAvailable: true,
+        imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200&h=200',
+        rating: 4.8,
+        totalTrips: 142,
+        languages: ['Filipino', 'English'],
+        description: 'Punctual, polite, and very familiar with Metro Manila shortcuts. Specialized in driving automatic sedans and SUVs.'
+    },
+    {
+        id: 'hd2',
+        name: 'Marlon Dizon',
+        phone: '0918-987-6543',
+        licenseType: 'Professional',
+        licenseNumber: 'N02-15-987654',
+        experience: '10+ years',
+        geoLimit: 'Province Wide',
+        pricePerHour: 200,
+        pricePerDay: 1800,
+        isAvailable: true,
+        imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200&h=200',
+        rating: 4.95,
+        totalTrips: 310,
+        languages: ['Filipino', 'English', 'Ilocano'],
+        description: 'Experienced long-distance driver. Perfect for family out-of-town trips. Certified defensive driver with zero accident record.'
+    },
+    {
+        id: 'hd3',
+        name: 'Arnel Pineda',
+        phone: '0922-555-8888',
+        licenseType: 'Professional',
+        licenseNumber: 'N03-18-555888',
+        experience: '3-5 years',
+        geoLimit: 'Within City',
+        pricePerHour: 120,
+        pricePerDay: 1000,
+        isAvailable: false,
+        imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200&h=200',
+        rating: 4.7,
+        totalTrips: 88,
+        languages: ['Filipino', 'English'],
+        description: 'Friendly driver, non-smoker, keeps vehicles clean. Experienced with manual and automatic transmissions.'
     }
 ];
 
@@ -738,7 +792,7 @@ export const seedBookings: Booking[] = [
         time: '11:00 AM',
         status: 'En Route',
         vehicle: {
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -759,7 +813,7 @@ export const seedBookings: Booking[] = [
         time: '01:00 PM',
         status: 'Completed',
         vehicle: {
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -785,7 +839,7 @@ export const seedBookings: Booking[] = [
         time: '09:00 AM',
         status: 'Completed',
         vehicle: {
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -808,7 +862,7 @@ export const seedBookings: Booking[] = [
         status: 'Cancelled',
         cancellationReason: 'Customer no longer available.',
         vehicle: {
-            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
+            make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -829,7 +883,7 @@ export const seedBookings: Booking[] = [
         time: '10:00 AM',
         status: 'Completed',
         vehicle: {
-            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png'], isPrimary: false,
+            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: false,
             vin: 'JT1AZ01Z000654321', mileage: 45000, insuranceProvider: 'BPI/MS Insurance', insurancePolicyNumber: 'POL-123456789'
         },
         location: { lat: 14.5510, lng: 121.0232 },
@@ -851,7 +905,7 @@ export const seedBookings: Booking[] = [
         time: '10:00 AM',
         status: 'Upcoming',
         vehicle: {
-            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png'], isPrimary: true,
+            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         },
         location: { lat: 14.6042, lng: 121.0485 },
@@ -868,7 +922,7 @@ export const seedBookings: Booking[] = [
         time: '02:00 PM',
         status: 'Upcoming',
         vehicle: {
-            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'DEF 456', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png'], isPrimary: false,
+            make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'DEF 456', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: false,
             vin: 'TY1AZ01Z000445566', mileage: 35000, insuranceProvider: 'Geico', insurancePolicyNumber: 'POL-GC-778899'
         },
         location: { lat: 14.6521, lng: 121.0333 },
@@ -885,7 +939,7 @@ export const seedBookings: Booking[] = [
         time: '04:00 PM',
         status: 'Upcoming',
         vehicle: {
-            make: 'Ford', model: 'Everest', year: 2023, plateNumber: 'GHI 123', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_blue.png'], isPrimary: true,
+            make: 'Ford', model: 'Everest', year: 2023, plateNumber: 'GHI 123', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'FD1AZ01Z000778899', mileage: 5000, insuranceProvider: 'Allstate', insurancePolicyNumber: 'POL-AS-112233'
         },
         location: { lat: 14.5510, lng: 121.0232 }, // Placeholder
@@ -902,7 +956,7 @@ export const seedBookings: Booking[] = [
         time: '11:00 AM',
         status: 'Upcoming',
         vehicle: {
-            make: 'Hyundai', model: 'Tucson', year: 2020, plateNumber: 'JKL 789', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_gray.png'], isPrimary: true,
+            make: 'Hyundai', model: 'Tucson', year: 2020, plateNumber: 'JKL 789', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'HY1AZ01Z000998877', mileage: 60000, insuranceProvider: 'Progressive', insurancePolicyNumber: 'POL-PG-665544'
         },
         location: { lat: 14.5510, lng: 121.0232 }, // Placeholder
@@ -921,19 +975,19 @@ export const seedCustomers: Customer[] = [
         phone: '555-123-4567',
         vehicles: [
             {
-                make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_suv_white.png'], isPrimary: true,
+                make: 'Mitsubishi', model: 'Montero', year: 2023, plateNumber: 'ABC 1234', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
                 vin: 'JN1AZ01Z000123456', mileage: 15000, insuranceProvider: 'AXA Insurance', insurancePolicyNumber: 'POL-987654321'
             },
             {
-                make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_gray.png'], isPrimary: false,
+                make: 'Toyota', model: 'Vios', year: 2021, plateNumber: 'GHI 111', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: false,
                 vin: 'JT1AZ01Z000654321', mileage: 45000, insuranceProvider: 'BPI/MS Insurance', insurancePolicyNumber: 'POL-123456789'
             },
             {
-                make: 'Ford', model: 'Ranger', year: 2022, plateNumber: 'RAP 888', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_red.png'], isPrimary: false,
+                make: 'Ford', model: 'Ranger', year: 2022, plateNumber: 'RAP 888', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: false,
                 vin: 'FD1RAPTOR00012345', mileage: 32000, insuranceProvider: 'FPG Insurance', insurancePolicyNumber: 'POL-FPG-456789'
             },
             {
-                make: 'Nissan', model: 'Navara', year: 2020, plateNumber: 'NAV 777', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_truck_black.png'], isPrimary: false,
+                make: 'Nissan', model: 'Navara', year: 2020, plateNumber: 'NAV 777', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: false,
                 vin: 'NS1NVRA000777', mileage: 55000, insuranceProvider: 'Standard Insurance', insurancePolicyNumber: 'POL-STD-555444'
             }
         ],
@@ -946,7 +1000,7 @@ export const seedCustomers: Customer[] = [
     {
         id: 'c2', name: 'Alex Rider', email: 'alex.rider@example.com', password: 'password', phone: '555-111-2222',
         vehicles: [{
-            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/vehicle_sedan_black.png'], isPrimary: true,
+            make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         }],
         picture: 'https://picsum.photos/seed/alex/200/200',
@@ -1101,7 +1155,7 @@ export const seedBanners: Banner[] = [
         id: 'banner1',
         title: '20% Off All Services',
         description: 'Get 20% off on all our premium services. Limited time offer!',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/ad_banner_1.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         link: '/services',
         startDate: '2024-01-01',
         endDate: '2024-12-31',
@@ -1112,7 +1166,7 @@ export const seedBanners: Banner[] = [
         id: 'banner2',
         title: 'New Parts in Stock!',
         description: 'Check out our new collection of high-quality engine and brake parts.',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/ad_banner_2.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         link: '/parts-store',
         startDate: '2024-01-01',
         endDate: '2024-12-31',
@@ -1123,7 +1177,7 @@ export const seedBanners: Banner[] = [
         id: 'banner3',
         title: 'Never Miss a Tune-Up',
         description: 'Set maintenance reminders for your vehicles and stay on top of their health.',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/ad_banner_3.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         link: '/reminders',
         startDate: '2024-01-01',
         endDate: '2024-12-31',
@@ -1134,7 +1188,7 @@ export const seedBanners: Banner[] = [
         id: 'banner4',
         title: 'Hassle-Free Oil Change',
         description: 'Book a professional oil change service at your location in just a few taps.',
-        imageUrl: 'https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/ad_banner_4.png',
+        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
         link: '/booking/1',
         startDate: '2024-01-01',
         endDate: '2024-12-31',
@@ -1342,6 +1396,7 @@ export const getSeedData = () => ({
     payouts: seedPayouts,
     rentalCars: seedRentalCars,
     rentalBookings: [],
+    hireDrivers: seedHireDrivers,
     subscriptions: seedSubscriptions,
     promoCodes: seedPromoCodes,
 });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { Bell } from 'lucide-react';
 import { Reminder } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -87,6 +87,8 @@ const ReminderFormModal: React.FC<{
                             {errors.date && <p className="text-red-400 text-xs mt-1">{errors.date}</p>}
                         </div>
                         <textarea
+                            id="reminder-notes"
+                            name="reminder-notes"
                             placeholder="Notes (optional)"
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
@@ -240,7 +242,7 @@ const RemindersScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title="Service Reminders" showBackButton icon={<Bell size={22} />} />
+            <CustomerHeader title="Service Reminders" showBackButton icon={<Bell size={22} />} />
 
             <div className="p-4 flex gap-4">
                 <button

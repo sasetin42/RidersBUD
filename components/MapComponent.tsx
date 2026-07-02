@@ -61,8 +61,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
             mapInstanceRef.current.on('click', onMapClick);
         }
 
+        // Invalidate size after initialization to fix gray tiles in modals
+        const invalidateTimer = setTimeout(() => {
+            if (mapInstanceRef.current) {
+                mapInstanceRef.current.invalidateSize();
+            }
+        }, 350);
+
         // Cleanup function to remove map instance on unmount
         return () => {
+            clearTimeout(invalidateTimer);
             if (mapInstanceRef.current) {
                 mapInstanceRef.current.remove();
                 mapInstanceRef.current = null;
@@ -81,12 +89,31 @@ const MapComponent: React.FC<MapComponentProps> = ({
     useEffect(() => {
         if (mapInstanceRef.current && bounds) {
             mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+            // Invalidate after fitting bounds to ensure proper rendering
+            setTimeout(() => {
+                if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+            }, 200);
         }
     }, [bounds]);
 
+    // Fallback default icon for markers that don't provide one
+    const defaultIconRef = useRef<any>(null);
+    const getDefaultIcon = () => {
+        if (!defaultIconRef.current && typeof L !== 'undefined') {
+            defaultIconRef.current = L.divIcon({
+                html: '<div style="background:#FE7803;width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>',
+                className: 'bg-transparent border-0',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12],
+                popupAnchor: [0, -12]
+            });
+        }
+        return defaultIconRef.current;
+    };
+
     // Sync markers with the `markers` prop efficiently
     useEffect(() => {
-        if (!markersLayerRef.current) return;
+        if (!markersLayerRef.current || typeof L === 'undefined') return;
 
         const currentMarkerIds = new Set(Object.keys(markersRef.current));
         const newMarkerIds = new Set(markers.map(m => m.id));
@@ -94,7 +121,11 @@ const MapComponent: React.FC<MapComponentProps> = ({
         // Remove old markers that are no longer in the props
         for (const id of currentMarkerIds) {
             if (!newMarkerIds.has(id)) {
-                markersLayerRef.current.removeLayer(markersRef.current[id]);
+                try {
+                    markersLayerRef.current.removeLayer(markersRef.current[id]);
+                } catch (e) {
+                    // Marker may not have been properly initialized
+                }
                 delete markersRef.current[id];
             }
         }
@@ -104,12 +135,22 @@ const MapComponent: React.FC<MapComponentProps> = ({
             if (markersRef.current[markerData.id]) {
                 // Marker exists, update its position and icon
                 const marker = markersRef.current[markerData.id];
-                marker.setLatLng(markerData.position);
-                if (markerData.icon) marker.setIcon(markerData.icon);
-                if (markerData.popupContent) marker.setPopupContent(markerData.popupContent);
+                try {
+                    marker.setLatLng(markerData.position);
+                    if (markerData.icon) marker.setIcon(markerData.icon);
+                    if (markerData.popupContent) marker.setPopupContent(markerData.popupContent);
+                } catch (e) {
+                    // Marker may be in a bad state, remove and recreate
+                    try { markersLayerRef.current.removeLayer(marker); } catch (e2) {}
+                    delete markersRef.current[markerData.id];
+                    const newMarker = L.marker(markerData.position, { icon: markerData.icon || getDefaultIcon() });
+                    if (markerData.popupContent) newMarker.bindPopup(markerData.popupContent);
+                    markersLayerRef.current.addLayer(newMarker);
+                    markersRef.current[markerData.id] = newMarker;
+                }
             } else {
                 // New marker, create and add it
-                const marker = L.marker(markerData.position, { icon: markerData.icon });
+                const marker = L.marker(markerData.position, { icon: markerData.icon || getDefaultIcon() });
                 if (markerData.popupContent) marker.bindPopup(markerData.popupContent);
                 markersLayerRef.current.addLayer(marker);
                 markersRef.current[markerData.id] = marker;

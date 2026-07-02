@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Header from '../../components/Header';
+import NotificationBell from '../../components/NotificationBell';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useMechanicAuth } from '../../context/MechanicAuthContext';
 import Spinner from '../../components/Spinner';
@@ -30,10 +31,10 @@ const TaskFormModal: React.FC<{
             <div className="bg-dark-gray rounded-lg p-6 w-full max-w-sm animate-scaleUp">
                 <h2 className="text-xl font-bold mb-4">{task ? 'Edit Task' : 'New Task'}</h2>
                 <div className="space-y-4">
-                    <input type="text" placeholder="Task Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent" />
-                    <textarea placeholder="Description (optional)" value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent" />
-                    <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent" />
-                    <select value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent">
+                    <input id="task-title" name="task-title" type="text" placeholder="Task Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent" />
+                    <textarea id="task-description" name="task-description" placeholder="Description (optional)" value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent" />
+                    <input id="task-due-date" name="task-due-date" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent" />
+                    <select id="task-priority" name="task-priority" value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className="w-full p-3 bg-field rounded-md outline-none transition-all focus:border-white/20 border border-transparent">
                         <option>Low</option>
                         <option>Medium</option>
                         <option>High</option>
@@ -147,20 +148,20 @@ const MechanicTasksScreen: React.FC = () => {
     
     return (
         <div className="flex flex-col h-full bg-secondary text-white">
-            <Header title="My Tasks" icon={<CheckSquare size={18} />} />
+            <Header title="My Tasks" rightAction={<NotificationBell />} icon={<CheckSquare size={18} />} />
             <div className="p-4 space-y-3 border-b border-dark-gray">
                 <div className="grid grid-cols-2 gap-3">
-                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm outline-none transition-all focus:border-white/20 border border-transparent"><option value="all">All Statuses</option><option value="incomplete">Incomplete</option><option value="complete">Complete</option></select>
-                    <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm outline-none transition-all focus:border-white/20 border border-transparent"><option value="all">All Priorities</option><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select>
+                    <select id="task-status-filter" name="task-status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm outline-none transition-all focus:border-white/20 border border-transparent"><option value="all">All Statuses</option><option value="incomplete">Incomplete</option><option value="complete">Complete</option></select>
+                    <select id="task-priority-filter" name="task-priority-filter" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm outline-none transition-all focus:border-white/20 border border-transparent"><option value="all">All Priorities</option><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select>
                 </div>
-                <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm outline-none transition-all focus:border-white/20 border border-transparent"><option value="dueDate">Sort by Due Date</option><option value="priority">Sort by Priority</option></select>
+                <select id="task-sort" name="task-sort" value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="w-full p-2 bg-field rounded-md text-sm outline-none transition-all focus:border-white/20 border border-transparent"><option value="dueDate">Sort by Due Date</option><option value="priority">Sort by Priority</option></select>
             </div>
 
             <div className="flex-grow overflow-y-auto px-4 pb-24">
                 {filteredAndSortedTasks.length > 0 && (
                     <div className="flex items-center gap-3 p-2 border-b border-field">
-                        <input type="checkbox" checked={filteredAndSortedTasks.length > 0 && selectedTaskIds.size === filteredAndSortedTasks.length} onChange={handleSelectAll} className="h-5 w-5 rounded border-gray-500 text-primary focus:ring-0" />
-                        <label className="text-sm text-light-gray">Select All</label>
+                        <input id="task-select-all" name="task-select-all" type="checkbox" checked={filteredAndSortedTasks.length > 0 && selectedTaskIds.size === filteredAndSortedTasks.length} onChange={handleSelectAll} className="h-5 w-5 rounded border-gray-500 text-primary focus:ring-0" />
+                        <label htmlFor="task-select-all" className="text-sm text-light-gray">Select All</label>
                     </div>
                 )}
                 {filteredAndSortedTasks.length === 0 ? (
@@ -169,7 +170,7 @@ const MechanicTasksScreen: React.FC = () => {
                     <div className="space-y-2 py-2">
                         {filteredAndSortedTasks.map(task => (
                             <div key={task.id} className={`p-3 rounded-lg flex items-start gap-3 transition-colors ${selectedTaskIds.has(task.id) ? 'bg-primary/20' : 'bg-dark-gray'}`}>
-                                <input type="checkbox" checked={selectedTaskIds.has(task.id)} onChange={() => handleSelectTask(task.id)} className="mt-1 h-5 w-5 rounded border-gray-500 text-primary focus:ring-0 flex-shrink-0" />
+                                <input id={`task-checkbox-${task.id}`} name={`task-checkbox-${task.id}`} type="checkbox" checked={selectedTaskIds.has(task.id)} onChange={() => handleSelectTask(task.id)} className="mt-1 h-5 w-5 rounded border-gray-500 text-primary focus:ring-0 flex-shrink-0" />
                                 <div className="flex-grow cursor-pointer" onClick={() => {setEditingTask(task); setIsModalOpen(true);}}>
                                     <p className={`font-semibold ${task.isComplete ? 'line-through text-gray-500' : ''}`}>{task.title}</p>
                                     {task.isComplete && task.completionDate ? (

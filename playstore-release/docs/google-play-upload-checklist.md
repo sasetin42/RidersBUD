@@ -1,22 +1,44 @@
-# Google Play Console Submission Checklist
+# Google Play Console Upload Checklist
 
-Use this checklist to ensure a smooth, error-free submission of **RidersBUD** on Google Play Console.
+This checklist outlines the steps and assets required to publish the RidersBUD app on the Google Play Store.
 
-## 📦 App Package Requirements
-- [ ] Generate the signed production **Android App Bundle (.aab)**.
-- [ ] Verify version code is incremented (e.g. `versionCode 1` to `versionCode 2`) for updates.
-- [ ] Confirm package name is `com.sasetin42.ridersbud`.
-- [ ] Confirm keystore credentials match exactly (unlocked with `release-key.jks`).
+## 1. Setup & Credentials
+- [ ] Google Play Developer Account created and active.
+- [ ] Developer registration fee paid.
+- [ ] Access permission granted to required team members (Release Manager, Developer, Admin).
 
-## 🎨 Store Listing Assets
-- [ ] **App Title:** RidersBUD
-- [ ] **Short Description:** Professional motorcycle and vehicle repair mechanic matching application.
-- [ ] **Full Description:** RidersBUD is a premium platform connecting riders with expert, verified local mechanics in real-time. Features include real-time location booking tracking, live progress tracking and payments, parts shopping, and community forum reviews.
-- [ ] **App Icon:** 512px x 512px (32-bit PNG, transparent, no rounded corners, maximum size 1MB).
-- [ ] **Feature Graphic:** 1024px x 500px (JPG or 24-bit PNG, no transparency).
-- [ ] **Phone Screenshots:** At least 2 screenshots, minimum 320px, 16:9 or 9:16 aspect ratio (recommend 4-6 screenshots showing customer booking, mechanic dashboard, and live maps).
+## 2. Store Presence Details
+- [ ] **App Name**: RidersBUD (Max 50 characters).
+- [ ] **Short Description**: Quick tagline summarizing the service (Max 80 characters).
+- [ ] **Full Description**: Detailed explanation of the app features, how it works, and user benefits (Max 4000 characters).
+- [ ] **App Icon**: 512 x 512 px, 32-bit PNG, transparent background (Max 1MB).
+- [ ] **Feature Graphic**: 1024 x 500 px, JPEG or 24-bit PNG, no transparency (Max 1MB).
+- [ ] **Screenshots**:
+  - [ ] Phone: At least 2, up to 8 screenshots. 16:9 or 9:16 aspect ratio (Min 320px, Max 3840px).
+  - [ ] 7-inch tablet: At least 2 screenshots (optional but recommended).
+  - [ ] 10-inch tablet: At least 2 screenshots (optional but recommended).
 
-## 🔒 Privacy & Safety
-- [ ] **Privacy Policy:** Link to public privacy policy URL (required for location & camera usage permissions).
-- [ ] **Content Rating Questionnaire:** Completed category (Utility / Matchmaking map-based service).
-- [ ] **Data Safety Form:** Specify location data is used for booking matching, camera for receipt uploads, and data is transmitted securely over HTTPS.
+## 3. App Content & Policies
+- [ ] **Privacy Policy URL**: Live URL pointing to the RidersBUD privacy policy page.
+- [ ] **Ads Declaration**: Declare if the app contains ads (RidersBUD does not contain ads).
+- [ ] **App Access**: Provide testing credentials (username/password) if the app requires login for Google reviewers to access all features.
+- [ ] **Content Rating**: Complete the questionnaire to obtain an age rating.
+- [ ] **Target Audience & Content**: Specify age groups (e.g., 18 and older) and ensure compliance with Google policies.
+- [ ] **Data Safety**: Declare what user data is collected and shared (e.g., location, personal info, device IDs) and how it is encrypted.
+- [ ] **Financial Features**: Complete financial declarations if applicable.
+- [ ] **Government Apps**: Declare if it is a government-affiliated app (No).
+
+## 4. Release Preparation
+- [ ] Production Signed Android App Bundle (`app-release.aab`) ready in `playstore-release/aab/`.
+- [ ] Release Notes translated into supported languages (stored in `playstore-release/docs/release-notes.md`).
+- [ ] Version code incremented in `build.gradle` relative to any previous uploads.
+
+## 5. Console Upload & Release
+- [ ] Go to Google Play Console → Select RidersBUD.
+- [ ] Navigate to **Production** under the Release section.
+- [ ] Create a new release.
+- [ ] Opt-in to **Play App Signing** (recommended).
+- [ ] Drag and drop `app-release.aab`.
+- [ ] Enter the Release Name and Release Notes.
+- [ ] Click **Save** and then **Review release**.
+- [ ] Start rollout to production (can set roll-out percentage, e.g., 100%).

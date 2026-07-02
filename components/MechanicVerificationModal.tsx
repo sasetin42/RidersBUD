@@ -207,6 +207,8 @@ const MechanicVerificationModal: React.FC = () => {
                                                     </div>
                                                 )}
                                                 <input
+                                                    id={req.id}
+                                                    name={req.id}
                                                     type="file"
                                                     accept=".png,.jpg,.jpeg,.pdf,.doc,.docx"
                                                     onChange={(e) => handleFileChange(e, req.id)}

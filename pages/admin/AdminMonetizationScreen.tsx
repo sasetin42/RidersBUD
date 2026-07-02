@@ -666,9 +666,11 @@ const AdminMonetizationScreen: React.FC = () => {
                         <div className="p-8 space-y-6">
                             <div className="space-y-5">
                                 <div>
-                                    <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Discount Code</label>
+                                    <label htmlFor="promo-code" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Discount Code</label>
                                     <input
                                         type="text"
+                                        id="promo-code"
+                                        name="promo-code"
                                         placeholder="e.g. SUMMER2024"
                                         value={newPromo.code}
                                         onChange={(e) => setNewPromo({ ...newPromo, code: e.target.value.toUpperCase() })}
@@ -677,9 +679,11 @@ const AdminMonetizationScreen: React.FC = () => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-6">
                                     <div>
-                                        <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Discount Type</label>
+                                        <label htmlFor="promo-type" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Discount Type</label>
                                         <div className="relative">
                                             <select
+                                                id="promo-type"
+                                                name="promo-type"
                                                 value={newPromo.discountType}
                                                 onChange={(e) => setNewPromo({ ...newPromo, discountType: e.target.value as any })}
                                                 className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-4 text-white outline-none appearance-none font-bold text-sm cursor-pointer"
@@ -693,9 +697,11 @@ const AdminMonetizationScreen: React.FC = () => {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Value</label>
+                                        <label htmlFor="promo-value" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Value</label>
                                         <input
                                             type="number"
+                                            id="promo-value"
+                                            name="promo-value"
                                             placeholder="20"
                                             value={newPromo.discountValue}
                                             onChange={(e) => setNewPromo({ ...newPromo, discountValue: Number(e.target.value) })}
@@ -704,9 +710,11 @@ const AdminMonetizationScreen: React.FC = () => {
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Category</label>
+                                    <label htmlFor="promo-category" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Category</label>
                                     <div className="relative">
                                         <select
+                                            id="promo-category"
+                                            name="promo-category"
                                             value={newPromo.category}
                                             onChange={(e) => setNewPromo({ ...newPromo, category: e.target.value as any })}
                                             className="w-full bg-[#121212] border border-white/10 rounded-xl px-4 py-4 text-white outline-none appearance-none font-bold text-sm cursor-pointer"
@@ -721,8 +729,10 @@ const AdminMonetizationScreen: React.FC = () => {
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Description</label>
+                                    <label htmlFor="promo-description" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Description</label>
                                     <textarea
+                                        id="promo-description"
+                                        name="promo-description"
                                         rows={3}
                                         placeholder="What is this code for?"
                                         value={newPromo.description}

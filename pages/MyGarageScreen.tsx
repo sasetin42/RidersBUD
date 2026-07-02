@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Badge, Button } from '../components/ui';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import Spinner from '../components/Spinner';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
@@ -30,7 +30,7 @@ interface SelfLog {
 }
 
 // Category & Sub-Category Options Definition (4-Wheel Drive Private Hire)
-const VEHICLE_CATEGORIES = {
+export const VEHICLE_CATEGORIES = {
     'Sedans': [
         'Toyota Vios',
         'Toyota Corolla Altis',
@@ -58,7 +58,7 @@ const VEHICLE_CATEGORIES = {
 };
 
 // Autoparse Make/Model from subCategory choice
-const parseMakeModel = (subCategory: string) => {
+export const parseMakeModel = (subCategory: string) => {
     if (subCategory.startsWith('Toyota ')) {
         return { make: 'Toyota', model: subCategory.substring(7) };
     }
@@ -149,8 +149,10 @@ const LogFormModal: React.FC<{
 
                 <form onSubmit={handleSave} className="space-y-4">
                     <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Maintenance Action</label>
+                        <label htmlFor="maint-action" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Maintenance Action</label>
                         <input
+                            id="maint-action"
+                            name="maint-action"
                             type="text"
                             value={action}
                             onChange={e => setAction(e.target.value)}
@@ -162,8 +164,10 @@ const LogFormModal: React.FC<{
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Date</label>
+                            <label htmlFor="maint-date" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Date</label>
                             <input
+                                id="maint-date"
+                                name="maint-date"
                                 type="date"
                                 value={date}
                                 onChange={e => setDate(e.target.value)}
@@ -171,8 +175,10 @@ const LogFormModal: React.FC<{
                             />
                         </div>
                         <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Odometer (km)</label>
+                            <label htmlFor="maint-odometer" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Odometer (km)</label>
                             <input
+                                id="maint-odometer"
+                                name="maint-odometer"
                                 type="text"
                                 value={mileage}
                                 onChange={e => setMileage(e.target.value)}
@@ -183,8 +189,10 @@ const LogFormModal: React.FC<{
                     </div>
 
                     <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Cost (₱)</label>
+                        <label htmlFor="maint-cost" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Cost (₱)</label>
                         <input
+                            id="maint-cost"
+                            name="maint-cost"
                             type="text"
                             value={cost}
                             onChange={e => setCost(e.target.value)}
@@ -194,8 +202,10 @@ const LogFormModal: React.FC<{
                     </div>
 
                     <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Additional Notes</label>
+                        <label htmlFor="maint-notes" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Additional Notes</label>
                         <textarea
+                            id="maint-notes"
+                            name="maint-notes"
                             value={notes}
                             onChange={e => setNotes(e.target.value)}
                             placeholder="Part brands, tools used, next interval details..."
@@ -218,7 +228,7 @@ const LogFormModal: React.FC<{
     );
 };
 
-const VehicleFormModal: React.FC<{
+export const VehicleFormModal: React.FC<{
     vehicle?: Vehicle;
     onClose: () => void;
     onSave: (vehicle: Vehicle) => Promise<void>;
@@ -299,11 +309,7 @@ const VehicleFormModal: React.FC<{
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!formData.plateNumber.trim()) {
-            setErrors(prev => ({ ...prev, imageUrls: 'Please enter Plate Number before uploading images.' }));
-            if (e.target) e.target.value = '';
-            return;
-        }
+        // Plate number is no longer required before uploading images; we use a fallback if empty
 
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
@@ -318,7 +324,7 @@ const VehicleFormModal: React.FC<{
         setUploadProgress(0);
         
         try {
-            const safePlateNumber = formData.plateNumber.trim().toUpperCase();
+            const safePlateNumber = formData.plateNumber.trim().toUpperCase() || vehicle?.id || `TEMP_${Date.now()}`;
             const newUrls: string[] = [];
             
             if (!user) {
@@ -502,6 +508,9 @@ const VehicleFormModal: React.FC<{
                                         {formData.imageUrls.length} / 5
                                     </div>
                                 </div>
+                                {errors.imageUrls && (
+                                    <p className="text-red-400 text-[10px] px-1 animate-fadeIn">{errors.imageUrls}</p>
+                                )}
                                 
                                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                                     <AnimatePresence mode="popLayout">
@@ -538,7 +547,7 @@ const VehicleFormModal: React.FC<{
                                                     <span className="text-[8px] sm:text-[9px] font-black text-gray-500 group-hover:text-white uppercase tracking-widest transition-colors">Add Media</span>
                                                 </>
                                             )}
-                                            <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" disabled={isUploading} />
+                                            <input id="garage-image" name="garage-image" type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" disabled={isUploading} />
                                         </label>
                                     )}
                                 </div>
@@ -547,8 +556,10 @@ const VehicleFormModal: React.FC<{
                             {/* Intelligent Category & Subcategory setup (4-Wheel Drive) */}
                             <div className="grid grid-cols-2 gap-4 sm:gap-5 bg-white/[0.02] p-4 sm:p-5 rounded-[2rem] sm:rounded-3xl border border-white/5">
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Category (4-Wheel Drive)</label>
+                                    <label htmlFor="vehicle-category" className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Category (4-Wheel Drive)</label>
                                     <select
+                                        id="vehicle-category"
+                                        name="vehicle-category"
                                         value={category}
                                         onChange={handleCategoryChange}
                                         className="w-full px-4 py-3 bg-[#1C1C1E] border border-white/10 rounded-2xl text-sm font-bold text-white outline-none focus:border-primary/40"
@@ -562,9 +573,11 @@ const VehicleFormModal: React.FC<{
                                 </div>
 
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Sub-Category (Model Group)</label>
+                                    <label htmlFor="vehicle-subcategory" className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Sub-Category (Model Group)</label>
                                     {category !== 'Other' ? (
                                         <select
+                                            id="vehicle-subcategory"
+                                            name="vehicle-subcategory"
                                             value={subCategory}
                                             onChange={handleSubCategoryChange}
                                             className="w-full px-4 py-3 bg-[#1C1C1E] border border-white/10 rounded-2xl text-sm font-bold text-white outline-none focus:border-primary/40"
@@ -576,6 +589,8 @@ const VehicleFormModal: React.FC<{
                                         </select>
                                     ) : (
                                         <input
+                                            id="vehicle-subcategory-custom"
+                                            name="vehicle-subcategory-custom"
                                             type="text"
                                             value={subCategory}
                                             onChange={e => setSubCategory(e.target.value)}
@@ -588,8 +603,10 @@ const VehicleFormModal: React.FC<{
 
                             <div className="grid grid-cols-2 gap-x-4 sm:gap-x-5 gap-y-4 sm:gap-y-6">
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Brand / Make</label>
+                                    <label htmlFor="vehicle-make" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Brand / Make</label>
                                     <input
+                                        id="vehicle-make"
+                                        name="vehicle-make"
                                         type="text"
                                         value={formData.make}
                                         onChange={e => setFormData({ ...formData, make: e.target.value })}
@@ -601,8 +618,10 @@ const VehicleFormModal: React.FC<{
                                 </div>
 
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Model Name</label>
+                                    <label htmlFor="vehicle-model" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Model Name</label>
                                     <input
+                                        id="vehicle-model"
+                                        name="vehicle-model"
                                         type="text"
                                         value={formData.model}
                                         onChange={e => setFormData({ ...formData, model: e.target.value })}
@@ -614,8 +633,10 @@ const VehicleFormModal: React.FC<{
                                 </div>
 
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Plate Number</label>
+                                    <label htmlFor="vehicle-plate" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Plate Number</label>
                                     <input
+                                        id="vehicle-plate"
+                                        name="vehicle-plate"
                                         type="text"
                                         value={formData.plateNumber}
                                         onChange={e => setFormData({ ...formData, plateNumber: e.target.value.toUpperCase() })}
@@ -627,8 +648,10 @@ const VehicleFormModal: React.FC<{
                                 </div>
 
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Year</label>
+                                    <label htmlFor="vehicle-year" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Year</label>
                                     <input
+                                        id="vehicle-year"
+                                        name="vehicle-year"
                                         type="number"
                                         value={formData.year}
                                         onChange={e => setFormData({ ...formData, year: Number(e.target.value) })}
@@ -639,8 +662,10 @@ const VehicleFormModal: React.FC<{
                                 </div>
 
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Odometer (km)</label>
+                                    <label htmlFor="vehicle-odometer" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Odometer (km)</label>
                                     <input
+                                        id="vehicle-odometer"
+                                        name="vehicle-odometer"
                                         type="number"
                                         value={formData.mileage}
                                         onChange={e => setFormData({ ...formData, mileage: e.target.value })}
@@ -650,8 +675,10 @@ const VehicleFormModal: React.FC<{
                                 </div>
 
                                 <div className="col-span-2 sm:col-span-1 space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Color Theme</label>
+                                    <label htmlFor="vehicle-color" className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Color Theme</label>
                                     <input
+                                        id="vehicle-color"
+                                        name="vehicle-color"
                                         type="text"
                                         value={formData.color}
                                         onChange={e => setFormData({ ...formData, color: e.target.value })}
@@ -667,8 +694,10 @@ const VehicleFormModal: React.FC<{
                                     </div>
                                     <div className="space-y-4 bg-white/[0.02] p-4 sm:p-5 rounded-[2rem] sm:rounded-3xl border border-white/5">
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">VIN / Chassis Number</label>
+                                            <label htmlFor="vehicle-vin" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">VIN / Chassis Number</label>
                                             <input
+                                                id="vehicle-vin"
+                                                name="vehicle-vin"
                                                 type="text"
                                                 value={formData.vin}
                                                 onChange={e => setFormData({ ...formData, vin: e.target.value.toUpperCase() })}
@@ -679,8 +708,10 @@ const VehicleFormModal: React.FC<{
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Provider</label>
+                                                <label htmlFor="vehicle-insurance-provider" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Provider</label>
                                                 <input
+                                                    id="vehicle-insurance-provider"
+                                                    name="vehicle-insurance-provider"
                                                     type="text"
                                                     value={formData.insuranceProvider}
                                                     onChange={e => setFormData({ ...formData, insuranceProvider: e.target.value })}
@@ -689,8 +720,10 @@ const VehicleFormModal: React.FC<{
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Policy Number</label>
+                                                <label htmlFor="vehicle-insurance-policy" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Policy Number</label>
                                                 <input
+                                                    id="vehicle-insurance-policy"
+                                                    name="vehicle-insurance-policy"
                                                     type="text"
                                                     value={formData.insurancePolicyNumber}
                                                     onChange={e => setFormData({ ...formData, insurancePolicyNumber: e.target.value })}
@@ -949,7 +982,7 @@ const MyGarageScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col min-h-screen bg-[#0F0F10] font-sans text-white pb-24">
-            <Header title="My Garage" showBackButton icon={<Car size={22} />} />
+            <CustomerHeader title="My Garage" showBackButton icon={<Car size={22} />} />
 
             <main className="flex-1 p-4 sm:p-6 space-y-6">
                 
@@ -1003,6 +1036,8 @@ const MyGarageScreen: React.FC = () => {
                     <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
                         <input
+                            id="garage-search"
+                            name="garage-search"
                             type="text"
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}

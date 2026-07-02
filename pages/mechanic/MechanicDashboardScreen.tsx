@@ -18,9 +18,10 @@ import { CallButton } from '../../components/CallUI';
 
 
 
-const StatCard = React.memo<{ title: string; value: string | number; icon: React.ReactNode; color?: string; tooltip?: string; className?: string }>(({ title, value, icon, color = "text-primary", tooltip, className = "" }) => {
+const StatCard = React.memo<{ title: string; value: string | number; icon: React.ReactNode; color?: string; tooltip?: string; className?: string; onClick?: () => void }>(({ title, value, icon, color = "text-primary", tooltip, className = "", onClick }) => {
+    const cardClass = `w-full bg-[#1A1A1A] p-3 sm:p-5 rounded-3xl border border-white/5 flex items-center gap-3 sm:gap-4 transition-all group ${onClick ? 'cursor-pointer hover:border-white/20 hover:bg-[#252525] active:scale-[0.98]' : 'hover:border-white/10 hover:bg-[#202020]'}`;
     const card = (
-        <div className="w-full bg-[#1A1A1A] p-3 sm:p-5 rounded-3xl border border-white/5 flex items-center gap-3 sm:gap-4 hover:border-white/10 transition-all hover:bg-[#202020] group">
+        <div className={cardClass} onClick={onClick}>
             <div className={`p-2 sm:p-3 rounded-2xl bg-white/5 ${color} group-hover:scale-110 transition-transform shadow-inner`}>
                 {icon}
             </div>
@@ -146,7 +147,7 @@ const MechanicDashboardScreen: React.FC = () => {
             console.warn("Failed to listen to customer profile:", error);
         });
 
-        return () => unsubscribe();
+        return () => { try { unsubscribe(); } catch (_) {} };
     }, [ongoingJob?.customerId]);
 
     const myBookings = useMemo(() => {
@@ -173,17 +174,27 @@ const MechanicDashboardScreen: React.FC = () => {
     const analyticsData = useMemo(() => {
         if (!mechanic || !db) return null;
 
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
+        const getJobTotal = (job: Booking) => {
+            if (job.totalAmount != null) return job.totalAmount;
+            const svcs = job.services && job.services.length > 0 ? job.services : job.service ? [job.service] : [];
+            return svcs.reduce((s, svc) => s + (svc.price || 0), 0);
+        };
 
-        const myJobsToday = db.bookings.filter(b => 
-            (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && 
-            isBookingApprovedForMechanicView(b) &&
-            b.date === todayStr
-        );
+        const todayStr = new Date().toLocaleDateString('en-CA');
 
-        const jobsCompletedToday = myJobsToday.filter(b => b.status === 'Completed');
-        const earningsToday = jobsCompletedToday.reduce((sum, job) => sum + (job.service?.price || job.services?.[0]?.price || 0), 0);
+        const myJobsToday = db.bookings.filter(b => {
+            if (!(b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id)) return false;
+            if (!isBookingApprovedForMechanicView(b)) return false;
+            
+            let jobDateStr = b.date;
+            if (jobDateStr && jobDateStr.includes('T')) {
+                jobDateStr = new Date(jobDateStr).toLocaleDateString('en-CA');
+            }
+            return jobDateStr === todayStr;
+        });
+
+        const jobsCompletedToday = myJobsToday.filter(b => b.status === 'Completed' && b.isPaid !== false);
+        const earningsToday = jobsCompletedToday.reduce((sum, job) => sum + getJobTotal(job), 0);
 
         const timeTo24h = (timeStr: string | undefined) => {
             if (!timeStr) return '00:00';
@@ -217,14 +228,20 @@ const MechanicDashboardScreen: React.FC = () => {
     const lifetimeStats = useMemo(() => {
         if (!mechanic || !db) return { averageJobValue: 0 };
 
+        const getJobTotal = (job: Booking) => {
+            if (job.totalAmount != null) return job.totalAmount;
+            const svcs = job.services && job.services.length > 0 ? job.services : job.service ? [job.service] : [];
+            return svcs.reduce((s, svc) => s + (svc.price || 0), 0);
+        };
+
         const completedJobs = db.bookings.filter(b => 
             (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && 
             isBookingApprovedForMechanicView(b) &&
-            b.status === 'Completed'
+            b.status === 'Completed' && b.isPaid !== false
         );
         if (completedJobs.length === 0) return { averageJobValue: 0 };
 
-        const totalEarnings = completedJobs.reduce((sum, job) => sum + (job.service?.price || job.services?.[0]?.price || 0), 0);
+        const totalEarnings = completedJobs.reduce((sum, job) => sum + getJobTotal(job), 0);
         const averageJobValue = totalEarnings / completedJobs.length;
 
         return { averageJobValue };
@@ -252,7 +269,7 @@ const MechanicDashboardScreen: React.FC = () => {
             setNewJobRequest(null);
         }
 
-    }, [db, isOnline, ongoingJob, mechanic, newJobRequest]);
+    }, [db, isOnline, ongoingJob, mechanic, newJobRequest, isBookingApprovedForMechanicView]);
 
     // Real-time check for new ASSIGNED job requests
     useEffect(() => {
@@ -416,9 +433,9 @@ const MechanicDashboardScreen: React.FC = () => {
                             <div className="flex justify-between items-center mb-5 relative z-10">
                                 <div className="flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-primary animate-ping"></span>
-                                    <h2 className="text-[10px] font-black text-primary tracking-[0.25em] uppercase">Active Assignment</h2>
+                                    <h2 className="text-[8px] font-black text-primary tracking-[0.25em] uppercase">Active Assignment</h2>
                                 </div>
-                                <span className="px-3.5 py-1 bg-primary/10 text-primary text-[10px] font-black tracking-widest rounded-full border border-primary/20 flex items-center gap-1.5 shadow-sm">
+                                <span className="px-3.5 py-1 bg-primary/10 text-primary text-[8px] font-black tracking-widest rounded-full border border-primary/20 flex items-center gap-1.5 shadow-sm">
                                     <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
                                     {ongoingJob.status}
                                 </span>
@@ -447,23 +464,18 @@ const MechanicDashboardScreen: React.FC = () => {
                                         
                                         <div className="flex-1">
                                             <div className="flex items-center gap-2">
-                                                <p className="text-lg font-black text-white tracking-tight leading-tight">{ongoingJob.customerName || 'Customer'}</p>
+                                                <p className="text-[12px] font-black text-white tracking-tight leading-tight">{ongoingJob.customerName || 'Customer'}</p>
                                             </div>
-                                            <p className="text-xs text-gray-400 font-medium mt-0.5">{customer?.phone || ongoingJob.phone || 'No phone'}</p>
+                                            <p className="text-[8px] text-gray-400 font-medium mt-0.5">{customer?.phone || ongoingJob.phone || 'No phone'}</p>
                                         </div>
                                     </div>
 
                                     {/* Action dial/navigate items */}
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 items-center">
                                         {customer?.id && (
                                             <Tooltip content="Call Customer">
-                                                <div className="flex items-center">
-                                                    <CallButton targetId={customer.id} targetRole="customer" targetName={customer.name || 'Customer'} targetImage={customer.picture} size="sm" />
-                                                    {customer?.phone && (
-                                                        <a href={`tel:${customer.phone}`} className="p-2.5 bg-green-500/10 hover:bg-green-500 text-green-400 hover:text-white rounded-xl border border-green-500/20 hover:border-green-500 transition-all shadow-md active:scale-90 ml-1">
-                                                            <Phone size={14} className="stroke-[2.5]" />
-                                                        </a>
-                                                    )}
+                                                <div>
+                                                    <CallButton targetId={customer.id} targetRole="customer" targetName={customer.name || 'Customer'} targetImage={customer.picture} size="md" />
                                                 </div>
                                             </Tooltip>
                                         )}
@@ -471,7 +483,7 @@ const MechanicDashboardScreen: React.FC = () => {
                                             <Tooltip content="Live Chat">
                                                 <button 
                                                     onClick={() => navigate(`/mechanic-portal/job/${ongoingJob.id}?chat=true`)}
-                                                    className="p-2.5 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl border border-primary/20 hover:border-primary transition-all shadow-md active:scale-90"
+                                                    className="w-10 h-10 flex items-center justify-center bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-full border border-primary/20 hover:border-primary transition-all shadow-md active:scale-90"
                                                 >
                                                     <MessageSquare size={14} className="stroke-[2.5]" />
                                                 </button>
@@ -498,7 +510,7 @@ const MechanicDashboardScreen: React.FC = () => {
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3.5">
                                         {/* Vehicle Image */}
-                                        <div className="w-20 h-14 rounded-xl bg-gradient-to-br from-white/5 to-white/10 border-2 border-white/20 overflow-hidden flex-shrink-0 shadow-lg relative">
+                                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-white/5 to-white/10 border-2 border-white/20 overflow-hidden flex-shrink-0 shadow-lg relative">
                                             {vehicleImage ? (
                                                 <img
                                                     src={vehicleImage}
@@ -513,7 +525,7 @@ const MechanicDashboardScreen: React.FC = () => {
                                             )}
                                         </div>
                                         <div>
-                                            <p className="text-sm font-extrabold text-white tracking-tight leading-none">
+                                            <p className="text-[10px] font-extrabold text-white tracking-tight leading-none">
                                                 {ongoingJob.vehicle?.year || ''} {ongoingJob.vehicle?.make || ''} {ongoingJob.vehicle?.model || ''}
                                             </p>
                                             <div className="flex gap-2 mt-1.5 items-center">
@@ -530,19 +542,19 @@ const MechanicDashboardScreen: React.FC = () => {
                                     </div>
 
                                     {/* Maps Navigation */}
-                                    {((customer?.lat && customer?.lng) || (ongoingJob.location?.lat && ongoingJob.location?.lng) || ongoingJob.location?.address) && (
+                                    {((ongoingJob.location?.lat && ongoingJob.location?.lng) || (customer?.lat && customer?.lng) || ongoingJob.location?.address) && (
                                         <Tooltip content="Navigate to Customer">
                                             <button
                                                 onClick={() => {
-                                                    const lat = customer?.lat || ongoingJob.location?.lat;
-                                                    const lng = customer?.lng || ongoingJob.location?.lng;
+                                                    const lat = ongoingJob.location?.lat || customer?.lat;
+                                                    const lng = ongoingJob.location?.lng || customer?.lng;
                                                     if (lat && lng) {
                                                         window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
                                                     } else if (ongoingJob.location?.address) {
                                                         window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ongoingJob.location.address)}`, '_blank');
                                                     }
                                                 }}
-                                                className="p-3 bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-xl border border-primary/20 hover:border-primary transition-all active:scale-95 shadow-md"
+                                                className="w-10 h-10 flex items-center justify-center bg-primary/10 hover:bg-primary text-primary hover:text-white rounded-full border border-primary/20 hover:border-primary transition-all active:scale-95 shadow-md"
                                             >
                                                 <MapPin size={16} className="stroke-[2.5]" />
                                             </button>
@@ -593,13 +605,15 @@ const MechanicDashboardScreen: React.FC = () => {
                                     color="text-green-400"
                                     tooltip="Total earnings today"
                                     className="col-span-2"
+                                    onClick={() => navigate('/mechanic-portal/earnings')}
                                 />
                                 <StatCard
                                     title="Wallet"
-                                    value={`₱${(mechanic.walletBalance || 0).toLocaleString()}`}
+                                    value={`₱${(db.mechanics.find(m => m.id === mechanic.id)?.walletBalance ?? mechanic.walletBalance ?? 0).toLocaleString()}`}
                                     icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>}
                                     color="text-primary"
                                     tooltip="Your current wallet balance"
+                                    onClick={() => navigate('/mechanic-portal/earnings')}
                                 />
                                 <StatCard
                                     title="Success"
@@ -607,6 +621,7 @@ const MechanicDashboardScreen: React.FC = () => {
                                     icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>}
                                     color="text-blue-400"
                                     tooltip="Jobs completed today"
+                                    onClick={() => navigate('/mechanic-portal/earnings')}
                                 />
                                 <StatCard
                                     title="Agenda"
@@ -614,6 +629,7 @@ const MechanicDashboardScreen: React.FC = () => {
                                     icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
                                     color="text-purple-400"
                                     tooltip="Upcoming jobs scheduled"
+                                    onClick={() => navigate('/mechanic-portal/calendar')}
                                 />
                                 <StatCard
                                     title="Rate"
@@ -621,135 +637,13 @@ const MechanicDashboardScreen: React.FC = () => {
                                     icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
                                     color="text-orange-400"
                                     tooltip="Average payout per job"
+                                    onClick={() => navigate('/mechanic-portal/earnings')}
                                 />
                             </div>
                         </div>
 
 
 
-                        {/* Jobs Tab switcher */}
-                        <div className="space-y-4 animate-fadeIn">
-                            <div className="flex items-center justify-between border-b border-white/5 pb-2 px-1">
-                                <div className="flex gap-6">
-                                    <button
-                                        type="button"
-                                        onClick={() => setJobsTab('accepted')}
-                                        className={`pb-2 text-xs font-black tracking-[0.2em] uppercase transition-all border-b-2 ${
-                                            jobsTab === 'accepted'
-                                                ? 'border-primary text-primary'
-                                                : 'border-transparent text-gray-400 hover:text-white'
-                                        }`}
-                                    >
-                                        Accepted ({acceptedJobs.length})
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setJobsTab('completed')}
-                                        className={`pb-2 text-xs font-black tracking-[0.2em] uppercase transition-all border-b-2 ${
-                                            jobsTab === 'completed'
-                                                ? 'border-primary text-primary'
-                                                : 'border-transparent text-gray-400 hover:text-white'
-                                        }`}
-                                    >
-                                        Completed ({completedJobs.length})
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="bg-[#1A1A1A] rounded-[2rem] border border-white/5 overflow-hidden shadow-2xl transition-all">
-                                {jobsTab === 'accepted' ? (
-                                    acceptedJobs.length > 0 ? (
-                                        acceptedJobs.map((job, index) => (
-                                            <div
-                                                key={job.id}
-                                                onClick={() => navigate(`/mechanic-portal/job/${job.id}`)}
-                                                className={`flex items-center p-5 cursor-pointer hover:bg-white/5 transition-all ${
-                                                    index < acceptedJobs.length - 1 ? 'border-b border-white/5' : ''
-                                                } group`}
-                                            >
-                                                <div className="w-1/4 text-xs font-black text-primary tracking-tighter leading-none">
-                                                    <div>{job.date}</div>
-                                                    <div className="text-gray-500 text-[10px] mt-1">{job.time}</div>
-                                                </div>
-                                                <div className="flex-grow">
-                                                    <p className="font-extrabold text-white text-sm tracking-tight">
-                                                        {job.service?.name || job.services?.[0]?.name || 'Service'}
-                                                    </p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-[10px] text-gray-500 font-bold tracking-widest">{job.customerName}</span>
-                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider ${
-                                                            job.status === 'In Progress' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
-                                                            job.status === 'En Route' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
-                                                            'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                                                        }`}>
-                                                            {job.status}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right flex items-center gap-3">
-                                                    <span className="text-sm font-black text-white">
-                                                        ₱{(job.service?.price || job.services?.[0]?.price || 0).toLocaleString()}
-                                                    </span>
-                                                    <Tooltip content="View job details">
-                                                        <div className="p-2 rounded-xl bg-white/5 group-hover:bg-primary/20 group-hover:text-primary transition-all">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
-                                                            </svg>
-                                                        </div>
-                                                    </Tooltip>
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="p-8 text-center text-gray-500 text-xs font-bold">
-                                            {isOnline ? "No accepted jobs in progress. Waiting for new requests..." : "You are offline. Go online to receive jobs."}
-                                        </div>
-                                    )
-                                ) : (
-                                    completedJobs.length > 0 ? (
-                                        completedJobs.map((job, index) => (
-                                            <div
-                                                key={job.id}
-                                                onClick={() => navigate(`/mechanic-portal/job/${job.id}`)}
-                                                className={`flex items-center p-5 cursor-pointer hover:bg-white/5 transition-all ${
-                                                    index < completedJobs.length - 1 ? 'border-b border-white/5' : ''
-                                                } group`}
-                                            >
-                                                <div className="w-1/4 text-xs font-black text-emerald-400 tracking-tighter leading-none">
-                                                    <div>{job.date}</div>
-                                                    <div className="text-gray-500 text-[10px] mt-1">{job.time}</div>
-                                                </div>
-                                                <div className="flex-grow">
-                                                    <p className="font-extrabold text-white text-sm tracking-tight">
-                                                        {job.service?.name || job.services?.[0]?.name || 'Service'}
-                                                    </p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-[10px] text-gray-500 font-bold tracking-widest">{job.customerName}</span>
-                                                        <span className="text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                                            Completed
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="text-right flex items-center gap-3">
-                                                    <span className="text-sm font-black text-emerald-400">
-                                                        ₱{(job.service?.price || job.services?.[0]?.price || 0).toLocaleString()}
-                                                    </span>
-                                                    <Tooltip content="View invoice & history">
-                                                        <div className="p-2 rounded-xl bg-white/5 group-hover:bg-emerald-500/20 group-hover:text-emerald-400 transition-all">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
-                                                            </svg>
-                                                        </div>
-                                                    </Tooltip>
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="p-8 text-center text-gray-500 text-xs font-bold">No completed jobs yet.</div>
-                                    )
-                                )}
-                            </div>
-                        </div>
                     </div>
                 )}
             </div>

@@ -46,7 +46,7 @@ const AdminSatisfactionScreen: React.FC = () => {
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => { try { unsubscribe(); } catch (_) {} };
     }, []);
 
     // Summary Statistics

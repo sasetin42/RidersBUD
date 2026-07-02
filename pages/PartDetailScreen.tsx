@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../context/DatabaseContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
-import { ArrowLeft, Star, ShoppingBag, Heart, Check, Truck, ShieldCheck, Share2, Facebook, Twitter, Send, Link as LinkIcon, X } from 'lucide-react';
+import { ArrowLeft, Star, ShoppingBag, Heart, Check, Truck, ShieldCheck, Share2, Facebook, Twitter, Send, Link as LinkIcon, X, MessageCircle, Linkedin, MessageSquare, Mail } from 'lucide-react';
 import { Button, Badge } from '../components/ui';
 import AddToCartSuccessModal from '../components/AddToCartSuccessModal';
 
@@ -24,24 +24,7 @@ const PartDetailScreen: React.FC = () => {
 
     if (!part) return null; // Or loading state
 
-    const handleShare = async () => {
-        const shareData = {
-            title: part.name,
-            text: `Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()}`,
-            url: window.location.href
-        };
-
-        // Try using Web Share API first (supported on mobile browsers)
-        if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-            try {
-                await navigator.share(shareData);
-                return;
-            } catch (err) {
-                console.log('Web share failed or dismissed, opening custom share modal:', err);
-            }
-        }
-        
-        // Show custom share modal if Web Share is not available or fails
+    const handleShare = () => {
         setShowShareModal(true);
     };
 
@@ -237,35 +220,73 @@ const PartDetailScreen: React.FC = () => {
                         </p>
 
                         {/* Social sharing grid */}
-                        <div className="grid grid-cols-4 gap-4 mb-6">
+                        <div className="grid grid-cols-4 gap-2.5 mb-6">
                             <a
                                 href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-[#1877F2]/10 border border-[#1877F2]/20 hover:bg-[#1877F2]/25 transition text-[#1877F2]"
+                                className="flex flex-col items-center gap-1.5 p-2 rounded-2xl bg-[#1877F2]/10 border border-[#1877F2]/20 hover:bg-[#1877F2]/25 transition text-[#1877F2]"
                             >
-                                <Facebook size={20} />
-                                <span className="text-[10px] font-bold">Facebook</span>
+                                <Facebook size={18} />
+                                <span className="text-[9px] font-bold">Facebook</span>
                             </a>
 
                             <a
-                                href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()}`)}`}
+                                href={`https://x.com/intent/tweet?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()}`)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/15 transition text-white"
+                                className="flex flex-col items-center gap-1.5 p-2 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/15 transition text-white"
                             >
-                                <Twitter size={20} />
-                                <span className="text-[10px] font-bold">Twitter</span>
+                                <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="currentColor">
+                                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 22.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
+                                </svg>
+                                <span className="text-[9px] font-bold">X</span>
                             </a>
 
                             <a
                                 href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()} ` + window.location.href)}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-[#25D366]/10 border border-[#25D366]/20 hover:bg-[#25D366]/25 transition text-[#25D366]"
+                                className="flex flex-col items-center gap-1.5 p-2 rounded-2xl bg-[#25D366]/10 border border-[#25D366]/20 hover:bg-[#25D366]/25 transition text-[#25D366]"
                             >
-                                <Send size={20} />
-                                <span className="text-[10px] font-bold">WhatsApp</span>
+                                <MessageCircle size={18} />
+                                <span className="text-[9px] font-bold">WhatsApp</span>
+                            </a>
+
+                            <a
+                                href={`https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()}`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-1.5 p-2 rounded-2xl bg-[#0088cc]/10 border border-[#0088cc]/20 hover:bg-[#0088cc]/25 transition text-[#0088cc]"
+                            >
+                                <Send size={18} />
+                                <span className="text-[9px] font-bold">Telegram</span>
+                            </a>
+
+                            <a
+                                href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(window.location.href)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex flex-col items-center gap-1.5 p-2 rounded-2xl bg-[#0A66C2]/10 border border-[#0A66C2]/20 hover:bg-[#0A66C2]/25 transition text-[#0A66C2]"
+                            >
+                                <Linkedin size={18} />
+                                <span className="text-[9px] font-bold">LinkedIn</span>
+                            </a>
+
+                            <a
+                                href={`sms:?&body=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()} ` + window.location.href)}`}
+                                className="flex flex-col items-center gap-1.5 p-2 rounded-2xl bg-[#00e676]/10 border border-[#00e676]/20 hover:bg-[#00e676]/25 transition text-[#00e676]"
+                            >
+                                <MessageSquare size={18} />
+                                <span className="text-[9px] font-bold">SMS</span>
+                            </a>
+
+                            <a
+                                href={`mailto:?subject=${encodeURIComponent(part.name)}&body=${encodeURIComponent(`Check out the ${part.name} on RidersBUD! Only ₱${part.price.toLocaleString()}\n\n` + window.location.href)}`}
+                                className="flex flex-col items-center gap-1.5 p-2 rounded-2xl bg-[#D44638]/10 border border-[#D44638]/20 hover:bg-[#D44638]/25 transition text-[#D44638]"
+                            >
+                                <Mail size={18} />
+                                <span className="text-[9px] font-bold">Email</span>
                             </a>
 
                             <button
@@ -279,10 +300,10 @@ const PartDetailScreen: React.FC = () => {
                                         console.error('Failed to copy:', err);
                                     }
                                 }}
-                                className="flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-primary/10 border border-primary/20 hover:bg-primary/25 transition text-primary"
+                                className="flex flex-col items-center justify-center gap-1.5 p-2 rounded-2xl bg-primary/10 border border-primary/20 hover:bg-primary/25 transition text-primary w-full h-full"
                             >
-                                <LinkIcon size={20} />
-                                <span className="text-[10px] font-bold">Copy Link</span>
+                                <LinkIcon size={18} />
+                                <span className="text-[9px] font-bold">Copy Link</span>
                             </button>
                         </div>
 

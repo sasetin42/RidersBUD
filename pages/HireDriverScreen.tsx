@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { UserCheck } from 'lucide-react';
 
 const TierCard: React.FC<{ title: string; price: string; description: string; }> = ({ title, price, description }) => (
@@ -41,7 +41,7 @@ const HireDriverScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title="Hire a Driver" showBackButton icon={<UserCheck size={22} />} />
+            <CustomerHeader title="Hire a Driver" showBackButton icon={<UserCheck size={22} />} />
             <div className="flex-grow overflow-y-auto">
                 <div className="relative">
                     <img 

@@ -178,12 +178,13 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                 {/* Comment Text Area */}
                 <div className="space-y-2 mb-6">
                     <div className="flex items-center justify-between px-1">
-                        <label className="text-xs font-bold text-gray-500 tracking-wider">Your Review</label>
+                        <label htmlFor="review-comment" className="text-xs font-bold text-gray-500 tracking-wider">Your Review</label>
                         <span className={`text-[10px] font-bold ${comment.length >= maxChars ? 'text-red-400' : 'text-gray-500'}`}>
                             {comment.length} / {maxChars}
                         </span>
                     </div>
                     <textarea
+                        id="review-comment" name="review-comment"
                         value={comment}
                         onChange={(e) => setComment(e.target.value.slice(0, maxChars))}
                         placeholder="Tell us what you liked or didn't like..."

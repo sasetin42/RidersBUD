@@ -1,70 +1,54 @@
-# Android Build Compilation Instructions
+# Android Build Instructions
 
-Follow these instructions on your local machine to build, sign, and compile the final signed Android App Bundle (`.aab`) and testing APK (`.apk`) files.
+Follow these steps to compile and sign production-ready packages of RidersBUD.
 
 ## Prerequisites
-1. **Java Development Kit (JDK 17)**: Make sure JDK 17 is installed. Run `java -version` to verify.
-2. **Android Studio**: Install Android Studio to get the Android SDK, build tools, and emulator setup.
-3. **Gradle**: Ensure Gradle command-line tools are available or run via the project's gradle wrapper (`./gradlew` or `gradlew.bat`).
+1. **Java Development Kit (JDK)**: JDK 21 installed.
+2. **Android SDK**: Android API Level 36, SDK Build-Tools 35, and platforms installed.
+3. **Node.js**: Node.js v18+ for building the React frontend.
 
----
-
-## Step 1: Generate the Release Keystore
-If you do not have a release key yet, open your terminal/command prompt and run:
-```bash
-keytool -genkey -v -keystore playstore-release/keystore/release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias ridersbud-key
-```
-Follow the prompts to configure your passwords and information, and save the resulting `release-key.jks` inside `/playstore-release/keystore/`.
-
----
-
-## Step 2: Build the Production Web App Bundle
-In the project root, compile the web assets:
+## 1. Prepare Frontend Assets
+Compile the React/Vite web application and sync it to the Capacitor Android project wrapper:
 ```bash
 npm run build
+npx cap sync android
 ```
-This updates the `/dist` directory.
 
----
+## 2. Local Configuration
+Ensure you have the local configuration files set up (these files are gitignored and should never be committed):
+- **`android/local.properties`**: Must contain the path to your Android SDK.
+  ```properties
+  sdk.dir=C\:\\Users\\User\\AppData\\Local\\Android\\Sdk
+  ```
+- **`android/variables.gradle`**: Contains the signing credentials:
+  ```groovy
+  ext {
+      ...
+      releaseStoreFile = '../../playstore-release/keystore/release-key.jks'
+      releaseStorePassword = 'your-keystore-password'
+      releaseKeyAlias = 'your-alias'
+      releaseKeyPassword = 'your-key-password'
+  }
+  ```
 
-## Step 3: Sync Web Assets to Android Studio
-Sync the compiled web files into the android native folder layout:
+## 3. Run Build Commands
+Navigate to the `android/` directory and execute the Gradle build. Make sure `JAVA_HOME` is set to JDK 21:
+
+### Windows (PowerShell)
+```powershell
+$env:JAVA_HOME="C:\Users\User\AppData\Local\Programs\Common\jdk-21.0.11+10"
+.\gradlew.bat bundleRelease assembleRelease
+```
+
+### macOS / Linux
 ```bash
-npx cap sync
+export JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home"
+./gradlew bundleRelease assembleRelease
 ```
 
----
+## 4. Retrieve Outputs
+The compiled binaries will be output to:
+- **AAB**: `android/app/build/outputs/bundle/release/app-release.aab`
+- **APK**: `android/app/build/outputs/apk/release/app-release.apk`
 
-## Step 4: Open and Build in Android Studio
-1. Open **Android Studio**.
-2. Select **Open File or Project** and point to the `/android` directory inside the project workspace.
-3. Wait for the Gradle sync to finish successfully.
-
-### To Generate the signed testing APK or AAB:
-1. Go to the top menu: **Build** > **Generate Signed Bundle / APK...**
-2. Choose either **Android App Bundle** (for Play Store upload) or **APK** (for local installation testing) and click **Next**.
-3. Point to the keystore file location (`/playstore-release/keystore/release-key.jks`).
-4. Enter the **alias** (`ridersbud-key`), **store password**, and **key password** you set in Step 1.
-5. Click **Next**, choose the **release** build variant, and select the target output folder.
-6. Click **Create** / **Finish**.
-
----
-
-## Step 5: Command Line Alternative (No IDE)
-If you prefer building directly from the command prompt:
-1. Open terminal inside the `/android` folder:
-   ```bash
-   cd android
-   ```
-2. Build the release App Bundle:
-   ```bash
-   ./gradlew bundleRelease
-   ```
-3. Build the release testing APK:
-   ```bash
-   ./gradlew assembleRelease
-   ```
-4. Sign the resulting bundle/apk inside `android/app/build/outputs/` using `apksigner` and your `release-key.jks`.
-5. Copy the signed builds to:
-   - `/playstore-release/apk/app-release.apk`
-   - `/playstore-release/aab/app-release.aab`
+Copy these files to their respective destinations under `playstore-release/aab/` and `playstore-release/apk/`.

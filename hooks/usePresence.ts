@@ -32,7 +32,7 @@ export function usePresence(userId: string | null, collectionName: string) {
         // attaching listeners when auth/presence hooks mount/unmount.
         return () => {
             clearInterval(interval);
-            updateDoc(userRef, { isOnline: false }).catch(() => {});
+            try { updateDoc(userRef, { isOnline: false }).catch(() => {}); } catch (_) {}
         };
     }, [userId, collectionName]);
 }
@@ -51,7 +51,7 @@ export function useOnlineStatus(userId: string | null, collectionName: string): 
             }
         });
 
-        return unsub;
+        return () => { try { unsub(); } catch (_) {} };
     }, [userId, collectionName]);
 
     return isOnline;

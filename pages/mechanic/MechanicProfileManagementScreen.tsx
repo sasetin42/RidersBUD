@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import NotificationBell from '../../components/NotificationBell';
 import Header from '../../components/Header';
 import { getProfileImage, STORAGE_PATHS } from '../../utils/imageConstants';
-import { Bell, CheckCircle, Smartphone, Volume2, VolumeX, Clock, Sparkles, Star } from 'lucide-react';
+import { Bell, CheckCircle, Smartphone, Volume2, VolumeX, Clock, Sparkles, Star, User, Building2, CreditCard, DollarSign, Wallet, Lock, MessageSquare, Hash } from 'lucide-react';
 import {
     getMechanicNotificationSettings,
     saveMechanicNotificationSettings,
@@ -45,9 +45,12 @@ const MenuItem = ({ label, subtitle, badge, icon, onClick, variant = "default" }
                 {icon}
             </span>
             <div className="flex flex-col text-left">
-                <span className={`text-sm font-black tracking-tight ${variant === 'danger' ? 'text-red-400' : 'text-white'}`}>
-                    {label}
-                </span>
+                <div className="flex items-center gap-2">
+                    <span className={`text-sm font-black tracking-tight ${variant === 'danger' ? 'text-red-400' : 'text-white'}`}>
+                        {label}
+                    </span>
+                    {badge && <div className="flex-shrink-0">{badge}</div>}
+                </div>
                 {subtitle && (
                     <span className="text-[10px] text-gray-500 font-bold tracking-wide mt-0.5 group-hover:text-gray-400 transition-colors">
                         {subtitle}
@@ -56,14 +59,12 @@ const MenuItem = ({ label, subtitle, badge, icon, onClick, variant = "default" }
             </div>
         </div>
         <div className="flex items-center gap-3">
-            {badge && <div className="flex-shrink-0">{badge}</div>}
             <div className={`p-2 rounded-xl bg-white/5 transition-all group-hover:translate-x-1 ${variant === 'danger' ? 'group-hover:bg-red-500/20 group-hover:text-red-500' : 'group-hover:bg-primary/20 group-hover:text-primary'}`}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 stroke-[3]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
             </div>
         </div>
     </button>
 );
-
 
 // --- Modal Components ---
 const ProfileDetailsModal: React.FC<{
@@ -79,6 +80,7 @@ const ProfileDetailsModal: React.FC<{
         birthday: mechanic.birthday || '',
         bio: mechanic.bio || '',
         basePrice: (mechanic as any).basePrice || 0,
+        specializations: mechanic.specializations || [],
     });
     const [activeTab, setActiveTab] = useState<'basic' | 'skills' | 'portfolio' | 'verification'>('basic');
     const [isSaving, setIsSaving] = useState(false);
@@ -257,9 +259,9 @@ const ProfileDetailsModal: React.FC<{
                             <div className="w-16 h-16 rounded-2xl bg-[#1A1A1A] border-4 border-[#121212] flex items-center justify-center overflow-hidden shadow-2xl">
                                 <img src={getProfileImage(formData.imageUrl, formData.name)} alt="Profile" className="w-full h-full object-cover" />
                             </div>
-                            <label className="absolute -bottom-2 -right-2 p-1.5 bg-primary hover:bg-orange-600 text-white rounded-xl shadow-lg cursor-pointer transition-all transform hover:scale-110 active:scale-95">
+                            <label htmlFor="profile-image-input" className="absolute -bottom-2 -right-2 p-1.5 bg-primary hover:bg-orange-600 text-white rounded-xl shadow-lg cursor-pointer transition-all transform hover:scale-110 active:scale-95">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-                                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isSaving} />
+                                <input type="file" id="profile-image-input" name="profileImage" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isSaving} />
                             </label>
                         </div>
                         <div>
@@ -270,34 +272,34 @@ const ProfileDetailsModal: React.FC<{
                 </div>
 
                 {/* Tabs */}
-                <div className="bg-[#0a0a0a] px-4 sm:px-6 pt-3 sm:pt-4 border-b border-white/5">
+                <div className="bg-[#0a0a0a] px-4 sm:px-6 pt-3 border-b border-white/5">
                     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
                         <button
                             onClick={() => setActiveTab('basic')}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 border ${activeTab === 'basic' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
+                            className={`profile-tab flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all whitespace-nowrap flex-shrink-0 border ${activeTab === 'basic' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>
                             <span>Basic</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('skills')}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 border ${activeTab === 'skills' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
+                            className={`profile-tab flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all whitespace-nowrap flex-shrink-0 border ${activeTab === 'skills' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" /></svg>
                             <span>Skills</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('portfolio')}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 border ${activeTab === 'portfolio' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
+                            className={`profile-tab flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all whitespace-nowrap flex-shrink-0 border ${activeTab === 'portfolio' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" /></svg>
                             <span>Work</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('verification')}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap flex-shrink-0 border relative ${activeTab === 'verification' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/30' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
+                            className={`profile-tab flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all whitespace-nowrap flex-shrink-0 border relative ${activeTab === 'verification' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/30' : 'bg-[#1a1a1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10 hover:bg-[#222]'}`}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
                             <span>Docs</span>
                             {verificationStatus === 'Submitted' && (
                                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
@@ -315,8 +317,9 @@ const ProfileDetailsModal: React.FC<{
                         <div className="space-y-4 sm:space-y-6 animate-fadeIn">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-gray-500 ml-1">Full Name</label>
+                                    <label htmlFor="mechanic-full-name" className="text-[10px] font-bold text-gray-500 ml-1">Full Name</label>
                                     <input
+                                        id="mechanic-full-name"
                                         type="text"
                                         name="name"
                                         value={formData.name}
@@ -326,8 +329,9 @@ const ProfileDetailsModal: React.FC<{
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-gray-500 ml-1">Phone Number</label>
+                                    <label htmlFor="mechanic-phone" className="text-[10px] font-bold text-gray-500 ml-1">Phone Number</label>
                                     <input
+                                        id="mechanic-phone"
                                         type="tel"
                                         name="phone"
                                         value={formData.phone}
@@ -337,18 +341,23 @@ const ProfileDetailsModal: React.FC<{
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-gray-500 ml-1">Birthday</label>
+                                    <label htmlFor="mechanic-birthday" className="text-[10px] font-bold text-gray-500 ml-1">Birthday</label>
                                     <input
-                                        type="date"
+                                        id="mechanic-birthday"
+                                        type={formData.birthday ? "date" : "text"}
                                         name="birthday"
                                         value={formData.birthday}
                                         onChange={handleInputChange}
-                                        className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white outline-none transition-all placeholder-gray-700 font-bold focus:border-white/20"
+                                        onFocus={(e) => e.target.type = "date"}
+                                        onBlur={(e) => { if (!formData.birthday) e.target.type = "text"; }}
+                                        className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white outline-none transition-all placeholder-gray-500 font-bold focus:border-white/20"
+                                        placeholder="Select your birthday"
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-gray-500 ml-1">Base Payout Price (₱)</label>
+                                    <label htmlFor="mechanic-base-price" className="text-[10px] font-bold text-gray-500 ml-1">Base Payout Price (₱)</label>
                                     <input
+                                        id="mechanic-base-price"
                                         type="number"
                                         name="basePrice"
                                         value={formData.basePrice || 0}
@@ -359,8 +368,9 @@ const ProfileDetailsModal: React.FC<{
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-[10px]  tracking-widest font-black text-gray-500 ml-1">Professional Bio</label>
+                                <label htmlFor="mechanic-bio" className="text-[10px]  tracking-widest font-black text-gray-500 ml-1">Professional Bio</label>
                                 <textarea
+                                    id="mechanic-bio"
                                     name="bio"
                                     value={formData.bio}
                                     onChange={handleInputChange}
@@ -376,56 +386,141 @@ const ProfileDetailsModal: React.FC<{
                     {activeTab === 'skills' && (
                         <div className="space-y-6 animate-fadeIn">
                             <div>
-                                <h3 className="text-lg font-bold text-white tracking-tight mb-4">Select Your Specializations</h3>
-                                <div className="flex flex-wrap gap-3 p-6 bg-white/5 rounded-[2rem] border border-white/5">
-                                    {predefinedSpecializations.map(spec => (
-                                        <button
-                                            key={spec}
-                                            type="button"
-                                            onClick={() => toggleSpecialization(spec)}
-                                            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${formData.specializations.includes(spec) ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20 scale-105' : 'bg-white/5 text-gray-400 border-white/5 hover:text-white hover:border-white/10'}`}
-                                        >
-                                            {spec}
-                                        </button>
+                                <h3 className="text-sm font-bold text-white tracking-tight mb-3">Select Your Specializations</h3>
+                                <div className="space-y-4 p-4 bg-white/5 rounded-2xl border border-white/5">
+                                    {[
+                                        {
+                                            title: 'Engine & Powertrain',
+                                            items: ['Engine Repair', 'Transmission', 'Exhaust Systems', 'Diagnostics']
+                                        },
+                                        {
+                                            title: 'Chassis & Braking',
+                                            items: ['Brake Systems', 'Suspension', 'Wheel Alignment']
+                                        },
+                                        {
+                                            title: 'Electrical & Electronics',
+                                            items: ['Electrical Systems', 'Battery Service']
+                                        },
+                                        {
+                                            title: 'Maintenance & Utility',
+                                            items: ['Oil Change', 'Air Conditioning', 'Tire Service']
+                                        },
+                                        {
+                                            title: 'Body & Detailing',
+                                            items: ['Paint & Body', 'Detailing', 'Welding']
+                                        }
+                                    ].map((category) => (
+                                        <div key={category.title} className="space-y-2">
+                                            <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest border-b border-white/5 pb-1">{category.title}</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {category.items.map(spec => (
+                                                    <button
+                                                        key={spec}
+                                                        type="button"
+                                                        onClick={() => toggleSpecialization(spec)}
+                                                        className={`spec-btn px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${formData.specializations.includes(spec) ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-white/5 text-gray-400 border-white/5 hover:text-white hover:border-white/10'}`}
+                                                    >
+                                                        {spec}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
 
                             <div>
-                                <h3 className="text-base sm:text-lg font-black text-white  tracking-tight mb-3 sm:mb-4">Add Custom Skill</h3>
+                                <h3 className="text-sm font-bold text-white tracking-tight mb-3">Add Custom Skill</h3>
                                 <div className="flex flex-col sm:flex-row gap-3">
                                     <input
                                         type="text"
+                                        id="custom-skill-input"
+                                        name="customSkill"
                                         value={newSkill}
                                         onChange={(e) => setNewSkill(e.target.value)}
                                         onKeyPress={(e) => e.key === 'Enter' && addCustomSkill()}
-                                        className="flex-1 bg-white/5 border border-white/5 rounded-2xl px-6 py-4 text-white outline-none transition-all placeholder-gray-700 font-bold focus:border-white/20"
+                                        className="flex-1 bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white outline-none transition-all placeholder-gray-700 font-bold text-xs focus:border-white/20"
                                         placeholder="e.g. Hybrid Systems"
                                     />
                                     <button
                                         onClick={addCustomSkill}
-                                        className="px-6 py-4 bg-primary/20 hover:bg-primary text-primary hover:text-white rounded-2xl font-bold text-xs transition-all w-full sm:w-auto"
+                                        className="px-5 py-3 bg-primary/20 hover:bg-primary text-primary hover:text-white rounded-xl font-bold text-xs transition-all w-full sm:w-auto"
                                     >
                                         Add
                                     </button>
                                 </div>
                             </div>
-
                             {formData.specializations.length > 0 && (
                                 <div>
-                                    <h3 className="text-base sm:text-lg font-black text-white  tracking-tight mb-3 sm:mb-4">Your Skills ({formData.specializations.length})</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {formData.specializations.map(spec => (
-                                            <div key={spec} className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary rounded-xl border border-primary/20">
-                                                <span className="text-xs font-bold">{spec}</span>
-                                                <button
-                                                    onClick={() => removeSpecialization(spec)}
-                                                    className="hover:text-red-400 transition-colors"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                                                </button>
-                                            </div>
-                                        ))}
+                                    <h3 className="text-sm font-bold text-white tracking-tight mb-3">Your Skills ({formData.specializations.length})</h3>
+                                    <div className="space-y-4 p-4 bg-white/5 rounded-2xl border border-white/5">
+                                        {[
+                                            {
+                                                title: 'Engine & Powertrain',
+                                                items: ['Engine Repair', 'Transmission', 'Exhaust Systems', 'Diagnostics']
+                                            },
+                                            {
+                                                title: 'Chassis & Braking',
+                                                items: ['Brake Systems', 'Suspension', 'Wheel Alignment']
+                                            },
+                                            {
+                                                title: 'Electrical & Electronics',
+                                                items: ['Electrical Systems', 'Battery Service']
+                                            },
+                                            {
+                                                title: 'Maintenance & Utility',
+                                                items: ['Oil Change', 'Air Conditioning', 'Tire Service']
+                                            },
+                                            {
+                                                title: 'Body & Detailing',
+                                                items: ['Paint & Body', 'Detailing', 'Welding']
+                                            }
+                                        ].map((category) => {
+                                            const selectedInCat = formData.specializations.filter(spec => category.items.includes(spec));
+                                            if (selectedInCat.length === 0) return null;
+                                            return (
+                                                <div key={category.title} className="space-y-2">
+                                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest border-b border-white/5 pb-1">{category.title}</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {selectedInCat.map(spec => (
+                                                            <div key={spec} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg border border-primary/20">
+                                                                <span className="text-[10px] font-bold">{spec}</span>
+                                                                <button
+                                                                    onClick={() => removeSpecialization(spec)}
+                                                                    className="hover:text-red-400 transition-colors"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {/* Handle Custom Skills (skills not in predefined categories) */}
+                                        {(() => {
+                                            const predefined = ['Engine Repair', 'Transmission', 'Exhaust Systems', 'Diagnostics', 'Brake Systems', 'Suspension', 'Wheel Alignment', 'Electrical Systems', 'Battery Service', 'Oil Change', 'Air Conditioning', 'Tire Service', 'Paint & Body', 'Detailing', 'Welding'];
+                                            const customSkills = formData.specializations.filter(spec => !predefined.includes(spec));
+                                            if (customSkills.length === 0) return null;
+                                            return (
+                                                <div className="space-y-2">
+                                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest border-b border-white/5 pb-1">Custom Skills</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {customSkills.map(spec => (
+                                                            <div key={spec} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg border border-primary/20">
+                                                                <span className="text-[10px] font-bold">{spec}</span>
+                                                                <button
+                                                                    onClick={() => removeSpecialization(spec)}
+                                                                    className="hover:text-red-400 transition-colors"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             )}
@@ -448,6 +543,8 @@ const ProfileDetailsModal: React.FC<{
                                     </div>
                                     <input
                                         type="file"
+                                        id="portfolio-upload-input"
+                                        name="portfolioImages"
                                         multiple
                                         accept="image/*"
                                         onChange={handlePortfolioUpload}
@@ -549,12 +646,12 @@ const ProfileDetailsModal: React.FC<{
                 </div>
 
                 {/* Footer */}
-                <div className="px-4 sm:px-8 py-3 sm:py-4 bg-[#1A1A1A]/80 border-t border-white/5">
-                    <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-2 sm:mb-0">
+                <div className="px-4 sm:px-6 py-2.5 sm:py-3 bg-[#1A1A1A]/80 border-t border-white/5">
+                    <div className="grid grid-cols-2 gap-3 mb-1 sm:mb-0">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 sm:px-8 py-3.5 sm:py-4 bg-white/5 hover:bg-white/10 active:bg-white/15 text-white rounded-2xl font-bold transition-all border border-white/5 text-xs sm:text-sm  tracking-widest"
+                            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 active:bg-white/15 text-white rounded-xl font-bold transition-all border border-white/5 text-xs tracking-wider"
                         >
                             Cancel
                         </button>
@@ -562,7 +659,7 @@ const ProfileDetailsModal: React.FC<{
                             type="button"
                             onClick={() => onSave(formData)}
                             disabled={isSaving}
-                            className="px-4 sm:px-10 py-3.5 sm:py-4 bg-primary hover:bg-orange-600 active:bg-orange-700 text-white rounded-2xl font-bold transition-all shadow-xl shadow-primary/20 flex items-center justify-center gap-2 sm:gap-3 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
+                            className="px-4 py-2.5 bg-primary hover:bg-orange-600 active:bg-orange-700 text-white rounded-xl font-bold transition-all shadow-xl shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
                         >
                             {isSaving ? (
                                 <>
@@ -651,18 +748,6 @@ const AvailabilityEditorModal: React.FC<{
         });
     };
 
-    const copyTimeToAllActive = (start: string, end: string) => {
-        setCurrentAvailability(prev => {
-            const updated = { ...prev };
-            daysOfWeek.forEach(d => {
-                if (updated[d].isAvailable) {
-                    updated[d] = { ...updated[d], startTime: start, endTime: end };
-                }
-            });
-            return updated;
-        });
-    };
-
     const isAllChecked = daysOfWeek.every(d => currentAvailability[d].isAvailable);
 
     return (
@@ -729,10 +814,12 @@ const AvailabilityEditorModal: React.FC<{
                                 {/* Day Switch Toggle & Name */}
                                 <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
                                     <div className="flex items-center gap-3">
-                                        <label className="flex items-center cursor-pointer group">
+                                        <label htmlFor={`availability-${day}`} className="flex items-center cursor-pointer group">
                                             <div className="relative">
                                                 <input 
                                                     type="checkbox" 
+                                                    id={`availability-${day}`}
+                                                    name={`availability-${day}`}
                                                     checked={dayAvailability.isAvailable} 
                                                     onChange={e => handleChange(day, { ...dayAvailability, isAvailable: e.target.checked })} 
                                                     className="sr-only" 
@@ -748,43 +835,33 @@ const AvailabilityEditorModal: React.FC<{
                                         </label>
                                         <span className={`h-2 w-2 rounded-full ${dayAvailability.isAvailable ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
                                     </div>
-
-                                    {/* Copy to All Days action button placed inline here! */}
-                                    {dayAvailability.isAvailable && (
-                                        <button
-                                            type="button"
-                                            onClick={() => copyTimeToAllActive(dayAvailability.startTime, dayAvailability.endTime)}
-                                            className="p-1.5 bg-[#25160D] border border-primary/20 hover:bg-primary text-primary hover:text-white rounded-lg transition-all flex items-center justify-center"
-                                            title="Copy this shift schedule to all active days"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-                                            </svg>
-                                        </button>
-                                    )}
                                 </div>
 
                                 {/* Start & End Time Inputs */}
-                                <div className="flex items-center gap-2 flex-grow sm:flex-grow-0 w-full sm:w-auto">
-                                    <div className="grid grid-cols-2 gap-3 flex-grow">
-                                        <div className="flex items-center gap-1.5 flex-1 min-w-[105px]">
-                                            <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">In</span>
+                                <div className="flex items-center w-full sm:w-auto mt-1 sm:mt-0">
+                                    <div className="flex items-center gap-2 w-full">
+                                        <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                            <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider shrink-0 pl-1">In</span>
                                             <input 
                                                 type="time" 
+                                                id={`startTime-${day}`}
+                                                name={`startTime-${day}`}
                                                 value={dayAvailability.startTime} 
                                                 disabled={!dayAvailability.isAvailable} 
                                                 onChange={e => handleChange(day, { ...dayAvailability, startTime: e.target.value })} 
-                                                className="w-full px-2.5 py-2 bg-field border border-secondary rounded-xl text-sm font-bold text-white disabled:opacity-30 disabled:cursor-not-allowed outline-none transition-all focus:border-primary/50" 
+                                                className="w-full min-w-0 px-1.5 sm:px-2.5 py-2 bg-field border border-secondary rounded-xl text-xs sm:text-sm font-bold text-white disabled:opacity-30 disabled:cursor-not-allowed outline-none transition-all focus:border-primary/50 time-picker-primary-icon" 
                                             />
                                         </div>
-                                        <div className="flex items-center gap-1.5 flex-1 min-w-[105px]">
-                                            <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">Out</span>
+                                        <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                            <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider shrink-0 pl-1">Out</span>
                                             <input 
                                                 type="time" 
+                                                id={`endTime-${day}`}
+                                                name={`endTime-${day}`}
                                                 value={dayAvailability.endTime} 
                                                 disabled={!dayAvailability.isAvailable} 
                                                 onChange={e => handleChange(day, { ...dayAvailability, endTime: e.target.value })} 
-                                                className="w-full px-2.5 py-2 bg-field border border-secondary rounded-xl text-sm font-bold text-white disabled:opacity-30 disabled:cursor-not-allowed outline-none transition-all focus:border-primary/50" 
+                                                className="w-full min-w-0 px-1.5 sm:px-2.5 py-2 bg-field border border-secondary rounded-xl text-xs sm:text-sm font-bold text-white disabled:opacity-30 disabled:cursor-not-allowed outline-none transition-all focus:border-primary/50 time-picker-primary-icon" 
                                             />
                                         </div>
                                     </div>
@@ -885,14 +962,14 @@ const TimeOffModal: React.FC<{
                             <button 
                                 type="button"
                                 onClick={() => { setIsRange(false); setError(''); }} 
-                                className={`w-1/2 py-2 text-xs font-bold rounded-lg transition-all ${!isRange ? 'bg-primary text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                                className={`w-1/2 py-2 text-xs font-bold rounded-lg transition-all ${!isRange ? 'bg-[#FE7803] text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
                             >
                                 Single Day
                             </button>
                             <button 
                                 type="button"
                                 onClick={() => { setIsRange(true); setError(''); }} 
-                                className={`w-1/2 py-2 text-xs font-bold rounded-lg transition-all ${isRange ? 'bg-primary text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                                className={`w-1/2 py-2 text-xs font-bold rounded-lg transition-all ${isRange ? 'bg-[#FE7803] text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
                             >
                                 Date Range
                             </button>
@@ -901,24 +978,28 @@ const TimeOffModal: React.FC<{
                         {/* Date Inputs */}
                         <div className={`grid grid-cols-1 ${isRange ? 'sm:grid-cols-2' : ''} gap-3`}>
                             <div>
-                                <label className="block text-[11px] font-bold text-gray-400 mb-1.5 ml-1">{isRange ? 'Start Date' : 'Date'}</label>
+                                <label htmlFor="time-off-start" className="block text-[11px] font-bold text-gray-400 mb-1.5 ml-1">{isRange ? 'Start Date' : 'Date'}</label>
                                 <input 
+                                    id="time-off-start"
+                                    name="timeOffStart"
                                     type="date" 
                                     value={startDate} 
                                     onChange={e => { setStartDate(e.target.value); setError(''); }} 
                                     min={todayStr} 
-                                    className="w-full p-3 bg-field border border-secondary rounded-xl text-sm font-bold text-white outline-none transition-all focus:border-primary/50" 
+                                    className={`w-full p-3 bg-field border border-secondary rounded-xl text-sm font-bold outline-none transition-all focus:border-primary/50 date-picker-primary-icon ${!startDate ? 'text-gray-500' : 'text-white'}`} 
                                 />
                             </div>
                             {isRange && (
                                 <div>
-                                    <label className="block text-[11px] font-bold text-gray-400 mb-1.5 ml-1">End Date</label>
+                                    <label htmlFor="time-off-end" className="block text-[11px] font-bold text-gray-400 mb-1.5 ml-1">End Date</label>
                                     <input 
+                                        id="time-off-end"
+                                        name="timeOffEnd"
                                         type="date" 
                                         value={endDate} 
                                         onChange={e => { setEndDate(e.target.value); setError(''); }} 
                                         min={startDate || todayStr} 
-                                        className="w-full p-3 bg-field border border-secondary rounded-xl text-sm font-bold text-white outline-none transition-all focus:border-primary/50" 
+                                        className={`w-full p-3 bg-field border border-secondary rounded-xl text-sm font-bold outline-none transition-all focus:border-primary/50 date-picker-primary-icon ${!endDate ? 'text-gray-500' : 'text-white'}`} 
                                     />
                                 </div>
                             )}
@@ -926,8 +1007,10 @@ const TimeOffModal: React.FC<{
 
                         {/* Custom Reason or presets */}
                         <div className="space-y-2">
-                            <label className="block text-[11px] font-bold text-gray-400 ml-1">Reason</label>
+                            <label htmlFor="time-off-reason" className="block text-[11px] font-bold text-gray-400 ml-1">Reason</label>
                             <input 
+                                id="time-off-reason"
+                                name="timeOffReason"
                                 type="text" 
                                 value={reason} 
                                 onChange={e => { setReason(e.target.value); setError(''); }} 
@@ -1078,9 +1161,10 @@ const ChangePasswordModal: React.FC<{
             <form onSubmit={handleChangePassword} className="space-y-5">
                 {/* Current Password */}
                 <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400">Current Password</label>
+                    <label htmlFor="mechanic-current-password" className="text-xs font-bold text-gray-400">Current Password</label>
                     <div className="relative flex items-center">
                         <input 
+                            id="mechanic-current-password"
                             type={showCurrentPw ? "text" : "password"} 
                             name="currentPassword" 
                             placeholder="Enter current password" 
@@ -1104,9 +1188,10 @@ const ChangePasswordModal: React.FC<{
 
                 {/* New Password */}
                 <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400">New Password</label>
+                    <label htmlFor="mechanic-new-password" className="text-xs font-bold text-gray-400">New Password</label>
                     <div className="relative flex items-center">
                         <input 
+                            id="mechanic-new-password"
                             type={showNewPw ? "text" : "password"} 
                             name="newPassword" 
                             placeholder="Enter new password" 
@@ -1130,9 +1215,10 @@ const ChangePasswordModal: React.FC<{
 
                 {/* Confirm Password */}
                 <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400">Confirm New Password</label>
+                    <label htmlFor="mechanic-confirm-password" className="text-xs font-bold text-gray-400">Confirm New Password</label>
                     <div className="relative flex items-center">
                         <input 
+                            id="mechanic-confirm-password"
                             type={showConfirmPw ? "text" : "password"} 
                             name="confirmPassword" 
                             placeholder="Confirm new password" 
@@ -1332,12 +1418,16 @@ const ReviewsModal: React.FC<{ reviews: Review[], onClose: () => void }> = ({ re
                 {/* Controls */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                     <input
+                        id="review-search"
+                        name="reviewSearch"
                         value={searchQuery}
                         onChange={(e) => { setSearchQuery(e.target.value); setVisibleCount(8); }}
                         placeholder="Search customer, comment, booking ID..."
                         className="sm:col-span-2 bg-[#181818] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-primary/40"
                     />
                     <select
+                        id="review-sort"
+                        name="reviewSort"
                         value={sortBy}
                         onChange={(e) => { setSortBy(e.target.value as any); setVisibleCount(8); }}
                         className="bg-[#181818] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-primary/40"
@@ -1454,7 +1544,8 @@ const PayoutRequestModal: React.FC<{
     mechanic: Mechanic;
     availableBalance: number;
     onClose: () => void;
-}> = ({ mechanic, availableBalance, onClose }) => {
+    onEditPayoutDetails: () => void;
+}> = ({ mechanic, availableBalance, onClose, onEditPayoutDetails }) => {
     const { addPayoutRequest, db } = useDatabase();
     const [amount, setAmount] = useState('');
     const [note, setNote] = useState('');
@@ -1467,7 +1558,7 @@ const PayoutRequestModal: React.FC<{
     const pendingRequestsAmount = useMemo(() => {
         if (!db?.payouts || !mechanic?.id) return 0;
         return db.payouts
-            .filter((p: any) => p.mechanicId === mechanic.id && (p.status === 'Pending' || p.status === 'Approved'))
+            .filter((p: any) => p.mechanicId === mechanic.id && p.status === 'Pending')
             .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
     }, [db?.payouts, mechanic?.id]);
 
@@ -1487,19 +1578,45 @@ const PayoutRequestModal: React.FC<{
     const effectiveAvailableBalance = availableBalance || lifetimeEarnings;
     const safeWithdrawable = Math.max(0, (effectiveAvailableBalance || 0) - pendingRequestsAmount);
     const requestAmount = parseFloat(amount || '0');
-    const hasPayoutDetails = mechanic.payoutDetails && mechanic.payoutDetails.accountName && mechanic.payoutDetails.accountNumber;
+    const initialHasPayoutDetails = mechanic.payoutDetails && mechanic.payoutDetails.accountName && mechanic.payoutDetails.accountNumber;
 
     const processingTimeline = settings.payoutSchedule || 'Processed within 3–5 business days';
     const minPayout = settings.minimumPayout || 0;
     const maxPayout = settings.maximumPayout || Number.MAX_SAFE_INTEGER;
 
     const estimatedRemaining = Math.max(0, safeWithdrawable - (isNaN(requestAmount) ? 0 : requestAmount));
+    const [selectedDestinationIndex, setSelectedDestinationIndex] = useState(0);
+
+    const payoutDestinations = useMemo<PayoutDetails[]>(() => {
+        const list: PayoutDetails[] = [];
+        if (mechanic.payoutDetails && mechanic.payoutDetails.accountName) {
+            list.push(mechanic.payoutDetails);
+            // Mock secondary destinations for demo purposes since schema is single destination
+            list.push({
+                method: 'Bank Transfer',
+                accountName: mechanic.payoutDetails.accountName,
+                accountNumber: mechanic.payoutDetails.accountNumber + '9999',
+                bankName: 'BDO Unibank',
+            });
+            list.push({
+                method: 'E-Wallet',
+                accountName: mechanic.payoutDetails.accountName,
+                accountNumber: mechanic.payoutDetails.accountNumber + '8888',
+                walletName: 'Maya',
+            });
+        }
+        return list;
+    }, [mechanic.payoutDetails]);
+
+    const activeDestination = payoutDestinations[selectedDestinationIndex] || mechanic.payoutDetails;
+
+    const hasPayoutDetails = !!activeDestination;
 
     const validationError = useMemo(() => {
         if (!hasPayoutDetails) return 'Please set up payout details first.';
-        if (isNaN(requestAmount) || requestAmount <= 0) return 'Please enter a valid amount greater than zero.';
-        if (minPayout && requestAmount < minPayout) return `Minimum payout amount is ₱${minPayout.toLocaleString()}.`;
-        if (requestAmount > maxPayout) return `Maximum payout amount is ₱${maxPayout.toLocaleString()}.`;
+        if (requestAmount <= 0) return 'Please enter a valid request amount.';
+        if (requestAmount < minPayout) return `Minimum payout request is ₱${minPayout.toLocaleString()}.`;
+        if (requestAmount > maxPayout) return `Maximum payout request is ₱${maxPayout.toLocaleString()}.`;
         if (requestAmount > safeWithdrawable) return 'Requested amount exceeds your safe withdrawable balance.';
         return '';
     }, [hasPayoutDetails, requestAmount, minPayout, maxPayout, safeWithdrawable]);
@@ -1519,16 +1636,16 @@ const PayoutRequestModal: React.FC<{
 
         setIsProcessing(true);
         try {
-            const method = mechanic.payoutDetails?.method === 'Bank Transfer'
-                ? `${mechanic.payoutDetails?.bankName} (Bank)`
-                : `${mechanic.payoutDetails?.walletName} (E-Wallet)`;
+            const method = activeDestination?.method === 'Bank Transfer'
+                ? `${activeDestination?.bankName} (Bank)`
+                : `${activeDestination?.walletName} (E-Wallet)`;
 
             await addPayoutRequest({
                 mechanicId: mechanic.id,
                 mechanicName: mechanic.name,
                 amount: requestAmount,
                 paymentMethod: method,
-                accountDetails: `${mechanic.payoutDetails?.accountName} - ${mechanic.payoutDetails?.accountNumber}`,
+                accountDetails: `${activeDestination?.accountName} - ${activeDestination?.accountNumber}`,
                 notes: note.trim() || 'Standard payout request from profile.'
             });
             setIsSuccess(true);
@@ -1541,21 +1658,46 @@ const PayoutRequestModal: React.FC<{
 
     if (isSuccess) {
         return (
-            <Modal title="Payout Request Submitted" isOpen={true} onClose={onClose}>
+            <Modal title={<h3 className="text-base font-black text-white tracking-tight">Payout Request Submitted</h3>} isOpen={true} onClose={onClose} compact>
                 <div className="text-center space-y-4">
                     <div className="w-20 h-20 rounded-3xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-400" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
                     </div>
-                    <h3 className="text-xl font-black text-white">Request Sent Successfully</h3>
-                    <div className="bg-field rounded-xl p-4 border border-white/10 text-left space-y-2">
-                        <p className="text-xs text-gray-400">Amount Requested</p>
-                        <p className="text-2xl font-black text-green-400">₱{requestAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                        <p className="text-xs text-gray-400 mt-3">Destination</p>
-                        <p className="text-sm text-white font-semibold">{mechanic.payoutDetails?.accountName} • ****{mechanic.payoutDetails?.accountNumber.slice(-4)}</p>
-                        <p className="text-xs text-gray-400 mt-3">Expected Timeline</p>
-                        <p className="text-sm text-primary font-bold">{processingTimeline}</p>
+                    <h3 className="text-lg font-black text-white">Request Sent Successfully</h3>
+                    <div className="bg-field rounded-xl p-4 border border-white/10 text-left space-y-3.5">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-400 shrink-0">
+                                <DollarSign size={16} />
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Amount Requested</p>
+                                <p className="text-xl font-black text-green-400 mt-0.5">₱{requestAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-3 border-t border-white/5 pt-3">
+                            <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400 shrink-0">
+                                {activeDestination?.method === 'Bank Transfer' ? <Building2 size={16} /> : <Smartphone size={16} />}
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Destination</p>
+                                <p className="text-sm text-white font-bold mt-0.5">
+                                    {activeDestination?.accountName} • {activeDestination?.method === 'Bank Transfer' ? activeDestination?.bankName : activeDestination?.walletName} ({activeDestination?.accountNumber.slice(-4)})
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 border-t border-white/5 pt-3">
+                            <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-primary shrink-0">
+                                <Clock size={16} />
+                            </div>
+                            <div>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Expected Timeline</p>
+                                <p className="text-xs font-bold text-primary mt-0.5">{processingTimeline}</p>
+                            </div>
+                        </div>
                     </div>
                     <button onClick={onClose} className="mt-2 w-full bg-primary text-white font-black py-3 rounded-xl hover:bg-orange-600 transition">
                         Done
@@ -1566,40 +1708,102 @@ const PayoutRequestModal: React.FC<{
     }
 
     return (
-        <Modal title="Request a Payout" isOpen={true} onClose={onClose}>
+        <Modal title={<h2 className="text-base font-black text-white tracking-tight">Request a Payout</h2>} isOpen={true} onClose={onClose} compact>
             <div className="space-y-4">
                 {/* Finance Summary - Total Earnings and Pending/Locked */}
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-[#132535] border border-white/10 rounded-xl p-3">
-                        <p className="text-[10px] text-gray-400 font-bold tracking-wider">Total Earnings</p>
-                        <p className="text-lg font-black text-sky-400">₱{lifetimeEarnings.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <div className="bg-[#132535] border border-sky-500/10 rounded-xl p-3 flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] text-gray-400 font-bold tracking-wider">Total Earnings</p>
+                            <p className="text-base font-black text-sky-400 mt-1">₱{lifetimeEarnings.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400 shrink-0">
+                            <Wallet size={16} />
+                        </div>
                     </div>
-                    <div className="bg-[#1f1b2e] border border-white/10 rounded-xl p-3">
-                        <p className="text-[10px] text-gray-400 font-bold tracking-wider">Pending/Locked</p>
-                        <p className="text-lg font-black text-yellow-400">₱{pendingRequestsAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <div className="bg-[#1f1b2e] border border-yellow-500/10 rounded-xl p-3 flex items-center justify-between">
+                        <div>
+                            <p className="text-[10px] text-gray-400 font-bold tracking-wider">Pending/Locked</p>
+                            <p className="text-base font-black text-yellow-400 mt-1">₱{pendingRequestsAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="w-8 h-8 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-400 shrink-0">
+                            <Lock size={16} />
+                        </div>
                     </div>
                 </div>
 
                 {!hasPayoutDetails ? (
                     <div className="p-4 bg-red-900/50 border border-red-500/50 rounded-xl text-center">
                         <p className="text-red-300 font-semibold">No Payout Details Found</p>
-                        <p className="text-xs text-red-200 mt-1">Please set up your payout details before requesting a payout.</p>
+                        <p className="text-xs text-red-200 mt-1">Please set up payout details before requesting a payout.</p>
+                        <button
+                            type="button"
+                            onClick={onEditPayoutDetails}
+                            className="mt-3 bg-primary text-white text-xs font-black px-4 py-2 rounded-lg hover:bg-orange-600 transition"
+                        >
+                            Set Up Details
+                        </button>
                     </div>
                 ) : (
-                    <div className="bg-field p-4 rounded-xl border border-white/10">
-                        <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-black text-white">Payout Destination</h4>
-                            <span className="text-[10px] bg-green-500/10 border border-green-500/20 text-green-400 font-bold px-2 py-0.5 rounded-full">Verified</span>
+                    <div className="bg-field p-4 rounded-xl border border-white/10 space-y-3">
+                        <div className="flex items-center justify-between mb-1">
+                            <h4 className="font-black text-white text-xs">Payout Destination</h4>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={onEditPayoutDetails}
+                                    className="text-[10px] font-bold text-primary hover:underline uppercase tracking-wider"
+                                >
+                                    Edit
+                                </button>
+                                <span className="text-[10px] bg-green-500/10 border border-green-500/20 text-green-400 font-bold px-2 py-0.5 rounded-full">Verified</span>
+                            </div>
                         </div>
-                        <p className="text-sm"><span className="text-light-gray">Account:</span> {mechanic.payoutDetails?.accountName}</p>
-                        <p className="text-sm"><span className="text-light-gray">Number:</span> ****{mechanic.payoutDetails?.accountNumber.slice(-4)}</p>
-                        <p className="text-sm"><span className="text-light-gray">Method:</span> {mechanic.payoutDetails?.method} ({mechanic.payoutDetails?.method === 'Bank Transfer' ? mechanic.payoutDetails?.bankName : mechanic.payoutDetails?.walletName})</p>
+                        
+                        <div className="relative">
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-primary">
+                                {activeDestination?.method === 'Bank Transfer' ? <Building2 size={15} /> : <Smartphone size={15} />}
+                            </div>
+                            <select
+                                id="payout-destination"
+                                name="payoutDestination"
+                                value={selectedDestinationIndex}
+                                onChange={(e) => setSelectedDestinationIndex(Number(e.target.value))}
+                                className="w-full p-2.5 pl-9 bg-black/40 border border-secondary rounded-xl text-xs text-white outline-none focus:border-white/20 cursor-pointer appearance-none"
+                            >
+                                {payoutDestinations.map((dest, idx) => (
+                                    <option key={idx} value={idx}>
+                                        {dest.method} — {dest.method === 'Bank Transfer' ? dest.bankName : dest.walletName} ({dest.accountNumber.slice(-4)})
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t border-white/5">
+                            <div className="flex items-center gap-2.5 text-xs text-light-gray">
+                                <User size={13} className="text-sky-400 shrink-0" />
+                                <span>Account: <span className="text-white font-bold">{activeDestination?.accountName}</span></span>
+                            </div>
+                            <div className="flex items-center gap-2.5 text-xs text-light-gray">
+                                <Hash size={13} className="text-orange-400 shrink-0" />
+                                <span>Number: <span className="text-white font-bold">{activeDestination?.accountNumber}</span></span>
+                            </div>
+                            <div className="flex items-center gap-2.5 text-xs text-light-gray">
+                                <CreditCard size={13} className="text-emerald-400 shrink-0" />
+                                <span>Method: <span className="text-white font-bold">{activeDestination?.method} ({activeDestination?.method === 'Bank Transfer' ? activeDestination?.bankName : activeDestination?.walletName})</span></span>
+                            </div>
+                        </div>
                     </div>
                 )}
 
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                        <label className="text-xs text-light-gray">Amount to Withdraw</label>
+                        <label htmlFor="payout-amount" className="text-xs text-light-gray">Amount to Withdraw</label>
                         <button
                             type="button"
                             onClick={() => setAmount(safeWithdrawable.toFixed(2))}
@@ -1609,13 +1813,15 @@ const PayoutRequestModal: React.FC<{
                         </button>
                     </div>
                     <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-light-gray">₱</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-primary font-bold text-sm">₱</span>
                         <input
+                            id="payout-amount"
+                            name="payoutAmount"
                             type="number"
                             value={amount}
                             onChange={e => { setAmount(e.target.value); setError(''); }}
                             disabled={!hasPayoutDetails}
-                            className="w-full p-3 pl-8 bg-field border border-secondary rounded-xl disabled:opacity-50 outline-none transition-all focus:border-white/20"
+                            className="w-full p-3 pl-8 bg-field border border-secondary rounded-xl disabled:opacity-50 outline-none transition-all focus:border-white/20 text-sm font-semibold text-white"
                             placeholder="0.00"
                         />
                     </div>
@@ -1634,34 +1840,45 @@ const PayoutRequestModal: React.FC<{
                 </div>
 
                 <div>
-                    <label className="text-xs text-light-gray mb-1 block">Notes (Optional)</label>
+                    <label htmlFor="payout-notes" className="text-xs text-light-gray mb-1.5 block flex items-center gap-1.5">
+                        <MessageSquare size={13} className="text-primary" />
+                        Notes (Optional)
+                    </label>
                     <textarea
+                        id="payout-notes"
+                        name="payoutNotes"
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
                         rows={2}
-                        className="w-full p-3 bg-field border border-secondary rounded-xl outline-none transition-all focus:border-white/20 resize-none"
+                        className="w-full p-3 bg-field border border-secondary rounded-xl outline-none transition-all focus:border-white/20 resize-none text-xs"
                         placeholder="Add notes for admin (e.g., urgent payout for utilities)"
                     />
                 </div>
 
-                <div className="bg-[#1A1A1A] border border-white/10 rounded-xl p-3">
-                    <p className="text-xs text-gray-400">Processing Timeline</p>
-                    <p className="text-sm font-bold text-primary mt-1">{processingTimeline}</p>
+                <div className="bg-[#1A1A1A] border border-white/10 rounded-xl p-3 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-primary mt-0.5 shrink-0">
+                        <Clock size={16} />
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Processing Timeline</p>
+                        <p className="text-xs font-bold text-primary mt-1">{processingTimeline}</p>
+                    </div>
                 </div>
 
                 {(error || validationError) && (
                     <p className="text-red-400 text-xs mt-1">{error || validationError}</p>
+
                 )}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
-                <button onClick={onClose} className="bg-field text-white font-bold py-2.5 px-4 rounded-xl hover:bg-gray-600 transition">
+                <button onClick={onClose} className="bg-field text-white font-bold py-2.5 px-4 rounded-xl hover:bg-gray-600 transition text-xs">
                     Cancel
                 </button>
                 <button
                     onClick={handleRequest}
                     disabled={!!validationError || isProcessing}
-                    className="bg-primary text-white font-black py-2.5 px-5 rounded-xl hover:bg-orange-600 transition disabled:opacity-50 min-w-[160px] flex justify-center items-center gap-2"
+                    className="bg-primary text-white font-black py-2.5 px-5 rounded-xl hover:bg-orange-600 transition disabled:opacity-50 min-w-[160px] flex justify-center items-center gap-2 text-xs"
                 >
                     {isProcessing ? (
                         <>
@@ -1674,7 +1891,6 @@ const PayoutRequestModal: React.FC<{
         </Modal>
     );
 };
-
 const PayoutDetailsModal: React.FC<{
     payoutDetails: Mechanic['payoutDetails'];
     onClose: () => void;
@@ -1792,8 +2008,9 @@ const PayoutDetailsModal: React.FC<{
 
                 {/* Account Name */}
                 <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400">Account Name</label>
+                    <label htmlFor="mechanic-account-name" className="text-xs font-bold text-gray-400">Account Name</label>
                     <input 
+                        id="mechanic-account-name"
                         type="text" 
                         name="accountName" 
                         value={details.accountName} 
@@ -1807,8 +2024,9 @@ const PayoutDetailsModal: React.FC<{
                     <>
                         {/* Bank Selector / Name */}
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400">Bank Name</label>
+                            <label htmlFor="mechanic-bank-name" className="text-xs font-bold text-gray-400">Bank Name</label>
                             <input 
+                                id="mechanic-bank-name"
                                 type="text" 
                                 name="bankName" 
                                 value={details.bankName || ''} 
@@ -1837,8 +2055,9 @@ const PayoutDetailsModal: React.FC<{
 
                         {/* Account Number */}
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400">Account Number</label>
+                            <label htmlFor="mechanic-account-number" className="text-xs font-bold text-gray-400">Account Number</label>
                             <input 
+                                id="mechanic-account-number"
                                 type="text" 
                                 name="accountNumber" 
                                 value={details.accountNumber} 
@@ -1873,8 +2092,9 @@ const PayoutDetailsModal: React.FC<{
 
                         {/* Phone Number */}
                         <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400">Account Number (Mobile Phone)</label>
+                            <label htmlFor="mechanic-wallet-number" className="text-xs font-bold text-gray-400">Account Number (Mobile Phone)</label>
                             <input 
+                                id="mechanic-wallet-number"
                                 type="tel" 
                                 name="accountNumber" 
                                 value={details.accountNumber} 
@@ -2034,7 +2254,7 @@ const LegalDocsModal: React.FC<{
             <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
                 <div>
                     <h3 className="text-lg font-bold mb-2">Business License</h3>
-                    <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange(e, 'businessLicenseUrl')} className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
+                    <input type="file" id="business-license" name="businessLicense" accept="image/*,application/pdf" onChange={(e) => handleFileChange(e, 'businessLicenseUrl')} className="w-full text-sm text-light-gray file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
                     {formData.businessLicenseUrl && <a href={formData.businessLicenseUrl} target="_blank" rel="noreferrer" className="text-blue-400 text-sm hover:underline mt-2 inline-block">View Current License</a>}
                 </div>
 
@@ -2044,8 +2264,8 @@ const LegalDocsModal: React.FC<{
                         {formData.certifications?.map((cert, index) => (
                             <div key={index} className="bg-field p-3 rounded-md space-y-2 relative">
                                 <button onClick={() => handleRemoveCert(index)} className="absolute top-2 right-2 text-red-400 hover:text-red-300 text-xl">&times;</button>
-                                <input type="text" value={cert.name} onChange={(e) => handleCertChange(index, 'name', e.target.value)} placeholder="Certification Name" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
-                                <input type="file" onChange={(e) => handleFileChange(e, 'certification', index)} className="w-full text-xs text-light-gray file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary" />
+                                <input type="text" name={`cert-name-${index}`} value={cert.name} onChange={(e) => handleCertChange(index, 'name', e.target.value)} placeholder="Certification Name" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
+                                <input type="file" name={`cert-file-${index}`} onChange={(e) => handleFileChange(e, 'certification', index)} className="w-full text-xs text-light-gray file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary" />
                                 {cert.fileUrl && <a href={cert.fileUrl} target="_blank" rel="noreferrer" className="text-blue-400 text-xs hover:underline">View File</a>}
                             </div>
                         ))}
@@ -2059,9 +2279,9 @@ const LegalDocsModal: React.FC<{
                         {formData.insurances?.map((ins, index) => (
                             <div key={index} className="bg-field p-3 rounded-md space-y-2 relative">
                                 <button onClick={() => handleRemoveInsurance(index)} className="absolute top-2 right-2 text-red-400 hover:text-red-300 text-xl">&times;</button>
-                                <input type="text" value={ins.type} onChange={(e) => handleInsuranceChange(index, 'type', e.target.value)} placeholder="Insurance Type (e.g., General Liability)" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
-                                <input type="text" value={ins.provider} onChange={(e) => handleInsuranceChange(index, 'provider', e.target.value)} placeholder="Provider (e.g., AXA)" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
-                                <input type="text" value={ins.policyNumber} onChange={(e) => handleInsuranceChange(index, 'policyNumber', e.target.value)} placeholder="Policy Number" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
+                                <input type="text" name={`ins-type-${index}`} value={ins.type} onChange={(e) => handleInsuranceChange(index, 'type', e.target.value)} placeholder="Insurance Type (e.g., General Liability)" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
+                                <input type="text" name={`ins-provider-${index}`} value={ins.provider} onChange={(e) => handleInsuranceChange(index, 'provider', e.target.value)} placeholder="Provider (e.g., AXA)" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
+                                <input type="text" name={`ins-policy-${index}`} value={ins.policyNumber} onChange={(e) => handleInsuranceChange(index, 'policyNumber', e.target.value)} placeholder="Policy Number" className="w-full p-2 bg-dark-gray border border-secondary rounded-md text-sm outline-none transition-all focus:border-white/20" />
                             </div>
                         ))}
                         <button onClick={handleAddInsurance} className="text-sm text-primary font-semibold">+ Add Insurance</button>
@@ -2075,7 +2295,6 @@ const LegalDocsModal: React.FC<{
         </Modal>
     );
 };
-
 const MechanicToggleSwitch: React.FC<{
     label: string;
     description: string;
@@ -2093,11 +2312,18 @@ const MechanicToggleSwitch: React.FC<{
             type="button"
             role="switch"
             aria-checked={enabled}
-            className={`${enabled ? 'bg-primary' : 'bg-[#333]'} relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none`}
+            className={`${enabled ? 'bg-primary' : 'bg-[#333]'} relative inline-flex flex-shrink-0 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-primary/50`}
+            style={{ width: '44px', height: '24px' }}
             onClick={() => onChange(!enabled)}
         >
             <span
-                className={`${enabled ? 'translate-x-5' : 'translate-x-1'} inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm`}
+                className="absolute rounded-full bg-white transition-all duration-200 shadow-sm shrink-0"
+                style={{
+                    width: '16px',
+                    height: '16px',
+                    top: '4px',
+                    left: enabled ? '24px' : '4px'
+                }}
             />
         </button>
     </div>
@@ -2268,18 +2494,13 @@ const MechanicNotificationSettingsModal: React.FC<{
                                     id="modal-job-radius"
                                     value={settings.maxJobDistance ?? 'any'}
                                     onChange={(e) => handleSettingChange('maxJobDistance', e.target.value)}
-                                    className="w-full px-4 py-3 bg-[#121212] border border-white/10 rounded-xl text-white appearance-none focus:outline-none focus:border-primary/50 transition-all text-xs"
+                                    className="w-full px-4 py-3 bg-[#121212] border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 transition-all text-xs"
                                 >
                                     <option value="5km">Within 5 Kilometers</option>
                                     <option value="15km">Within 15 Kilometers</option>
                                     <option value="30km">Within 30 Kilometers</option>
                                     <option value="any">Anywhere / No Limits</option>
                                 </select>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -2440,6 +2661,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
     const { mechanic, logout, loading, updateMechanicProfile } = useMechanicAuth();
     const { db, updateMechanicNotificationSettings } = useDatabase();
     const [activeModal, setActiveModal] = useState<string | null>(null);
+    const [previousModal, setPreviousModal] = useState<string | null>(null);
     const navigate = useNavigate();
 
     const { totalJobs, lifetimeEarnings, availableForPayout } = useMemo(() => {
@@ -2499,7 +2721,12 @@ const MechanicProfileManagementScreen: React.FC = () => {
 
     const handlePayoutDetailsSave = (payoutDetails: PayoutDetails) => {
         updateMechanicProfile({ ...mechanic, payoutDetails });
-        setActiveModal(null);
+        if (previousModal) {
+            setActiveModal(previousModal);
+            setPreviousModal(null);
+        } else {
+            setActiveModal(null);
+        }
     };
 
     return (
@@ -2509,6 +2736,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
             <Header
                 title="My Profile"
                 rightAction={<NotificationBell />}
+                icon={<User size={22} />}
             />
 
             <div className="flex-grow p-4 sm:p-8 space-y-8 overflow-y-auto pb-10">
@@ -2655,8 +2883,31 @@ const MechanicProfileManagementScreen: React.FC = () => {
             {activeModal === 'timeOff' && <TimeOffModal unavailableDates={mechanic.unavailableDates || []} onClose={() => setActiveModal(null)} onSave={handleTimeOffSave} />}
             {activeModal === 'password' && <ChangePasswordModal currentPass={mechanic.password} onClose={() => setActiveModal(null)} onSave={handlePasswordSave} />}
             {activeModal === 'reviews' && <ReviewsModal reviews={mechanic.reviewsList || []} onClose={() => setActiveModal(null)} />}
-            {activeModal === 'payoutRequest' && <PayoutRequestModal mechanic={mechanic} availableBalance={availableForPayout} onClose={() => setActiveModal(null)} />}
-            {activeModal === 'payouts' && <PayoutDetailsModal payoutDetails={mechanic.payoutDetails} onClose={() => setActiveModal(null)} onSave={handlePayoutDetailsSave} />}
+            {activeModal === 'payoutRequest' && (
+                <PayoutRequestModal 
+                    mechanic={mechanic} 
+                    availableBalance={availableForPayout} 
+                    onClose={() => setActiveModal(null)} 
+                    onEditPayoutDetails={() => {
+                        setPreviousModal('payoutRequest');
+                        setActiveModal('payouts');
+                    }} 
+                />
+            )}
+            {activeModal === 'payouts' && (
+                <PayoutDetailsModal 
+                    payoutDetails={mechanic.payoutDetails} 
+                    onClose={() => {
+                        if (previousModal) {
+                            setActiveModal(previousModal);
+                            setPreviousModal(null);
+                        } else {
+                            setActiveModal(null);
+                        }
+                    }} 
+                    onSave={handlePayoutDetailsSave} 
+                />
+            )}
             {activeModal === 'support' && <HelpSupportModal contactEmail={db.settings.contactEmail} contactPhone={db.settings.contactPhone} onClose={() => setActiveModal(null)} />}
             {activeModal === 'legal' && <LegalDocsModal mechanic={mechanic} onClose={() => setActiveModal(null)} onSave={handleProfileSave} />}
             {activeModal === 'notifications' && mechanic && <MechanicNotificationSettingsModal user={mechanic} onClose={() => setActiveModal(null)} onSave={(s) => updateMechanicNotificationSettings(mechanic.id, s)} />}

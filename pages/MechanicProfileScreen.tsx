@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { Review, Mechanic } from '../types';
@@ -10,45 +10,90 @@ import HomeLiveMap from '../components/HomeLiveMap';
 import { getProfileImage, getVehicleImage } from '../utils/imageConstants';
 import { Wrench, X, Star } from 'lucide-react';
 
-const ReviewCard: React.FC<{ review: Review }> = ({ review }) => (
-    <div className="bg-dark-gray p-4 rounded-lg">
-        <div className="flex justify-between items-center mb-2">
-            <p className="font-semibold text-white">{review.customerName}</p>
-            <div className="flex items-center text-yellow-400">
-                {[...Array(5)].map((_, i) => (
-                    <Star
-                        key={i}
-                        size={16}
-                        className={i < review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-600'}
-                    />
-                ))}
+const ReviewCard: React.FC<{ review: Review }> = ({ review }) => {
+    const initials = review.customerName
+        ? review.customerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+        : 'C';
+    
+    const formattedDate = new Date(review.date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+
+    return (
+        <div className="bg-[#1A1A1E] border border-white/5 p-3.5 rounded-2xl flex gap-3.5 transition-all duration-200 hover:border-white/10 hover:bg-[#202025]">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary/20 to-orange-500/20 border border-primary/30 flex items-center justify-center text-xs font-black text-primary flex-shrink-0">
+                {initials}
+            </div>
+            
+            <div className="flex-grow min-w-0 space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                    <div>
+                        <h4 className="font-black text-white text-xs truncate leading-snug">
+                            {review.customerName}
+                        </h4>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className="flex items-center text-yellow-400">
+                                {[...Array(5)].map((_, i) => (
+                                    <Star
+                                        key={i}
+                                        size={10}
+                                        className={i < review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-700'}
+                                    />
+                                ))}
+                            </div>
+                            <span className="text-[9px] text-gray-500 font-bold">{formattedDate}</span>
+                        </div>
+                    </div>
+                    
+                    <span className="flex items-center gap-0.5 bg-green-500/10 text-green-400 border border-green-500/20 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider">
+                        ✓ Verified
+                    </span>
+                </div>
+                
+                <p className="text-xs text-gray-300 font-medium leading-relaxed">
+                    {review.comment}
+                </p>
             </div>
         </div>
-        <p className="text-sm text-light-gray">{review.comment}</p>
-        <p className="text-xs text-gray-500 mt-2">{new Date(review.date).toLocaleDateString()}</p>
-    </div>
-);
+    );
+};
 
 const SkeletonLoader = () => (
     <div className="flex flex-col h-full bg-secondary">
-            <Header title="Mechanic Profile" showBackButton icon={<Wrench size={22} />} />
-        <div className="flex-grow p-6 space-y-6 overflow-y-auto animate-pulse">
+        <CustomerHeader title="Mechanic Profile" showBackButton icon={<Wrench size={22} />} />
+        <div className="flex-grow p-6 space-y-8 overflow-y-auto animate-pulse">
             {/* Profile Header Skeleton */}
-            <div className="flex flex-col items-center text-center">
-                <div className="w-28 h-28 rounded-full bg-dark-gray mb-4"></div>
-                <div className="h-8 w-48 bg-dark-gray rounded mb-2"></div>
-                <div className="h-5 w-32 bg-dark-gray rounded"></div>
-                {/* Specializations skeleton moved here */}
-                <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                    <div className="h-8 w-24 bg-dark-gray rounded-full"></div>
-                    <div className="h-8 w-28 bg-dark-gray rounded-full"></div>
-                    <div className="h-8 w-20 bg-dark-gray rounded-full"></div>
+            <div className="flex flex-col items-center text-center -mb-2">
+                <div className="w-20 h-20 rounded-full bg-dark-gray mb-3 border-2 border-transparent"></div>
+                <div className="flex items-center gap-2">
+                    <div className="h-7 w-36 bg-dark-gray rounded-lg"></div>
+                    <div className="h-5 w-5 bg-dark-gray rounded-full"></div>
                 </div>
+            </div>
+
+            {/* Stats Cards Skeleton */}
+            <div className="grid grid-cols-3 gap-4">
+                {[...Array(3)].map((_, i) => (
+                    <div key={i} className="bg-[#1A1A1E] border border-white/5 p-2.5 rounded-2xl h-[76px] flex flex-col items-center justify-center space-y-1.5">
+                        <div className="h-5 w-5 bg-dark-gray rounded-full"></div>
+                        <div className="h-4 w-10 bg-dark-gray rounded"></div>
+                        <div className="h-3 w-12 bg-dark-gray rounded"></div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Specializations Skeleton */}
+            <div className="flex overflow-x-auto gap-2 py-1 px-6 -mx-6 scrollbar-hide">
+                <div className="h-7 w-20 bg-dark-gray rounded-xl flex-shrink-0"></div>
+                <div className="h-7 w-24 bg-dark-gray rounded-xl flex-shrink-0"></div>
+                <div className="h-7 w-16 bg-dark-gray rounded-xl flex-shrink-0"></div>
             </div>
 
             {/* Bio Skeleton */}
             <div>
-                <div className="h-6 w-32 bg-dark-gray rounded mb-3"></div>
+                <div className="h-6 w-24 bg-dark-gray rounded mb-3"></div>
                 <div className="bg-dark-gray p-4 rounded-lg space-y-2">
                     <div className="h-4 bg-field rounded w-full"></div>
                     <div className="h-4 bg-field rounded w-5/6"></div>
@@ -57,29 +102,33 @@ const SkeletonLoader = () => (
 
             {/* Portfolio Skeleton */}
             <div>
-                <div className="h-6 w-24 bg-dark-gray rounded mb-3"></div>
+                <div className="h-6 w-20 bg-dark-gray rounded mb-3"></div>
                 <div className="bg-dark-gray rounded-lg h-48 w-full"></div>
             </div>
 
             {/* Reviews Skeleton */}
             <div>
-                <div className="h-6 w-44 bg-dark-gray rounded mb-3"></div>
+                <div className="h-6 w-36 bg-dark-gray rounded mb-3"></div>
+                <div className="flex justify-between gap-4 mb-4">
+                    <div className="h-8 w-48 bg-dark-gray rounded-full"></div>
+                    <div className="h-8 w-28 bg-dark-gray rounded-lg"></div>
+                </div>
                 <div className="space-y-4">
-                    <div className="bg-dark-gray p-4 rounded-lg h-20"></div>
-                    <div className="bg-dark-gray p-4 rounded-lg h-20"></div>
+                    <div className="bg-[#1A1A1E] border border-white/5 p-3.5 rounded-2xl h-[78px]"></div>
+                    <div className="bg-[#1A1A1E] border border-white/5 p-3.5 rounded-2xl h-[78px]"></div>
                 </div>
             </div>
+        </div>
+        
+        {/* Bottom Actions Bar Skeleton */}
+        <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex gap-3">
+            <div className="flex-1 h-12 bg-field rounded-lg"></div>
+            <div className="flex-1 h-12 bg-primary/30 rounded-lg"></div>
         </div>
     </div>
 );
 
-const StatCard: React.FC<{ title: string, value: React.ReactNode, icon: React.ReactNode }> = ({ title, value, icon }) => (
-    <div className="bg-dark-gray p-3 rounded-lg flex flex-col items-center justify-center text-center h-full">
-        <div className="text-primary h-6 w-6 mb-1">{icon}</div>
-        <div className="font-bold text-white">{value}</div>
-        <p className="text-xs text-light-gray mt-1">{title}</p>
-    </div>
-);
+
 
 
 const MechanicProfileScreen: React.FC = () => {
@@ -93,14 +142,9 @@ const MechanicProfileScreen: React.FC = () => {
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+    const [currentPage, setCurrentPage] = useState<number>(1);
 
-    // State for the "Find Other Mechanics" section
-    const [specFilterOpen, setSpecFilterOpen] = useState(false);
-    const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
-    const [nearbyRatingFilter, setNearbyRatingFilter] = useState(0);
-    const [mechanicSearch, setMechanicSearch] = useState('');
-    const [nearbySortOption, setNearbySortOption] = useState('rating');
-    const [selectedMechanicId, setSelectedMechanicId] = useState<string | null>(null);
+
 
     const isFavorited = useMemo(() => user?.favoriteMechanicIds?.includes(mechanicId!), [user, mechanicId]);
 
@@ -134,41 +178,14 @@ const MechanicProfileScreen: React.FC = () => {
         return reviews;
     }, [mechanic?.reviewsList, reviewFilter, sortOrder]);
 
-    // --- Logic for "Find Other Mechanics Nearby" ---
-    const allSpecializations = useMemo(() => {
-        const specSet = new Set<string>();
-        db.mechanics.forEach(m => { if (m.status === 'Active') m.specializations.forEach(spec => specSet.add(spec)) });
-        return Array.from(specSet).sort();
-    }, [db.mechanics]);
+    const paginatedReviews = useMemo(() => {
+        const startIndex = (currentPage - 1) * 3;
+        return filteredReviews.slice(startIndex, startIndex + 3);
+    }, [filteredReviews, currentPage]);
 
-    const handleSpecToggle = (spec: string) => {
-        setSelectedSpecs(prev => prev.includes(spec) ? prev.filter(s => s !== spec) : [...prev, spec]);
-    };
+    const totalPages = Math.ceil(filteredReviews.length / 3);
 
-    const filteredNearbyMechanics = useMemo(() => {
-        if (!db) return [];
-        const { bookings, mechanics } = db;
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
-        const todayDayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
-        const busyMechanicIds = new Set(bookings.filter(b => (b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress') && b.mechanic && b.date === todayStr).map(b => b.mechanic!.id));
 
-        let filtered = mechanics.filter(m => {
-            if (m.id === mechanicId) return false; // Exclude current mechanic
-            const isActive = m.status === 'Active';
-            const hasSelectedSpec = selectedSpecs.length === 0 || selectedSpecs.some(spec => m.specializations.includes(spec));
-            const meetsRating = m.rating >= nearbyRatingFilter;
-            const searchMatch = mechanicSearch.trim() === '' || m.name.toLowerCase().includes(mechanicSearch.toLowerCase().trim()) || m.specializations.some(spec => spec.toLowerCase().includes(mechanicSearch.toLowerCase().trim()));
-            return isActive && hasSelectedSpec && meetsRating && searchMatch;
-        });
-        
-        filtered.sort((a, b) => {
-            if (nearbySortOption === 'jobs') return b.reviews - a.reviews;
-            return b.rating - a.rating; // Default to rating
-        });
-
-        return filtered.map(m => ({ ...m, isAvailable: (m.isOnline ?? false) && !busyMechanicIds.has(m.id) }));
-    }, [db, selectedSpecs, nearbyRatingFilter, mechanicSearch, nearbySortOption, mechanicId]);
 
     const handleBookMechanic = (mechanicToBook: Mechanic) => {
         // Using Diagnostic (Service ID 3) as the default service for direct mechanic booking
@@ -182,7 +199,7 @@ const MechanicProfileScreen: React.FC = () => {
     if (!mechanic) {
         return (
             <div className="flex flex-col h-full bg-secondary">
-                <Header title="Mechanic Not Found" showBackButton icon={<Wrench size={22} />} />
+                <CustomerHeader title="Mechanic Not Found" showBackButton icon={<Wrench size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <p>The requested mechanic profile could not be found.</p>
                 </div>
@@ -212,34 +229,58 @@ const MechanicProfileScreen: React.FC = () => {
                     <img src={fullScreenImage} alt="Full screen view" className="max-w-full max-h-full object-contain rounded-lg" />
                 </div>
             )}
-                <Header title="Mechanic Profile" showBackButton icon={<Wrench size={22} />} />
+                <CustomerHeader title="Mechanic Profile" showBackButton icon={<Wrench size={22} />} />
             <div className="flex-grow p-6 space-y-8 overflow-y-auto">
-                <div className="flex flex-col items-center text-center">
-                    <img src={getProfileImage(mechanic.imageUrl, 'mechanic')} alt={mechanic.name} className="w-28 h-28 rounded-full object-cover mb-4 border-4 border-primary" />
-                    <div className="flex items-center gap-3">
-                         <h1 className="text-3xl font-bold text-white">{mechanic.name}</h1>
+                <div className="flex flex-col items-center text-center -mb-2">
+                    <img src={getProfileImage(mechanic.imageUrl, 'mechanic')} alt={mechanic.name} className="w-20 h-20 rounded-full object-cover mb-3 border-2 border-primary" />
+                    <div className="flex items-center gap-2">
+                         <h1 className="text-xl font-black text-white tracking-tight">{mechanic.name}</h1>
                          <button onClick={handleToggleFavorite} className="text-yellow-400" aria-label="Toggle Favorite">
-                            <Star size={32} className={`transition-transform transform hover:scale-125 ${isFavorited ? 'fill-current' : ''}`} />
+                            <Star size={20} className={`transition-transform transform hover:scale-110 ${isFavorited ? 'fill-current' : ''}`} />
                         </button>
                     </div>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-4">
-                    <StatCard title="Rating" value={<span className="text-xl">{(mechanic.rating || 0).toFixed(1)}</span>} icon={<Star className="h-6 w-6 text-yellow-400 fill-yellow-400" />} />
-                    <StatCard title="Jobs Completed" value={<span className="text-xl">{mechanic.reviews}</span>} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>} />
-                    <StatCard 
-                        title="Status" 
-                        value={
-                            <div className="flex items-center justify-center gap-1.5 text-lg">
-                                <span className={`h-2.5 w-2.5 rounded-full ${onlineStatusIconColor}`}></span>
-                                <span>{onlineStatus}</span>
-                            </div>
-                        } 
-                        icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z" /></svg>}
-                    />
+                <div className="flex items-center justify-between w-full bg-[#1A1A1E] border border-white/5 rounded-2xl p-2.5 backdrop-blur-md">
+                    {/* Rating Segment */}
+                    <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
+                        <div className="flex items-center gap-1 text-yellow-400">
+                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                            <span className="font-black text-white text-xs tracking-tight">{(mechanic.rating || 0).toFixed(1)}</span>
+                        </div>
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">Rating</p>
+                    </div>
+                    
+                    {/* Divider */}
+                    <div className="w-[1px] h-8 bg-white/5"></div>
+                    
+                    {/* Jobs Completed Segment */}
+                    <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
+                        <div className="flex items-center gap-1 text-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                            <span className="font-black text-white text-xs tracking-tight">{mechanic.reviews}</span>
+                        </div>
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">Jobs Completed</p>
+                    </div>
+                    
+                    {/* Divider */}
+                    <div className="w-[1px] h-8 bg-white/5"></div>
+                    
+                    {/* Status Segment */}
+                    <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
+                        <div className="flex items-center justify-center gap-1.5">
+                            <span className={`h-1.5 w-1.5 rounded-full ${onlineStatusIconColor}`}></span>
+                            <span className="font-black text-white text-xs tracking-tight">{onlineStatus}</span>
+                        </div>
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">Status</p>
+                    </div>
                 </div>
-                <div className="flex flex-wrap gap-2 justify-center">
-                    {mechanic.specializations.map((spec, index) => <span key={index} className="bg-primary/20 text-primary text-sm font-medium px-3 py-1 rounded-full">{spec}</span>)}
+                <div className="flex overflow-x-auto gap-2 py-1 px-6 -mx-6 scrollbar-hide snap-x">
+                    {mechanic.specializations.map((spec, index) => (
+                        <span key={index} className="snap-center flex-shrink-0 bg-primary/10 text-primary text-[10px] font-black px-3 py-1.5 rounded-xl border border-primary/20 tracking-wider uppercase">
+                            {spec}
+                        </span>
+                    ))}
                 </div>
 
                 <div>
@@ -308,60 +349,48 @@ const MechanicProfileScreen: React.FC = () => {
                     {mechanic.reviewsList && mechanic.reviewsList.length > 0 ? (<>
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                             <div className="flex space-x-2 overflow-x-auto scrollbar-hide pb-2">
-                                {[0, 5, 4, 3, 2, 1].map(star => <button key={star} onClick={() => setReviewFilter(star)} className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${reviewFilter === star ? 'bg-primary text-white' : 'bg-field text-light-gray hover:bg-dark-gray'}`}>{star === 0 ? 'All' : `${star} ★`}</button>)}
+                                {[0, 5, 4, 3, 2, 1].map(star => <button key={star} onClick={() => { setReviewFilter(star); setCurrentPage(1); }} className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${reviewFilter === star ? 'bg-primary text-white' : 'bg-field text-light-gray hover:bg-dark-gray'}`}>{star === 0 ? 'All' : `${star} ★`}</button>)}
                             </div>
                             <div>
-                                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value as any)} className="bg-field text-sm rounded-lg focus:outline-none block w-full p-2" aria-label="Sort reviews"><option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="highest">Highest Rating</option><option value="lowest">Lowest Rating</option></select>
+                                <select id="sort-reviews" name="sort-reviews" value={sortOrder} onChange={(e) => { setSortOrder(e.target.value as any); setCurrentPage(1); }} className="bg-field text-sm rounded-lg focus:outline-none block w-full p-2" aria-label="Sort reviews"><option value="newest">Newest First</option><option value="oldest">Oldest First</option><option value="highest">Highest Rating</option><option value="lowest">Lowest Rating</option></select>
                             </div>
                         </div>
-                        {filteredReviews.length > 0 ? (<div className="space-y-4">{filteredReviews.map(review => <ReviewCard key={review.id} review={review} />)}</div>) : (<div className="bg-dark-gray text-center text-light-gray p-6 rounded-lg"><p>No reviews found for this rating.</p></div>)}
+                        {paginatedReviews.length > 0 ? (
+                            <>
+                                <div className="space-y-4">
+                                    {paginatedReviews.map(review => <ReviewCard key={review.id} review={review} />)}
+                                </div>
+                                {totalPages > 1 && (
+                                    <div className="flex justify-center items-center gap-4 mt-6">
+                                        <button
+                                            disabled={currentPage === 1}
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            className="px-4 py-2 rounded-xl bg-field text-white font-bold text-xs disabled:opacity-50 transition active:scale-95"
+                                        >
+                                            Prev
+                                        </button>
+                                        <span className="text-xs text-light-gray font-bold">
+                                            Page {currentPage} of {totalPages}
+                                        </span>
+                                        <button
+                                            disabled={currentPage === totalPages}
+                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                            className="px-4 py-2 rounded-xl bg-field text-white font-bold text-xs disabled:opacity-50 transition active:scale-95"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <div className="bg-dark-gray text-center text-light-gray p-6 rounded-lg">
+                                <p>No reviews found for this rating.</p>
+                            </div>
+                        )}
                     </>) : (<div className="bg-dark-gray text-center text-light-gray p-6 rounded-lg"><p>This mechanic has no reviews yet.</p></div>)}
                 </div>
 
-                <div className="border-t border-field pt-8">
-                    <h2 className="text-2xl font-semibold mb-4 text-white">Find Other Mechanics Nearby</h2>
-                     <div className="mb-4 space-y-3">
-                        <input type="text" value={mechanicSearch} onChange={e => setMechanicSearch(e.target.value)} placeholder="Search name or specialty..." className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white" />
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block text-xs font-medium text-light-gray mb-1">Specialization</label>
-                                <div className="relative">
-                                    <button onClick={() => setSpecFilterOpen(!specFilterOpen)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white text-left flex justify-between items-center h-[42px]"><span className="truncate">{selectedSpecs.length > 0 ? `${selectedSpecs.length} spec${selectedSpecs.length > 1 ? 's' : ''} selected` : 'All'}</span><svg className={`w-4 h-4 transition-transform ${specFilterOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
-                                    {specFilterOpen && (<div className="absolute top-full left-0 w-full mt-1 bg-field border border-dark-gray rounded-lg z-10 max-h-48 overflow-y-auto">{allSpecializations.map(spec => (<label key={spec} className="flex items-center gap-2 p-2 hover:bg-dark-gray cursor-pointer"><input type="checkbox" checked={selectedSpecs.includes(spec)} onChange={() => handleSpecToggle(spec)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-0" /><span>{spec}</span></label>))}</div>)}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-light-gray mb-1">Minimum Rating</label>
-                                <select value={nearbyRatingFilter} onChange={(e) => setNearbyRatingFilter(Number(e.target.value))} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white h-[42px]"><option value={0}>All Ratings</option><option value={4}>4 ★ & Up</option><option value={3}>3 ★ & Up</option></select>
-                            </div>
-                        </div>
-                        <select value={nearbySortOption} onChange={e => setNearbySortOption(e.target.value)} className="w-full px-4 py-2 bg-field border border-dark-gray rounded-lg text-white"><option value="rating">Sort: By Rating</option><option value="jobs">Sort: By Jobs Done</option></select>
-                    </div>
-                    <div className="h-80 w-full rounded-xl shadow-lg overflow-hidden relative z-0">
-                        <HomeLiveMap 
-                            mechanics={filteredNearbyMechanics} 
-                            customerLocation={{ lat: mechanic.lat, lng: mechanic.lng }} 
-                            selectedMechanicId={selectedMechanicId} 
-                            onMarkerClick={setSelectedMechanicId} 
-                            onMapClickToBook={(latlng) => { /* Do nothing on this map */ }}
-                            onBookMechanic={handleBookMechanic}
-                        />
-                    </div>
-                    <div className="flex overflow-x-auto scrollbar-hide gap-3 p-2 -mx-2 mt-4">
-                        {filteredNearbyMechanics.map(m => (
-                            <div key={m.id} onClick={() => setSelectedMechanicId(m.id)} onDoubleClick={() => navigate(`/mechanic-profile/${m.id}`)} className={`flex-shrink-0 w-64 bg-dark-gray p-3 rounded-lg cursor-pointer border-2 transition-all ${selectedMechanicId === m.id ? 'border-primary' : 'border-transparent'}`}>
-                                <div className="flex items-center gap-3">
-                                    <img src={getProfileImage(m.imageUrl, 'mechanic')} alt={m.name} className="w-12 h-12 rounded-full object-cover"/>
-                                    <div className="flex-grow overflow-hidden">
-                                        <p className="font-bold text-white text-sm truncate">{m.name}</p>
-                                        <p className="text-xs text-yellow-400">★ {m.rating} ({m.reviews} jobs)</p>
-                                        {m.isAvailable ? <p className="text-xs text-green-400 font-semibold">Available Today</p> : <p className="text-xs text-gray-500">Unavailable</p>}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+
 
             </div>
             <div className="p-4 bg-[#1D1D1D] border-t border-dark-gray flex gap-3">

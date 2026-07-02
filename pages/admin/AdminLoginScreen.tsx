@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
+import { useDatabase } from '../../context/DatabaseContext';
 import { useNavigate } from 'react-router-dom';
 import Spinner from '../../components/Spinner';
 import { Eye, EyeOff, Lock, Mail, Shield } from 'lucide-react';
@@ -27,7 +28,8 @@ const AdminLoginScreen: React.FC = () => {
         }
     };
 
-    const logoUrl = '/riders-logo.png';
+    const { db } = useDatabase();
+    const logoUrl = db?.settings?.adminLoginLogoUrl || db?.settings?.appLogoUrl || '/riders-logo.png';
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0A0A0A] via-[#121212] to-[#1A1A1A] p-4 relative overflow-hidden">

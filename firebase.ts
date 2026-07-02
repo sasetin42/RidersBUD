@@ -15,7 +15,7 @@ export const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-import { initializeFirestore, getFirestore, persistentLocalCache } from "firebase/firestore";
+import { initializeFirestore, getFirestore, memoryLocalCache } from "firebase/firestore";
 
 // Clear stale Firestore localStorage entries to prevent QuotaExceededError
 try {
@@ -29,14 +29,52 @@ try {
     keysToRemove.forEach(key => localStorage.removeItem(key));
 } catch (_) {}
 
-let dbInstance;
+// Clear corrupt Firestore IndexedDB databases BEFORE Firestore init to prevent
+// "INTERNAL ASSERTION FAILED: Unexpected state (ve: -1)" from corrupt target state.
+// deleteDatabase() queues synchronously so the subsequent open() inside
+// initializeFirestore will run after the delete per IndexedDB spec (FIFO per database).
 try {
-    dbInstance = initializeFirestore(app, {
-        localCache: persistentLocalCache()
-    });
-} catch (e) {
-    console.warn("Firestore init with settings failed, falling back to default:", e);
-    dbInstance = getFirestore(app);
+    if (typeof indexedDB !== 'undefined') {
+        const projectId = firebaseConfig.projectId;
+        const knownDbNames = [
+            `firestore/[DEFAULT]/${projectId}/(default)`,
+            `firestore/[DEFAULT]/${projectId}/(default)/main`,
+            `firestore/${projectId}/(default)/main`,
+            `firestore/${projectId}/(default)`,
+            `firestore/${projectId}`,
+        ];
+        knownDbNames.forEach(name => {
+            try { indexedDB.deleteDatabase(name); } catch (_) {}
+        });
+        // Also delete any legacy/non-standard Firestore databases asynchronously
+        if (indexedDB.databases) {
+            indexedDB.databases().then(dbs => {
+                dbs.forEach(db => {
+                    if (db.name && db.name.startsWith('firestore/')) {
+                        try { indexedDB.deleteDatabase(db.name); } catch (_) {}
+                    }
+                });
+            }).catch(() => {});
+        }
+    }
+} catch (_) {}
+
+let dbInstance;
+const globalDb = (globalThis as any)._firebaseDb;
+if (globalDb) {
+    dbInstance = globalDb;
+} else {
+    try {
+        dbInstance = initializeFirestore(app, {
+            localCache: memoryLocalCache(),
+            experimentalForceLongPolling: true,
+            ignoreUndefinedProperties: true
+        });
+        (globalThis as any)._firebaseDb = dbInstance;
+    } catch (e) {
+        console.warn("Firestore init with settings failed, falling back to default:", e);
+        dbInstance = getFirestore(app);
+    }
 }
 export const db = dbInstance;
 

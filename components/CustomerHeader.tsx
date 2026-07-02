@@ -11,9 +11,10 @@ interface CustomerHeaderProps {
     subtitle?: string;
     showBackButton?: boolean;
     icon?: React.ReactNode;
+    onBack?: () => void;
 }
 
-const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBackButton = false, icon }) => {
+const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBackButton = false, icon, onBack }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -33,7 +34,7 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
             <div className="flex items-center gap-3">
                 {showBackButton && (
                     <button
-                        onClick={() => navigate(-1)}
+                        onClick={onBack || (() => navigate(-1))}
                         className="p-1.5 -ml-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95"
                     >
                         <ChevronLeft className="h-5 w-5" />

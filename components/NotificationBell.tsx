@@ -5,10 +5,12 @@ import { useNotification } from '../context/NotificationContext';
 import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { useAuth } from '../context/AuthContext';
 import { Notification } from '../types';
+import { useDatabase } from '../context/DatabaseContext';
+import { getProfileImage } from '../utils/imageConstants';
 import {
     Bell, X, Check, CheckCheck, Trash2,
     Info, AlertTriangle, CheckCircle, AlertOctagon,
-    Clock, ChevronRight, BellOff, Sparkles
+    Clock, ChevronRight, BellOff, Sparkles, User
 } from 'lucide-react';
 
 type FilterTab = 'all' | 'unread';
@@ -108,6 +110,19 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
     const [showAbsTime, setShowAbsTime] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isVisible, setIsVisible] = useState(true);
+    const [imgError, setImgError] = useState(false);
+
+    const { db } = useDatabase();
+
+    const mechanicId = notif.metadata?.mechanicId;
+    const mechanic = db?.mechanics?.find(m => 
+        (mechanicId && m.id === mechanicId) || 
+        (notif.message && m.name && notif.message.toLowerCase().includes(m.name.toLowerCase())) ||
+        (notif.title && m.name && notif.title.toLowerCase().includes(m.name.toLowerCase()))
+    );
+
+    const showMechanicImg = !!mechanic;
+    const mechanicImgUrl = mechanic ? getProfileImage(mechanic.imageUrl, 'mechanic') : '';
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -144,14 +159,25 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
                 <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${config.leftBar} ${config.leftBarGlow}`} />
             )}
 
-            <div className="p-2.5 sm:p-4 pl-4 sm:pl-5">
-                <div className="flex items-start gap-2 sm:gap-3">
-                    {/* Icon with color-coded container */}
-                    <div className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 border ${config.bg} ${config.border} shadow-lg ${config.glow} mt-0.5`}>
-                        <IconComponent size={16} className={config.text} strokeWidth={2.5} />
+            <div className="p-2 sm:p-3 pl-3 sm:pl-4">
+                <div className="flex items-start gap-2.5 sm:gap-3.5">
+                    {/* Icon or Mechanic Image with color-coded container */}
+                    <div className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 border overflow-hidden ${config.bg} ${config.border} shadow-lg ${config.glow} mt-0.5`}>
+                        {showMechanicImg && mechanicImgUrl && !imgError ? (
+                            <img
+                                src={mechanicImgUrl}
+                                alt={mechanic?.name || 'Mechanic'}
+                                onError={() => setImgError(true)}
+                                className="w-full h-full object-cover"
+                            />
+                        ) : showMechanicImg ? (
+                            <User size={14} className={config.text} strokeWidth={2.5} />
+                        ) : (
+                            <IconComponent size={14} className={config.text} strokeWidth={2.5} />
+                        )}
                         {/* Animated pulse dot for unread */}
                         {!notif.read && (
-                            <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${config.dot} border-2 border-[#111] shadow-sm`} />
+                            <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${config.dot} border-2 border-[#111] shadow-sm`} />
                         )}
                     </div>
 
@@ -159,7 +185,7 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
                         <div className="flex items-start justify-between gap-1 mb-0.5">
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                 {/* Type badge */}
-                                <span className={`text-[8px] font-black tracking-widest uppercase px-1.5 py-0.5 rounded-md border ${config.badge} shrink-0`}>
+                                <span className={`text-[7px] font-black tracking-widest uppercase px-1 py-0.5 rounded border ${config.badge} shrink-0`}>
                                     {config.label}
                                 </span>
                             </div>
@@ -170,47 +196,47 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
                                     <button
                                         onClick={handleMarkRead}
                                         title="Mark as read"
-                                        className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center hover:bg-[#FE7803]/20 text-[#FE7803] transition-colors active:scale-90"
+                                        className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[#FE7803]/20 text-[#FE7803] transition-colors active:scale-90"
                                     >
-                                        <Check size={14} strokeWidth={3} />
+                                        <Check size={12} strokeWidth={3} />
                                     </button>
                                 )}
                                 <button
                                     onClick={handleDelete}
                                     title="Delete notification"
                                     disabled={isDeleting}
-                                    className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors active:scale-90 disabled:opacity-50"
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition-colors active:scale-90 disabled:opacity-50"
                                 >
                                     {isDeleting ? (
-                                        <svg className="animate-spin h-3.5 w-3.5 text-red-400" fill="none" viewBox="0 0 24 24">
+                                        <svg className="animate-spin h-3 w-3 text-red-400" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                                         </svg>
                                     ) : (
-                                        <Trash2 size={14} />
+                                        <Trash2 size={12} />
                                     )}
                                 </button>
                             </div>
                         </div>
 
                         {/* Title */}
-                        <h4 className={`text-[13px] sm:text-sm font-bold leading-snug break-words ${notif.read ? 'text-gray-400' : 'text-white'}`}>
+                        <h4 className={`text-[12px] sm:text-[13px] font-bold leading-snug break-words ${notif.read ? 'text-gray-400' : 'text-white'}`}>
                             {notif.title}
                         </h4>
 
                         {/* Message */}
-                        <p className="text-[12px] sm:text-[13px] text-gray-500 mt-0.5 leading-relaxed break-words line-clamp-2">
+                        <p className="text-[11px] sm:text-[12px] text-gray-500 mt-0.5 leading-relaxed break-words line-clamp-2">
                             {notif.message}
                         </p>
 
-                        <div className="flex items-center justify-between mt-1.5">
+                        <div className="flex items-center justify-between mt-1">
                             <button
-                                className={`flex items-center gap-1.5 text-[10px] text-gray-600 hover:text-gray-400 transition-colors py-1`}
+                                className={`flex items-center gap-1 text-[9px] text-gray-600 hover:text-gray-400 transition-colors py-0.5`}
                                 onMouseEnter={() => setShowAbsTime(true)}
                                 onMouseLeave={() => setShowAbsTime(false)}
                                 onClick={(e) => e.stopPropagation()}
                             >
-                                <Clock size={10} />
+                                <Clock size={9} />
                                 <span className="font-mono tracking-wide">
                                     {showAbsTime ? formatAbsoluteTime(notif.timestamp) : formatRelativeTime(notif.timestamp)}
                                 </span>
@@ -219,10 +245,10 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
                             {notif.link && (
                                 <button
                                     onClick={handleView}
-                                    className={`flex items-center gap-1 text-[10px] font-black tracking-wide transition-colors py-1 group/view ${config.text} hover:opacity-80`}
+                                    className={`flex items-center gap-0.5 text-[9px] font-black tracking-wide transition-colors py-0.5 group/view ${config.text} hover:opacity-80`}
                                 >
                                     View
-                                    <ChevronRight size={10} strokeWidth={3} className="group-hover/view:translate-x-0.5 transition-transform" />
+                                    <ChevronRight size={9} strokeWidth={3} className="group-hover/view:translate-x-0.5 transition-transform" />
                                 </button>
                             )}
                         </div>
@@ -257,9 +283,9 @@ const NotificationBell: React.FC<{ className?: string }> = ({ className = "" }) 
         : null;
 
     // Notifications are already filtered by role in NotificationContext
-    const unreadCount = notifications.filter(n => !n.read).length;
+    const unreadCount = notifications.filter(n => n.status === 'unread' || n.read === false).length;
     const displayNotifications = activeTab === 'unread'
-        ? notifications.filter(n => !n.read)
+        ? notifications.filter(n => n.status === 'unread' || n.read === false)
         : notifications;
 
     // Close on outside click disabled per user request to only close via close button
@@ -473,7 +499,7 @@ const NotificationBell: React.FC<{ className?: string }> = ({ className = "" }) 
             >
                 <Bell className={`h-5 w-5 transition-transform duration-300 ${unreadCount > 0 ? 'animate-[wiggle_1s_ease-in-out_infinite]' : ''}`} />
                 {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 flex h-[18px] w-[18px]">
+                    <span className="absolute top-0 right-0 flex h-[18px] w-[18px] translate-x-1/3 -translate-y-1/3">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FE7803] opacity-60" />
                         <span className="relative inline-flex rounded-full h-[18px] w-[18px] bg-[#FE7803] text-[9px] font-black text-white items-center justify-center border-2 border-[#121212] shadow-lg">
                             {unreadCount > 99 ? '99+' : unreadCount > 9 ? '9+' : unreadCount}

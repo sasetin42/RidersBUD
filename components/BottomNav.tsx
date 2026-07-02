@@ -43,10 +43,15 @@ const BottomNav: React.FC = () => {
     const isBookingProcess = (
         location.pathname.includes('/booking/') || 
         location.pathname.includes('/payment') || 
-        location.pathname.includes('/service-payment')
+        location.pathname.includes('/service-payment') ||
+        location.pathname.includes('/app-services/book/') ||
+        location.pathname.includes('/app-services/liaison-book/')
     ) && !location.pathname.includes('-confirmation') && !location.search.includes('success=true');
 
-    const isDetailView = location.pathname.includes('/service/') || location.pathname.includes('/part/');
+    const isDetailView = 
+        location.pathname.includes('/service/') || 
+        location.pathname.includes('/part/') ||
+        (location.pathname.includes('/app-services/') && !location.pathname.includes('/book/') && !location.pathname.includes('/liaison-book/'));
     const isSupport = location.pathname.includes('/support-chat');
 
     if (isBookingProcess || isDetailView || isSupport) {

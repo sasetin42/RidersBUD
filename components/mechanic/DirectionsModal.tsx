@@ -69,8 +69,8 @@ const DirectionsModal: React.FC<DirectionsModalProps> = ({ booking, customer, on
     const mechanic = booking.mechanic;
     const mechanicLat = mechanic?.lat;
     const mechanicLng = mechanic?.lng;
-    const customerLat = customer?.lat;
-    const customerLng = customer?.lng;
+    const customerLat = booking.location?.lat || customer?.lat;
+    const customerLng = booking.location?.lng || customer?.lng;
 
     useEffect(() => {
         if (!mapRef.current || !mechanicLat || !mechanicLng || !customerLat || !customerLng || mapInstanceRef.current || typeof L === 'undefined') return;

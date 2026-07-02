@@ -92,7 +92,7 @@ const AdminUsersScreen: React.FC = () => {
             });
             setAuditLogs(logs);
         });
-        return () => unsubscribe();
+        return () => { try { unsubscribe(); } catch (_) {} };
     }, []);
 
     // Create Audit Log Helper
@@ -178,7 +178,7 @@ const AdminUsersScreen: React.FC = () => {
             isActive: c.status !== 'Suspended' && c.status !== 'Inactive',
             avatarUrl: c.picture || '',
             createdAt: c.registrationDate || new Date().toISOString(),
-            lastLogin: '',
+            lastLogin: (c as any).lastLogin || (c as any).lastActive || '',
             originalData: c
         }));
 
@@ -192,7 +192,7 @@ const AdminUsersScreen: React.FC = () => {
             isActive: m.status !== 'Suspended' && m.status !== 'Inactive',
             avatarUrl: m.imageUrl || '',
             createdAt: m.registrationDate || m.joinedAt || new Date().toISOString(),
-            lastLogin: '',
+            lastLogin: (m as any).lastLogin || (m as any).lastActive || '',
             originalData: m
         }));
 
@@ -800,32 +800,32 @@ const AdminUsersScreen: React.FC = () => {
                                 <table className="w-full text-left">
                                     <thead className="bg-white/5">
                                         <tr>
-                                            <th className="px-8 py-6">
-                                                <button onClick={() => requestSort('name')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500">
+                                            <th className="px-8 py-6 whitespace-nowrap">
+                                                <button onClick={() => requestSort('name')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap">
                                                     User Details {getSortIndicator('name')}
                                                 </button>
                                             </th>
-                                            <th className="px-8 py-6">
-                                                <button onClick={() => requestSort('role')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500">
+                                            <th className="px-8 py-6 whitespace-nowrap">
+                                                <button onClick={() => requestSort('role')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap">
                                                     Role / Category {getSortIndicator('role')}
                                                 </button>
                                             </th>
-                                            <th className="px-8 py-6">
-                                                <button onClick={() => requestSort('isActive')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500">
+                                            <th className="px-8 py-6 whitespace-nowrap">
+                                                <button onClick={() => requestSort('isActive')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap">
                                                     Status {getSortIndicator('isActive')}
                                                 </button>
                                             </th>
-                                            <th className="px-8 py-6">
-                                                <button onClick={() => requestSort('createdAt')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500">
+                                            <th className="px-8 py-6 whitespace-nowrap">
+                                                <button onClick={() => requestSort('createdAt')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap">
                                                     Created At {getSortIndicator('createdAt')}
                                                 </button>
                                             </th>
-                                            <th className="px-8 py-6">
-                                                <button onClick={() => requestSort('lastLogin')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500">
+                                            <th className="px-8 py-6 whitespace-nowrap">
+                                                <button onClick={() => requestSort('lastLogin')} className="flex items-center hover:text-white transition-colors text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap">
                                                     Last Activity {getSortIndicator('lastLogin')}
                                                 </button>
                                             </th>
-                                            <th className="px-8 py-6 text-right text-[10px] font-black tracking-widest text-gray-500">Actions</th>
+                                            <th className="px-8 py-6 text-right text-[10px] font-black tracking-widest text-gray-500 whitespace-nowrap">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-white/5">
@@ -842,13 +842,13 @@ const AdminUsersScreen: React.FC = () => {
 
                                             return (
                                                 <tr key={user.id} className="hover:bg-white/5 transition-colors group">
-                                                    <td className="px-8 py-6">
+                                                    <td className="px-8 py-6 whitespace-nowrap">
                                                         <div className="flex items-center gap-4">
                                                             <img
-                                                                src={user.avatarUrl || '/riders-logo.png'}
+                                                                src={user.avatarUrl || (user.roleCategory === 'Mechanic' ? db?.settings?.defaultMechanicImageUrl : user.roleCategory === 'Customer' ? db?.settings?.defaultCustomerImageUrl : null) || '/riders-logo.png'}
                                                                 alt={user.name}
                                                                 className="w-12 h-12 rounded-2xl object-cover border border-white/10 shadow-lg"
-                                                                onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                                                onError={(e) => { (e.target as HTMLImageElement).src = (user.roleCategory === 'Mechanic' ? db?.settings?.defaultMechanicImageUrl : db?.settings?.defaultCustomerImageUrl) || '/riders-logo.png'; }}
                                                             />
                                                             <div>
                                                                 <div className="font-bold text-white text-base group-hover:text-primary transition-colors flex items-center gap-2">
@@ -867,12 +867,12 @@ const AdminUsersScreen: React.FC = () => {
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-8 py-6">
+                                                    <td className="px-8 py-6 whitespace-nowrap">
                                                         <span className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest border ${roleColors[user.role] || 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>
                                                             {user.role}
                                                         </span>
                                                     </td>
-                                                <td className="px-8 py-6">
+                                                <td className="px-8 py-6 whitespace-nowrap">
                                                     {user.isActive ? (
                                                         <div className="flex items-center gap-2">
                                                             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
@@ -887,7 +887,7 @@ const AdminUsersScreen: React.FC = () => {
                                                         </div>
                                                     )}
                                                 </td>
-                                                <td className="px-8 py-6 text-gray-400 text-sm font-medium">
+                                                <td className="px-8 py-6 text-gray-400 text-sm font-medium whitespace-nowrap">
                                                     {user.createdAt ? (
                                                         <div className="flex flex-col">
                                                             <span className="font-bold text-gray-300">{new Date(user.createdAt).toLocaleDateString()}</span>
@@ -897,21 +897,25 @@ const AdminUsersScreen: React.FC = () => {
                                                         <span className="text-gray-600">N/A</span>
                                                     )}
                                                 </td>
-                                                <td className="px-8 py-6 text-gray-400 text-sm font-medium">
-                                                    {user.roleCategory === 'Admin' ? (
-                                                        user.lastLogin ? (
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-gray-300">{new Date(user.lastLogin).toLocaleDateString()}</span>
-                                                                <span className="text-[10px] text-gray-500 mt-0.5">{new Date(user.lastLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                            </div>
-                                                        ) : (
-                                                            <span className="text-gray-600">Never logged in</span>
-                                                        )
-                                                    ) : (
-                                                        <span className="text-gray-600">Mobile app usage</span>
-                                                    )}
+                                                <td className="px-8 py-6 text-gray-400 text-sm font-medium whitespace-nowrap">
+                                                    {(() => {
+                                                        const activeTime = user.originalData?.lastActive || user.lastLogin;
+                                                        if (activeTime) {
+                                                            const dateObj = new Date(activeTime);
+                                                            const isValidDate = !isNaN(dateObj.getTime());
+                                                            if (isValidDate) {
+                                                                return (
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-bold text-gray-300">{dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                                                                        <span className="text-[10px] text-gray-500 mt-0.5">{dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                        }
+                                                        return <span className="text-gray-600">Never logged in</span>;
+                                                    })()}
                                                 </td>
-                                                <td className="px-8 py-6 text-right relative action-dropdown-container">
+                                                <td className="px-8 py-6 text-right relative action-dropdown-container whitespace-nowrap">
                                                     <div className="flex items-center justify-end">
                                                         <button
                                                             onClick={(e) => {
@@ -1024,10 +1028,10 @@ const AdminUsersScreen: React.FC = () => {
                                     <div key={user.id} className="bg-[#121212]/60 backdrop-blur-xl border border-white/10 rounded-[2rem] p-6 space-y-4 shadow-xl">
                                         <div className="flex items-center gap-4">
                                              <img
-                                                src={user.avatarUrl || '/riders-logo.png'}
+                                                src={user.avatarUrl || (user.roleCategory === 'Mechanic' ? db?.settings?.defaultMechanicImageUrl : user.roleCategory === 'Customer' ? db?.settings?.defaultCustomerImageUrl : null) || '/riders-logo.png'}
                                                 alt={user.name}
-                                                className="w-12 h-12 rounded-2xl object-cover border border-white/10 shadow-lg"
-                                                onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                                className="w-12 h-12 rounded-2xl object-cover border border-white/10 shadow-xl transition-transform group-hover:scale-105"
+                                                onError={(e) => { (e.target as HTMLImageElement).src = (user.roleCategory === 'Mechanic' ? db?.settings?.defaultMechanicImageUrl : db?.settings?.defaultCustomerImageUrl) || '/riders-logo.png'; }}
                                             />
                                             <div className="flex-grow min-w-0">
                                                 <div className="font-bold text-white text-base truncate flex items-center gap-2">
@@ -1202,7 +1206,7 @@ const AdminUsersScreen: React.FC = () => {
                                         </div>
                                         <label className="absolute -bottom-1 -right-1 p-2.5 bg-primary hover:bg-orange-600 text-white rounded-xl shadow-lg cursor-pointer transition-all transform hover:scale-110 active:scale-95 border-2 border-[#18181b]">
                                             <Camera size={14} />
-                                            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                                            <input type="file" id="admin-user-image" name="admin-user-image" accept="image/*" className="hidden" onChange={handleImageUpload} />
                                         </label>
                                     </div>
                                 </div>
@@ -1226,9 +1230,11 @@ const AdminUsersScreen: React.FC = () => {
                                     {/* Role Configuration (Only editable on creation to prevent DB schema conflicts) */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Account Role Category</label>
+                                            <label htmlFor="admin-user-role-category" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Account Role Category</label>
                                             <div className="relative">
                                                 <select
+                                                    id="admin-user-role-category"
+                                                    name="admin-user-role-category"
                                                     value={currentUser.roleCategory || 'Customer'}
                                                     disabled={isEditing}
                                                     onChange={e => {
@@ -1251,9 +1257,11 @@ const AdminUsersScreen: React.FC = () => {
 
                                         {currentUser.roleCategory === 'Admin' && (
                                             <div className="space-y-2">
-                                                <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Admin Access Level</label>
+                                                <label htmlFor="admin-user-access-level" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Admin Access Level</label>
                                                 <div className="relative">
                                                     <select
+                                                        id="admin-user-access-level"
+                                                        name="admin-user-access-level"
                                                         value={currentUser.role || 'Viewer'}
                                                         onChange={e => setCurrentUser({ ...currentUser, role: e.target.value as RoleName })}
                                                         className="w-full bg-[#121212] border border-white/10 rounded-2xl px-5 py-4 text-white font-bold text-xs tracking-wider outline-none appearance-none cursor-pointer"
@@ -1272,8 +1280,10 @@ const AdminUsersScreen: React.FC = () => {
                                     {/* Core Profile Fields */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Full Name</label>
+                                            <label htmlFor="admin-user-name" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Full Name</label>
                                             <input
+                                                id="admin-user-name"
+                                                name="admin-user-name"
                                                 type="text"
                                                 value={currentUser.name || ''}
                                                 onChange={e => setCurrentUser({ ...currentUser, name: e.target.value })}
@@ -1283,8 +1293,10 @@ const AdminUsersScreen: React.FC = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Email Address</label>
+                                            <label htmlFor="admin-user-email" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Email Address</label>
                                             <input
+                                                id="admin-user-email"
+                                                name="admin-user-email"
                                                 type="email"
                                                 value={currentUser.email || ''}
                                                 onChange={e => setCurrentUser({ ...currentUser, email: e.target.value })}
@@ -1294,8 +1306,10 @@ const AdminUsersScreen: React.FC = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Mobile Number</label>
+                                            <label htmlFor="admin-user-phone" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Mobile Number</label>
                                             <input
+                                                id="admin-user-phone"
+                                                name="admin-user-phone"
                                                 type="text"
                                                 value={currentUser.phone || ''}
                                                 onChange={e => setCurrentUser({ ...currentUser, phone: e.target.value })}
@@ -1326,8 +1340,10 @@ const AdminUsersScreen: React.FC = () => {
                                             <h3 className="text-xs font-black text-amber-400 tracking-widest uppercase">Mechanic Profile Configuration</h3>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div className="space-y-2">
-                                                    <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Labor Specialization / Specialties</label>
+                                                    <label htmlFor="admin-user-specializations" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Labor Specialization / Specialties</label>
                                                     <input
+                                                        id="admin-user-specializations"
+                                                        name="admin-user-specializations"
                                                         type="text"
                                                         value={(currentUser.originalData?.specializations || []).join(', ')}
                                                         onChange={e => {
@@ -1347,8 +1363,10 @@ const AdminUsersScreen: React.FC = () => {
                                                 </div>
 
                                                 <div className="space-y-2">
-                                                    <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Assigned Service Area</label>
+                                                    <label htmlFor="admin-user-service-area" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Assigned Service Area</label>
                                                     <input
+                                                        id="admin-user-service-area"
+                                                        name="admin-user-service-area"
                                                         type="text"
                                                         value={currentUser.originalData?.address || ''}
                                                         onChange={e => setCurrentUser({
@@ -1365,8 +1383,10 @@ const AdminUsersScreen: React.FC = () => {
                                             </div>
 
                                             <div className="space-y-2">
-                                                <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Bio / Profile Description</label>
+                                                <label htmlFor="admin-user-bio" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Bio / Profile Description</label>
                                                 <textarea
+                                                    id="admin-user-bio"
+                                                    name="admin-user-bio"
                                                     value={currentUser.originalData?.bio || ''}
                                                     onChange={e => setCurrentUser({
                                                         ...currentUser,
@@ -1388,8 +1408,10 @@ const AdminUsersScreen: React.FC = () => {
                                         <div className="border-t border-white/5 pt-6 space-y-6 animate-fadeIn">
                                             <h3 className="text-xs font-black text-pink-400 tracking-widest uppercase">Customer Profile Details</h3>
                                             <div className="space-y-2">
-                                                <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Default Service Address</label>
+                                                <label htmlFor="admin-user-address" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">Default Service Address</label>
                                                 <input
+                                                    id="admin-user-address"
+                                                    name="admin-user-address"
                                                     type="text"
                                                     value={currentUser.originalData?.address || ''}
                                                     onChange={e => setCurrentUser({
@@ -1476,11 +1498,13 @@ const AdminUsersScreen: React.FC = () => {
 
                                     {/* Security Password Setup */}
                                     <div className="border-t border-white/5 pt-6 space-y-2">
-                                        <label className="text-[10px] tracking-widest font-black text-gray-500 ml-1">
+                                        <label htmlFor="admin-user-password" className="text-[10px] tracking-widest font-black text-gray-500 ml-1">
                                             {isEditing ? 'New Password (Optional Reset)' : 'Initial Password'}
                                         </label>
                                         <div className="relative">
                                             <input
+                                                id="admin-user-password"
+                                                name="admin-user-password"
                                                 type={showUserPassword ? 'text' : 'password'}
                                                 value={currentUser.password || ''}
                                                 onChange={e => setCurrentUser({ ...currentUser, password: e.target.value })}

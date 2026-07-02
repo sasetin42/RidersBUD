@@ -138,7 +138,7 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => { try { unsubscribe(); } catch (_) {} };
     }, [firebaseUser, isBypassed, mechanic?.id]);
 
     // Live Location Tracking - High accuracy, immediate start, retry on failure

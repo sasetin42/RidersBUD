@@ -207,13 +207,15 @@ const MechanicFormModal: React.FC<{
                                     </div>
                                     <label className="absolute -bottom-1 -right-1 p-1.5 bg-primary hover:bg-orange-600 text-white rounded-lg shadow cursor-pointer transition-all transform hover:scale-105 active:scale-95">
                                         <Camera size={10} />
-                                        <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
+                                        <input type="file" id="mechanic-profile-image" name="mechanic-profile-image" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
                                     </label>
                                 </div>
                                 <div className="flex-grow w-full">
                                     <div className="space-y-1">
-                                        <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Technician Name</label>
+                                        <label htmlFor="mechanic-name" className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Technician Name</label>
                                         <input
+                                            id="mechanic-name"
+                                            name="mechanic-name"
                                             type="text"
                                             value={formData.name}
                                             onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
@@ -226,8 +228,10 @@ const MechanicFormModal: React.FC<{
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="space-y-1">
-                                    <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Professional Email</label>
+                                    <label htmlFor="mechanic-email" className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Professional Email</label>
                                     <input
+                                        id="mechanic-email"
+                                        name="mechanic-email"
                                         type="email"
                                         value={formData.email}
                                         onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
@@ -236,8 +240,10 @@ const MechanicFormModal: React.FC<{
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Contact Number</label>
+                                    <label htmlFor="mechanic-phone" className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Contact Number</label>
                                     <input
+                                        id="mechanic-phone"
+                                        name="mechanic-phone"
                                         type="tel"
                                         value={formData.phone}
                                         onChange={e => setFormData(p => ({ ...p, phone: e.target.value }))}
@@ -246,8 +252,10 @@ const MechanicFormModal: React.FC<{
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Date of Birth</label>
+                                    <label htmlFor="mechanic-dob" className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Date of Birth</label>
                                     <input
+                                        id="mechanic-dob"
+                                        name="mechanic-dob"
                                         type="date"
                                         value={formData.birthday}
                                         onChange={e => setFormData(p => ({ ...p, birthday: e.target.value }))}
@@ -255,9 +263,11 @@ const MechanicFormModal: React.FC<{
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Password Hint</label>
+                                    <label htmlFor="mechanic-password" className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Password Hint</label>
                                     <div className="relative">
                                         <input
+                                            id="mechanic-password"
+                                            name="mechanic-password"
                                             type={showMechPassword ? 'text' : 'password'}
                                             value={formData.password}
                                             onChange={e => setFormData(p => ({ ...p, password: e.target.value }))}
@@ -276,8 +286,10 @@ const MechanicFormModal: React.FC<{
                                 <h4 className="text-[9px] tracking-widest font-black text-primary uppercase">Quick Add Catalog Specializations</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1">
-                                        <label className="text-[8px] tracking-widest font-black text-gray-400 ml-1 uppercase">Catalog Category</label>
+                                        <label htmlFor="mechanic-catalog-category" className="text-[8px] tracking-widest font-black text-gray-400 ml-1 uppercase">Catalog Category</label>
                                         <select
+                                            id="mechanic-catalog-category"
+                                            name="mechanic-catalog-category"
                                             value={selectedCategory}
                                             onChange={e => setSelectedCategory(e.target.value)}
                                             className="w-full bg-black/40 border border-white/5 rounded-xl px-3 py-2 text-xs text-white outline-none transition-all font-bold"
@@ -289,8 +301,10 @@ const MechanicFormModal: React.FC<{
                                         </select>
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[8px] tracking-widest font-black text-gray-400 ml-1 uppercase">Catalog Service</label>
+                                        <label htmlFor="mechanic-catalog-service" className="text-[8px] tracking-widest font-black text-gray-400 ml-1 uppercase">Catalog Service</label>
                                         <select
+                                            id="mechanic-catalog-service"
+                                            name="mechanic-catalog-service"
                                             disabled={!selectedCategory}
                                             onChange={e => handleSelectServiceSpec(e.target.value)}
                                             defaultValue=""
@@ -332,8 +346,10 @@ const MechanicFormModal: React.FC<{
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Professional Bio</label>
+                                <label htmlFor="mechanic-bio" className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Professional Bio</label>
                                 <textarea
+                                    id="mechanic-bio"
+                                    name="mechanic-bio"
                                     value={formData.bio}
                                     onChange={e => setFormData(p => ({ ...p, bio: e.target.value }))}
                                     rows={3}
@@ -401,7 +417,7 @@ const MechanicFormModal: React.FC<{
                                             <label className="px-6 py-3 bg-white/5 hover:bg-primary text-[10px] font-black  tracking-widest text-white rounded-xl cursor-pointer transition-all active:scale-95 shadow-lg flex items-center gap-2">
                                                 {isUploadingDoc === doc.id ? <Spinner size="sm" color="text-white" /> : <Upload size={16} />}
                                                 Upload
-                                                <input type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleDocumentUpload(doc.id as any)} />
+                                                <input type="file" id="mechanic-document" name="mechanic-document" className="hidden" accept="image/*,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleDocumentUpload(doc.id as any)} />
                                             </label>
                                         )}
                                     </div>

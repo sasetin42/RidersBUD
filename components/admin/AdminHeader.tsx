@@ -101,9 +101,13 @@ const AdminHeader: React.FC<AdminHeaderProps> = ({ onToggleSidebar }) => {
                             </p>
                         </div>
                         <div className="relative">
-                            <div className="w-10 h-10 bg-gradient-to-tr from-primary to-orange-600 rounded-xl flex items-center justify-center font-bold text-white text-lg shadow-lg shadow-primary/20 ring-2 ring-white/10 transition-transform group-hover:rotate-6 group-active:scale-90">
-                                {adminUser?.name?.charAt(0) || 'A'}
-                            </div>
+                            {adminUser?.avatarUrl ? (
+                                <img src={adminUser.avatarUrl} alt={adminUser.name} className="w-10 h-10 rounded-xl object-cover shadow-lg shadow-primary/20 ring-2 ring-white/10 transition-transform group-hover:rotate-6 group-active:scale-90" />
+                            ) : (
+                                <div className="w-10 h-10 bg-gradient-to-tr from-primary to-orange-600 rounded-xl flex items-center justify-center font-bold text-white text-lg shadow-lg shadow-primary/20 ring-2 ring-white/10 transition-transform group-hover:rotate-6 group-active:scale-90">
+                                    {adminUser?.name?.charAt(0) || 'A'}
+                                </div>
+                            )}
                             <div className="absolute -bottom-1 -right-1 bg-[#121212] p-0.5 rounded-lg border border-white/10 text-gray-400">
                                 <ChevronDown size={12} className={`transition-transform duration-300 ${isProfileOpen ? 'rotate-180' : ''}`} />
                             </div>
@@ -116,9 +120,13 @@ const AdminHeader: React.FC<AdminHeaderProps> = ({ onToggleSidebar }) => {
                         <div className="absolute right-0 mt-3 w-64 bg-[#1A1A1A] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-slideDown z-50">
                             <div className="p-5 bg-gradient-to-br from-white/5 to-transparent border-b border-white/5">
                                 <div className="flex items-center gap-3 mb-3">
-                                    <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center font-bold text-primary text-xl border border-primary/30">
-                                        {adminUser?.name?.charAt(0) || 'A'}
-                                    </div>
+                                    {adminUser?.avatarUrl ? (
+                                        <img src={adminUser.avatarUrl} alt={adminUser.name} className="w-12 h-12 rounded-xl object-cover border border-primary/30" />
+                                    ) : (
+                                        <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center font-bold text-primary text-xl border border-primary/30">
+                                            {adminUser?.name?.charAt(0) || 'A'}
+                                        </div>
+                                    )}
                                     <div>
                                         <p className="text-base font-bold text-white leading-none">{adminUser?.name || 'Admin User'}</p>
                                         <p className="text-xs text-gray-500 mt-1 font-medium">{adminUser?.email || 'admin@ridersbud.com'}</p>

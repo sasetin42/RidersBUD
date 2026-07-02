@@ -6,7 +6,7 @@ import { auth, db as firestore } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { storageService } from '../services/StorageService';
 import Spinner from '../components/Spinner';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { Customer, Mechanic, Vehicle } from '../types';
 import { Camera, Plus, Trash2, MapPin, Gauge, Palette, Shield, Info, Car, User, UserCheck } from 'lucide-react';
 import { fileToBase64 } from '../utils/fileUtils';
@@ -276,7 +276,7 @@ const CompleteProfileScreen: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-[#0A0A0A] text-white">
-            <Header title="Complete Profile" showBack={false} icon={<UserCheck size={22} />} />
+            <CustomerHeader title="Complete Profile" showBack={false} icon={<UserCheck size={22} />} />
             
             <div className="max-w-2xl mx-auto px-6 py-12">
                 <div className="text-center mb-12">
@@ -295,7 +295,7 @@ const CompleteProfileScreen: React.FC = () => {
                             <div className="bg-[#1C1C1E] border border-white/5 rounded-[2rem] p-6 space-y-6">
                                 {/* Profile Picture Selector */}
                                 <div className="flex flex-col items-center gap-3 py-2">
-                                    <label className="relative w-28 h-28 rounded-full bg-black/40 border border-white/10 overflow-hidden cursor-pointer hover:border-primary/50 group transition-all">
+                                    <label htmlFor="profilePic" className="relative w-28 h-28 rounded-full bg-black/40 border border-white/10 overflow-hidden cursor-pointer hover:border-primary/50 group transition-all">
                                         {profilePicPreview ? (
                                             <img src={profilePicPreview} alt="Avatar" className="w-full h-full object-cover transition-transform group-hover:scale-105" onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${fullName || 'User'}&background=FE7803&color=fff&size=256`; }} />
                                         ) : (
@@ -306,14 +306,16 @@ const CompleteProfileScreen: React.FC = () => {
                                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
                                             <Camera size={20} className="text-white animate-pulse" />
                                         </div>
-                                        <input type="file" className="hidden" accept="image/*" onChange={handleProfilePicChange} />
+                                        <input id="profilePic" name="profilePic" type="file" className="hidden" accept="image/*" onChange={handleProfilePicChange} />
                                     </label>
                                     <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Tap to upload Profile Photo</span>
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Full Name</label>
+                                    <label htmlFor="fullName" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Full Name</label>
                                     <input 
+                                        id="fullName"
+                                        name="fullName"
                                         type="text" 
                                         value={fullName}
                                         onChange={(e) => setFullName(e.target.value)}
@@ -325,8 +327,10 @@ const CompleteProfileScreen: React.FC = () => {
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Phone Number</label>
+                                        <label htmlFor="phone" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Phone Number</label>
                                         <input 
+                                            id="phone"
+                                            name="phone"
                                             type="tel" 
                                             value={phone}
                                             onChange={(e) => setPhone(e.target.value)}
@@ -336,9 +340,11 @@ const CompleteProfileScreen: React.FC = () => {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Complete Address</label>
+                                        <label htmlFor="address" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Complete Address</label>
                                         <div className="relative">
                                             <input 
+                                                id="address"
+                                                name="address"
                                                 type="text" 
                                                 value={address}
                                                 onChange={(e) => setAddress(e.target.value)}
@@ -361,8 +367,10 @@ const CompleteProfileScreen: React.FC = () => {
                             <div className="bg-[#1C1C1E] border border-white/5 rounded-[2rem] p-6 space-y-6">
                                 {/* Vehicle Category Selector */}
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Vehicle Category</label>
+                                    <label htmlFor="vehicleCategory" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Vehicle Category</label>
                                     <select 
+                                        id="vehicleCategory"
+                                        name="vehicleCategory"
                                         value={vehicle.category} 
                                         onChange={(e) => setVehicle({...vehicle, category: e.target.value, make: '', model: '', subCategory: ''})}
                                         className="w-full bg-white/5 border border-white/5 rounded-2xl px-6 py-4 outline-none focus:border-primary/50 transition-all font-bold"
@@ -396,8 +404,10 @@ const CompleteProfileScreen: React.FC = () => {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Make</label>
+                                        <label htmlFor="vehicleMake" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Make</label>
                                         <input 
+                                            id="vehicleMake"
+                                            name="vehicleMake"
                                             type="text" 
                                             value={vehicle.make}
                                             onChange={(e) => setVehicle({...vehicle, make: e.target.value})}
@@ -407,8 +417,10 @@ const CompleteProfileScreen: React.FC = () => {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Model</label>
+                                        <label htmlFor="vehicleModel" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Model</label>
                                         <input 
+                                            id="vehicleModel"
+                                            name="vehicleModel"
                                             type="text" 
                                             value={vehicle.model}
                                             onChange={(e) => setVehicle({...vehicle, model: e.target.value})}
@@ -421,8 +433,10 @@ const CompleteProfileScreen: React.FC = () => {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Year</label>
+                                        <label htmlFor="vehicleYear" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Year</label>
                                         <input 
+                                            id="vehicleYear"
+                                            name="vehicleYear"
                                             type="number" 
                                             value={vehicle.year}
                                             onChange={(e) => setVehicle({...vehicle, year: parseInt(e.target.value) || new Date().getFullYear()})}
@@ -431,8 +445,10 @@ const CompleteProfileScreen: React.FC = () => {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Plate Number</label>
+                                        <label htmlFor="vehiclePlateNumber" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Plate Number</label>
                                         <input 
+                                            id="vehiclePlateNumber"
+                                            name="vehiclePlateNumber"
                                             type="text" 
                                             value={vehicle.plateNumber}
                                             onChange={(e) => setVehicle({...vehicle, plateNumber: e.target.value})}
@@ -445,9 +461,11 @@ const CompleteProfileScreen: React.FC = () => {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Color</label>
+                                        <label htmlFor="vehicleColor" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Color</label>
                                         <div className="relative">
                                             <input 
+                                                id="vehicleColor"
+                                                name="vehicleColor"
                                                 type="text" 
                                                 value={vehicle.color}
                                                 onChange={(e) => setVehicle({...vehicle, color: e.target.value})}
@@ -458,9 +476,11 @@ const CompleteProfileScreen: React.FC = () => {
                                         </div>
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Mileage (km)</label>
+                                        <label htmlFor="vehicleMileage" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Mileage (km)</label>
                                         <div className="relative">
                                             <input 
+                                                id="vehicleMileage"
+                                                name="vehicleMileage"
                                                 type="number" 
                                                 value={vehicle.mileage || ''}
                                                 onChange={(e) => setVehicle({...vehicle, mileage: parseInt(e.target.value) || 0})}
@@ -491,10 +511,10 @@ const CompleteProfileScreen: React.FC = () => {
                                         ))}
 
                                         {vehicleImagePreviews.length < 5 && (
-                                            <label className="aspect-square rounded-2xl border border-dashed border-white/10 bg-white/5 hover:border-primary/50 flex flex-col items-center justify-center text-gray-400 hover:text-white cursor-pointer transition-all group active:scale-[0.98]">
+                                            <label htmlFor="vehicleImages" className="aspect-square rounded-2xl border border-dashed border-white/10 bg-white/5 hover:border-primary/50 flex flex-col items-center justify-center text-gray-400 hover:text-white cursor-pointer transition-all group active:scale-[0.98]">
                                                 <Plus size={20} className="group-hover:scale-110 transition-transform" />
                                                 <span className="text-[8px] font-black uppercase tracking-wider mt-1 block">Add Photo</span>
-                                                <input type="file" className="hidden" multiple accept="image/*" onChange={handleVehicleImagesChange} />
+                                                <input id="vehicleImages" name="vehicleImages" type="file" className="hidden" multiple accept="image/*" onChange={handleVehicleImagesChange} />
                                             </label>
                                         )}
                                     </div>
@@ -519,8 +539,10 @@ const CompleteProfileScreen: React.FC = () => {
                             </h2>
                             <div className="bg-[#1C1C1E] border border-white/5 rounded-[2rem] p-6 space-y-4">
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Phone Number</label>
+                                    <label htmlFor="mechanicPhone" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Phone Number</label>
                                     <input 
+                                        id="mechanicPhone"
+                                        name="mechanicPhone"
                                         type="tel" 
                                         value={phone}
                                         onChange={(e) => setPhone(e.target.value)}
@@ -530,8 +552,10 @@ const CompleteProfileScreen: React.FC = () => {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Professional Bio</label>
+                                    <label htmlFor="mechanicBio" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Professional Bio</label>
                                     <textarea 
+                                        id="mechanicBio"
+                                        name="mechanicBio"
                                         value={mechanicData.bio}
                                         onChange={(e) => setMechanicData({...mechanicData, bio: e.target.value})}
                                         rows={4}
@@ -572,19 +596,19 @@ const CompleteProfileScreen: React.FC = () => {
                                 Verification Documents
                             </h2>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <label className="bg-white/5 border border-dashed border-white/10 rounded-[2rem] p-6 text-center cursor-pointer hover:border-primary/50 transition-all group">
+                                <label htmlFor="licenseFile" className="bg-white/5 border border-dashed border-white/10 rounded-[2rem] p-6 text-center cursor-pointer hover:border-primary/50 transition-all group">
                                     <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                     </div>
                                     <span className="text-xs font-black uppercase tracking-widest text-gray-400 block">{licenseFile ? licenseFile.name : 'Business License'}</span>
-                                    <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => setLicenseFile(e.target.files?.[0] || null)} />
+                                    <input id="licenseFile" name="licenseFile" type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => setLicenseFile(e.target.files?.[0] || null)} />
                                 </label>
-                                <label className="bg-white/5 border border-dashed border-white/10 rounded-[2rem] p-6 text-center cursor-pointer hover:border-primary/50 transition-all group">
+                                <label htmlFor="idFile" className="bg-white/5 border border-dashed border-white/10 rounded-[2rem] p-6 text-center cursor-pointer hover:border-primary/50 transition-all group">
                                     <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" /></svg>
                                     </div>
                                     <span className="text-xs font-black uppercase tracking-widest text-gray-400 block">{idFile ? idFile.name : 'Valid ID'}</span>
-                                    <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => setIdFile(e.target.files?.[0] || null)} />
+                                    <input id="idFile" name="idFile" type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => setIdFile(e.target.files?.[0] || null)} />
                                 </label>
                             </div>
                         </div>

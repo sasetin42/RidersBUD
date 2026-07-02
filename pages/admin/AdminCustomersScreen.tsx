@@ -186,7 +186,7 @@ const CustomerFormModal: React.FC<{
                                     </div>
                                     <label className="absolute -bottom-1 -right-1 p-1.5 bg-primary hover:bg-orange-600 text-white rounded-lg shadow cursor-pointer transition-all transform hover:scale-105 active:scale-95">
                                         <Camera size={10} />
-                                        <input type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
+                                        <input id="customer-profile-image" name="customer-profile-image" type="file" accept="image/*" className="hidden" onChange={handleProfileImageUpload} />
                                     </label>
                                 </div>
                                 <div className="flex-grow w-full">
@@ -295,7 +295,7 @@ const CustomerFormModal: React.FC<{
                                             {(vehicleForm.imageUrls || []).length < 5 && (
                                                 <label className="aspect-square rounded-xl border border-dashed border-white/10 hover:border-primary/50 flex flex-col items-center justify-center cursor-pointer bg-white/[0.02] hover:bg-white/5 transition-all">
                                                     <Camera size={16} className="text-gray-500" />
-                                                    <input type="file" className="hidden" accept="image/*" onChange={handleVehicleImageUpload} />
+                                                    <input id="vehicle-image-upload" name="vehicle-image-upload" type="file" className="hidden" accept="image/*" onChange={handleVehicleImageUpload} />
                                                 </label>
                                             )}
                                         </div>
@@ -304,7 +304,7 @@ const CustomerFormModal: React.FC<{
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Category</label>
-                                            <select value={vehicleForm.category || 'Sedans'} onChange={e => setVehicleForm(p => ({ ...p, category: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10 select-custom">
+                                            <select id="vehicle-category" name="vehicle-category" value={vehicleForm.category || 'Sedans'} onChange={e => setVehicleForm(p => ({ ...p, category: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10 select-custom">
                                                 <option value="Sedans">Sedans</option>
                                                 <option value="SUVs">SUVs</option>
                                                 <option value="Vans / MPVs">Vans / MPVs</option>
@@ -314,45 +314,45 @@ const CustomerFormModal: React.FC<{
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Sub-Category</label>
-                                            <input type="text" value={vehicleForm.subCategory || ''} onChange={e => setVehicleForm(p => ({ ...p, subCategory: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="e.g. Toyota Vios" />
+                                            <input id="vehicle-subcategory" name="vehicle-subcategory" type="text" value={vehicleForm.subCategory || ''} onChange={e => setVehicleForm(p => ({ ...p, subCategory: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="e.g. Toyota Vios" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Make</label>
-                                            <input type="text" value={vehicleForm.make} onChange={e => setVehicleForm(p => ({ ...p, make: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Toyota" />
+                                            <input id="vehicle-make" name="vehicle-make" type="text" value={vehicleForm.make} onChange={e => setVehicleForm(p => ({ ...p, make: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Toyota" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Model</label>
-                                            <input type="text" value={vehicleForm.model} onChange={e => setVehicleForm(p => ({ ...p, model: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Vios" />
+                                            <input id="vehicle-model" name="vehicle-model" type="text" value={vehicleForm.model} onChange={e => setVehicleForm(p => ({ ...p, model: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Vios" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Year</label>
-                                            <input type="number" value={vehicleForm.year} onChange={e => setVehicleForm(p => ({ ...p, year: parseInt(e.target.value) }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" />
+                                            <input id="vehicle-year" name="vehicle-year" type="number" value={vehicleForm.year} onChange={e => setVehicleForm(p => ({ ...p, year: parseInt(e.target.value) }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Plate #</label>
-                                            <input type="text" value={vehicleForm.plateNumber} onChange={e => setVehicleForm(p => ({ ...p, plateNumber: e.target.value.toUpperCase() }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="ABC 1234" />
+                                            <input id="vehicle-plate" name="vehicle-plate" type="text" value={vehicleForm.plateNumber} onChange={e => setVehicleForm(p => ({ ...p, plateNumber: e.target.value.toUpperCase() }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="ABC 1234" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Color</label>
-                                            <input type="text" value={vehicleForm.color || ''} onChange={e => setVehicleForm(p => ({ ...p, color: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Silver" />
+                                            <input id="vehicle-color" name="vehicle-color" type="text" value={vehicleForm.color || ''} onChange={e => setVehicleForm(p => ({ ...p, color: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Silver" />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Odometer (km)</label>
-                                            <input type="number" value={vehicleForm.mileage || ''} onChange={e => setVehicleForm(p => ({ ...p, mileage: parseInt(e.target.value) || 0 }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="0" />
+                                            <input id="vehicle-mileage" name="vehicle-mileage" type="number" value={vehicleForm.mileage || ''} onChange={e => setVehicleForm(p => ({ ...p, mileage: parseInt(e.target.value) || 0 }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="0" />
                                         </div>
                                         <div className="col-span-2 grid grid-cols-2 gap-3 bg-white/[0.02] p-3 rounded-2xl border border-white/5 mt-2">
                                             <div className="col-span-2"><h4 className="text-[9px] font-black text-primary tracking-widest uppercase ml-1">Security & Insurance</h4></div>
                                             <div className="col-span-2 space-y-1">
                                                 <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">VIN / Chassis Number</label>
-                                                <input type="text" value={vehicleForm.vin || ''} onChange={e => setVehicleForm(p => ({ ...p, vin: e.target.value.toUpperCase() }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-mono outline-none focus:border-white/10 focus:border-white/15" placeholder="17-Digit VIN" />
+                                                <input id="vehicle-vin" name="vehicle-vin" type="text" value={vehicleForm.vin || ''} onChange={e => setVehicleForm(p => ({ ...p, vin: e.target.value.toUpperCase() }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-mono outline-none focus:border-white/10 focus:border-white/15" placeholder="17-Digit VIN" />
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Provider</label>
-                                                <input type="text" value={vehicleForm.insuranceProvider || ''} onChange={e => setVehicleForm(p => ({ ...p, insuranceProvider: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Insurance Co." />
+                                                <input id="vehicle-insurance" name="vehicle-insurance" type="text" value={vehicleForm.insuranceProvider || ''} onChange={e => setVehicleForm(p => ({ ...p, insuranceProvider: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="Insurance Co." />
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[9px] tracking-widest font-black text-gray-500 ml-1 uppercase">Policy Number</label>
-                                                <input type="text" value={vehicleForm.insurancePolicyNumber || ''} onChange={e => setVehicleForm(p => ({ ...p, insurancePolicyNumber: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="PN-XXXXXX" />
+                                                <input id="vehicle-policy" name="vehicle-policy" type="text" value={vehicleForm.insurancePolicyNumber || ''} onChange={e => setVehicleForm(p => ({ ...p, insurancePolicyNumber: e.target.value }))} className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-2.5 text-xs text-white font-bold outline-none focus:border-white/10" placeholder="PN-XXXXXX" />
                                             </div>
                                         </div>
                                     </div>
@@ -669,16 +669,16 @@ const AdminCustomersScreen: React.FC = () => {
                 <div className="relative bg-[#121212]/80 backdrop-blur-xl border border-white/10 p-4 rounded-[2rem] flex flex-col lg:flex-row items-center gap-4">
                     <div className="flex-1 relative w-full">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                        <input type="text" placeholder="Search by name, email, or phone..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-white/5 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white font-medium placeholder-gray-600 outline-none transition-all focus:border-primary/50 focus:bg-white/10" />
+                        <input id="customer-search" name="customer-search" type="text" placeholder="Search by name, email, or phone..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-white/5 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white font-medium placeholder-gray-600 outline-none transition-all focus:border-primary/50 focus:bg-white/10" />
                     </div>
                     <div className="flex items-center gap-2">
-                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-sm text-white font-medium outline-none focus:border-primary/50 cursor-pointer hover:bg-white/10">
+                        <select id="customer-status-filter" name="customer-status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-sm text-white font-medium outline-none focus:border-primary/50 cursor-pointer hover:bg-white/10">
                             <option value="all">All Status</option>
                             <option value="Active">Active</option>
                             <option value="Inactive">Inactive</option>
                             <option value="Banned">Banned</option>
                         </select>
-                        <select value={vehicleFilter} onChange={e => setVehicleFilter(e.target.value)} className="bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-sm text-white font-medium outline-none focus:border-primary/50 cursor-pointer hover:bg-white/10 min-w-[120px]">
+                        <select id="customer-vehicle-filter" name="customer-vehicle-filter" value={vehicleFilter} onChange={e => setVehicleFilter(e.target.value)} className="bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-sm text-white font-medium outline-none focus:border-primary/50 cursor-pointer hover:bg-white/10 min-w-[120px]">
                             <option value="all">All Vehicles</option>
                             <option value="0">No Vehicles</option>
                             <option value="1">1 Vehicle</option>

@@ -626,6 +626,12 @@ textarea {
     z-index: 1;
 }
 
+/* Small location pin wrapper override for Route Map */
+.rb-location-pin-wrapper.small-pin {
+    transform: scale(0.6);
+    transform-origin: bottom center;
+}
+
 /* Cluster badge */
 .rb-cluster-badge {
     width: 44px;
@@ -856,17 +862,48 @@ button.btn-secondary,
 button.bg-secondary,
 button.bg-green-500,
 button.bg-orange-600 {
-    padding-top: 14px !important;
-    padding-bottom: 14px !important;
-    padding-left: 24px !important;
-    padding-right: 24px !important;
-    border-radius: 16px !important; /* Modern rounded-2xl standard */
-    font-size: 13px !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+    border-radius: 12px !important; /* Standardize shape to match form fields and inputs */
+    font-size: 12px !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     line-height: 1.25 !important;
     font-weight: 700 !important;
+}
+
+/* Reset overrides for specialization buttons to keep them compact */
+button.spec-btn {
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    border-radius: 10px !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: normal !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1.25 !important;
+}
+
+/* Reset overrides for profile tabs to keep them compact and standardized */
+button.profile-tab {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+    border-radius: 12px !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1.25 !important;
 }
 
 /* Pulse/glow hover updates for premium dark mode feel */
@@ -924,4 +961,108 @@ button:active {
         linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
 }
 
-
+/* --- Global Form Field Styling --- */
+:where(
+    input[type="text"],
+    input[type="number"],
+    input[type="email"],
+    input[type="password"],
+    input[type="tel"],
+    input[type="url"],
+    input[type="search"],
+    input[type="date"],
+    input[type="time"],
+    select,
+    textarea
+) {
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    background-color: rgba(26, 26, 26, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.25s ease-in-out;
+}
+
+:where(
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    input[type="email"]:focus,
+    input[type="password"]:focus,
+    input[type="tel"]:focus,
+    input[type="url"]:focus,
+    input[type="search"]:focus,
+    input[type="date"]:focus,
+    input[type="time"]:focus,
+    select:focus,
+    textarea:focus
+) {
+    background-color: rgba(0, 0, 0, 0.4);
+    border-color: rgba(254, 120, 3, 0.6);
+    box-shadow: 0 0 12px rgba(254, 120, 3, 0.15);
+    outline: none;
+}
+
+/* Make placeholders highly visible and viewable */
+input::placeholder,
+textarea::placeholder,
+select::placeholder {
+    color: rgba(255, 255, 255, 0.5) !important;
+    opacity: 1 !important;
+}
+
+/* Date and Time custom placeholder visibility for Webkit browsers */
+input[type="date"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit {
+    color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* Restore solid white text once a valid value is selected */
+input[type="date"]:valid::-webkit-datetime-edit,
+input[type="time"]:valid::-webkit-datetime-edit,
+input[type="date"]:focus::-webkit-datetime-edit,
+input[type="time"]:focus::-webkit-datetime-edit {
+    color: #ffffff !important;
+}
+
+/* Custom webkit calendar/time picker indicator design */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer !important;
+    padding-right: 0.75rem !important; /* Proper padding for the dropdown icon */
+    margin-left: 0.5rem !important;
+    filter: invert(1) opacity(0.6) !important; /* High contrast white icon on dark mode */
+    transition: opacity 0.2s ease !important;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    filter: invert(1) opacity(1) !important;
+}
+
+/* Mechanic Card Action Buttons styling overrides */
+button.mechanic-card-btn {
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    border-radius: 12px !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+}/* Colorize time picker icon to primary brand color #FE7803 */
+.time-picker-primary-icon::-webkit-calendar-picker-indicator {
+    background: transparent url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSIjRkU3ODAzIiBkPSJNMTEuOTkgMkM2LjQ3IDIgMiA2LjQ4IDIgMTJzNC40NyAxMCA5Ljk5IDEwQzE3LjUyIDIyIDIyIDE3LjUyIDIyIDEyUzE3LjUyIDIgMTEuOTkgMnpNMTIgMjBjLTQuNDIgMC04LTMuNTgtOC04czMuNTgtOCA4LTggOCAzLjU4IDggOC0zLjU4IDgtOCA4em0uNS0xM0gxMXY2bDUuMjUgMy4xNS53NS0xLjIzLTQuNS0yLjY3eiIvPjwvc3ZnPg==') no-repeat center !important;
+    background-size: contain !important;
+    cursor: pointer;
+    opacity: 1 !important;
+    filter: none !important;
+}
+
+.date-picker-primary-icon::-webkit-calendar-picker-indicator {
+    background: transparent url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRTc4MDMiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSIzIiB5PSI0IiB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHJ4PSIyIiByeT0iMiI+PC9yZWN0PjxsaW5lIHgxPSIxNiIgeTE9IjIiIHgyPSIxNiIgeTI9IjYiPjwvbGluZT48bGluZSB4MT0iOCIgeTE9IjIiIHgyPSI4IiB5Mj0iNiI+PC9saW5lPjxsaW5lIHgxPSIzIiB5MT0iMTAiIHgyPSIyMSIgeTI9IjEwIj48L2xpbmU+PC9zdmc+') no-repeat center !important;
+    background-size: contain !important;
+    cursor: pointer;
+    opacity: 1 !important;
+    filter: none !important;
+}

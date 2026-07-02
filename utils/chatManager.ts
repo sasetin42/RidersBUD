@@ -12,6 +12,12 @@ export interface ChatMessage {
         url: string;
         name: string;
     };
+    attachments?: Array<{
+        type: 'image' | 'file';
+        url: string;
+        name: string;
+    }>;
+    replyTo?: ChatMessage;
 }
 
 /**

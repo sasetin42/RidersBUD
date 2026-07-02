@@ -1,5 +1,5 @@
 import React from 'react';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { Heart } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
@@ -35,7 +35,7 @@ const FavoriteMechanicsScreen: React.FC = () => {
     if (authLoading || dbLoading) {
         return (
             <div className="flex flex-col h-full bg-secondary">
-                <Header title="Favorite Mechanics" showBackButton icon={<Heart size={22} />} />
+                <CustomerHeader title="Favorite Mechanics" showBackButton icon={<Heart size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
                 </div>
@@ -45,7 +45,7 @@ const FavoriteMechanicsScreen: React.FC = () => {
     
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <Header title="Favorite Mechanics" showBackButton icon={<Heart size={22} />} />
+            <CustomerHeader title="Favorite Mechanics" showBackButton icon={<Heart size={22} />} />
             <main className="flex-grow overflow-y-auto p-4">
                 {favoriteMechanics.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center text-light-gray px-6">

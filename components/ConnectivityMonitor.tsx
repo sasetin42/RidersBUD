@@ -22,7 +22,7 @@ const ConnectivityMonitor: React.FC = () => {
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
-            unsub();
+            try { unsub(); } catch (_) {}
         };
     }, []);
 

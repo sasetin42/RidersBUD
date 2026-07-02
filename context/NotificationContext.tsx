@@ -7,7 +7,7 @@ import { useMechanicAuth } from './MechanicAuthContext';
 
 interface NotificationContextType {
     notifications: Notification[];
-    addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read' | 'date'> & { date?: string }) => void;
+    addNotification: (notification: Omit<Notification, 'id' | 'createdAt' | 'createdBy' | 'status'> & { date?: string }) => void;
     markAsRead: (id: string) => void;
     markAllAsRead: (recipientId?: string) => void;
     deleteNotification: (id: string) => void;
@@ -15,7 +15,11 @@ interface NotificationContextType {
     unreadCount: number;
 }
 
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+const globalContext = (globalThis as any)._NotificationContext;
+const NotificationContext = globalContext || createContext<NotificationContextType | undefined>(undefined);
+if (!globalContext) {
+    (globalThis as any)._NotificationContext = NotificationContext;
+}
 
 export const useNotification = () => {
     const context = useContext(NotificationContext);
@@ -54,9 +58,9 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     const activeRecipientId: string | null = isAdminAuthenticated
         ? 'admin'
         : isMechanicAuthenticated && mechanic
-        ? `mechanic-${mechanic.id}`
+        ? mechanic.id
         : isAuthenticated && user
-        ? `customer-${user.id}`
+        ? user.id
         : null;
 
     // Load persisted clearedAt from localStorage whenever the recipient changes
@@ -82,74 +86,46 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         };
     }, []);
 
-    // Live notifications from Firestore, sorted newest first, filtered strictly by active role + UID to prevent leakage.
-    // Each role type ONLY sees notifications that belong to them — NEVER cross-role notifications.
-    // Notifications older than (or equal to) clearedAt are hidden — this makes Clear All work for broadcast 'all' docs too.
+    // Live notifications from Firestore, sorted newest first, filtered strictly by active UID to prevent leakage.
+    // Each user ONLY sees notifications that belong to them — NEVER cross-user notifications.
     const notifications = [...(db?.notifications || [])]
         .filter(n => {
             // Hide notifications that were cleared (by timestamp)
             if (clearedAt > 0 && (n.timestamp ?? 0) <= clearedAt) return false;
 
-            // Admin sees: admin-targeted notifications + broadcast 'all' notifications
-            if (isAdminAuthenticated) {
-                return n.recipientId === 'admin' || n.recipientId === 'all';
-            }
+            // Strict filtering by recipientId
+            if (n.recipientId === 'all') return true;
+            if (activeRecipientId && n.recipientId === activeRecipientId) return true;
 
-            // Mechanic notification rules: ONLY their own mechanic notifications + 'all' broadcasts
-            if (isMechanicAuthenticated && mechanic) {
-                const isMechanicRecipient = n.recipientId === `mechanic-${mechanic.id}`;
-                const isBroadcast = n.recipientId === 'all';
-                // Strictly block if not for this mechanic and not a broadcast
-                if (!isMechanicRecipient && !isBroadcast) return false;
-
-                // Block customer-only and admin-only notification types from showing to mechanics
-                const blockedTitles = ['Payment Verified', 'Payment Approved', 'Store Payment Approved', 'Admin Alert'];
-                if (blockedTitles.some(t => n.title?.includes(t))) return false;
-
-                // Block any notification that looks like it's for customers or admins
-                const isAdminAlert = n.title?.includes('Admin') || n.message?.includes('admin');
-                const isCustomerAlert = n.title?.includes('Customer') || n.recipientId?.startsWith('customer-');
-                if (isAdminAlert || isCustomerAlert) return false;
-
-                return true;
-            }
-
-            // Customer notification rules: ONLY their own customer notifications + 'all' broadcasts
-            if (isAuthenticated && user) {
-                const isCustomerRecipient = n.recipientId === `customer-${user.id}`;
-                const isBroadcast = n.recipientId === 'all';
-                // Strictly block if not for this customer and not a broadcast
-                if (!isCustomerRecipient && !isBroadcast) return false;
-
-                // Block mechanic-only and admin-only notifications
-                if (n.recipientId?.startsWith('mechanic-')) return false;
-                if (n.recipientId === 'admin') return false;
-
-                // Block mechanic info assignment alerts but allow the success acceptance notification
-                if (n.title?.toLowerCase().includes('mechanic')) {
-                    const isAcceptanceSuccess = n.type === 'success' || n.message?.toLowerCase().includes('will be handling');
-                    if (!isAcceptanceSuccess) return false;
-                }
-
-                return true;
-            }
-
-            // If not logged in, do not show any notifications
             return false;
         })
         .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
-    const unreadCount = notifications.filter(n => !n.read).length;
+    const unreadCount = notifications.filter(n => n.status === 'unread' || n.read === false).length;
 
-    const addNotification = (notificationData: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-        const recipientId = notificationData.recipientId || 'all';
+    const addNotification = (notificationData: Omit<Notification, 'id' | 'createdAt' | 'createdBy' | 'status'> & { date?: string }) => {
+        let recipientId = notificationData.recipientId || 'all';
+        let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined;
+
+        if (recipientId.startsWith('mechanic-')) {
+            recipientId = recipientId.replace('mechanic-', '');
+            recipientRole = 'mechanic';
+        } else if (recipientId.startsWith('customer-')) {
+            recipientId = recipientId.replace('customer-', '');
+            recipientRole = 'customer';
+        } else if (recipientId === 'admin') {
+            recipientRole = 'admin';
+        }
+
         dbAddNotification({
             ...notificationData,
             recipientId,
+            recipientRole,
             timestamp: Date.now(),
-            read: false,
+            status: 'unread',
+            read: false, // Legacy
             date: notificationData.date || new Date().toISOString()
-        });
+        } as any);
     };
 
     const markAsRead = (id: string) => {
@@ -197,6 +173,118 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             // Even if Firestore delete fails, the clearedAt filter keeps the UI clear
         }
     }, [dbClearAllNotifications]);
+
+    // --- Sound and Voice Announcements ---
+    const [lastNotifiedId, setLastNotifiedId] = useState<string | null>(null);
+
+    const playNotificationChime = useCallback(() => {
+        try {
+            if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
+                return; // Prevent warning/error if user has not interacted with the page yet
+            }
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const now = ctx.currentTime;
+
+            const playTone = (freq: number, start: number, duration: number) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0, start);
+                gain.gain.linearRampToValueAtTime(0.15, start + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+                osc.start(start);
+                osc.stop(start + duration);
+            };
+
+            // Pleasant double chime (D5 -> A5)
+            playTone(587.33, now, 0.3);      
+            playTone(880.00, now + 0.08, 0.5);  
+        } catch (e) {
+            console.warn('[NotificationContext] Failed to play chime:', e);
+        }
+    }, []);
+
+    const speakNotification = useCallback((title: string, message: string) => {
+        try {
+            if (navigator.userActivation && !navigator.userActivation.hasBeenActive) {
+                return; // Prevent warning/error if user has not interacted with the page yet
+            }
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Clear any ongoing speaking queue
+
+                let speechText = `${title}. ${message}`;
+                const lowerTitle = title.toLowerCase();
+                const lowerMsg = message.toLowerCase();
+
+                // Lookup extra details (Customer & Mechanic) from DB bookings to enhance spoken message
+                let bookingDetails = '';
+                if (db?.bookings) {
+                    const matchedBooking = db.bookings.find(b => 
+                        (b.id && message.includes(b.id.slice(-6))) || 
+                        (b.customerName && message.toLowerCase().includes(b.customerName.toLowerCase()))
+                    );
+                    if (matchedBooking) {
+                        const customerName = matchedBooking.customerName || 'Customer';
+                        const mechanicName = matchedBooking.mechanic?.name || matchedBooking.mechanicName || 'unassigned';
+                        bookingDetails = ` Customer name is ${customerName}. Assigned mechanic is ${mechanicName}.`;
+                    }
+                }
+
+                // Check event category and construct clear spoken report
+                if (lowerTitle.includes('payment') || lowerMsg.includes('payment') || lowerTitle.includes('gcash') || lowerMsg.includes('gcash')) {
+                    if (lowerMsg.includes('deposit') || lowerMsg.includes('downpayment') || lowerMsg.includes('down payment')) {
+                        speechText = `Attention Admin. Downpayment verified. ${message}.${bookingDetails}`;
+                    } else if (lowerMsg.includes('balance') || lowerMsg.includes('completion') || lowerMsg.includes('full payment') || lowerMsg.includes('marked as paid')) {
+                        speechText = `Attention Admin. Balance payment for completion verified. ${message}.${bookingDetails}`;
+                    } else {
+                        speechText = `Attention Admin. Payment notification. ${message}.${bookingDetails}`;
+                    }
+                } else if (lowerTitle.includes('booking') || lowerMsg.includes('booking')) {
+                    speechText = `Attention Admin. New service booking. ${message}.${bookingDetails}`;
+                } else if (lowerTitle.includes('order') || lowerMsg.includes('order')) {
+                    speechText = `Attention Admin. New store order placed. ${message}`;
+                } else if (lowerTitle.includes('onboarding') || lowerTitle.includes('onboard') || lowerTitle.includes('registration') || lowerMsg.includes('registered')) {
+                    if (lowerMsg.includes('mechanic') || lowerTitle.includes('mechanic')) {
+                        speechText = `Attention Admin. New mechanic account created. ${message}`;
+                    } else {
+                        speechText = `Attention Admin. New customer account created. ${message}`;
+                    }
+                }
+
+                const utterance = new SpeechSynthesisUtterance(speechText);
+                utterance.rate = 0.95;
+                utterance.pitch = 1.0;
+
+                const voices = window.speechSynthesis.getVoices();
+                const preferredVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Microsoft')));
+                if (preferredVoice) {
+                    utterance.voice = preferredVoice;
+                }
+
+                window.speechSynthesis.speak(utterance);
+            }
+        } catch (e) {
+            console.warn('[NotificationContext] Speech synthesis error:', e);
+        }
+    }, [db?.bookings]);
+
+    useEffect(() => {
+        if (!isAdminAuthenticated || notifications.length === 0) return;
+
+        const latestNotif = notifications[0];
+        if (latestNotif && latestNotif.id && latestNotif.id !== lastNotifiedId) {
+            setLastNotifiedId(latestNotif.id);
+
+            if (latestNotif.status === 'unread' || latestNotif.read === false) {
+                playNotificationChime();
+                speakNotification(latestNotif.title || 'Notification', latestNotif.message || '');
+            }
+        }
+    }, [notifications, isAdminAuthenticated, lastNotifiedId, playNotificationChime, speakNotification]);
 
     const value = {
         notifications,

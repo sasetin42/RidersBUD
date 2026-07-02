@@ -4,6 +4,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { Settings } from '../../types';
 import Spinner from '../../components/Spinner';
 import { storageService } from '../../services/StorageService';
+import { sendEmail } from '../../services/emailService';
 import {
     Save, Globe, Clock, DollarSign, Bell, Shield, Upload, Image as ImageIcon,
     Layout, Smartphone, Wrench, CreditCard, Mail, FileCheck, Plus, Trash2, User,
@@ -42,6 +43,10 @@ const AdminSettingsScreen: React.FC = () => {
     const [showLiveSalt, setShowLiveSalt] = useState(false);
     const [showSandboxApiKey, setShowSandboxApiKey] = useState(false);
     const [showSandboxSalt, setShowSandboxSalt] = useState(false);
+    
+    const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+    const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+    const [smtpTestResult, setSmtpTestResult] = useState<{success: boolean, message: string} | null>(null);
 
     useEffect(() => {
         if (db?.settings) {
@@ -99,6 +104,32 @@ const AdminSettingsScreen: React.FC = () => {
                     recipientId: 'admin',
                 });
             }
+        }
+    };
+
+    const handleTestSmtp = async () => {
+        if (!localSettings) return;
+        setIsTestingSmtp(true);
+        setSmtpTestResult(null);
+        try {
+            const success = await sendEmail(
+                localSettings.contactEmail || 'admin@ridersbud.com',
+                'Test Email from RidersBUD',
+                'This is a test email to verify your SMTP configuration is working correctly.',
+                localSettings
+            );
+            if (success) {
+                setSmtpTestResult({ success: true, message: 'Test email sent successfully!' });
+                addNotification('Success', 'Test email sent successfully.', 'success');
+            } else {
+                setSmtpTestResult({ success: false, message: 'Failed to send test email. Please check your settings.' });
+                addNotification('Error', 'Failed to send test email.', 'error');
+            }
+        } catch (error: any) {
+            setSmtpTestResult({ success: false, message: error.message || 'An error occurred while sending the email.' });
+            addNotification('Error', 'An error occurred while sending test email.', 'error');
+        } finally {
+            setIsTestingSmtp(false);
         }
     };
 
@@ -403,8 +434,10 @@ const AdminSettingsScreen: React.FC = () => {
                                     </h2>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-500  tracking-widest flex items-center gap-2"><Facebook size={14} /> Facebook</label>
+                                            <label htmlFor="social-facebook" className="text-[10px] font-black text-gray-500  tracking-widest flex items-center gap-2"><Facebook size={14} /> Facebook</label>
                                             <input
+                                                id="social-facebook"
+                                                name="social-facebook"
                                                 value={localSettings.socialLinks?.facebook || ''}
                                                 onChange={(e) => handleSocialChange('facebook', e.target.value)}
                                                 className="w-full bg-[#121212] border border-white/10 rounded-2xl px-5 py-4 text-white outline-none transition-all text-sm font-bold"
@@ -412,8 +445,10 @@ const AdminSettingsScreen: React.FC = () => {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-500  tracking-widest flex items-center gap-2"><Twitter size={14} /> Twitter (X)</label>
+                                            <label htmlFor="social-twitter" className="text-[10px] font-black text-gray-500  tracking-widest flex items-center gap-2"><Twitter size={14} /> Twitter (X)</label>
                                             <input
+                                                id="social-twitter"
+                                                name="social-twitter"
                                                 value={localSettings.socialLinks?.twitter || ''}
                                                 onChange={(e) => handleSocialChange('twitter', e.target.value)}
                                                 className="w-full bg-[#121212] border border-white/10 rounded-2xl px-5 py-4 text-white outline-none transition-all text-sm font-bold"
@@ -421,8 +456,10 @@ const AdminSettingsScreen: React.FC = () => {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-gray-500  tracking-widest flex items-center gap-2"><Instagram size={14} /> Instagram</label>
+                                            <label htmlFor="social-instagram" className="text-[10px] font-black text-gray-500  tracking-widest flex items-center gap-2"><Instagram size={14} /> Instagram</label>
                                             <input
+                                                id="social-instagram"
+                                                name="social-instagram"
                                                 value={localSettings.socialLinks?.instagram || ''}
                                                 onChange={(e) => handleSocialChange('instagram', e.target.value)}
                                                 className="w-full bg-[#121212] border border-white/10 rounded-2xl px-5 py-4 text-white outline-none transition-all text-sm font-bold"
@@ -449,6 +486,11 @@ const AdminSettingsScreen: React.FC = () => {
                                         'Splash Screen Logo',
                                         'splashLogoUrl',
                                         'Displayed centered on the initial loading screen when the app starts.'
+                                    )}
+                                    {renderImageUpload(
+                                        'Loading Screen Logo',
+                                        'loadingLogoUrl',
+                                        'Displayed centered on the application loading screens.'
                                     )}
                                     {renderImageUpload(
                                         'Authentication Logo (Sign In/Up)',
@@ -526,9 +568,11 @@ const AdminSettingsScreen: React.FC = () => {
                                         {renderInput('Max Payout', 'maximumPayout', 'number')}
 
                                         <div className="space-y-2">
-                                            <label className="text-[10px]  tracking-widest font-black text-gray-500 ml-1 block">Payout Schedule</label>
+                                            <label htmlFor="settings-payout-schedule" className="text-[10px]  tracking-widest font-black text-gray-500 ml-1 block">Payout Schedule</label>
                                             <div className="relative">
                                                 <select
+                                                    id="settings-payout-schedule"
+                                                    name="settings-payout-schedule"
                                                     value={localSettings.payoutSchedule || 'Manual'}
                                                     onChange={(e) => handleInputChange('payoutSchedule', e.target.value)}
                                                     className="w-full bg-[#121212] border border-white/10 rounded-2xl px-5 py-4 text-white outline-none transition-all appearance-none cursor-pointer font-bold text-sm"
@@ -752,6 +796,109 @@ const AdminSettingsScreen: React.FC = () => {
                                     {renderSwitch('New Booking Alerts', 'emailOnNewBooking', 'Receive an email whenever a customer places a new booking.')}
                                     {renderSwitch('Cancellation Alerts', 'emailOnCancellation', 'Receive an email when a booking is cancelled by a customer or mechanic.')}
                                 </div>
+
+                                <div className="mt-8 pt-8 border-t border-white/10">
+                                    <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
+                                        <Globe className="text-primary" size={20} /> SMTP Server Configuration
+                                    </h2>
+                                    <p className="text-gray-400 text-sm mb-6">Configure your SMTP settings to enable the system to send emails. These credentials are used to securely route emails through an HTTPS bridge.</p>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                        <label htmlFor="smtp-host" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Host</label>
+                                        <input
+                                            id="smtp-host"
+                                            name="smtp-host"
+                                            type="text"
+                                            value={localSettings?.smtpHost || ''}
+                                            onChange={(e) => handleInputChange('smtpHost', e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
+                                            placeholder="e.g., smtp.gmail.com"
+                                        />
+                                        </div>
+                                        <div className="space-y-2">
+                                        <label htmlFor="smtp-port" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Port</label>
+                                        <input
+                                            id="smtp-port"
+                                            name="smtp-port"
+                                            type="text"
+                                            value={localSettings?.smtpPort || ''}
+                                            onChange={(e) => handleInputChange('smtpPort', e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
+                                            placeholder="e.g., 587 or 465"
+                                        />
+                                        </div>
+                                        <div className="space-y-2">
+                                        <label htmlFor="smtp-username" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Username</label>
+                                        <input
+                                            id="smtp-username"
+                                            name="smtp-username"
+                                            type="text"
+                                            value={localSettings?.smtpUsername || ''}
+                                            onChange={(e) => handleInputChange('smtpUsername', e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
+                                            placeholder="Your email address"
+                                        />
+                                        </div>
+                                        <div className="space-y-2">
+                                        <label htmlFor="smtp-password" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Password</label>
+                                        <div className="relative">
+                                            <input
+                                                id="smtp-password"
+                                                name="smtp-password"
+                                                type={showSmtpPassword ? 'text' : 'password'}
+                                                value={localSettings?.smtpPassword || ''}
+                                                onChange={(e) => handleInputChange('smtpPassword', e.target.value)}
+                                                className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-4 pr-12 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
+                                                placeholder="App password or SMTP password"
+                                            />
+                                                <button type="button" onClick={() => setShowSmtpPassword(!showSmtpPassword)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-primary transition-colors">
+                                                    {showSmtpPassword ? <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                        <label htmlFor="smtp-sender-name" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">Sender Name</label>
+                                        <input
+                                            id="smtp-sender-name"
+                                            name="smtp-sender-name"
+                                            type="text"
+                                            value={localSettings?.smtpFromName || ''}
+                                            onChange={(e) => handleInputChange('smtpFromName', e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
+                                            placeholder="e.g., RidersBUD Notifications"
+                                        />
+                                        </div>
+                                        <div className="space-y-2">
+                                        <label htmlFor="smtp-sender-email" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">Sender Email</label>
+                                        <input
+                                            id="smtp-sender-email"
+                                            name="smtp-sender-email"
+                                            type="email"
+                                            value={localSettings?.smtpFromEmail || ''}
+                                            onChange={(e) => handleInputChange('smtpFromEmail', e.target.value)}
+                                            className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
+                                            placeholder="e.g., noreply@ridersbud.com"
+                                        />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="mt-6 flex flex-col sm:flex-row items-center gap-4">
+                                        <button 
+                                            onClick={handleTestSmtp}
+                                            disabled={isTestingSmtp || !localSettings?.smtpHost || !localSettings?.smtpUsername || !localSettings?.smtpPassword}
+                                            className="px-6 py-3 bg-[#1A1A1A] border border-white/10 hover:border-primary/50 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {isTestingSmtp ? <Spinner size="sm" /> : <Mail size={18} />}
+                                            Test Connection
+                                        </button>
+                                        {smtpTestResult && (
+                                            <div className={`text-sm px-4 py-2 rounded-lg ${smtpTestResult.success ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                                {smtpTestResult.message}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -777,8 +924,10 @@ const AdminSettingsScreen: React.FC = () => {
                                             <div className="flex justify-between items-start">
                                                 <div className="flex-1 space-y-4">
                                                     <div className="space-y-1">
-                                                        <label className="text-[9px]  tracking-widest font-black text-gray-600 block">Label</label>
+                                                        <label htmlFor="faq-label" className="text-[9px]  tracking-widest font-black text-gray-600 block">Label</label>
                                                         <input
+                                                            id="faq-label"
+                                                            name="faq-label"
                                                             value={req.label}
                                                             onChange={(e) => handleRequirementChange(index, 'label', e.target.value)}
                                                             className="w-full bg-transparent text-white font-bold text-lg border-b border-white/10 focus:border-primary outline-none py-1"
@@ -786,8 +935,10 @@ const AdminSettingsScreen: React.FC = () => {
                                                         />
                                                     </div>
                                                     <div className="space-y-1">
-                                                        <label className="text-[9px]  tracking-widest font-black text-gray-600 block">Description (Hint)</label>
+                                                        <label htmlFor="faq-description" className="text-[9px]  tracking-widest font-black text-gray-600 block">Description (Hint)</label>
                                                         <input
+                                                            id="faq-description"
+                                                            name="faq-description"
                                                             value={req.description}
                                                             onChange={(e) => handleRequirementChange(index, 'description', e.target.value)}
                                                             className="w-full bg-transparent text-gray-400 text-xs border-b border-white/10 focus:border-primary outline-none py-1"
@@ -882,31 +1033,37 @@ const AdminSettingsScreen: React.FC = () => {
                                                 <div className="flex justify-between items-start gap-4">
                                                     <div className="flex-1 space-y-4">
                                                         <div className="space-y-1">
-                                                            <label className="text-[9px]  tracking-widest font-black text-gray-600 block">Question</label>
-                                                            <input
-                                                                value={faq.question}
-                                                                onChange={(e) => handleFAQChange(index, 'question', e.target.value)}
-                                                                className="w-full bg-transparent text-white font-bold text-lg border-b border-white/10 focus:border-primary outline-none py-1"
-                                                                placeholder="e.g. How do I book?"
-                                                            />
+                                                        <label htmlFor="faq-question" className="text-[9px]  tracking-widest font-black text-gray-600 block">Question</label>
+                                                        <input
+                                                            id="faq-question"
+                                                            name="faq-question"
+                                                            value={faq.question}
+                                                            onChange={(e) => handleFAQChange(index, 'question', e.target.value)}
+                                                            className="w-full bg-transparent text-white font-bold text-lg border-b border-white/10 focus:border-primary outline-none py-1"
+                                                            placeholder="e.g. How do I book?"
+                                                        />
                                                         </div>
                                                         <div className="space-y-1">
-                                                            <label className="text-[9px]  tracking-widest font-black text-gray-600 block">Answer</label>
-                                                            <textarea
-                                                                value={faq.answer}
-                                                                onChange={(e) => handleFAQChange(index, 'answer', e.target.value)}
-                                                                className="w-full bg-transparent text-gray-400 text-sm border-b border-white/10 focus:border-primary outline-none py-1 min-h-[60px] resize-none"
-                                                                placeholder="Enter the detailed answer here..."
-                                                            />
+                                                        <label htmlFor="faq-answer" className="text-[9px]  tracking-widest font-black text-gray-600 block">Answer</label>
+                                                        <textarea
+                                                            id="faq-answer"
+                                                            name="faq-answer"
+                                                            value={faq.answer}
+                                                            onChange={(e) => handleFAQChange(index, 'answer', e.target.value)}
+                                                            className="w-full bg-transparent text-gray-400 text-sm border-b border-white/10 focus:border-primary outline-none py-1 min-h-[60px] resize-none"
+                                                            placeholder="Enter the detailed answer here..."
+                                                        />
                                                         </div>
                                                         <div className="space-y-1 w-1/3">
-                                                            <label className="text-[9px]  tracking-widest font-black text-gray-600 block">Category</label>
-                                                            <input
-                                                                value={faq.category}
-                                                                onChange={(e) => handleFAQChange(index, 'category', e.target.value)}
-                                                                className="w-full bg-transparent text-gray-400 text-xs border-b border-white/10 focus:border-primary outline-none py-1"
-                                                                placeholder="General"
-                                                            />
+                                                        <label htmlFor="faq-category" className="text-[9px]  tracking-widest font-black text-gray-600 block">Category</label>
+                                                        <input
+                                                            id="faq-category"
+                                                            name="faq-category"
+                                                            value={faq.category}
+                                                            onChange={(e) => handleFAQChange(index, 'category', e.target.value)}
+                                                            className="w-full bg-transparent text-gray-400 text-xs border-b border-white/10 focus:border-primary outline-none py-1"
+                                                            placeholder="General"
+                                                        />
                                                         </div>
                                                     </div>
                                                     <button

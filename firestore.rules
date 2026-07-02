@@ -102,15 +102,15 @@ service cloud.firestore {
     }
 
     // Notifications
+    // Note: The code stores recipientId WITHOUT the "customer-" or "mechanic-" prefix
+    // (stripped by sendNotification/addNotification). So the rule matches the raw UID directly.
     match /notifications/{notificationId} {
       allow read: if isAuth() && (
-        isAdmin() || 
         resource.data.recipientId == "all" || 
-        resource.data.recipientId == "customer-" + request.auth.uid ||
-        resource.data.recipientId == "mechanic-" + request.auth.uid ||
-        resource.data.recipientId == "admin" && isAdmin()
+        resource.data.recipientId == request.auth.uid ||
+        (resource.data.recipientId == "admin" && isAdmin())
       );
-      allow write: if isAuth(); // Anyone can create a notification currently based on DatabaseContext
+      allow write: if isAuth();
     }
 
     // Public readable collections (Services, Parts, Banners, FAQs, Settings, etc.)
@@ -129,6 +129,7 @@ service cloud.firestore {
 
     match /roles/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /rentalCars/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /hireDrivers/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /rentalBookings/{document=**} { 
       allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
       allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
@@ -136,7 +137,25 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     match /subscriptions/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    
+    // RidersBud Services
+    match /appServices/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /serviceProviders/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /servicePricing/{document=**} { allow read: if true; allow write: if isAdmin(); }
 
+    match /serviceRequests/{requestId} {
+      allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
+      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /serviceActivityLogs/{logId} {
+      allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
     match /{document=**} {
       allow read, write: if isAdmin();
     }

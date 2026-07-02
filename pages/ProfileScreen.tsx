@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import NotificationBell from '../components/NotificationBell';
 import { useNavigate } from 'react-router-dom';
 import Modal from '../components/admin/Modal';
@@ -21,8 +21,41 @@ import {
 } from '../utils/notificationManager';
 import { Customer } from '../types';
 
-
 // --- Local Components (copied for consistency) ---
+const ToggleSwitch: React.FC<{
+    label: string;
+    description: string;
+    enabled: boolean;
+    onChange: (enabled: boolean) => void;
+    id: string;
+}> = ({ label, description, enabled, onChange, id }) => (
+    <div className="flex items-center justify-between bg-[#1A1A1A] border border-white/5 p-4 rounded-xl transition-colors hover:border-white/10">
+        <div className="pr-4 flex-1 min-w-0">
+            <h4 className="font-bold text-white text-xs mb-0.5">{label}</h4>
+            <p className="text-[10px] text-gray-500 leading-snug">{description}</p>
+        </div>
+        <button
+            id={id}
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            className={`${enabled ? 'bg-primary' : 'bg-[#333]'} relative inline-flex flex-shrink-0 items-center rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-primary/50`}
+            style={{ width: '44px', height: '24px' }}
+            onClick={() => onChange(!enabled)}
+        >
+            <span
+                className="absolute rounded-full bg-white transition-all duration-200 shadow-sm shrink-0"
+                style={{
+                    width: '16px',
+                    height: '16px',
+                    top: '4px',
+                    left: enabled ? '24px' : '4px'
+                }}
+            />
+        </button>
+    </div>
+);
+
 const MenuItem = ({ label, subtitle, badge, icon, onClick, variant = "default" }: { label: string, subtitle?: string, badge?: React.ReactNode, icon: React.ReactNode, onClick: () => void, variant?: "default" | "danger" }) => (
     <button
         onClick={onClick}
@@ -34,9 +67,12 @@ const MenuItem = ({ label, subtitle, badge, icon, onClick, variant = "default" }
                 {icon}
             </span>
             <div className="flex flex-col text-left">
-                <span className={`text-sm font-black tracking-tight ${variant === 'danger' ? 'text-red-400' : 'text-white'}`}>
-                    {label}
-                </span>
+                <div className="flex items-center gap-2">
+                    <span className={`text-sm font-black tracking-tight ${variant === 'danger' ? 'text-red-400' : 'text-white'}`}>
+                        {label}
+                    </span>
+                    {badge && <div className="flex-shrink-0">{badge}</div>}
+                </div>
                 {subtitle && (
                     <span className="text-[10px] text-gray-500 font-bold tracking-wide mt-0.5 group-hover:text-gray-400 transition-colors">
                         {subtitle}
@@ -45,14 +81,12 @@ const MenuItem = ({ label, subtitle, badge, icon, onClick, variant = "default" }
             </div>
         </div>
         <div className="flex items-center gap-3">
-            {badge && <div className="flex-shrink-0">{badge}</div>}
             <div className={`p-2 rounded-xl bg-white/5 transition-all group-hover:translate-x-1 ${variant === 'danger' ? 'group-hover:bg-red-500/20 group-hover:text-red-500' : 'group-hover:bg-primary/20 group-hover:text-primary'}`}>
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 stroke-[3]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
             </div>
         </div>
     </button>
 );
-
 const HelpSupportModal: React.FC<{
     contactEmail: string;
     contactPhone: string;
@@ -175,8 +209,10 @@ const EditProfileModal: React.FC<{
                             />
                         </div>
 
-                        <label className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                        <label htmlFor="profile-avatar" className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                             <input
+                                id="profile-avatar"
+                                name="profile-avatar"
                                 type="file"
                                 accept="image/*"
                                 className="hidden"
@@ -189,10 +225,11 @@ const EditProfileModal: React.FC<{
                 </div>
 
                 <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-2">Full Name</label>
+                    <label htmlFor="profile-name" className="block text-xs font-bold text-gray-500 mb-2">Full Name</label>
                     <div className="relative">
                         <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                         <input
+                            id="profile-name"
                             type="text"
                             name="name"
                             value={formData.name}
@@ -203,10 +240,11 @@ const EditProfileModal: React.FC<{
                     </div>
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-2">Email</label>
+                    <label htmlFor="profile-email" className="block text-xs font-bold text-gray-500 mb-2">Email</label>
                     <div className="relative">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                         <input
+                            id="profile-email"
                             type="email"
                             name="email"
                             value={formData.email}
@@ -217,10 +255,11 @@ const EditProfileModal: React.FC<{
                     </div>
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-2">Phone</label>
+                    <label htmlFor="profile-phone" className="block text-xs font-bold text-gray-500 mb-2">Phone</label>
                     <div className="relative">
                         <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                         <input
+                            id="profile-phone"
                             type="tel"
                             name="phone"
                             value={formData.phone}
@@ -231,10 +270,11 @@ const EditProfileModal: React.FC<{
                     </div>
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-2">Address</label>
+                    <label htmlFor="profile-address" className="block text-xs font-bold text-gray-500 mb-2">Address</label>
                     <div className="relative">
                         <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                         <input
+                            id="profile-address"
                             type="text"
                             name="address"
                             value={formData.address}
@@ -255,34 +295,6 @@ const EditProfileModal: React.FC<{
         </Modal>
     );
 };
-
-const ToggleSwitch: React.FC<{
-    label: string;
-    description: string;
-    enabled: boolean;
-    onChange: (enabled: boolean) => void;
-    id: string;
-}> = ({ label, description, enabled, onChange, id }) => (
-    <div className="flex items-center justify-between bg-[#1A1A1A] border border-white/5 p-4 rounded-xl transition-colors hover:border-white/10">
-        <div className="pr-4 flex-1 min-w-0">
-            <h4 className="font-bold text-white text-xs mb-0.5">{label}</h4>
-            <p className="text-[10px] text-gray-500 leading-snug">{description}</p>
-        </div>
-        <button
-            id={id}
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            className={`${enabled ? 'bg-primary' : 'bg-[#333]'} relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none`}
-            onClick={() => onChange(!enabled)}
-        >
-            <span
-                className={`${enabled ? 'translate-x-5' : 'translate-x-1'} inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm`}
-            />
-        </button>
-    </div>
-);
-
 interface ExtendedCustomer extends Customer {
     notificationSettings?: NotificationSettings;
 }
@@ -389,7 +401,6 @@ const NotificationSettingsModal: React.FC<{
             alert('Test Notification Triggered!\n(In-app HUD chime simulated successfully)');
         }
     };
-
     return (
         <Modal title="Notification Preferences" isOpen={true} onClose={onClose}>
             {/* Tab navigation */}
@@ -401,7 +412,7 @@ const NotificationSettingsModal: React.FC<{
                         onClick={() => setActiveTab(tab)}
                         className={`flex-1 pb-3 text-xs font-black uppercase tracking-wider transition-colors border-b-2 text-center ${activeTab === tab ? 'text-primary border-primary' : 'text-gray-500 border-transparent hover:text-white'}`}
                     >
-                        {tab === 'general' ? 'General Settings' : tab === 'dnd' ? 'Quiet Hours' : 'System Alerts'}
+                        {tab === 'general' ? 'Settings' : tab === 'dnd' ? 'Quiet Hours' : 'System Alerts'}
                     </button>
                 ))}
             </div>
@@ -441,17 +452,12 @@ const NotificationSettingsModal: React.FC<{
                                     id="modal-reminder-lead-time"
                                     value={settings.reminderLeadTime}
                                     onChange={(e) => handleSettingChange('reminderLeadTime', e.target.value)}
-                                    className="w-full px-4 py-3 bg-[#121212] border border-white/10 rounded-xl text-white appearance-none focus:outline-none focus:border-primary/50 transition-all text-xs"
+                                    className="w-full px-4 py-3 bg-[#121212] border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary/50 transition-all text-xs"
                                 >
                                     <option value="1-hour">1 Hour Before</option>
                                     <option value="1-day">1 Day Before</option>
                                     <option value="2-days">2 Days Before</option>
                                 </select>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -672,7 +678,7 @@ const ProfileScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col min-h-screen bg-secondary pb-24 font-sans">
-            <Header title="My Profile" icon={<User size={22} />} />
+            <CustomerHeader title="My Profile" icon={<User size={22} />} />
 
             <div className="flex-grow p-6 space-y-6">
                 {/* Profile Card */}

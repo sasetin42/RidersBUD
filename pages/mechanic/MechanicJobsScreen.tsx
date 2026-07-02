@@ -212,7 +212,7 @@ const MechanicJobsScreen: React.FC = () => {
     if (loading || !db || !mechanic) {
         return (
             <div className="flex flex-col h-full bg-secondary">
-                <Header title="My Jobs" icon={<Briefcase size={22} />} />
+                <Header title="My Jobs" rightAction={<NotificationBell />} icon={<Briefcase size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
                 </div>

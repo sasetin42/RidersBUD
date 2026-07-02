@@ -8,8 +8,9 @@ import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { useAdminOnlineStatus } from '../hooks/usePresence';
 import { compressAndEncodeImage } from '../utils/fileUtils';
+import { optimizeImageToWebP } from '../utils/imageOptimizer';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Paperclip, FileText, Trash2, MapPin, Phone, Search, Download, CheckCircle, RefreshCw, Star, Send } from 'lucide-react';
+import { X, Paperclip, FileText, Trash2, MapPin, Phone, Search, Download, CheckCircle, RefreshCw, Star, Send, MoreHorizontal, CornerUpLeft } from 'lucide-react';
 import Tooltip from './ui/Tooltip';
 import { db as firestoreDB } from '../firebase';
 import { collection, addDoc, query, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
@@ -26,6 +27,19 @@ interface Message {
         content: string; // Base64 or URL
         name: string;
     };
+    attachments?: Array<{
+        type: 'image' | 'file';
+        content: string; // Base64 or URL
+        name: string;
+    }>;
+    senderName?: string;
+    senderAvatar?: string;
+    replyTo?: {
+        id?: string;
+        text: string;
+        sender: 'user' | 'ai' | 'admin';
+        senderName?: string;
+    };
 }
 
 interface ChatModalProps {
@@ -39,11 +53,16 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(mode === 'ai'); // Only load initially if AI
     const [chat, setChat] = useState<Chat | null>(null);
-    const [attachment, setAttachment] = useState<{ type: 'image' | 'file'; content: string; name: string } | null>(null);
+    const [attachments, setAttachments] = useState<Array<{ type: 'image' | 'file'; content: string; name: string }>>([]);
     const [isCompressing, setIsCompressing] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [chatSession, setChatSession] = useState<any>(null);
     const [isSessionLoaded, setIsSessionLoaded] = useState(false);
+    
+    // UI states
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     
     // Satisfaction Survey States
     const [hasCheckedFeedback, setHasCheckedFeedback] = useState(false);
@@ -52,6 +71,16 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
     const [hoverRating, setHoverRating] = useState(0);
     const [comment, setComment] = useState('');
     const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setIsMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -155,7 +184,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
         });
 
         return () => {
-            unsubscribeDoc();
+            try { unsubscribeDoc(); } catch (_) {}
         };
     }, [mode, currentUser?.id]);
 
@@ -205,7 +234,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
         });
 
         return () => {
-            unsubscribeMessages();
+            try { unsubscribeMessages(); } catch (_) {}
         };
     }, [mode, currentUser?.id, chatSession?.startedAt]);
 
@@ -324,44 +353,49 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
     }, [messages]);
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            
-            // For AI mode, we still need base64 for Gemini inlineData
-            if (mode === 'ai') {
-                setIsCompressing(true);
-                try {
-                    const base64 = await compressAndEncodeImage(file);
-                    setAttachment({
-                        type: file.type.startsWith('image/') ? 'image' : 'file',
-                        content: base64,
-                        name: file.name
-                    });
-                } catch (error) {
-                    console.error("File processing error:", error);
-                    alert("Failed to process file. Please try again.");
-                } finally {
-                    setIsCompressing(false);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
+        const files = Array.from(e.target.files || []) as File[];
+        if (!files.length) return;
+
+        setIsCompressing(true);
+        const newAttachments: Array<{ type: 'image' | 'file'; content: string; name: string }> = [];
+
+        try {
+            for (const file of files) {
+                if (file.size > 3 * 1024 * 1024) {
+                    alert(`Caution: The file "${file.name}" exceeds the maximum upload capacity of 3MB and will not be attached.`);
+                    continue;
                 }
-            } else {
-                // For Admin mode, use Base64 directly (avoids Firebase Storage permission errors)
-                setIsCompressing(true);
-                try {
-                    const base64 = await compressAndEncodeImage(file);
-                    setAttachment({
-                        type: file.type.startsWith('image/') ? 'image' : 'file',
+
+                if (file.type.startsWith('image/')) {
+                    const base64 = await optimizeImageToWebP(file, 1920, 0.8);
+                    newAttachments.push({
+                        type: 'image',
+                        content: base64,
+                        name: file.name.replace(/\.[^/.]+$/, "") + ".webp"
+                    });
+                } else {
+                    const reader = new FileReader();
+                    const base64 = await new Promise<string>((resolve, reject) => {
+                        reader.onloadend = () => resolve(reader.result as string);
+                        reader.onerror = () => reject(new Error('Failed to read file'));
+                        reader.readAsDataURL(file);
+                    });
+                    newAttachments.push({
+                        type: 'file',
                         content: base64,
                         name: file.name
                     });
-                } catch (error) {
-                    console.error("Upload error:", error);
-                    alert("Failed to upload file.");
-                } finally {
-                    setIsCompressing(false);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
                 }
             }
+            if (newAttachments.length > 0) {
+                setAttachments(prev => [...prev, ...newAttachments]);
+            }
+        } catch (error) {
+            console.error("File processing error:", error);
+            alert("Failed to process one or more files. Please try again.");
+        } finally {
+            setIsCompressing(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
@@ -426,20 +460,23 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if ((!input.trim() && !attachment) || isLoading) return; 
+        if ((!input.trim() && attachments.length === 0) || isLoading) return; 
         if (mode === 'ai' && !chat) return; 
 
         const userText = input;
-        const currentAttachment = attachment;
+        const currentAttachments = [...attachments];
+        const currentReply = replyingTo;
 
         setInput('');
-        setAttachment(null);
+        setAttachments([]);
+        setReplyingTo(null);
 
         // Optimistic update for both modes so messages appear immediately
         setMessages(prev => [...prev, {
             sender: 'user',
             text: userText,
-            attachment: currentAttachment ? { ...currentAttachment } : undefined
+            ...(currentAttachments.length > 0 && { attachments: currentAttachments }),
+            ...(currentReply && { replyTo: currentReply })
         }]);
         if (mode === 'ai') {
             setIsLoading(true);
@@ -454,14 +491,18 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                     messagePart.parts.push({ text: userText });
                 }
 
-                if (currentAttachment && currentAttachment.type === 'image') {
-                    const base64Data = currentAttachment.content.split(',')[1];
-                    const mimeType = currentAttachment.content.substring(currentAttachment.content.indexOf(':') + 1, currentAttachment.content.indexOf(';'));
-                    messagePart.parts.push({
-                        inlineData: { mimeType: mimeType, data: base64Data }
+                if (currentAttachments.length > 0) {
+                    currentAttachments.forEach(att => {
+                        if (att.type === 'image') {
+                            const base64Data = att.content.split(',')[1];
+                            const mimeType = att.content.substring(att.content.indexOf(':') + 1, att.content.indexOf(';'));
+                            messagePart.parts.push({
+                                inlineData: { mimeType: mimeType, data: base64Data }
+                            });
+                        } else {
+                            messagePart.parts.push({ text: `[User attached file: ${att.name}]` });
+                        }
                     });
-                } else if (currentAttachment) {
-                    messagePart.parts.push({ text: `[User attached file: ${currentAttachment.name}]` });
                 }
 
                 const responseStream = await chat.sendMessageStream(messagePart.parts);
@@ -479,7 +520,8 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                 const messageData = {
                     sender: 'user',
                     text: userText,
-                    attachment: currentAttachment,
+                    attachments: currentAttachments.length > 0 ? currentAttachments : null,
+                    ...(currentReply && { replyTo: currentReply }),
                     timestamp: serverTimestamp()
                 };
 
@@ -492,7 +534,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                     userName: currentUser.name || 'Unknown User',
                     userEmail: currentUser.email || 'No Email',
                     userAvatar: currentUser.photoUrl || null,
-                    lastMessage: userText || (currentAttachment ? '[Attachment]' : ''),
+                    lastMessage: userText || (currentAttachments.length > 0 ? '[Attachments]' : ''),
                     lastTimestamp: serverTimestamp(),
                     unread: true,
                     userType: currentUser.userType,
@@ -527,7 +569,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                     <img
                         src={attachment.content}
                         alt="Attachment"
-                        className="max-w-[200px] max-h-[200px] object-cover"
+                        className="max-w-[150px] max-h-[150px] object-cover"
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                         <Search className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" size={24} />
@@ -560,8 +602,13 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
 
     // Use "Support Agent" name/image for Admin mode, but sync with settings if possible for "Live" feel
     // If it's AI, we use virtual mechanic name. If it's admin, we use the settings too as "Official Support"
-    const botName = db.settings.virtualMechanicName || 'Support Agent';
-    const botImage = db.settings.virtualMechanicImageUrl || "https://ui-avatars.com/api/?name=Support+Agent&background=0D8ABC&color=fff";
+    const botName = mode === 'ai' 
+        ? (db.settings.virtualMechanicName || 'RiderAI') 
+        : (chatSession?.adminName || db.settings.supportChatTitle || 'RidersBud Support');
+        
+    const botImage = mode === 'ai'
+        ? (db.settings.virtualMechanicImageUrl || "https://ui-avatars.com/api/?name=RiderAI&background=FE7803&color=fff")
+        : (chatSession?.adminAvatar || db.settings.appLogoUrl || "https://ui-avatars.com/api/?name=Support+Agent&background=0D8ABC&color=fff");
     const isOnline = mode === 'admin' ? adminsOnline : db.settings.chatEnabled;
     const supportPhone = db.settings.supportPhone;
 
@@ -597,21 +644,28 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                     initial={{ scale: 0.9, y: 20 }}
                     animate={{ scale: 1, y: 0 }}
                     exit={{ scale: 0.9, y: 20 }}
-                    className="w-full max-w-lg bg-[#1e1e1e] border border-white/10 rounded-2xl shadow-2xl flex flex-col h-[80vh] overflow-hidden"
+                    className="w-full max-w-lg bg-[#111111] border border-white/10 rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col h-[85vh] sm:h-[80vh] overflow-hidden"
                 >
                     {/* Header */}
-                    <header className="p-4 bg-gradient-to-r from-[#2A2A2A] to-[#202020] border-b border-white/5 flex items-center justify-between shrink-0">
-                        <div className="flex items-center gap-3">
+                    <header className="p-2 px-3 bg-gradient-to-r from-[#1b1b1b] to-[#161616] border-b border-white/5 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-2">
                             <div className="relative">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center overflow-hidden border border-white/10 bg-gray-800`}>
-                                    <img src={botImage} alt={botName} className="w-full h-full object-cover" />
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center overflow-hidden border border-white/10 bg-[#242424] shadow-sm`}>
+                                    <img 
+                                        src={botImage} 
+                                        alt={botName} 
+                                        className="w-full h-full object-cover" 
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(botName)}&background=0D8ABC&color=fff`;
+                                        }}
+                                    />
                                 </div>
-                                <span className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[#1e1e1e] rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                                <span className={`absolute bottom-0 right-0 w-2 h-2 border-[1.5px] border-[#111111] rounded-full shadow-sm ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
                             </div>
                             <div>
-                                <h3 className="text-white font-bold">{botName}</h3>
-                                <p className="text-xs text-gray-400 flex items-center gap-1">
-                                    {isOnline ? 'Online' : 'Offline'} • {mode === 'ai' ? 'AI Assistant' : 'Live Support'}
+                                <h3 className="text-white font-black text-[13px] tracking-tight leading-none mb-0.5">{botName}</h3>
+                                <p className="text-[9px] text-gray-400 font-bold tracking-widest uppercase">
+                                    {isOnline ? <span className="text-green-500">Online</span> : 'Offline'} • {mode === 'ai' ? 'AI' : 'Live'}
                                 </p>
                             </div>
                         </div>
@@ -620,15 +674,15 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                 <Tooltip content="Call Support" position="bottom">
                                     <button
                                         onClick={() => window.open(`tel:${supportPhone}`)}
-                                        className="text-gray-400 hover:text-green-500 transition-colors p-2 hover:bg-white/5 rounded-full"
+                                        className="text-gray-400 hover:text-green-500 transition-colors p-1.5 hover:bg-white/5 rounded-full"
                                     >
-                                        <Phone className="w-5 h-5" />
+                                        <Phone className="w-3.5 h-3.5" />
                                     </button>
                                 </Tooltip>
                             )}
                             <Tooltip content="Close" position="bottom">
-                                <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-full">
-                                    <X className="w-6 h-6" />
+                                <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/5 rounded-full">
+                                    <X className="w-4 h-4" />
                                 </button>
                             </Tooltip>
                         </div>
@@ -689,8 +743,9 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
 
                                     {/* Feedback Comment Box */}
                                     <div className="w-full text-left space-y-1">
-                                        <label className="text-[9px] uppercase font-black tracking-widest text-gray-500">Comments</label>
+                                        <label htmlFor="chat-comment" className="text-[9px] uppercase font-black tracking-widest text-gray-500">Comments</label>
                                         <textarea
+                                            id="chat-comment" name="chat-comment"
                                             value={comment}
                                             onChange={(e) => setComment(e.target.value)}
                                             placeholder="Write a message of satisfaction or comments..."
@@ -757,46 +812,90 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                         className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                                     >
                                         {msg.sender !== 'user' && ( // Handle 'ai' or 'admin' sender
-                                            <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-700 shrink-0 border border-white/10">
+                                            <div className="w-6 h-6 rounded-full overflow-hidden bg-gray-700 shrink-0 border border-white/10 shadow-sm mb-1">
                                                 <img
-                                                    src={botImage}
-                                                    alt="Bot"
+                                                    src={msg.sender === 'admin' ? (msg.senderAvatar || chatSession?.adminAvatar || botImage) : botImage}
+                                                    alt={msg.sender === 'admin' ? (msg.senderName || chatSession?.adminName || botName) : botName}
                                                     className="w-full h-full object-cover"
+                                                    onError={(e) => {
+                                                        const name = msg.sender === 'admin' ? (msg.senderName || chatSession?.adminName || botName) : botName;
+                                                        (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
+                                                    }}
                                                 />
                                             </div>
                                         )}
-                                        <div className={`max-w-[80%] flex flex-col gap-1 ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                                            <div className={`p-3.5 rounded-2xl ${msg.sender === 'user'
-                                                ? 'bg-gradient-to-br from-orange-600 to-orange-500 text-white rounded-br-none shadow-md'
-                                                : 'bg-[#2A2A2A] text-gray-100 rounded-bl-none border border-white/5'
-                                                }`}>
-                                                {msg.attachment && renderAttachment(msg.attachment)}
+                                        <div className={`max-w-[75%] relative group/msg flex flex-col gap-0.5 ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                                            <button
+                                                onClick={() => setReplyingTo(msg)}
+                                                className={`absolute top-1/2 -translate-y-1/2 opacity-0 group-hover/msg:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-white/5 text-gray-400 hover:text-white ${msg.sender === 'user' ? '-left-8' : '-right-8'}`}
+                                                title="Reply"
+                                            >
+                                                <CornerUpLeft size={14} />
+                                            </button>
 
-                                                {!msg.attachment && isLoading && index === messages.length - 1 && msg.sender === 'ai' && msg.text === '' ? (
-                                                    <div className="flex gap-1 items-center h-6">
-                                                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                                                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                                                        <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                                                    </div>
-                                                ) : (
-                                                    msg.text && (
-                                                        msg.text.startsWith('https://www.google.com/maps') ? (
-                                                            <a
-                                                                href={msg.text}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className={`flex items-center gap-2 font-bold underline ${msg.sender === 'user' ? 'text-white' : 'text-blue-400'}`}
-                                                            >
-                                                                <MapPin className="w-4 h-4" />
-                                                                Shared Location
-                                                            </a>
-                                                        ) : (
-                                                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-                                                        )
-                                                    )
-                                                )}
-                                            </div>
-                                            <span className="text-[10px] text-gray-500 px-1">
+                                            {mode === 'admin' && msg.sender === 'admin' && (
+                                                <span className="text-[9px] font-black tracking-widest uppercase text-gray-500 px-1 leading-none mb-0.5">
+                                                    {msg.senderName || chatSession?.adminName || 'Support'}
+                                                </span>
+                                            )}
+                                            
+                                            {msg.text && msg.text.startsWith('https://www.google.com/maps') ? (
+                                                <div className="flex flex-col gap-1">
+                                                    {msg.replyTo && (
+                                                        <div className="text-[10px] bg-[#242424] px-2 py-1.5 rounded-lg border border-white/5 opacity-80 max-w-[180px]">
+                                                            <div className="font-bold text-gray-300 mb-0.5">{msg.replyTo.senderName || (msg.replyTo.sender === 'user' ? 'User' : 'Support')}</div>
+                                                            <div className="truncate text-gray-400">{msg.replyTo.text || '[Attachment]'}</div>
+                                                        </div>
+                                                    )}
+                                                    <a
+                                                        href={msg.text}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className={`group flex items-center justify-center gap-1.5 font-bold px-3 py-1.5 text-xs rounded-2xl transition-all hover:scale-[1.02] shadow-sm ${msg.sender === 'user' ? 'bg-white text-orange-600 hover:bg-gray-100 rounded-br-sm' : 'bg-gradient-to-r from-[#ff6a00] to-[#ff7a18] text-white hover:shadow-[0_4px_12px_rgba(255,106,0,0.25)] rounded-bl-sm'}`}
+                                                    >
+                                                        <MapPin className="w-3.5 h-3.5 shrink-0" />
+                                                        Shared Location
+                                                    </a>
+                                                </div>
+                                            ) : (
+                                                <div className={`px-3 py-2 rounded-2xl shadow-sm max-w-full overflow-hidden ${msg.sender === 'user'
+                                                    ? 'bg-gradient-to-br from-[#ff6a00] to-[#ff7a18] text-white rounded-br-sm'
+                                                    : 'bg-[#242424] text-gray-100 rounded-bl-sm border border-white/5'
+                                                    }`}>
+                                                    
+                                                    {msg.replyTo && (
+                                                        <div className={`mb-1.5 pb-1.5 text-[10px] border-b ${msg.sender === 'user' ? 'border-white/20' : 'border-white/10'}`}>
+                                                            <div className="font-bold mb-0.5 opacity-80">{msg.replyTo.senderName || (msg.replyTo.sender === 'user' ? 'User' : 'Support')}</div>
+                                                            <div className="opacity-70 truncate max-w-[180px]">{msg.replyTo.text || '[Attachment]'}</div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Legacy single attachment support */}
+                                                    {msg.attachment && renderAttachment(msg.attachment)}
+                                                    
+                                                    {/* New multiple attachments support */}
+                                                    {msg.attachments && msg.attachments.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                                            {msg.attachments.map((att, i) => (
+                                                                <div key={i} className="max-w-[150px]">
+                                                                    {renderAttachment(att)}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {!msg.attachment && isLoading && index === messages.length - 1 && msg.sender === 'ai' && msg.text === '' ? (
+                                                        <div className="flex gap-1 items-center h-4">
+                                                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
+                                                        </div>
+                                                    ) : (
+                                                        msg.text && <p className="text-xs leading-relaxed whitespace-pre-wrap break-all">{msg.text}</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <span className="text-[9px] text-gray-500 px-1 font-bold">
                                                 {msg.timestamp?.seconds
                                                     ? new Date(msg.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                                                     : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -808,90 +907,157 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                             </main>
 
                             {/* Footer / Preview */}
-                            <div className="bg-[#1e1e1e] border-t border-white/5 p-4 shrink-0">
+                            <div className="bg-[#1e1e1e] border-t border-white/5 p-2 px-3 shrink-0">
                                 <AnimatePresence>
-                                    {attachment && (
+                                        {attachments.length > 0 && (
+                                            <motion.div
+                                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                exit={{ opacity: 0, scale: 0.9 }}
+                                                className="absolute bottom-full left-3 mb-2 p-1.5 bg-[#2a2a2a] border border-white/10 rounded-xl shadow-xl flex gap-1.5 z-50 max-w-[90%] overflow-x-auto custom-scrollbar"
+                                            >
+                                                {attachments.map((att, i) => (
+                                                    <div key={i} className="relative flex items-center gap-1.5 pr-2 bg-black/20 rounded-lg shrink-0">
+                                                        {att.type === 'image' ? (
+                                                            <div className="w-8 h-8 rounded-md overflow-hidden bg-black shrink-0 relative group">
+                                                                <img src={att.content} alt="Preview" className="w-full h-full object-cover" />
+                                                            </div>
+                                                        ) : (
+                                                            <div className="w-8 h-8 rounded-md bg-gray-700 flex items-center justify-center shrink-0">
+                                                                <FileText className="w-4 h-4 text-gray-300" />
+                                                            </div>
+                                                        )}
+                                                        <div className="max-w-[80px] min-w-[50px]">
+                                                            <p className="text-[10px] font-bold text-gray-200 truncate">{att.name}</p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                                                            className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-red-500/80 transition-colors shrink-0"
+                                                        >
+                                                            <Trash2 size={10} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+
+                                <AnimatePresence>
+                                    {replyingTo && (
                                         <motion.div
-                                            initial={{ opacity: 0, height: 0 }}
-                                            animate={{ opacity: 1, height: 'auto' }}
-                                            exit={{ opacity: 0, height: 0 }}
-                                            className="flex items-center gap-3 mb-3 p-2 bg-[#2A2A2A] rounded-xl border border-white/5"
+                                            initial={{ opacity: 0, y: 10, height: 0 }}
+                                            animate={{ opacity: 1, y: 0, height: 'auto' }}
+                                            exit={{ opacity: 0, y: 10, height: 0 }}
+                                            className="mb-2 px-3 py-2 bg-[#1f1f1f] border-l-[3px] border-[#ff6a00] rounded-r-xl rounded-l-sm shadow-sm relative flex items-start gap-2"
                                         >
-                                            {attachment.type === 'image' ? (
-                                                <div className="w-12 h-12 rounded-lg overflow-hidden bg-black shrink-0 relative group">
-                                                    <img src={attachment.content} alt="Preview" className="w-full h-full object-cover" />
-                                                </div>
-                                            ) : (
-                                                <div className="w-12 h-12 rounded-lg bg-gray-700 flex items-center justify-center shrink-0">
-                                                    <FileText className="w-6 h-6 text-gray-300" />
-                                                </div>
-                                            )}
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm text-gray-200 truncate">{attachment.name}</p>
-                                                <p className="text-xs text-gray-500">Ready to send</p>
+                                                <div className="flex items-center gap-1.5 mb-0.5">
+                                                    <CornerUpLeft size={12} className="text-[#ff6a00]" />
+                                                    <span className="text-[10px] font-black text-[#ff6a00]">
+                                                        Replying to {replyingTo.senderName || (replyingTo.sender === 'user' ? 'User' : 'Support')}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-300 truncate">
+                                                    {replyingTo.text || '[Attachment]'}
+                                                </p>
                                             </div>
                                             <button
-                                                onClick={() => setAttachment(null)}
-                                                className="p-1.5 hover:bg-white/10 rounded-full text-gray-400 hover:text-red-400 transition-colors"
+                                                type="button"
+                                                onClick={() => setReplyingTo(null)}
+                                                className="p-1 hover:bg-white/10 rounded-full text-gray-500 hover:text-white transition-colors shrink-0"
                                             >
-                                                <div className="w-4 h-4" >
-                                                    <Trash2 className="w-full h-full" />
-                                                </div>
+                                                <X size={14} />
                                             </button>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
 
-                                <form onSubmit={handleSendMessage} className="flex gap-2 items-end">
+                                <form onSubmit={handleSendMessage} className="flex gap-1.5 items-end">
+                                    <label htmlFor="chatFileInput" className="sr-only">Attach file</label>
                                     <input
+                                        id="chatFileInput"
+                                        name="chatFileInput"
                                         type="file"
+                                        multiple
                                         ref={fileInputRef}
                                         onChange={handleFileSelect}
                                         accept="image/*,.pdf,.doc,.docx"
                                         className="hidden"
                                     />
-                                    <Tooltip content="Attach File" position="top">
-                                        <button
-                                            type="button"
-                                            onClick={() => fileInputRef.current?.click()}
-                                            disabled={isLoading || isCompressing}
-                                            className={`p-3 rounded-full bg-[#2A2A2A] text-gray-400 hover:text-orange-500 hover:bg-[#333] transition-colors border border-white/5 ${isCompressing ? 'animate-pulse' : ''}`}
-                                        >
-                                            <Paperclip className="w-5 h-5" />
-                                        </button>
-                                    </Tooltip>
 
-                                    <Tooltip content="Share Location" position="top">
-                                        <button
-                                            type="button"
-                                            onClick={handleShareLocation}
-                                            disabled={isLoading || isCompressing}
-                                            className={`p-3 rounded-full bg-[#2A2A2A] text-gray-400 hover:text-green-500 hover:bg-[#333] transition-colors border border-white/5`}
-                                        >
-                                            <MapPin className="w-5 h-5" />
-                                        </button>
-                                    </Tooltip>
-
-                                    <div className="flex-1 relative">
+                                    <div className="flex-1 relative flex items-center bg-[#1f1f1f] border border-white/10 rounded-full focus-within:border-[#ff6a00]/50 focus-within:ring-1 focus-within:ring-[#ff6a00]/50 transition-all shadow-inner">
+                                        <div className="relative" ref={menuRef}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                                                disabled={isLoading || isCompressing}
+                                                className={`ml-1 w-8 h-8 rounded-full flex items-center justify-center text-[#ff6a00] hover:bg-white/5 transition-colors ${isCompressing ? 'animate-pulse' : ''} ${isMenuOpen ? 'bg-white/5' : ''}`}
+                                            >
+                                                <MoreHorizontal className="w-4 h-4" />
+                                            </button>
+                                            
+                                            <AnimatePresence>
+                                                {isMenuOpen && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                        className="absolute bottom-full left-0 mb-3 w-48 bg-[#1b1b1b] border border-white/10 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] overflow-hidden z-[60]"
+                                                    >
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                fileInputRef.current?.click();
+                                                                setIsMenuOpen(false);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors border-b border-white/5"
+                                                        >
+                                                            <div className="w-6 h-6 rounded-full bg-[#ff6a00]/10 flex items-center justify-center">
+                                                                <Paperclip className="w-3.5 h-3.5 text-[#ff6a00]" />
+                                                            </div>
+                                                            Attach File
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                handleShareLocation();
+                                                                setIsMenuOpen(false);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors"
+                                                        >
+                                                            <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center">
+                                                                <MapPin className="w-3.5 h-3.5 text-green-500" />
+                                                            </div>
+                                                            Share Location
+                                                        </button>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+                                        
+                                        <label htmlFor="chatMessageInput" className="sr-only">Type a message</label>
                                         <input
+                                            id="chatMessageInput"
+                                            name="chatMessageInput"
                                             type="text"
                                             value={input}
                                             onChange={(e) => setInput(e.target.value)}
-                                            placeholder={mode === 'ai' ? (isCompressing ? "Compressing file..." : "Type a message...") : "Message Support..."}
-                                            className="w-full bg-[#252525] text-white pl-4 pr-4 py-3 rounded-xl border border-white/5 focus:outline-none focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 transition-all placeholder:text-gray-600"
+                                            placeholder={mode === 'ai' ? (isCompressing ? "Compressing..." : "Type message...") : "Message Support..."}
+                                            className="flex-1 bg-transparent border-none focus:border-none focus:ring-0 focus:outline-none text-white pl-1.5 pr-2 py-2 placeholder:text-[#9ca3af] text-xs font-medium"
                                             disabled={isLoading || isCompressing}
                                         />
+                                        
+                                        <Tooltip content="Send Message" position="top">
+                                            <button
+                                                type="submit"
+                                                disabled={isLoading || (!input.trim() && attachments.length === 0) || isCompressing}
+                                                className="w-8 h-8 min-w-[32px] min-h-[32px] mr-1 rounded-full border-none bg-gradient-to-br from-[#ff7a18] to-[#ff4d00] text-white flex items-center justify-center cursor-pointer transition-all duration-250 ease-out disabled:opacity-45 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none hover:scale-105 hover:shadow-[0_8px_20px_rgba(255,106,0,0.35)]"
+                                            >
+                                                <Send size={14} className="ml-0.5" />
+                                            </button>
+                                        </Tooltip>
                                     </div>
-
-                                    <Tooltip content="Send Message" position="top">
-                                        <button
-                                            type="submit"
-                                            disabled={isLoading || (!input.trim() && !attachment) || isCompressing}
-                                            className="p-3 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-orange-500/20 hover:scale-105 transition-all group"
-                                        >
-                                            <Send size={18} />
-                                        </button>
-                                    </Tooltip>
                                 </form>
                             </div>
                         </>

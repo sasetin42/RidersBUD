@@ -215,7 +215,7 @@ export const AdminAuthProvider: React.FC<{ children: ReactNode }> = ({ children 
                 setLoading(false);
             });
 
-            return () => unsubscribeSnapshot();
+            return () => { try { unsubscribeSnapshot(); } catch (_) {} };
         } else {
             // No Firebase user and no bypass — definitely not authenticated
             setAdminUser(null);
@@ -346,7 +346,7 @@ export const AdminAuthProvider: React.FC<{ children: ReactNode }> = ({ children 
             setTotalUnreadChats(snapshot.size);
         });
 
-        return () => unsubscribe();
+        return () => { try { unsubscribe(); } catch (_) {} };
     }, [isAdminAuthenticated]);
 
     usePresence(isAdminAuthenticated && !isBypassed ? adminUser?.id || null : null, 'adminUsers');

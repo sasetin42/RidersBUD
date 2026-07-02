@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Booking, BookingStatus } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
+import { useCall } from '../context/CallContext';
 
 declare const L: any;
 
@@ -58,6 +59,7 @@ interface TrackMechanicModalProps {
 
 const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClose, onShare, customerLocation }) => {
     const { db } = useDatabase();
+    const { startCall, callStatus } = useCall();
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
     const mechanicMarkerRef = useRef<any>(null);
@@ -286,9 +288,40 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
                             </div>
                         </div>
                         <div className="flex gap-2 self-start">
-                            <a href={`tel:${liveMechanic.phone}`} className="p-4 bg-white/5 hover:bg-primary/20 text-white hover:text-primary rounded-2xl border border-white/5 transition-all shadow-xl active:scale-90">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C11.5 18 2 8.5 2 3z" /></svg>
-                            </a>
+                            {liveMechanic && (() => {
+                                const isAssigned = booking && 
+                                    ['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(booking.status) &&
+                                    (booking.mechanicId || booking.mechanicName || booking.mechanic?.id || booking.mechanic?.name);
+                                return (
+                                    <button
+                                        onClick={() => {
+                                            if (!isAssigned) {
+                                                alert('Calling is disabled. A mechanic has not been assigned to this booking yet.');
+                                                return;
+                                            }
+                                            if (callStatus === 'idle') {
+                                                startCall({
+                                                    targetId: liveMechanic.id || booking.mechanicId || 'support-mechanic',
+                                                    targetRole: 'mechanic',
+                                                    targetName: liveMechanic.name || booking.mechanicName || 'Mechanic',
+                                                    targetImage: liveMechanic.picture || liveMechanic.imageUrl || booking.mechanic?.picture,
+                                                    type: 'audio'
+                                                });
+                                            } else {
+                                                alert('A call is already active.');
+                                            }
+                                        }}
+                                        disabled={callStatus !== 'idle' || !isAssigned}
+                                        className={`p-4 rounded-2xl border transition-all shadow-xl disabled:opacity-40 disabled:cursor-not-allowed ${
+                                            isAssigned 
+                                                ? 'bg-white/5 hover:bg-primary/20 text-white hover:text-primary border-white/5 active:scale-90' 
+                                                : 'bg-white/5 border-white/5 text-gray-500'
+                                        }`}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C11.5 18 2 8.5 2 3z" /></svg>
+                                    </button>
+                                );
+                            })()}
                             <button onClick={onShare} className="p-4 bg-white/5 hover:bg-primary/20 text-white hover:text-primary rounded-2xl border border-white/5 transition-all shadow-xl active:scale-90">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" /></svg>
                             </button>

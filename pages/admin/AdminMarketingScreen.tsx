@@ -116,9 +116,10 @@ const BannerForm: React.FC<{
                 {activeTab === 'details' && (
                     <div className="space-y-6 animate-fadeIn">
                         <div>
-                            <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Campaign Title</label>
+                            <label htmlFor="campaign-title" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Campaign Title</label>
                             <input
                                 type="text"
+                                id="campaign-title"
                                 name="title"
                                 value={formData.title}
                                 onChange={handleChange}
@@ -129,8 +130,9 @@ const BannerForm: React.FC<{
                         </div>
 
                         <div>
-                            <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Description</label>
+                            <label htmlFor="campaign-description" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Description</label>
                             <textarea
+                                id="campaign-description"
                                 name="description"
                                 value={formData.description}
                                 onChange={handleChange}
@@ -143,9 +145,10 @@ const BannerForm: React.FC<{
 
                         <div className="grid grid-cols-2 gap-6">
                             <div>
-                                <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Start Date</label>
+                                <label htmlFor="campaign-start-date" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Start Date</label>
                                 <input
                                     type="date"
+                                    id="campaign-start-date"
                                     name="startDate"
                                     value={formData.startDate}
                                     onChange={handleChange}
@@ -153,9 +156,10 @@ const BannerForm: React.FC<{
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">End Date (Optional)</label>
+                                <label htmlFor="campaign-end-date" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">End Date (Optional)</label>
                                 <input
                                     type="date"
+                                    id="campaign-end-date"
                                     name="endDate"
                                     value={formData.endDate}
                                     onChange={handleChange}
@@ -201,9 +205,10 @@ const BannerForm: React.FC<{
                         </div>
 
                         <div>
-                            <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Link / Action URL</label>
+                            <label htmlFor="campaign-url" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Link / Action URL</label>
                             <input
                                 type="text"
+                                id="campaign-url"
                                 name="link"
                                 value={formData.link}
                                 onChange={handleChange}
@@ -218,8 +223,9 @@ const BannerForm: React.FC<{
                 {activeTab === 'settings' && (
                     <div className="space-y-6 animate-fadeIn">
                         <div>
-                            <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Target Audience</label>
+                            <label htmlFor="campaign-audience" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-2">Target Audience</label>
                             <select
+                                id="campaign-audience"
                                 name="targetAudience"
                                 value={formData.targetAudience}
                                 onChange={handleChange}
@@ -457,8 +463,10 @@ const AdminMarketingScreen: React.FC = () => {
                 <div className="absolute -inset-1 bg-gradient-to-r from-pink-600 to-purple-600 rounded-[2.5rem] blur opacity-5 group-hover:opacity-10 transition duration-1000"></div>
                 <div className="flex flex-col lg:flex-row justify-between items-center gap-6 relative z-10">
                     <div className="flex items-center gap-4 w-full lg:w-auto">
-                        <label className="text-[10px] font-black  tracking-widest text-gray-500 whitespace-nowrap">Filter Status</label>
+                        <label htmlFor="campaign-filter" className="text-[10px] font-black  tracking-widest text-gray-500 whitespace-nowrap">Filter Status</label>
                         <select
+                            id="campaign-filter"
+                            name="campaign-filter"
                             value={filterStatus}
                             onChange={(e) => setFilterStatus(e.target.value as any)}
                             className="w-full lg:w-64 px-6 py-4 bg-white/5 border border-white/5 rounded-2xl text-white font-bold outline-none focus:border-primary appearance-none cursor-pointer hover:bg-white/10 transition-colors"

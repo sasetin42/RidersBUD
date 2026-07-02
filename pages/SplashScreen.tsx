@@ -5,9 +5,7 @@ const SplashScreen: React.FC = () => {
     const { db } = useDatabase();
 
     // Use a default logo while the database is loading or if it's not set
-    const defaultLogo = "/riders-logo.png";
-    const isOldPlaceholder = db?.settings.appLogoUrl?.includes('storage.googleapis.com');
-    const logoUrl = (db?.settings.appLogoUrl && !isOldPlaceholder) ? db.settings.appLogoUrl : defaultLogo;
+    const logoUrl = "/riders-logo.png";
     const tagline = db?.settings.appTagline || "Trusted Car Care Wherever You Are";
 
     return (

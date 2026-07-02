@@ -32,6 +32,8 @@ interface AuthContextType {
     updateUserVehicle: (vehicle: Vehicle) => Promise<void>;
     deleteUserVehicle: (plateNumber: string) => Promise<void>;
     setPrimaryVehicle: (plateNumber: string) => Promise<void>;
+    addFavoriteMechanic: (mechanicId: string) => Promise<void>;
+    removeFavoriteMechanic: (mechanicId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -53,7 +55,9 @@ export const useAuth = () => {
             addUserVehicle: async () => {},
             updateUserVehicle: async () => {},
             deleteUserVehicle: async () => {},
-            setPrimaryVehicle: async () => {}
+            setPrimaryVehicle: async () => {},
+            addFavoriteMechanic: async () => {},
+            removeFavoriteMechanic: async () => {}
         } as unknown as AuthContextType;
     }
     return context;
@@ -69,6 +73,7 @@ const saveCustomerSessionToStorage = (user: Customer | null, isBypassed: boolean
         localStorage.removeItem('ridersbud_customer_bypass');
         localStorage.removeItem('ridersbud_customer_user_data');
     }
+    window.dispatchEvent(new Event('customerAuthChange'));
 };
 
 const loadCustomerSessionFromStorage = (): { isBypassed: boolean; user: Customer | null } => {
@@ -116,7 +121,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, []);
 
     useEffect(() => {
-        const activeUserId = firebaseUser?.uid || (isBypassed ? user?.id : null);
+        const firebaseUid = firebaseUser?.uid;
+        const activeUserId = firebaseUid || (isBypassed ? user?.id : null);
         if (!activeUserId) return;
 
         let unsubscribeSnapshot: (() => void) | null = null;
@@ -126,9 +132,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setLoading(true);
 
             try {
-                if (firebaseUser) {
+                if (firebaseUid) {
                     // Guard: check if this uid belongs to a mechanic first
-                    const mechanicSnap = await getDoc(doc(firestore, 'mechanics', firebaseUser.uid));
+                    const mechanicSnap = await getDoc(doc(firestore, 'mechanics', firebaseUid));
                     if (cancelled) return;
 
                     if (mechanicSnap.exists()) {
@@ -171,9 +177,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         return () => {
             cancelled = true;
-            unsubscribeSnapshot?.();
+            try { unsubscribeSnapshot?.(); } catch (_) {}
         };
-    }, [firebaseUser, isBypassed, user?.id]);
+    }, [firebaseUser?.uid, isBypassed, user?.id]);
 
     const loginWithCredentials = async (email: string, pass: string) => {
         // First check if this email exists in mechanics collection
@@ -545,6 +551,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             throw error;
         }
     };
+    const addFavoriteMechanic = async (mechanicId: string) => {
+        if (!auth.currentUser || !user) return;
+        try {
+            const currentFavorites = user.favoriteMechanicIds || [];
+            if (!currentFavorites.includes(mechanicId)) {
+                const updatedFavorites = [...currentFavorites, mechanicId];
+                const userDocRef = doc(firestore, 'customers', auth.currentUser.uid);
+                await updateDoc(userDocRef, { favoriteMechanicIds: updatedFavorites });
+            }
+        } catch (error) {
+            console.error("Add Favorite Mechanic Error:", error);
+            throw error;
+        }
+    };
+
+    const removeFavoriteMechanic = async (mechanicId: string) => {
+        if (!auth.currentUser || !user) return;
+        try {
+            const currentFavorites = user.favoriteMechanicIds || [];
+            const updatedFavorites = currentFavorites.filter(id => id !== mechanicId);
+            const userDocRef = doc(firestore, 'customers', auth.currentUser.uid);
+            await updateDoc(userDocRef, { favoriteMechanicIds: updatedFavorites });
+        } catch (error) {
+            console.error("Remove Favorite Mechanic Error:", error);
+            throw error;
+        }
+    };
 
     usePresence(isAuthenticated ? user?.id || null : null, 'customers');
 
@@ -563,7 +596,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             addUserVehicle,
             updateUserVehicle,
             deleteUserVehicle,
-            setPrimaryVehicle
+            setPrimaryVehicle,
+            addFavoriteMechanic,
+            removeFavoriteMechanic
         }}>
             {children}
         </AuthContext.Provider>

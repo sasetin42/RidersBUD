@@ -4,12 +4,36 @@ import { Link, useNavigate } from 'react-router-dom';
 import MarketingBanner from '../components/MarketingBanner';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
+import CustomerHeader from '../components/CustomerHeader';
 import { Car, Calendar, FileText, Heart, ChevronRight, Wrench, Search, Bell, Settings, LogOut, User, Phone, MessageSquare, MapPin, Star, Package } from 'lucide-react';
 import Spinner from '../components/Spinner';
 import NotificationBell from '../components/NotificationBell';
 import { MOCKUPS, getProfileImage } from '../utils/imageConstants';
 import { getFallbackImageForCategory } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
+
+const BookingImage: React.FC<{ src?: string; alt: string }> = ({ src, alt }) => {
+    const [error, setError] = useState(false);
+    useEffect(() => {
+        setError(false);
+    }, [src]);
+
+    if (error || !src) {
+        return (
+            <div className="w-full h-full bg-gradient-to-br from-primary/15 to-orange-600/15 flex items-center justify-center">
+                <Wrench className="w-7 h-7 text-primary/80" />
+            </div>
+        );
+    }
+    return (
+        <img
+            src={src}
+            alt={alt}
+            className="w-full h-full object-cover"
+            onError={() => setError(true)}
+        />
+    );
+};
 
 const HomeScreen: React.FC = () => {
     const { user, logout } = useAuth();
@@ -25,12 +49,15 @@ const HomeScreen: React.FC = () => {
     const [showSearchDropdown, setShowSearchDropdown] = useState(false);
     const [bookingToCancel, setBookingToCancel] = useState<string | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
 
     const handleCancelBooking = async (bookingId: string) => {
+        if (!cancelReason.trim()) return;
         setIsCancelling(true);
         try {
-            await cancelBooking(bookingId, 'Cancelled by customer');
+            await cancelBooking(bookingId, cancelReason.trim());
             setBookingToCancel(null);
+            setCancelReason('');
         } catch (error) {
             console.error('Failed to cancel booking:', error);
         } finally {
@@ -99,7 +126,7 @@ const HomeScreen: React.FC = () => {
 
     // Derived state for widgets
     const activeBooking = db?.bookings.find(b =>
-        b.customerName === user?.name &&
+        (b.customerId === user?.id || b.customerName === user?.name) &&
         ['En Route', 'In Progress', 'Mechanic Assigned'].includes(b.status)
     );
 
@@ -109,6 +136,14 @@ const HomeScreen: React.FC = () => {
             .filter(b => (b.customerId === user.id || b.customerName === user.name) && ['Upcoming', 'Booking Confirmed'].includes(b.status))
             .sort((a, b) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
     }, [db?.bookings, user]);
+
+    const activeOrder = React.useMemo(() => {
+        if (!db?.orders || !user) return null;
+        return db.orders.find(o => 
+            (o.customerId === user.id || o.customerName === user.name) && 
+            ['Processing', 'Shipped'].includes(o.status)
+        );
+    }, [db?.orders, user]);
 
     // Live mechanic data lookup
     const liveMechanic = activeBooking && db?.mechanics
@@ -143,79 +178,20 @@ const HomeScreen: React.FC = () => {
         );
     }
 
-
-
     return (
         <div className="flex flex-col min-h-screen bg-[#121212] text-white pb-24 font-sans">
-            {/* Header Section */}
-            <header className="px-6 py-8 z-30 bg-[#121212]/90 backdrop-blur-md">
-                <div className="flex justify-between items-center mb-6">
-                    <div>
-                        <p className="text-sm text-gray-400 font-medium mb-1">Welcome back,</p>
-                        <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-2">
-                            {user?.name.split(' ')[0]}! <span className="text-2xl">👋</span>
-                        </h1>
-                    </div>
+            <CustomerHeader title={`Welcome, ${user?.name.split(' ')[0]}!`} icon={<Car size={22} />} />
 
-                    <div className="flex items-center gap-3">
-                        {/* Notification Bell Component */}
-                        <Tooltip content="Notifications">
-                            <NotificationBell className="w-12 h-12 flex items-center justify-center bg-[#1E1E1E] border border-white/10 rounded-full hover:bg-white/10 text-gray-300 hover:text-white" />
-                        </Tooltip>
-
-                        {/* Profile Dropdown */}
-                        <div className="relative flex items-center justify-center">
-                            <Tooltip content="Profile">
-                                <button
-                                    onClick={() => setIsProfileOpen(!isProfileOpen)}
-                                    className="w-12 h-12 rounded-full border border-white/10 overflow-hidden shadow-2xl focus:outline-none transition-all flex items-center justify-center bg-[#1E1E1E] hover:bg-white/10"
-                                >
-                                    <img
-                                        src={getProfileImage(user?.picture, user?.name)}
-                                        alt="Profile"
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
-                                    />
-                                </button>
-                            </Tooltip>
-
-                            {/* Dropdown Menu */}
-                            {isProfileOpen && (
-                                <div className="absolute right-0 top-full mt-2 w-48 bg-[#1E1E1E] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden animate-fadeIn">
-                                    <div className="py-1">
-                                        <Tooltip content="Profile settings" className="w-full">
-                                            <button
-                                                onClick={() => {
-                                                    navigate('/customer-portal/profile');
-                                                    setIsProfileOpen(false);
-                                                }}
-                                                className="w-full px-4 py-3 text-left text-sm text-gray-300 hover:bg-white/5 hover:text-white flex items-center gap-2 transition-colors"
-                                            >
-                                                <Settings size={16} />
-                                                Profile Settings
-                                            </button>
-                                        </Tooltip>
-                                        <Tooltip content="Log out" className="w-full">
-                                            <button
-                                                onClick={handleLogout}
-                                                className="w-full px-4 py-3 text-left text-sm text-red-400 hover:bg-white/5 hover:text-red-300 flex items-center gap-2 transition-colors border-t border-white/5"
-                                            >
-                                                <LogOut size={16} />
-                                                Log Out
-                                            </button>
-                                        </Tooltip>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
+            {/* Search Bar section */}
+            <div className="px-6 py-4 bg-[#121212]/90 backdrop-blur-md sticky top-[53px] z-30 border-b border-white/5 w-full">
                 {/* Search Bar & Live Dropdown - Fully Functional 1-row width */}
-                <div className="relative w-full z-40">
+                <div className="relative w-full z-40 max-w-5xl mx-auto">
                     <div className="relative flex items-center group w-full">
+                        <label htmlFor="globalSearch" className="sr-only">Search services, products, and tools</label>
                         <Search className="absolute left-5 h-5 w-5 text-gray-500 group-focus-within:text-primary transition-colors pointer-events-none" />
                         <input
+                            id="globalSearch"
+                            name="globalSearch"
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -349,7 +325,7 @@ const HomeScreen: React.FC = () => {
                         </div>
                     )}
                 </div>
-            </header>
+            </div>
 
             <main className="flex-grow w-full px-6 space-y-4 overflow-y-auto custom-scrollbar pt-2 max-w-5xl mx-auto">
 
@@ -387,7 +363,14 @@ const HomeScreen: React.FC = () => {
                                     </div>
                                     <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center overflow-hidden">
                                         {primaryVehicle.imageUrls && primaryVehicle.imageUrls.length > 0 ? (
-                                            <img src={primaryVehicle.imageUrls[0]} alt={`${primaryVehicle.make} ${primaryVehicle.model}`} className="w-full h-full object-cover" />
+                                            <img
+                                                src={primaryVehicle.imageUrls[0]}
+                                                alt={`${primaryVehicle.make} ${primaryVehicle.model}`}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                                }}
+                                            />
                                         ) : (
                                             <img src="/assets/car_mockup.png" alt="Car Mockup" className="w-full h-full object-cover opacity-50" />
                                         )}
@@ -446,60 +429,55 @@ const HomeScreen: React.FC = () => {
                                             {/* Accent glow */}
                                             <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
                                             
-                                            <div className="flex gap-4 relative z-10">
-                                                {/* Service Image */}
-                                                <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-white/10 flex-shrink-0 bg-[#1A1A1A]">
-                                                    <img 
-                                                        src={serviceImg || MOCKUPS.changeOil} 
-                                                        alt="Service" 
-                                                        className="w-full h-full object-cover"
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).src = MOCKUPS.changeOil;
-                                                        }}
-                                                    />
-                                                    <span className="absolute top-2 left-2 bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full tracking-wider uppercase border border-yellow-400/20">
-                                                        Upcoming
-                                                    </span>
-                                                </div>
-
-                                                {/* Service Info */}
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex justify-between items-start">
-                                                        <h3 className="text-white font-bold text-base leading-tight truncate">
-                                                            {booking.services?.map((s: any) => s.name).join(', ') || booking.service?.name || 'Vehicle Service'}
-                                                        </h3>
-                                                        <span className="text-xs font-mono text-gray-500">#{booking.id.slice(-6).toUpperCase()}</span>
+                                            <div className="relative z-10">
+                                                <div className="flex gap-4">
+                                                    {/* Service Image */}
+                                                    <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-white/10 flex-shrink-0 bg-[#1A1A1A]">
+                                                        <BookingImage src={serviceImg} alt="Service" />
+                                                        <span className="absolute top-2 left-2 bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full tracking-wider uppercase border border-yellow-400/20">
+                                                            Upcoming
+                                                        </span>
                                                     </div>
 
-                                                    <p className="text-xs text-yellow-400 font-bold mt-1.5 flex items-center gap-1.5">
-                                                        <Calendar size={13} />
-                                                        {booking.date} · {booking.time}
-                                                    </p>
-
-                                                    <p className="text-xs text-gray-400 mt-2 font-medium">
-                                                        Vehicle: <span className="text-gray-300 font-bold">{booking.vehicle?.year} {booking.vehicle?.make} {booking.vehicle?.model}</span> · <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-gray-300">{booking.vehicle?.plateNumber}</span>
-                                                    </p>
-
-                                                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
-                                                        <div className="text-[11px] text-gray-500">
-                                                            Payment: <span className={booking.isVerified ? 'text-green-400 font-bold' : 'text-yellow-500 font-bold'}>
-                                                                {booking.isVerified ? `Deposit ₱${deposit.toLocaleString()} Verified` : 'Pending Verification'}
-                                                            </span>
+                                                    {/* Service Info */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex justify-between items-start">
+                                                            <h3 className="text-white font-bold text-base leading-tight truncate">
+                                                                {booking.services?.map((s: any) => s.name).join(', ') || booking.service?.name || 'Vehicle Service'}
+                                                            </h3>
+                                                            <span className="text-xs font-mono text-gray-500">#{booking.id.slice(-6).toUpperCase()}</span>
                                                         </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
-                                                                className="text-xs font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-3 py-1.5 rounded-xl border border-white/5"
-                                                            >
-                                                                Details
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setBookingToCancel(booking.id)}
-                                                                className="text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors bg-red-500/5 px-3 py-1.5 rounded-xl border border-red-500/20"
-                                                            >
-                                                                Cancel
-                                                            </button>
-                                                        </div>
+
+                                                        <p className="text-xs text-yellow-400 font-bold mt-1.5 flex items-center gap-1.5">
+                                                            <Calendar size={13} />
+                                                            {booking.date} · {booking.time}
+                                                        </p>
+
+                                                        <p className="text-xs text-gray-400 mt-2 font-medium">
+                                                            Vehicle: <span className="text-gray-300 font-bold">{booking.vehicle?.year} {booking.vehicle?.make} {booking.vehicle?.model}</span> · <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-gray-300">{booking.vehicle?.plateNumber}</span>
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center justify-between mt-4 pt-3.5 border-t border-white/5">
+                                                    <div className="text-[11px] text-gray-500">
+                                                        Payment: <span className={booking.isVerified ? 'text-green-400 font-bold' : 'text-yellow-500 font-bold'}>
+                                                            {booking.isVerified ? `Deposit ₱${deposit.toLocaleString()} Verified` : 'Pending Verification'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
+                                                            className="text-xs font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-3 py-1.5 rounded-xl border border-white/5"
+                                                        >
+                                                            Details
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setBookingToCancel(booking.id)}
+                                                            className="text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors bg-red-500/5 px-3 py-1.5 rounded-xl border border-red-500/20"
+                                                        >
+                                                            Cancel
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -554,12 +532,14 @@ const HomeScreen: React.FC = () => {
                                     <div>
                                         <h3 className="text-white font-bold text-base leading-tight group-hover:text-primary transition-colors">{activeBooking.serviceName}</h3>
                                         <p className="text-xs text-gray-400 font-medium mt-0.5">{activeBooking.vehicle.make} {activeBooking.vehicle.model} • <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-gray-300">{activeBooking.vehicle.plateNumber}</span></p>
+                                        <div className="mt-2">
+                                            <span className="inline-flex bg-primary/20 text-primary text-[10px] font-black px-3 py-1.5 rounded-full border border-primary/20 items-center gap-1.5 uppercase tracking-wider">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+                                                {activeBooking.status}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-                                <span className="bg-primary/20 text-primary text-[10px] font-black px-3 py-1.5 rounded-full border border-primary/20 flex items-center gap-1.5 uppercase tracking-wider">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
-                                    {activeBooking.status}
-                                </span>
                             </div>
 
                             {/* Progress & Status Description */}
@@ -577,7 +557,7 @@ const HomeScreen: React.FC = () => {
                             </div>
 
                             {/* Live Mechanic Profile Section */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                            <div className="flex flex-col gap-3 relative z-10">
                                 <div className="flex items-center gap-3">
                                     <div className="relative">
                                         <div className="w-11 h-11 rounded-2xl border border-white/10 bg-[#2A1C15] flex items-center justify-center font-bold text-white overflow-hidden shadow-md">
@@ -615,14 +595,14 @@ const HomeScreen: React.FC = () => {
                                 </div>
 
                                 {/* Actions buttons */}
-                                <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <div className="flex items-center gap-2 w-full">
                                     {((activeBooking.paymentMethod === 'gcash' && !activeBooking.gcashReceiptUrl) || activeBooking.gcashPaymentStatus === 'awaiting_payment') && (
                                         <button 
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 navigate(`/customer-portal/booking-detail/${activeBooking.id}`);
                                             }}
-                                            className="flex-1 sm:flex-initial py-2.5 px-4 bg-[#FE7803] hover:bg-[#e06902] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-md shadow-orange-500/15 animate-pulse"
+                                            className="flex-1 py-2.5 px-4 bg-[#FE7803] hover:bg-[#e06902] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-md shadow-orange-500/15 animate-pulse"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -635,7 +615,7 @@ const HomeScreen: React.FC = () => {
                                             e.stopPropagation();
                                             navigate(`/customer-portal/booking-detail/${activeBooking.id}?chat=true`);
                                         }}
-                                        className="flex-1 sm:flex-initial py-2.5 px-4 bg-primary hover:bg-primary/90 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-md shadow-primary/10"
+                                        className="flex-1 py-2.5 px-4 bg-[#FE7803] hover:bg-[#e06902] rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-md shadow-orange-500/10"
                                     >
                                         <MessageSquare size={14} />
                                         Chat
@@ -646,12 +626,73 @@ const HomeScreen: React.FC = () => {
                                                 e.stopPropagation();
                                                 navigate(`/customer-portal/booking-detail/${activeBooking.id}?track=true`);
                                             }}
-                                            className="flex-1 sm:flex-initial py-2.5 px-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                                            className="flex-1 py-2.5 px-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all active:scale-95"
                                         >
                                             <MapPin size={14} />
                                             Track
                                         </button>
                                     )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                
+                {/* Current Active Order Widget */}
+                {activeOrder && (
+                    <div className="animate-slideUp w-full mt-4">
+                        <div
+                            onClick={() => navigate(`/customer-portal/order-history?id=${activeOrder.id}`)}
+                            className="bg-gradient-to-br from-[#121E25] via-[#1E1E1E] to-[#121212] border border-cyan-500/20 rounded-3xl p-5 relative overflow-hidden group cursor-pointer shadow-xl hover:shadow-cyan-500/5 transition-all w-full"
+                        >
+                            {/* Blur accent */}
+                            <div className="absolute top-0 right-0 w-40 h-40 bg-cyan-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+                            
+                            {/* Card Header */}
+                            <div className="flex justify-between items-start mb-4 relative z-10">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-2xl bg-[#15252A] border border-white/5 flex items-center justify-center shadow-inner">
+                                        <Package className="text-cyan-400 h-6 w-6 animate-pulse" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-bold text-base leading-tight group-hover:text-cyan-400 transition-colors">
+                                            Order #{activeOrder.id.slice(-6).toUpperCase()}
+                                        </h3>
+                                        <p className="text-xs text-gray-400 font-medium mt-0.5">
+                                            {activeOrder.items.length} item(s) · Total: <span className="text-primary font-bold">₱{activeOrder.total.toLocaleString()}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className={`text-[10px] font-black px-3 py-1.5 rounded-full border flex items-center gap-1.5 uppercase tracking-wider ${
+                                    activeOrder.status === 'Shipped' 
+                                        ? 'bg-orange-500/20 text-orange-400 border-orange-500/20' 
+                                        : 'bg-blue-500/20 text-blue-400 border-blue-500/20'
+                                }`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full animate-ping ${
+                                        activeOrder.status === 'Shipped' ? 'bg-orange-400' : 'bg-blue-400'
+                                    }`}></span>
+                                    {activeOrder.status}
+                                </span>
+                            </div>
+
+                            {/* Progress Bar & Subtitle */}
+                            <div className="space-y-3 relative z-10">
+                                <div className="flex justify-between text-xs font-semibold">
+                                    <span className="text-gray-300 flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                                        {activeOrder.status === 'Processing' ? 'Processing Order' : 'Shipped & En Route'}
+                                    </span>
+                                    <span className="text-cyan-400 font-bold">
+                                        {activeOrder.status === 'Processing' ? 'Preparing items in warehouse' : 'Carrier is delivering your package'}
+                                    </span>
+                                </div>
+                                <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden">
+                                    <div 
+                                        className={`h-full rounded-full transition-all duration-500 ${
+                                            activeOrder.status === 'Shipped' ? 'bg-orange-500' : 'bg-blue-500'
+                                        }`}
+                                        style={{ width: activeOrder.status === 'Shipped' ? '66%' : '33%' }}
+                                    ></div>
                                 </div>
                             </div>
                         </div>
@@ -685,8 +726,39 @@ const HomeScreen: React.FC = () => {
                                         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black via-black/90 to-transparent"></div>
 
                                         <div className="absolute bottom-4 left-4 right-4">
-                                            <h3 className="text-lg font-black text-white leading-tight mb-1 group-hover:text-primary transition-colors duration-300">{service.name}</h3>
-                                            <p className="text-xs font-bold text-primary group-hover:text-white transition-colors duration-300">From ₱{service.price.toLocaleString()}</p>
+                                            <h3 className="text-[15px] font-black text-white leading-tight mb-1 group-hover:text-primary transition-colors duration-300">{service.name}</h3>
+                                            <p className="text-[10px] font-bold text-primary group-hover:text-white transition-colors duration-300">From ₱{service.price?.toLocaleString()}</p>
+                                        </div>
+                                    </div>
+                                </Link>
+                            </Tooltip>
+                        ))}
+                    </div>
+                </section>
+
+                {/* Featured App Services */}
+                <section className="animate-slideUp" style={{ animationDelay: '0.15s' }}>
+                    <div className="flex justify-between items-end mb-5 mt-8">
+                        <h2 className="text-lg font-black text-white tracking-wide">Featured Services</h2>
+                        <Tooltip content="Browse all ridersbud services">
+                            <Link to="/customer-portal/app-services" className="text-xs text-primary font-bold hover:text-white transition-colors">View All</Link>
+                        </Tooltip>
+                    </div>
+
+                    <div className="flex gap-4 overflow-x-auto pb-4 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
+                        {db?.appServices?.filter((s: any) => s.category === 'Special Services' && s.isActive !== false).slice().sort((a: any, b: any) => (a.order || 99) - (b.order || 99)).map((service: any) => (
+                            <Tooltip key={service.id} content={service.name}>
+                                <Link
+                                    to={`/customer-portal/app-services/${service.id}`}
+                                    className="flex-shrink-0 w-44 group relative snap-start"
+                                >
+                                    <div className="h-56 w-full rounded-2xl overflow-hidden relative shadow-lg bg-[#1E1E1E] group-hover:shadow-2xl group-hover:shadow-primary/20 transition-all duration-500 border border-white/5 group-hover:border-primary/30">
+                                        <img src={service.imageUrl || '/assets/logo.png'} alt={service.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" onError={(e) => { (e.target as HTMLImageElement).src = '/assets/logo.png'; }} />
+                                        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black via-black/90 to-transparent"></div>
+
+                                        <div className="absolute bottom-4 left-4 right-4">
+                                            <h3 className="text-[15px] font-black text-white leading-tight mb-1 group-hover:text-primary transition-colors duration-300">{service.name}</h3>
+                                            <p className="text-[10px] font-bold text-gray-400 line-clamp-2">{service.description}</p>
                                         </div>
                                     </div>
                                 </Link>
@@ -720,8 +792,8 @@ const HomeScreen: React.FC = () => {
                                 <Package size={12} /> PARTS & ACCESSORIES
                             </span>
 
-                            <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight mb-1.5">Genuine Parts</h3>
-                            <p className="text-xs sm:text-sm text-gray-400 font-medium mb-2">Premium quality auto parts & tools. Upgrade your ride today.</p>
+                            <h3 className="text-[20px] font-black text-white tracking-tight leading-tight mb-1.5">Genuine Parts</h3>
+                            <p className="text-[12px] text-gray-400 font-medium mb-2">Premium quality auto parts & tools. Upgrade your ride today.</p>
                             
                             {/* Parts count */}
                             <p className="text-[11px] text-gray-600 font-bold mb-3">
@@ -790,10 +862,10 @@ const HomeScreen: React.FC = () => {
                             <span className="inline-flex items-center gap-1.5 bg-primary/20 border border-primary/30 text-primary text-[10px] font-black tracking-widest px-3 py-1 rounded-full w-fit mb-3 uppercase">
                                 <Wrench size={12} /> EXPERT CARE
                             </span>
-                            <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight mb-1.5 whitespace-nowrap">
+                            <h3 className="text-[20px] font-black text-white tracking-tight leading-tight mb-1.5 whitespace-nowrap">
                                 Premium Service
                             </h3>
-                            <p className="text-xs sm:text-sm text-gray-400 font-medium mb-2 line-clamp-2 leading-relaxed">
+                            <p className="text-[12px] text-gray-400 font-medium mb-2 line-clamp-2 leading-relaxed">
                                 Book certified mechanics for expert diagnostics, auto repairs, and maintenance.
                             </p>
                             
@@ -851,18 +923,62 @@ const HomeScreen: React.FC = () => {
                         <p className="text-xs text-gray-400 mt-2 leading-relaxed">
                             Are you sure you want to cancel this booking? This will cancel the service schedule and notify the admin immediately.
                         </p>
+
+                        <div className="mt-4 space-y-3.5">
+                            <label className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Quick Reasons</label>
+                            <div className="flex flex-wrap gap-1.5">
+                                {[
+                                    'Change of plans',
+                                    'Schedule conflict',
+                                    'Not needed anymore',
+                                    'Incorrect details'
+                                ].map((template) => (
+                                    <button
+                                        key={template}
+                                        type="button"
+                                        onClick={() => setCancelReason(template)}
+                                        className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all duration-200 active:scale-95 ${
+                                            cancelReason === template
+                                                ? 'bg-primary/20 border-primary text-primary'
+                                                : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'
+                                        }`}
+                                    >
+                                        {template}
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            <div className="flex flex-col group">
+                                <label htmlFor="home-cancel-reason" className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-1.5 group-focus-within:text-primary transition-colors">Specify Reason *</label>
+                                <textarea
+                                    id="home-cancel-reason"
+                                    name="home-cancel-reason"
+                                    required
+                                    value={cancelReason}
+                                    onChange={(e) => setCancelReason(e.target.value)}
+                                    placeholder="Please tell us why you want to cancel..."
+                                    rows={3}
+                                    className="w-full bg-black/40 border border-white/5 hover:border-white/10 focus:border-red-500/50 text-white text-xs font-bold rounded-xl p-3 outline-none resize-none transition-all focus:ring-2 focus:ring-red-500/10 shadow-inner"
+                                />
+                            </div>
+                        </div>
+
                         <div className="flex gap-3 mt-6">
                             <button
                                 disabled={isCancelling}
-                                onClick={() => setBookingToCancel(null)}
+                                onClick={() => { setBookingToCancel(null); setCancelReason(''); }}
                                 className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-2.5 rounded-xl border border-white/5 transition-all text-xs"
                             >
                                 No, Keep It
                             </button>
                             <button
-                                disabled={isCancelling}
+                                disabled={isCancelling || !cancelReason.trim()}
                                 onClick={() => handleCancelBooking(bookingToCancel)}
-                                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5"
+                                className={`flex-1 font-bold py-2.5 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 ${
+                                    cancelReason.trim()
+                                        ? 'bg-red-500 hover:bg-red-600 text-white cursor-pointer'
+                                        : 'bg-red-500/30 text-white/50 cursor-not-allowed'
+                                }`}
                             >
                                 {isCancelling ? <Spinner size="sm" /> : 'Yes, Cancel'}
                             </button>

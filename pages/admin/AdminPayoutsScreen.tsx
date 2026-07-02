@@ -6,7 +6,7 @@ import Modal from '../../components/admin/Modal';
 import { useNotification } from '../../context/NotificationContext';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
 import { useAdminAuth } from '../../context/AdminAuthContext';
-import { DollarSign, Clock, CheckCircle, XCircle, Download, Eye, Search, Filter, Calendar, Settings, TrendingUp, CreditCard, ChevronDown, ArrowUpDown, History } from 'lucide-react';
+import { DollarSign, Clock, CheckCircle, XCircle, Download, Eye, Search, Filter, Calendar, Settings, TrendingUp, CreditCard, ChevronDown, ArrowUpDown, History, Building2, Smartphone, MessageSquare } from 'lucide-react';
 
 type SortableKeys = 'id' | 'mechanicName' | 'amount' | 'requestDate' | 'status';
 
@@ -15,11 +15,15 @@ const PayoutDetailsModal: React.FC<{
     onClose: () => void;
     onProcess: (payoutId: string, status: 'Approved' | 'Rejected' | 'Paid', details?: { notes?: string; transactionId?: string }) => void;
 }> = ({ request, onClose, onProcess }) => {
+    const { db } = useDatabase();
     const [processing, setProcessing] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [transactionId, setTransactionId] = useState('');
     const [showRejectionInput, setShowRejectionInput] = useState(false);
     const [showPaidInput, setShowPaidInput] = useState(false);
+
+    const mechanic = db?.mechanics?.find((m: any) => m.id === request.mechanicId || m.name === request.mechanicName);
+    const profilePic = mechanic?.imageUrl || mechanic?.profilePicture || '/riders-logo.png';
 
     const handleProcess = async (status: 'Approved' | 'Rejected' | 'Paid') => {
         if (status === 'Rejected' && !rejectionReason.trim()) {
@@ -41,96 +45,150 @@ const PayoutDetailsModal: React.FC<{
     };
 
     return (
-        <Modal title={`Payout Request #${request.id.toUpperCase().slice(-6)}`} isOpen={true} onClose={onClose}>
-            <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
-                <div className="bg-gradient-to-br from-[#1A1A1A] to-black p-6 rounded-[1.5rem] border border-white/5 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 blur-[50px] rounded-full pointer-events-none"></div>
-                    <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-4">
+        <Modal title={<h3 className="text-base font-black text-white tracking-tight">Payout Request Details</h3>} isOpen={true} onClose={onClose} compact>
+            <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="bg-gradient-to-br from-[#1A1A1A] to-black p-4 rounded-[1.2rem] border border-white/5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 blur-[40px] rounded-full pointer-events-none"></div>
+                    <div className="relative z-10 flex flex-row justify-between items-center gap-4">
                         <div>
-                            <p className="text-[10px] font-black  tracking-widest text-gray-500 mb-2">Total Amount</p>
-                            <p className="text-5xl font-black text-white tracking-tighter">₱{request.amount.toLocaleString()}</p>
+                            <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase">Total Amount</p>
+                            <p className="text-3xl font-black text-white tracking-tight mt-0.5">₱{request.amount.toLocaleString()}</p>
                         </div>
-                        <div className={`px-4 py-2 rounded-xl border ${
+                        <div className={`px-3 py-1.5 rounded-lg border text-[10px] font-black tracking-widest ${
                             request.status === 'Pending' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500' : 
                             request.status === 'Approved' ? 'bg-blue-500/10 border-blue-500/20 text-blue-500' : 
                             request.status === 'Paid' ? 'bg-green-500/10 border-green-500/20 text-green-500' : 
                             'bg-red-500/10 border-red-500/20 text-red-500'
                         }`}>
-                            <p className="text-xs font-black  tracking-widest">{request.status}</p>
+                            {request.status.toUpperCase()}
                         </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-white/5 p-6 rounded-[1.5rem] border border-white/5">
-                        <p className="text-[10px] font-black  tracking-widest text-gray-500 mb-2">Mechanic Details</p>
-                        <p className="font-bold text-white text-lg">{request.mechanicName}</p>
-                        <div className="mt-4 pt-4 border-t border-white/5">
-                            <p className="text-[10px] font-black  tracking-widest text-gray-500 mb-1">Request Date</p>
-                            <p className="text-sm font-medium text-gray-300">
-                                {request.requestDate ? new Date(request.requestDate).toLocaleDateString() : 'Invalid Date'}
-                            </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <div className="bg-white/5 p-4 rounded-[1.2rem] border border-white/5 flex flex-col justify-between">
+                        <div>
+                            <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase mb-2.5">Mechanic Details</p>
+                            <div className="flex items-center gap-2.5">
+                                <img 
+                                    src={profilePic} 
+                                    alt={request.mechanicName} 
+                                    className="w-9 h-9 rounded-full object-cover border border-white/10 shrink-0"
+                                    onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                />
+                                <div className="min-w-0">
+                                    <p className="font-bold text-white text-sm truncate">{request.mechanicName}</p>
+                                    <p className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">ID: {request.mechanicId?.slice(-6) || 'N/A'}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-2">
+                            <Calendar size={13} className="text-gray-500" />
+                            <div>
+                                <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase leading-none">Request Date</p>
+                                <p className="text-xs font-semibold text-gray-300 mt-1">
+                                    {request.requestDate ? `${new Date(request.requestDate).toLocaleDateString(undefined, { dateStyle: 'medium' })} • ${new Date(request.requestDate).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : 'Invalid Date'}
+                                </p>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-white/5 p-6 rounded-[1.5rem] border border-white/5">
-                        <p className="text-[10px] font-black  tracking-widest text-gray-500 mb-2">Payment Method</p>
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-primary/20 rounded-lg text-primary">
-                                <CreditCard size={18} />
+                    <div className="bg-white/5 p-4 rounded-[1.2rem] border border-white/5 space-y-3">
+                        <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase">Payment Destination</p>
+                        <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 bg-primary/10 rounded-lg text-primary shrink-0">
+                                {request.paymentMethod.toLowerCase().includes('bank') ? <Building2 size={15} /> : <Smartphone size={15} />}
                             </div>
-                            <p className="font-bold text-white">{request.paymentMethod}</p>
+                            <div className="min-w-0">
+                                <p className="font-bold text-white text-xs truncate">{request.paymentMethod}</p>
+                                <p className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">Method Reference</p>
+                            </div>
                         </div>
-                        <p className="text-sm text-gray-400 font-mono bg-black/30 p-3 rounded-lg border border-white/5">{request.accountDetails}</p>
+                        <div className="bg-black/30 p-2.5 rounded-lg border border-white/5 text-[11px] font-mono text-gray-400 leading-normal space-y-1.5">
+                            {mechanic?.payoutDetails ? (
+                                <>
+                                    <div className="flex justify-between items-center"><span className="text-gray-500">Account Name:</span> <span className="text-white font-semibold">{mechanic.payoutDetails.accountName}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-gray-500">Account Number:</span> <span className="text-white font-semibold">{mechanic.payoutDetails.accountNumber}</span></div>
+                                    {mechanic.payoutDetails.bankName && (
+                                        <div className="flex justify-between items-center"><span className="text-gray-500">Bank Name:</span> <span className="text-white font-semibold">{mechanic.payoutDetails.bankName}</span></div>
+                                    )}
+                                    {mechanic.payoutDetails.walletName && (
+                                        <div className="flex justify-between items-center"><span className="text-gray-500">E-Wallet:</span> <span className="text-white font-semibold">{mechanic.payoutDetails.walletName}</span></div>
+                                    )}
+                                    <div className="text-[9px] text-gray-500 border-t border-white/5 pt-1 mt-1 shrink-0 truncate">Stored Request: {request.accountDetails}</div>
+                                </>
+                            ) : (
+                                <div className="break-all">{request.accountDetails}</div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 {request.notes && (
-                    <div className="bg-white/5 p-6 rounded-[1.5rem] border border-white/5">
-                        <p className="text-[10px] font-black  tracking-widest text-gray-500 mb-2">Request Notes</p>
-                        <p className="text-sm text-white ">"{request.notes}"</p>
+                    <div className="bg-white/5 p-4 rounded-[1.2rem] border border-white/5 flex items-start gap-2.5">
+                        <MessageSquare size={14} className="text-primary mt-0.5 shrink-0" />
+                        <div>
+                            <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase mb-0.5">Request Notes</p>
+                            <p className="text-xs text-white leading-relaxed">"{request.notes}"</p>
+                        </div>
                     </div>
                 )}
 
-                        {(request.adminNotes || request.rejectionReason || request.transactionId) && (
-                    <div className="bg-white/5 p-6 rounded-[1.5rem] border border-white/5">
-                        <p className="text-[10px] font-black  tracking-widest text-gray-500 mb-2">Admin Remarks</p>
-                        <p className="text-sm text-gray-300 italic">"{request.adminNotes || request.rejectionReason || 'No specific remarks.'}"</p>
-                        {request.transactionId && (
-                            <p className="text-xs text-primary font-mono mt-2 flex items-center gap-2">
-                                <History size={14} /> Ref: {request.transactionId}
-                            </p>
-                        )}
-                        {(request.adminName || request.processedBy) && (
-                            <p className="text-[10px] text-gray-500 mt-2 font-bold uppercase tracking-tighter">
-                                Processed by: {request.adminName || request.processedBy} {request.processDate && `on ${new Date(request.processDate).toLocaleDateString()}`}
-                            </p>
-                        )}
+                {(request.adminNotes || request.rejectionReason || request.transactionId) && (
+                    <div className="bg-white/5 p-4 rounded-[1.2rem] border border-white/5 space-y-3">
+                        <div className="flex items-center gap-2.5">
+                            <History size={14} className="text-blue-400 shrink-0" />
+                            <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase">Admin Remarks & Logs</p>
+                        </div>
+                        <div className="text-xs text-gray-300 bg-black/20 p-2.5 rounded-lg border border-white/5 italic">
+                            "{request.adminNotes || request.rejectionReason || 'No notes provided.'}"
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/5">
+                            {request.transactionId && (
+                                <div>
+                                    <p className="text-[9px] text-gray-500 font-bold uppercase">Transaction ID</p>
+                                    <p className="text-[10px] text-primary font-mono font-bold truncate mt-0.5">{request.transactionId}</p>
+                                </div>
+                            )}
+                            {(request.adminName || request.processedBy) && (
+                                <div>
+                                    <p className="text-[9px] text-gray-500 font-bold uppercase">Processed By</p>
+                                    <p className="text-[10px] text-white font-bold truncate mt-0.5">
+                                        {request.adminName || request.processedBy} {request.processDate && `on ${new Date(request.processDate).toLocaleDateString()}`}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
                 {showRejectionInput && (
-                    <div className="bg-red-500/10 p-6 rounded-[1.5rem] border border-red-500/30 animate-fadeIn">
-                        <label className="block text-[10px] font-black  tracking-widest text-red-400 mb-2">Reason for Rejection *</label>
+                    <div className="bg-red-500/10 p-4 rounded-[1.2rem] border border-red-500/30 animate-fadeIn">
+                        <label htmlFor="payout-rejection-reason" className="block text-[10px] font-black tracking-widest text-red-400 mb-2">Reason for Rejection *</label>
                         <textarea
+                            id="payout-rejection-reason"
+                            name="payout-rejection-reason"
                             value={rejectionReason}
                             onChange={(e) => setRejectionReason(e.target.value)}
                             placeholder="Please provide a clear reason for the mechanic..."
-                            className="w-full p-4 bg-black/40 border border-red-500/30 rounded-xl text-white placeholder-red-300/50 focus:ring-1 focus:ring-red-500 focus:border-red-500 resize-none outline-none"
-                            rows={3}
+                            className="w-full p-3 bg-black/40 border border-red-500/30 rounded-xl text-white placeholder-red-300/50 focus:ring-1 focus:ring-red-500 focus:border-red-500 resize-none outline-none text-xs"
+                            rows={2}
                         />
                     </div>
                 )}
 
                 {showPaidInput && (
-                    <div className="bg-green-500/10 p-6 rounded-[1.5rem] border border-green-500/30 animate-fadeIn">
-                        <label className="block text-[10px] font-black  tracking-widest text-green-400 mb-2">Transaction ID / Reference Number *</label>
+                    <div className="bg-green-500/10 p-4 rounded-[1.2rem] border border-green-500/30 animate-fadeIn">
+                        <label htmlFor="payout-transaction-id" className="block text-[10px] font-black tracking-widest text-green-400 mb-2">Transaction ID / Reference Number *</label>
                         <input
                             type="text"
+                            id="payout-transaction-id"
+                            name="payout-transaction-id"
                             value={transactionId}
                             onChange={(e) => setTransactionId(e.target.value)}
                             placeholder="Enter bank transfer ref or GCash ID..."
-                            className="w-full p-4 bg-black/40 border border-green-500/30 rounded-xl text-white placeholder-green-300/50 focus:ring-1 focus:ring-green-500 focus:border-green-500 outline-none"
+                            className="w-full p-3 bg-black/40 border border-green-500/30 rounded-xl text-white placeholder-green-300/50 focus:ring-1 focus:ring-green-500 focus:border-green-500 outline-none text-xs"
                         />
                     </div>
                 )}
@@ -140,14 +198,14 @@ const PayoutDetailsModal: React.FC<{
                         <button
                             onClick={() => handleProcess('Rejected')}
                             disabled={processing}
-                            className="flex-1 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white font-black  tracking-widest text-xs py-4 px-6 rounded-xl transition-all border border-red-500/20 disabled:opacity-50"
+                            className="flex-1 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-red-500/20 disabled:opacity-50"
                         >
                             {processing ? <Spinner size="sm" /> : 'Reject Request'}
                         </button>
                         <button
                             onClick={() => handleProcess('Approved')}
                             disabled={processing}
-                            className="flex-1 bg-blue-500/10 hover:bg-blue-500 text-blue-500 hover:text-white font-black  tracking-widest text-xs py-4 px-6 rounded-xl transition-all border border-blue-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(59,130,246,0.1)] hover:shadow-[0_0_30px_rgba(59,130,246,0.4)]"
+                            className="flex-1 bg-blue-500/10 hover:bg-blue-500 text-blue-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-blue-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(59,130,246,0.1)] hover:shadow-[0_0_30px_rgba(59,130,246,0.4)]"
                         >
                             {processing ? <Spinner size="sm" /> : 'Approve Request'}
                         </button>
@@ -159,7 +217,7 @@ const PayoutDetailsModal: React.FC<{
                         <button
                             onClick={() => handleProcess('Paid')}
                             disabled={processing}
-                            className="w-full bg-green-500/10 hover:bg-green-500 text-green-500 hover:text-white font-black  tracking-widest text-xs py-4 px-6 rounded-xl transition-all border border-green-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(34,197,94,0.1)] hover:shadow-[0_0_30px_rgba(34,197,94,0.4)]"
+                            className="w-full bg-green-500/10 hover:bg-green-500 text-green-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-green-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(34,197,94,0.1)] hover:shadow-[0_0_30px_rgba(34,197,94,0.4)]"
                         >
                             {processing ? <Spinner size="sm" /> : 'Mark as Paid'}
                         </button>
@@ -187,11 +245,13 @@ const PayoutSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         <Modal title="Payout Configuration" isOpen={true} onClose={onClose}>
             <div className="space-y-8 p-2">
                 <div>
-                    <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-3">Minimum Payout Amount (₱)</label>
+                    <label htmlFor="payout-min-amount" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-3">Minimum Payout Amount (₱)</label>
                     <div className="relative group">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₱</span>
                         <input
                             type="number"
+                            id="payout-min-amount"
+                            name="payout-min-amount"
                             value={minPayout}
                             onChange={(e) => setMinPayout(Number(e.target.value))}
                             className="w-full pl-8 pr-4 py-4 bg-white/5 border border-white/5 rounded-xl text-white font-bold focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all"
@@ -201,8 +261,10 @@ const PayoutSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 </div>
 
                 <div>
-                    <label className="block text-[10px] font-black  tracking-widest text-gray-500 mb-3">Payout Frequency</label>
+                    <label htmlFor="payout-frequency" className="block text-[10px] font-black  tracking-widest text-gray-500 mb-3">Payout Frequency</label>
                     <select
+                        id="payout-frequency"
+                        name="payout-frequency"
                         value={payoutSchedule}
                         onChange={(e) => setPayoutSchedule(e.target.value)}
                         className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-white outline-none font-bold text-sm cursor-pointer"
@@ -518,63 +580,93 @@ const AdminPayoutsScreen: React.FC = () => {
                     <table className="w-full text-left border-collapse min-w-[1000px]">
                         <thead>
                             <tr className="bg-white/5 border-b border-white/5">
-                                <th className="py-8 px-8 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-4 px-6 font-black text-gray-500  tracking-[0.2em] text-[10px]">
                                     <button onClick={() => requestSort('id')} className="flex items-center hover:text-white transition-colors group">
                                         Request ID {getSortIndicator('id')}
                                     </button>
                                 </th>
-                                <th className="py-8 px-8 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-4 px-6 font-black text-gray-500  tracking-[0.2em] text-[10px]">
                                     <button onClick={() => requestSort('mechanicName')} className="flex items-center hover:text-white transition-colors group">
                                         Mechanic {getSortIndicator('mechanicName')}
                                     </button>
                                 </th>
-                                <th className="py-8 px-8 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-4 px-6 font-black text-gray-500  tracking-[0.2em] text-[10px]">
                                     <button onClick={() => requestSort('amount')} className="flex items-center hover:text-white transition-colors group">
                                         Amount {getSortIndicator('amount')}
                                     </button>
                                 </th>
-                                <th className="py-8 px-8 font-black text-gray-500  tracking-[0.2em] text-[10px]">Payment Method</th>
-                                <th className="py-8 px-8 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-4 px-6 font-black text-gray-500  tracking-[0.2em] text-[10px]">Payment Method</th>
+                                <th className="py-4 px-6 font-black text-gray-500  tracking-[0.2em] text-[10px]">
                                     <button onClick={() => requestSort('requestDate')} className="flex items-center hover:text-white transition-colors group">
                                         Request Date {getSortIndicator('requestDate')}
                                     </button>
                                 </th>
-                                <th className="py-8 px-8 font-black text-gray-500  tracking-[0.2em] text-[10px]">
+                                <th className="py-4 px-6 font-black text-gray-500  tracking-[0.2em] text-[10px]">
                                     <button onClick={() => requestSort('status')} className="flex items-center hover:text-white transition-colors group">
                                         Status {getSortIndicator('status')}
                                     </button>
                                 </th>
-                                <th className="py-8 px-8 font-black text-gray-500  tracking-[0.2em] text-[10px] text-center">Actions</th>
+                                <th className="py-4 px-6 font-black text-gray-500  tracking-[0.2em] text-[10px] text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {filteredRequests.length > 0 ? filteredRequests.map((request, index) => (
-                                <tr key={request.id} className={`transition-all duration-200 hover:bg-white/[0.02] group ${index % 2 === 0 ? '' : 'bg-white/[0.01]'}`}>
-                                    <td className="py-6 px-8 text-[10px] font-black  tracking-widest text-gray-500">#{request.id.toUpperCase().slice(-6)}</td>
-                                    <td className="py-6 px-8 text-sm text-white font-bold">{request.mechanicName}</td>
-                                    <td className="py-6 px-8 text-sm font-black text-primary">₱{request.amount.toLocaleString()}</td>
-                                    <td className="py-6 px-8 text-xs text-gray-400 font-medium">{request.paymentMethod}</td>
-                                    <td className="py-6 px-8 text-xs text-gray-500 font-mono">
-                                        {request.requestDate ? new Date(request.requestDate).toLocaleDateString() : 'Invalid Date'}
-                                    </td>
-                                    <td className="py-6 px-8">
-                                        <span className={`px-4 py-2 rounded-xl text-[10px] font-black  tracking-widest border ${statusColors[request.status]}`}>
-                                            {request.status}
-                                        </span>
-                                    </td>
-                                    <td className="py-6 px-8 text-center">
-                                        <div className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
-                                            <button
-                                                onClick={() => setViewingRequest(request)}
-                                                className="p-3 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/20 transition-all"
-                                                title="View Details"
-                                            >
-                                                <Eye size={16} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            )) : (
+                            {filteredRequests.length > 0 ? filteredRequests.map((request, index) => {
+                                const mechanic = db?.mechanics?.find((m: any) => m.id === request.mechanicId || m.name === request.mechanicName);
+                                const profilePic = mechanic?.imageUrl || mechanic?.profilePicture || '/riders-logo.png';
+                                return (
+                                    <tr key={request.id} className={`transition-all duration-200 hover:bg-white/[0.02] group ${index % 2 === 0 ? '' : 'bg-white/[0.01]'}`}>
+                                        <td className="py-3 px-6 text-[10px] font-black  tracking-widest text-gray-500">#{request.id.toUpperCase().slice(-6)}</td>
+                                        <td className="py-3 px-6 text-xs text-white font-bold">
+                                            <div className="flex items-center gap-2.5">
+                                                <img 
+                                                    src={profilePic} 
+                                                    alt={request.mechanicName} 
+                                                    className="w-7 h-7 rounded-full object-cover border border-white/10 shrink-0" 
+                                                    onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
+                                                />
+                                                <span className="truncate max-w-[150px]">{request.mechanicName}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-3 px-6 text-xs font-black text-primary">₱{request.amount.toLocaleString()}</td>
+                                        <td className="py-3 px-6 text-xs text-gray-400 font-medium">
+                                            <div className="flex items-center gap-1.5">
+                                                {(request.paymentMethod || '').toLowerCase().includes('bank') ? (
+                                                    <Building2 size={13} className="text-sky-400 shrink-0" />
+                                                ) : (
+                                                    <Smartphone size={13} className="text-blue-400 shrink-0" />
+                                                )}
+                                                <span className="truncate max-w-[150px]">{request.paymentMethod}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-3 px-6 text-xs text-gray-500 font-mono">
+                                            <div className="flex items-center gap-1.5">
+                                                <Calendar size={13} className="text-gray-600 shrink-0" />
+                                                <span>{request.requestDate ? new Date(request.requestDate).toLocaleDateString() : 'Invalid Date'}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-3 px-6">
+                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black  tracking-widest border ${statusColors[request.status]}`}>
+                                                {request.status === 'Pending' && <Clock size={11} />}
+                                                {request.status === 'Approved' && <CheckCircle size={11} />}
+                                                {request.status === 'Paid' && <CheckCircle size={11} />}
+                                                {request.status === 'Rejected' && <XCircle size={11} />}
+                                                {request.status}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 px-6 text-center">
+                                            <div className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
+                                                <button
+                                                    onClick={() => setViewingRequest(request)}
+                                                    className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/20 transition-all"
+                                                    title="View Details"
+                                                >
+                                                    <Eye size={14} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            }) : (
                                 <tr>
                                     <td colSpan={7} className="text-center py-24">
                                         <div className="flex flex-col items-center gap-4">

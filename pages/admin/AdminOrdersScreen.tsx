@@ -5,9 +5,11 @@ import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
 import { useNotification } from '../../context/NotificationContext';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
-import { ShoppingCart, DollarSign, TrendingUp, Package, Download, Eye, Search, X, ChevronDown, ArrowUpDown, MapPin, User, Mail, Phone, Calendar, CheckCircle, AlertCircle, ShieldCheck } from 'lucide-react';
+import { ShoppingCart, DollarSign, TrendingUp, Package, Download, Eye, Search, X, ChevronDown, ArrowUpDown, MapPin, User, Mail, Phone, Calendar, CheckCircle, AlertCircle, ShieldCheck, Trash2, XCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
+import Tooltip from '../../components/ui/Tooltip';
 
 type SortableKeys = 'customerName' | 'date' | 'total' | 'status';
 
@@ -86,12 +88,7 @@ const PaymentApprovalModal: React.FC<PaymentApprovalModalProps> = ({ order, orde
                 link: '/customer-portal/order-history'
             });
 
-            addNotification({
-                type: 'error',
-                title: 'Payment Declined',
-                message: `GCash payment for ${order.customerName} has been declined.`,
-                recipientId: 'admin'
-            });
+            toast.success("Payment Declined");
             onStatusUpdated();
             onClose();
         } catch (e) {
@@ -144,8 +141,10 @@ const PaymentApprovalModal: React.FC<PaymentApprovalModalProps> = ({ order, orde
 
                 {showDeclineInput ? (
                     <div className="space-y-3 p-4 bg-red-500/5 rounded-xl border border-red-500/10">
-                        <label className="text-xs font-bold text-red-400 block">Decline Reason</label>
+                        <label htmlFor="order-decline-reason" className="text-xs font-bold text-red-400 block">Decline Reason</label>
                         <textarea
+                            id="order-decline-reason"
+                            name="order-decline-reason"
                             value={declineReason}
                             onChange={(e) => setDeclineReason(e.target.value)}
                             placeholder="Enter the reason for rejection (e.g. Reference number mismatch, Blur screenshot)..."
@@ -434,7 +433,7 @@ const OrderDetailsModal: React.FC<{ order: Order; orderNumber: string; onClose: 
 };
 
 const AdminOrdersScreen: React.FC = () => {
-    const { db, updateOrderStatus, loading } = useDatabase();
+    const { db, updateOrderStatus, loading, deleteAllOrders, deleteOrder } = useDatabase();
     const { addNotification } = useNotification();
     const [searchQuery, setSearchQuery] = useState('');
     const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
@@ -443,6 +442,27 @@ const AdminOrdersScreen: React.FC = () => {
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'date', direction: 'ascending' });
     const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
     const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+    const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+    const [isDeletingAll, setIsDeletingAll] = useState(false);
+
+    const handleDeleteAllOrders = async () => {
+        setIsDeletingAll(true);
+        try {
+            await deleteAllOrders();
+            setShowDeleteAllConfirm(false);
+            toast.success('All order records have been successfully deleted.');
+        } catch (err) {
+            console.error("Failed to delete orders", err);
+            addNotification({
+                type: 'error',
+                title: 'Purge Failed',
+                message: 'Failed to delete orders. Please try again.',
+                recipientId: 'admin'
+            });
+        } finally {
+            setIsDeletingAll(false);
+        }
+    };
 
     const orderSequences = useMemo(() => {
         if (!db?.orders) return {};
@@ -566,7 +586,7 @@ const AdminOrdersScreen: React.FC = () => {
     const handleUpdateStatus = async (orderId: string, status: OrderStatus) => {
         try {
             await updateOrderStatus(orderId, status);
-            addNotification({ type: 'success', title: 'Order Updated', message: `Order #${orderId.slice(-6)} status set to ${status}.`, recipientId: 'admin' });
+            toast.success(`Order #${orderId.slice(-6)} status set to ${status}.`);
         } catch (e) {
             addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'admin' });
         }
@@ -652,13 +672,26 @@ const AdminOrdersScreen: React.FC = () => {
                         <p className="text-gray-500 font-bold tracking-[0.3em] text-[10px]">Logistics & Sales</p>
                     </div>
                 </div>
-                <button
-                    onClick={exportToCSV}
-                    className="px-6 py-4 bg-white/5 hover:bg-white/10 text-white rounded-[1.5rem] font-black tracking-widest text-[10px] border border-white/5 transition-all flex items-center gap-3 active:scale-95"
-                >
-                    <Download size={18} />
-                    Export CSV
-                </button>
+                <div className="flex items-center gap-3">
+                    <Tooltip content="Delete all orders from database">
+                        <button
+                            onClick={() => setShowDeleteAllConfirm(true)}
+                            className="px-6 py-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-[1.5rem] font-black tracking-widest text-[10px] border border-red-500/20 transition-all flex items-center gap-3 active:scale-95 animate-pulse"
+                        >
+                            <Trash2 size={18} />
+                            Delete All
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Export orders to CSV file">
+                        <button
+                            onClick={exportToCSV}
+                            className="px-6 py-4 bg-white/5 hover:bg-white/10 text-white rounded-[1.5rem] font-black tracking-widest text-[10px] border border-white/5 transition-all flex items-center gap-3 active:scale-95"
+                        >
+                            <Download size={18} />
+                            Export CSV
+                        </button>
+                    </Tooltip>
+                </div>
             </div>
 
             {/* KPI Cards */}
@@ -959,6 +992,38 @@ const AdminOrdersScreen: React.FC = () => {
                     orderNumber={orderSequences[viewingOrder.id] || viewingOrder.id}
                     onClose={() => setViewingOrder(null)} 
                 />
+            )}
+            {showDeleteAllConfirm && (
+                <Modal title="Delete All Orders" isOpen={true} onClose={() => setShowDeleteAllConfirm(false)}>
+                    <div className="space-y-4">
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl flex gap-3">
+                            <XCircle className="flex-shrink-0 mt-0.5 text-red-400" />
+                            <div>
+                                <h4 className="font-bold text-sm text-white">Critical Warning</h4>
+                                <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                                    This operation will permanently delete <strong>all order records</strong>, transaction logs, and associated details from the database. This action is irreversible.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 pt-2">
+                            <button
+                                onClick={() => setShowDeleteAllConfirm(false)}
+                                disabled={isDeletingAll}
+                                className="bg-[#1E1E1E] text-white font-bold py-2.5 px-5 rounded-xl hover:bg-gray-800 transition text-xs"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteAllOrders}
+                                disabled={isDeletingAll}
+                                className="bg-red-600 text-white font-black py-2.5 px-5 rounded-xl hover:bg-red-700 transition text-xs shadow-lg shadow-red-600/20 flex items-center gap-1.5"
+                            >
+                                {isDeletingAll ? <Spinner size="sm" color="text-white" /> : <Trash2 size={14} />}
+                                {isDeletingAll ? 'Deleting...' : 'Permanently Delete All'}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
             )}
         </div>
     );

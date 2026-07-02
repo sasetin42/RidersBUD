@@ -108,9 +108,9 @@ const EnhancedServiceCardComponent: React.FC<{
 
                         {/* Price & Rating Section */}
                         <div className="mt-auto pt-2 border-t border-white/5 space-y-2">
-                            <div className="flex items-center justify-between">
+                             <div className="flex items-center justify-between">
                                 <span className="text-sm sm:text-base font-extrabold text-[#FF7A00]">
-                                    {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Get Quote'}
+                                    {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'For Quotation'}
                                 </span>
                                 
                                 {rating > 0 && (
@@ -136,7 +136,7 @@ const EnhancedServiceCardComponent: React.FC<{
                     // List Mode Price and Details
                     <div className="space-y-2">
                         <p className="text-[#FF7A00] text-lg font-bold">
-                            {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Get Quote'}
+                            {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'For Quotation'}
                         </p>
                         <p className="text-white text-sm font-semibold capitalize">{service.category}</p>
                         <div className="flex items-center gap-2 text-gray-400 text-xs">
@@ -348,10 +348,13 @@ const ServicesScreen: React.FC = () => {
                         <Tooltip content="Search services" className="w-full">
                             <input
                                 type="text"
+                                id="search-services"
+                                name="search-services"
                                 placeholder="Search services..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-12 pr-10 py-3 bg-[#1E1E1E] border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none transition-all font-medium"
+                                className="w-full h-12 pl-12 pr-10 bg-[#1E1E1E] border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none transition-all font-medium"
+                                autoComplete="off"
                             />
                         </Tooltip>
                         {searchQuery && (
@@ -371,7 +374,7 @@ const ServicesScreen: React.FC = () => {
                         <Tooltip content="Filter by category" className="w-full">
                             <button
                                 onClick={() => setIsCategoryOpen(!isCategoryOpen)}
-                                className={`w-full text-left pl-4 pr-10 py-3 bg-[#1E1E1E] border ${isCategoryOpen ? 'border-primary' : 'border-white/10'} rounded-xl text-white text-sm font-bold transition-all truncate cursor-pointer hover:bg-[#252525] flex items-center`}
+                                className={`w-full h-12 text-left pl-4 pr-10 bg-[#1E1E1E] border ${isCategoryOpen ? 'border-primary' : 'border-white/10'} rounded-xl text-white text-sm font-bold transition-all cursor-pointer hover:bg-[#252525] flex items-center`}
                             >
                                 <span className="truncate capitalize">{filterCategory === 'all' ? 'All Services' : filterCategory}</span>
                                 <ChevronDown size={16} className={`text-gray-400 transition-transform duration-300 absolute right-3 ${isCategoryOpen ? 'rotate-180 text-primary' : ''}`} />

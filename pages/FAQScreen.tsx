@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import CustomerHeader from '../components/CustomerHeader';
 import { useDatabase } from '../context/DatabaseContext';
 import { FAQItem } from '../types';
 import Spinner from '../components/Spinner';
@@ -120,7 +120,7 @@ const FAQScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-[#121212]">
-            <Header title="Help Center" showBackButton icon={<HelpCircle size={22} />} />
+            <CustomerHeader title="Help Center" showBackButton icon={<HelpCircle size={22} />} />
 
             <main className="flex-grow overflow-y-auto pb-6">
                 {/* Hero Search Section */}

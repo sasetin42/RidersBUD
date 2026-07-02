@@ -5,9 +5,11 @@ import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
-import { Eye, EyeOff, Mail, Lock, User, Wrench, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, Wrench, ArrowRight, X } from 'lucide-react';
 import SecurityDetailsModal from '../components/SecurityDetailsModal';
 import { getFriendlyErrorMessage } from '../utils/firebaseErrors';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '../firebase';
 
 
 const LoginScreen: React.FC = () => {
@@ -36,6 +38,13 @@ const LoginScreen: React.FC = () => {
     const [mechanicPassword, setMechanicPassword] = useState('');
     const [mechanicError, setMechanicError] = useState('');
 
+    // Forgot Password state
+    const [forgotPasswordModalOpen, setForgotPasswordModalOpen] = useState(false);
+    const [resetEmail, setResetEmail] = useState('');
+    const [resetMessage, setResetMessage] = useState('');
+    const [resetError, setResetError] = useState('');
+    const [isResetting, setIsResetting] = useState(false);
+
     useEffect(() => {
         if (location.state?.from === 'mechanic') {
             setActiveTab('mechanic');
@@ -57,7 +66,7 @@ const LoginScreen: React.FC = () => {
     }
 
     const { settings } = db;
-    const logoUrl = settings.authLogoUrl || "/riders-logo.png";
+    const logoUrl = settings.authLogoUrl || "";
 
     const validateCustomerField = (name: string, value: string) => {
         let fieldError = '';
@@ -163,13 +172,36 @@ const LoginScreen: React.FC = () => {
     };
 
     const showSecurityModalFor = (role: 'Customer' | 'Mechanic') => {
-        setSecurityModalRole(role);
-        setSecurityModalOpen(shouldShowSecurityModal(role));
+        if (shouldShowSecurityModal(role)) {
+            setSecurityModalRole(role);
+            setSecurityModalOpen(true);
+        } else {
+            navigate(role === 'Mechanic' ? '/mechanic-portal/dashboard' : '/customer-portal/dashboard', { replace: true });
+        }
     };
 
     const closeSecurityModal = () => {
         setSecurityModalOpen(false);
         localStorage.setItem(`security_modal_dismissed_${securityModalRole.toLowerCase()}`, 'true');
+    };
+
+    const handleResetPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setResetError('');
+        setResetMessage('');
+        if (!resetEmail) {
+            setResetError('Please enter your email address.');
+            return;
+        }
+        setIsResetting(true);
+        try {
+            await sendPasswordResetEmail(auth, resetEmail);
+            setResetMessage('Password reset email sent! Check your inbox.');
+        } catch (err) {
+            setResetError(getFriendlyErrorMessage(err));
+        } finally {
+            setIsResetting(false);
+        }
     };
 
     const isLikelyCustomerToMechanicError = (err: unknown) => {
@@ -196,12 +228,57 @@ const LoginScreen: React.FC = () => {
                 onClose={closeSecurityModal}
             />
 
+            {forgotPasswordModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl w-full max-w-md p-6 relative animate-slideUp shadow-2xl">
+                        <button 
+                            onClick={() => setForgotPasswordModalOpen(false)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                        <h2 className="text-2xl font-bold text-white mb-2">Reset Password</h2>
+                        <p className="text-gray-400 text-sm mb-6">Enter your email address and we'll send you a link to reset your password.</p>
+                        
+                        <form onSubmit={handleResetPassword} className="space-y-4">
+                            <div className="space-y-2">
+                                <label htmlFor="resetEmail" className="block text-sm font-medium text-gray-300">Email Address</label>
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                        <Mail className="w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors" />
+                                    </div>
+                                    <input
+                                        id="resetEmail"
+                                        type="email"
+                                        value={resetEmail}
+                                        onChange={(e) => setResetEmail(e.target.value)}
+                                        className="w-full pl-12 pr-4 py-3 bg-[#0A0A0A]/50 border border-white/10 rounded-xl text-white placeholder-gray-500 outline-none transition-all focus:border-white/20"
+                                        placeholder="you@example.com"
+                                    />
+                                </div>
+                            </div>
+                            
+                            {resetMessage && <p className="text-green-400 text-sm bg-green-400/10 p-3 rounded-lg border border-green-400/20">{resetMessage}</p>}
+                            {resetError && <p className="text-red-400 text-sm bg-red-400/10 p-3 rounded-lg border border-red-400/20">{resetError}</p>}
+                            
+                            <button
+                                type="submit"
+                                disabled={isResetting}
+                                className="w-full bg-primary text-white font-semibold py-3 rounded-xl hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mt-2"
+                            >
+                                {isResetting ? <Spinner size="sm" color="text-white" /> : "Send Reset Link"}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             <div className="w-full max-w-md relative z-10 py-8 flex flex-col">
 
-                {/* Logo & Header */}
+                {/* Header */}
                 <div className="text-center mb-8 animate-fadeIn">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="RidersBUD Logo" className="w-64 mb-2 max-h-32 object-contain mx-auto mix-blend-screen" />
+                        <img src={logoUrl} alt={`${settings.appName || 'RidersBUD'} Logo`} className="w-48 mb-6 max-h-24 object-contain mx-auto mix-blend-screen" />
                     ) : (
                         <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent mb-2">{settings.appName || 'Riders'}</h1>
                     )}
@@ -248,6 +325,7 @@ const LoginScreen: React.FC = () => {
                                             id="email"
                                             type="email"
                                             name="email"
+                                            autoComplete="email"
                                             placeholder="you@example.com"
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
@@ -268,6 +346,7 @@ const LoginScreen: React.FC = () => {
                                             id="password"
                                             type={showPassword ? "text" : "password"}
                                             name="password"
+                                            autoComplete="current-password"
                                             placeholder="••••••••"
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
@@ -282,6 +361,9 @@ const LoginScreen: React.FC = () => {
                                         </button>
                                     </div>
                                     {errors.password && <p className="text-red-400 text-xs mt-1 animate-shake">{errors.password}</p>}
+                                    <div className="flex justify-end mt-1">
+                                        <button type="button" onClick={() => { setResetEmail(email); setForgotPasswordModalOpen(true); setResetMessage(''); setResetError(''); }} className="text-sm text-primary hover:text-orange-500 transition-colors">Forgot Password?</button>
+                                    </div>
                                 </div>
 
                                 {/* Error Message */}
@@ -356,6 +438,8 @@ const LoginScreen: React.FC = () => {
                                         </div>
                                         <input
                                             id="mechanicEmail"
+                                            name="mechanicEmail"
+                                            autoComplete="email"
                                             type="email"
                                             placeholder="mechanic@example.com"
                                             value={mechanicEmail}
@@ -374,6 +458,8 @@ const LoginScreen: React.FC = () => {
                                         </div>
                                         <input
                                             id="mechanicPassword"
+                                            name="mechanicPassword"
+                                            autoComplete="current-password"
                                             type={showPassword ? "text" : "password"}
                                             placeholder="••••••••"
                                             value={mechanicPassword}
@@ -387,6 +473,9 @@ const LoginScreen: React.FC = () => {
                                         >
                                             {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                                         </button>
+                                    </div>
+                                    <div className="flex justify-end mt-1">
+                                        <button type="button" onClick={() => { setResetEmail(mechanicEmail); setForgotPasswordModalOpen(true); setResetMessage(''); setResetError(''); }} className="text-sm text-primary hover:text-orange-500 transition-colors">Forgot Password?</button>
                                     </div>
                                 </div>
 

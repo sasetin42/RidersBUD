@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { 
     Wallet, ArrowUpRight, DollarSign, History, 
     CheckCircle2, TrendingUp, Info, X, 
-    Check, CreditCard, Calendar 
+    Check, CreditCard, Calendar, ChevronRight 
 } from 'lucide-react';
 import Header from '../../components/Header';
 import NotificationBell from '../../components/NotificationBell';
@@ -84,10 +85,12 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({ isOpen, onClose
                     ) : (
                         <form onSubmit={handleSubmit} className="space-y-6">
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Withdrawal Amount</label>
+                                <label htmlFor="withdrawal-amount" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Withdrawal Amount</label>
                                 <div className="relative">
                                     <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-white/20">₱</span>
                                     <input
+                                        id="withdrawal-amount"
+                                        name="withdrawal-amount"
                                         type="number"
                                         value={amount}
                                         onChange={(e) => setAmount(e.target.value)}
@@ -130,10 +133,12 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({ isOpen, onClose
                             </div>
 
                             <div className="space-y-3">
-                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                                <label htmlFor="withdrawal-gcash-info" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
                                     {method === 'GCash' ? 'GCash Number & Name' : 'Account Number & Bank Name'}
                                 </label>
                                 <textarea
+                                    id="withdrawal-gcash-info"
+                                    name="withdrawal-gcash-info"
                                     value={details}
                                     onChange={(e) => setDetails(e.target.value)}
                                     placeholder={method === 'GCash' ? "09XX XXX XXXX - John Doe" : "BDO: 1234567890 - John Doe"}
@@ -234,14 +239,20 @@ const MechanicEarningsScreen: React.FC = () => {
         }).reverse();
 
         let dailyEarnings = last7Days.map(day => {
-            // Correctly format date as YYYY-MM-DD in local time
             const year = day.getFullYear();
             const month = String(day.getMonth() + 1).padStart(2, '0');
             const date = String(day.getDate()).padStart(2, '0');
             const dayStr = `${year}-${month}-${date}`;
             
             const earningsForDay = myCompletedJobs
-                .filter(job => job.date === dayStr && job.isPaid !== false)
+                .filter(job => {
+                    if (job.isPaid === false) return false;
+                    let jobDateStr = job.date;
+                    if (jobDateStr && jobDateStr.includes('T')) {
+                        jobDateStr = new Date(jobDateStr).toLocaleDateString('en-CA');
+                    }
+                    return jobDateStr === dayStr;
+                })
                 .reduce((sum, job) => sum + getJobTotal(job), 0);
             return {
                 label: day.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -260,7 +271,10 @@ const MechanicEarningsScreen: React.FC = () => {
         }
 
         const groupedHistory = filteredJobs.reduce((acc, job) => {
-            const date = job.date; // job.date is already in YYYY-MM-DD format
+            let date = job.date;
+            if (date && date.includes('T')) {
+                date = new Date(date).toLocaleDateString('en-CA');
+            }
             if (!acc[date]) acc[date] = [];
             acc[date].push(job);
             return acc;
@@ -296,7 +310,7 @@ const MechanicEarningsScreen: React.FC = () => {
     if (loading || !db || !mechanic) {
         return (
             <div className="flex flex-col h-full bg-secondary">
-                <Header title="My Earnings" icon={<TrendingUp size={22} />} />
+                <Header title="My Earnings" rightAction={<NotificationBell />} icon={<TrendingUp size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
                 </div>
@@ -307,29 +321,7 @@ const MechanicEarningsScreen: React.FC = () => {
     return (
         <div className="min-h-screen bg-[#121212] text-white">
             <div className="relative min-h-screen">
-                {/* Dashboard Hero Header */}
-                <div className="bg-[#121212] pt-5 pb-5 px-6 border-b border-white/5 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 blur-[100px] rounded-full -mr-32 -mt-32" />
-                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/5 blur-[80px] rounded-full -ml-24 -mb-24" />
-                    
-                    <div className="max-w-4xl mx-auto">
-                        <div className="flex items-center justify-between">
-                            <div className="p-4 rounded-3xl bg-white/5 border border-white/10 text-white shadow-2xl">
-                                <Wallet size={24} />
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <NotificationBell />
-                                <div className="w-12 h-12 rounded-[1.5rem] p-0.5 bg-gradient-to-br from-white/20 to-transparent border border-white/10 overflow-hidden">
-                                    <img 
-                                        src={mechanic.imageUrl || `https://ui-avatars.com/api/?name=${mechanic.name}&background=FE7803&color=fff`} 
-                                        alt={mechanic.name}
-                                        className="w-full h-full rounded-[1.4rem] object-cover"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <Header title="My Earnings" rightAction={<NotificationBell />} icon={<TrendingUp size={22} />} />
 
                 {/* Chart Section */}
                 <div className="mt-8 bg-[#1A1A1A] p-6 rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden group mx-6">
@@ -525,29 +517,43 @@ const StatCard: React.FC<{ title: string, value: string | number, icon: React.Re
 
 const EarningItemCard: React.FC<{ booking: Booking }> = ({ booking }) => {
     const amount = booking.totalAmount || (booking.services || []).reduce((sum, s) => sum + s.price, 0);
+    const serviceImageUrl = booking.services?.[0]?.imageUrl || booking.service?.imageUrl || '';
+    
     return (
-        <div className="bg-[#1A1A1A] p-5 rounded-[1.75rem] border border-white/5 flex justify-between items-center hover:bg-[#202020] transition-all group shadow-xl">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5 transition-all shadow-inner group-hover:bg-primary/10 group-hover:border-primary/20">
-                    <DollarSign className="text-gray-500 group-hover:text-primary" size={20} />
+        <Link 
+            to={`/mechanic-portal/job/${booking.id}`}
+            className="bg-[#1A1A1A] p-4 rounded-2xl border border-white/5 flex justify-between items-center hover:bg-[#202020] hover:border-white/10 transition-all group shadow-lg cursor-pointer block"
+        >
+            <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 overflow-hidden transition-all shadow-inner shrink-0 group-hover:bg-primary/10 group-hover:border-primary/20">
+                    {serviceImageUrl ? (
+                        <img src={serviceImageUrl} alt="Service" className="w-full h-full object-cover" />
+                    ) : (
+                        <DollarSign className="text-gray-500 group-hover:text-primary" size={16} />
+                    )}
                 </div>
                 <div className="min-w-0">
-                    <p className="font-black text-white text-sm tracking-tight truncate max-w-[140px] sm:max-w-none">
+                    <p className="font-extrabold text-white text-xs tracking-tight truncate max-w-[150px] sm:max-w-none">
                         {booking.services?.[0]?.name || booking.service?.name || 'Service Job'}
                     </p>
-                    <div className="flex items-center gap-2 mt-1">
-                        <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">{booking.vehicle?.brand} {booking.vehicle?.model}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <span className="text-[7.5px] text-gray-500 font-extrabold uppercase tracking-widest">
+                            {booking.vehicle?.brand} {booking.vehicle?.model}
+                        </span>
                     </div>
                 </div>
             </div>
-            <div className="text-right">
-                <p className="font-black text-lg text-white tracking-tighter leading-none mb-2">₱{amount.toLocaleString()}</p>
-                <div className="flex items-center justify-end gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
-                    <span className="text-[8px] font-black text-green-500 uppercase tracking-widest">Settled</span>
+            <div className="flex items-center gap-3">
+                <div className="text-right">
+                    <p className="font-black text-sm text-white tracking-tighter leading-none mb-1.5">₱{amount.toLocaleString()}</p>
+                    <div className="flex items-center justify-end gap-1">
+                        <div className="w-1 h-1 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
+                        <span className="text-[7.5px] font-black text-green-500 uppercase tracking-widest">Completed</span>
+                    </div>
                 </div>
+                <ChevronRight className="text-gray-600 group-hover:text-white transition-colors shrink-0" size={14} />
             </div>
-        </div>
+        </Link>
     );
 };
 

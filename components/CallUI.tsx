@@ -1,6 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, X, Video, VideoOff, Camera, Wifi, WifiOff, Signal, Clock, RotateCcw, PhoneIncoming } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, VolumeX, X, Video, VideoOff, Camera, Wifi, WifiOff, Signal, Clock, RotateCcw, PhoneIncoming, ShieldCheck, Grid } from 'lucide-react';
 import { useCall } from '../context/CallContext';
+import { rtdb, auth } from '../firebase';
+import { ref, set, remove } from 'firebase/database';
+
 
 // Format call duration as MM:SS
 function formatCallDuration(seconds: number): string {
@@ -22,7 +25,7 @@ function getNetworkQualityColor(quality: string): string {
 
 export const IncomingCallModal: React.FC = () => {
   const { callStatus, callInfo, answerCall, declineCall } = useCall();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const acceptButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (callStatus === 'ringing' && callInfo) {
@@ -40,36 +43,72 @@ export const IncomingCallModal: React.FC = () => {
     }
   }, [callStatus, callInfo]);
 
+  // Robust autofocus for the 'Accept' button
+  useEffect(() => {
+    if (callStatus === 'ringing' && acceptButtonRef.current) {
+      const timer = setTimeout(() => {
+        acceptButtonRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [callStatus]);
+
+  // Keyboard shortcuts: Enter to accept, Escape to decline
+  useEffect(() => {
+    if (callStatus !== 'ringing') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        answerCall();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        declineCall();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [callStatus, answerCall, declineCall]);
+
   if (callStatus !== 'ringing' || !callInfo) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center animate-fadeIn">
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="incoming-call-title">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" />
-      <div className="relative z-10 bg-gradient-to-b from-[#1E1E22] to-[#0A0A0C] border border-white/10 rounded-[2rem] shadow-2xl w-[90%] max-w-sm p-8 text-center animate-scaleUp">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 mx-auto mb-5 flex items-center justify-center ring-4 ring-primary/20 overflow-hidden">
+      <div className="relative z-10 bg-gradient-to-b from-[#1E1E22] to-[#0A0A0C] border border-white/10 rounded-[2.25rem] shadow-2xl w-[85%] max-w-xs p-6 text-center animate-scaleUp">
+        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 mx-auto mb-4 flex items-center justify-center ring-4 ring-primary/20 overflow-hidden shadow-lg">
           {callInfo.callerImage ? (
             <img src={callInfo.callerImage} alt="" className="w-full h-full object-cover" />
           ) : (
-            <Phone size={32} className="text-primary" />
+            <Phone size={24} className="text-primary" />
           )}
         </div>
-        <h2 className="text-2xl font-black text-white mb-1">{callInfo.callerName}</h2>
-        <p className="text-sm text-gray-400 font-medium mb-1">
+        <h2 id="incoming-call-title" className="text-xl font-black text-white mb-0.5 tracking-tight">{callInfo.callerName}</h2>
+        <p className="text-xs text-gray-400 font-bold mb-0.5">
           {callInfo.callerRole === 'admin' ? 'Live Support' : callInfo.callerRole === 'mechanic' ? 'Mechanic' : 'Customer'}
         </p>
-        <p className="text-xs text-gray-600 font-bold mb-8">Incoming {callInfo.type} call...</p>
-        <div className="flex items-center justify-center gap-6">
+        <p className="text-[10px] text-gray-600 font-bold mb-6 font-mono uppercase tracking-wider">Incoming {callInfo.type} call...</p>
+        
+        <div className="flex items-center justify-center gap-4">
           <button
-            onClick={declineCall}
-            className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center hover:bg-red-500/40 transition-all duration-300 group"
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); declineCall(); }}
+            className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center hover:bg-red-500/30 active:scale-90 focus:outline-none focus:ring-4 focus:ring-red-500/50 transition-all duration-300 group"
+            aria-label="Decline Call"
           >
-            <PhoneOff size={24} className="text-red-400 group-hover:scale-110 transition-transform" />
+            <PhoneOff size={20} className="text-red-400 group-hover:scale-110 transition-transform" />
           </button>
           <button
-            onClick={answerCall}
-            className="w-16 h-16 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center hover:bg-green-500/40 transition-all duration-300 group animate-pulse"
+            ref={acceptButtonRef}
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); answerCall(); }}
+            className="w-14 h-14 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center hover:bg-green-500/30 active:scale-90 focus:outline-none focus:ring-4 focus:ring-green-500/50 transition-all duration-300 group animate-pulse"
+            aria-label="Answer Call"
           >
-            <Phone size={24} className="text-green-400 group-hover:scale-110 transition-transform" />
+            <Phone size={20} className="text-green-400 group-hover:scale-110 transition-transform" />
           </button>
         </div>
       </div>
@@ -79,33 +118,138 @@ export const IncomingCallModal: React.FC = () => {
 
 export const OutgoingCallModal: React.FC = () => {
   const { callStatus, callInfo, endCall } = useCall();
+  const [isMuted, setIsMuted] = React.useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = React.useState(false);
+  const [showKeypad, setShowKeypad] = React.useState(false);
+  const endButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Autofocus the end call button for ease of quick cancellation
+  useEffect(() => {
+    if (callStatus === 'calling' && endButtonRef.current) {
+      const timer = setTimeout(() => {
+        endButtonRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [callStatus]);
+
+  // Keyboard shortcut: Escape to end/cancel the outgoing call
+  useEffect(() => {
+    if (callStatus !== 'calling') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        endCall();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [callStatus, endCall]);
 
   if (callStatus !== 'calling' || !callInfo) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center animate-fadeIn">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" />
-      <div className="relative z-10 bg-gradient-to-b from-[#1E1E22] to-[#0A0A0C] border border-white/10 rounded-[2rem] shadow-2xl w-[90%] max-w-sm p-8 text-center animate-scaleUp">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 mx-auto mb-5 flex items-center justify-center ring-4 ring-primary/20 overflow-hidden">
-          {callInfo.calleeImage ? (
-            <img src={callInfo.calleeImage} alt="" className="w-full h-full object-cover" />
-          ) : (
-            <Phone size={32} className="text-primary" />
-          )}
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center animate-fadeIn" role="dialog" aria-modal="true" aria-labelledby="outgoing-call-title">
+      <div className="absolute inset-0 bg-black/85 backdrop-blur-xl" />
+      <div className="relative z-10 bg-[#15151A]/85 border border-white/10 rounded-[2.25rem] shadow-2xl w-[85%] max-w-xs p-6 text-center animate-scaleUp overflow-hidden">
+        {/* Top Status Indicators */}
+        <div className="flex justify-between items-center mb-6 px-1">
+          <div className="flex items-center gap-1.5 text-green-400 bg-green-500/10 px-2.5 py-0.5 rounded-full border border-green-500/20">
+            <ShieldCheck size={11} />
+            <span className="text-[8px] font-black uppercase tracking-wider">Encrypted</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-gray-400 bg-white/5 px-2.5 py-0.5 rounded-full border border-white/5">
+            <Signal size={11} className="text-primary animate-pulse" />
+            <span className="text-[8px] font-black uppercase tracking-wider font-mono">HD Audio</span>
+          </div>
         </div>
-        <h2 className="text-2xl font-black text-white mb-1">{callInfo.calleeName}</h2>
-        <p className="text-sm text-gray-400 font-medium mb-1">
+
+        {/* Pulsing Avatar Area */}
+        <div className="relative w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+          {/* Animated ripple rings */}
+          <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" style={{ animationDuration: '3s' }} />
+          <div className="absolute -inset-1.5 rounded-full bg-primary/10 animate-pulse" style={{ animationDuration: '2s' }} />
+          
+          <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center ring-4 ring-primary/30 overflow-hidden shadow-2xl">
+            {callInfo.calleeImage ? (
+              <img src={callInfo.calleeImage} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Phone size={28} className="text-primary" />
+            )}
+          </div>
+        </div>
+
+        {/* Callee Details */}
+        <h2 id="outgoing-call-title" className="text-xl font-black text-white mb-0.5 tracking-tight">{callInfo.calleeName}</h2>
+        <p className="text-xs text-gray-400 font-bold tracking-wide mb-1">
           {callInfo.calleeRole === 'admin' ? 'Live Support' : callInfo.calleeRole === 'mechanic' ? 'Mechanic' : 'Customer'}
         </p>
-        <p className="text-xs text-gray-600 font-bold mb-8">
-          <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse mr-2" />
+        <p className="text-[10px] text-primary/80 font-bold mb-6 flex items-center justify-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-bounce" />
           Calling...
         </p>
+
+        {/* Mid-Call Action Buttons (redesigned controls) */}
+        <div className="grid grid-cols-3 gap-3 mb-6 max-w-[200px] mx-auto">
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => setIsMuted(!isMuted)}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border ${
+                isMuted 
+                  ? 'bg-red-500/20 border-red-500/40 text-red-400' 
+                  : 'bg-white/5 border-white/5 text-white hover:bg-white/10'
+              }`}
+              aria-label="Mute Microphone"
+            >
+              {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
+            </button>
+            <span className="text-[9px] text-gray-400 font-bold">Mute</span>
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => setIsSpeakerOn(!isSpeakerOn)}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border ${
+                isSpeakerOn 
+                  ? 'bg-primary/20 border-primary/40 text-primary' 
+                  : 'bg-white/5 border-white/5 text-white hover:bg-white/10'
+              }`}
+              aria-label="Speaker"
+            >
+              <Volume2 size={16} className={isSpeakerOn ? 'animate-pulse' : ''} />
+            </button>
+            <span className="text-[9px] text-gray-400 font-bold">Speaker</span>
+          </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => setShowKeypad(!showKeypad)}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all border ${
+                showKeypad 
+                  ? 'bg-white/20 border-white/30 text-white' 
+                  : 'bg-white/5 border-white/5 text-white hover:bg-white/10'
+              }`}
+              aria-label="Toggle Keypad"
+            >
+              <Grid size={16} />
+            </button>
+            <span className="text-[9px] text-gray-400 font-bold">Keypad</span>
+          </div>
+        </div>
+
+        {/* End Call Button */}
         <button
-          onClick={endCall}
-          className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center hover:bg-red-500/40 transition-all duration-300 mx-auto group"
+          ref={endButtonRef}
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); endCall(); }}
+          className="w-14 h-14 rounded-full bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/30 flex items-center justify-center transition-all duration-300 mx-auto group active:scale-90 focus:outline-none focus:ring-4 focus:ring-red-500/50"
+          aria-label="End Call"
         >
-          <X size={24} className="text-red-400 group-hover:scale-110 transition-transform" />
+          <PhoneOff size={20} className="text-white group-hover:rotate-12 transition-transform" />
         </button>
       </div>
     </div>
@@ -122,7 +266,7 @@ export const ActiveCallBar: React.FC = () => {
   const isVideoCall = callInfo.type === 'video';
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-[200] animate-slideUp">
+    <div className="fixed bottom-4 left-4 right-4 z-[999999] animate-slideUp">
       <div className="bg-gradient-to-r from-[#1E1E22] to-[#0A0A0C] border border-primary/20 rounded-2xl shadow-2xl shadow-primary/5 p-4 max-w-md mx-auto backdrop-blur-xl">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -186,7 +330,8 @@ export const ActiveCallBar: React.FC = () => {
               </>
             )}
             <button
-              onClick={endCall}
+              type="button"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); endCall(); }}
               className="w-10 h-10 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center hover:bg-red-500/40 transition-all"
             >
               <PhoneOff size={16} className="text-red-400" />
@@ -200,22 +345,28 @@ export const ActiveCallBar: React.FC = () => {
 
 // Full-screen video call modal
 export const FullScreenCallModal: React.FC = () => {
-  const { callStatus, callInfo, endCall, toggleMute, toggleSpeaker, toggleVideo, switchCamera, isMuted, isSpeakerOn, callDuration, networkStats } = useCall();
+  const { callStatus, callInfo, endCall, toggleMute, toggleSpeaker, toggleVideo, switchCamera, isMuted, isSpeakerOn, callDuration, networkStats, localStream, remoteStream } = useCall();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (localVideoRef.current) {
-      // This will be updated via context
+    if (localVideoRef.current && localVideoRef.current.srcObject !== localStream) {
+      localVideoRef.current.srcObject = localStream;
     }
-  }, []);
+  }, [localStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
 
   if (callStatus !== 'connected' || !callInfo || callInfo.type !== 'video') return null;
 
   const isVideoCall = callInfo.type === 'video';
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black flex flex-col">
+    <div className="fixed inset-0 z-[999999] bg-black flex flex-col">
       {/* Remote video (full screen) */}
       <div className="flex-1 relative bg-gray-900">
         <video
@@ -234,7 +385,8 @@ export const FullScreenCallModal: React.FC = () => {
             </div>
           </div>
           <button
-            onClick={endCall}
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); endCall(); }}
             className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center"
           >
             <PhoneOff size={20} className="text-white" />
@@ -295,7 +447,8 @@ export const FullScreenCallModal: React.FC = () => {
             <Camera size={24} className="text-white" />
           </button>
           <button
-            onClick={endCall}
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); endCall(); }}
             className="w-14 h-14 rounded-full bg-red-500 flex items-center justify-center hover:bg-red-600 transition-all"
           >
             <PhoneOff size={24} className="text-white" />
@@ -350,7 +503,22 @@ export const SupportCallButton: React.FC<{
   const isDisabled = callStatus !== 'idle';
 
   // Live Support admin ID - this should match your admin user ID in Firebase
-  const SUPPORT_ADMIN_ID = 'admin-support';
+    // Read admin ID from Firebase auth or localStorage fallback
+  const getAdminId = (): string => {
+    try {
+      const adminSession = localStorage.getItem('ridersbud_admin_session');
+      if (adminSession === 'true') {
+        const adminDataStr = localStorage.getItem('ridersbud_admin_user_data');
+        if (adminDataStr) {
+          const adminData = JSON.parse(adminDataStr);
+          return adminData.uid || adminData.id || 'admin';
+        }
+      }
+    } catch {}
+    // Also check if there's an admin user in Firebase Auth with known ID
+    return 'admin'; // Default admin UID
+  };
+  const SUPPORT_ADMIN_ID = getAdminId();
   const SUPPORT_ROLE: 'admin' = 'admin';
 
   const sizeClasses = size === 'sm' ? 'px-3 py-2 text-xs' : size === 'lg' ? 'px-6 py-3 text-base' : 'px-4 py-2.5 text-sm';
@@ -468,7 +636,7 @@ export const CallHistoryButton: React.FC<{
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/80">
           <div className="bg-[#1E1E22] border border-white/10 rounded-2xl p-6 w-[90%] max-w-md max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-black text-white">Call History</h3>
@@ -508,3 +676,5 @@ export const CallHistoryButton: React.FC<{
     </>
   );
 };
+
+

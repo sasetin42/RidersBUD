@@ -13,6 +13,7 @@ import {
     MapPin,
 } from 'lucide-react';
 import { Booking } from '../../types';
+import { useDatabase } from '../../context/DatabaseContext';
 
 interface AssignedJobNotificationModalProps {
     booking: Booking;
@@ -49,6 +50,22 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
     onClose,
 }) => {
     const navigate = useNavigate();
+    const { db } = useDatabase();
+    const [imageError, setImageError] = React.useState(false);
+
+    const customer = React.useMemo(() => {
+        if (!db?.customers) return null;
+        if (Array.isArray(db.customers)) {
+            return db.customers.find((c) => c.id === booking.customerId) || null;
+        }
+        if ((db.customers as any).id === booking.customerId) {
+            return db.customers as any;
+        }
+        return null;
+    }, [db?.customers, booking.customerId]);
+
+    const imageUrl = customer?.picture || db?.settings?.defaultCustomerImageUrl || '';
+    const hasImage = !!imageUrl && !imageError;
 
     const handleViewDetails = () => {
         onClose();
@@ -208,7 +225,7 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                             />
                             {/* Icon container */}
                             <div
-                                className="relative w-14 h-14 rounded-2xl flex items-center justify-center"
+                                className="relative w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden"
                                 style={{
                                     background:
                                         'linear-gradient(135deg, rgba(254,120,3,0.20), rgba(254,120,3,0.08))',
@@ -216,7 +233,16 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                                     boxShadow: '0 0 20px rgba(254,120,3,0.15)',
                                 }}
                             >
-                                <Briefcase size={24} color="#FE7803" strokeWidth={1.8} />
+                                {hasImage ? (
+                                    <img
+                                        src={imageUrl}
+                                        alt={booking.customerName || 'Customer'}
+                                        className="w-full h-full object-cover rounded-2xl"
+                                        onError={() => setImageError(true)}
+                                    />
+                                ) : (
+                                    <User size={24} color="#FE7803" strokeWidth={1.8} />
+                                )}
                             </div>
                         </div>
 

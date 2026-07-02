@@ -13,8 +13,20 @@ export interface Service {
     popularityScore?: number;
     totalBookings?: number;
     lastModified?: string;
-    createdAt?: string;
     duration?: number;
+    requiresDownpayment?: boolean;
+    downpaymentPercentage?: number;
+    requiresApproval?: boolean;
+    bookingNoticeHours?: number;
+    // Rental and Driver Hire fields
+    isCarRental?: boolean;
+    carRentalClass?: string;
+    carRentalTransmission?: string;
+    carRentalFuel?: string;
+    isDriverHire?: boolean;
+    driverLicenseType?: string;
+    driverExperience?: string;
+    driverGeoLimits?: string;
 }
 
 export interface Vehicle {
@@ -110,6 +122,7 @@ export interface Settings {
     sidebarLogoUrl?: string;
     mapLogoUrl?: string;
     invoiceLogoUrl?: string;
+    loadingLogoUrl?: string;
     adminPanelTitle?: string;
     sidebarColor?: string;
     accentColor?: string;
@@ -144,6 +157,14 @@ export interface Settings {
     // Notifications
     emailOnNewBooking?: boolean;
     emailOnCancellation?: boolean;
+
+    // SMTP Configuration
+    smtpHost?: string;
+    smtpPort?: string;
+    smtpUsername?: string;
+    smtpPassword?: string;
+    smtpFromName?: string;
+    smtpFromEmail?: string;
 
     // Verification
     verificationRequirements?: any[]; // Using any for simplicity as it's defined inside AdminSettings currently
@@ -208,10 +229,87 @@ export interface Database {
     roles: any[];
     tasks: any[];
     payouts: any[];
-    rentalCars: any[];
-    rentalBookings: any[];
+    rentalCars: RentalCar[];
+    rentalBookings: RentalBooking[];
+    hireDrivers: HireDriver[];
     subscriptions: any[];
     promoCodes: any[];
+    appServices: AppService[];
+    serviceRequests: ServiceRequest[];
+    serviceProviders: ServiceProvider[];
+    servicePricing: ServicePricing[];
+    serviceActivityLogs: ServiceActivityLog[];
+    liaisonStaff: LiaisonStaff[];
+    liaisonBranches: LiaisonBranch[];
+    liaisonBookings: LiaisonBooking[];
+}
+
+export interface AppService {
+    id: string;
+    name: string;
+    description: string;
+    imageUrl?: string;
+    category?: string;
+    isActive: boolean;
+    features?: string[];
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export interface ServiceProvider {
+    id: string;
+    name: string;
+    contactPerson?: string;
+    email?: string;
+    phone?: string;
+    address?: string;
+    servicesOffered?: string[];
+    rating?: number;
+    isActive: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export interface ServicePricing {
+    id: string;
+    serviceId: string;
+    name: string;
+    description?: string;
+    price: number;
+    currency?: string;
+    isActive: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export interface ServiceRequest {
+    id: string;
+    customerId: string;
+    customerName?: string;
+    serviceId: string;
+    serviceName?: string;
+    pricingId?: string;
+    providerId?: string;
+    status: 'Pending' | 'In Progress' | 'Completed' | 'Cancelled' | string;
+    details?: any;
+    vehicleId?: string;
+    scheduledDate?: string;
+    completedDate?: string;
+    notes?: string;
+    totalAmount?: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ServiceActivityLog {
+    id: string;
+    requestId: string;
+    customerId?: string;
+    statusFrom?: string;
+    statusTo: string;
+    notes?: string;
+    updatedBy?: string;
+    updatedAt: string;
 }
 
 export interface Reminder {
@@ -379,6 +477,12 @@ export interface Booking {
         address?: string;
     };
     notes?: string;
+    rentalCarDetails?: any;
+    driverDetails?: any;
+    startLocation?: string;
+    endLocation?: string;
+    endDate?: string;
+    rentalDays?: number;
     paymentMethod?: 'Cash' | 'GCash' | 'Card';
     paymentStatus?: 'pending' | 'partial' | 'paid';
     paidAmount?: number;
@@ -388,6 +492,10 @@ export interface Booking {
     gcashReceiptUrl?: string;
     gcashDeclineReason?: string;
     isVerified?: boolean;
+    gcashDownpaymentReceiptUrl?: string;
+    gcashBalanceReceiptUrl?: string;
+    gcashBalanceReference?: string;
+    gcashDownpaymentReference?: string;
     paymentIntentId?: string;
     checkoutUrl?: string;
     gcashPaymentStatus?: 'awaiting_payment' | 'receipt_uploaded' | 'balance_receipt_uploaded' | 'verified' | 'declined';
@@ -477,20 +585,78 @@ export interface PayoutDetails {
     walletName?: string;
 }
 
-export type RentalCar = any;
-export type RentalBooking = any;
+export interface RentalCar {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    type: string;
+    seats: number;
+    pricePerDay: number;
+    transmission?: string;
+    fuelPolicy?: string;
+    color?: string;
+    plateNumber?: string;
+    isAvailable: boolean;
+    imageUrl: string;
+    features?: string[];
+    description?: string;
+}
+
+export interface HireDriver {
+    id: string;
+    name: string;
+    phone: string;
+    licenseType: string;
+    licenseNumber?: string;
+    experience: string;
+    geoLimit: string;
+    pricePerHour: number;
+    pricePerDay: number;
+    isAvailable: boolean;
+    imageUrl: string;
+    rating?: number;
+    totalTrips?: number;
+    languages?: string[];
+    description?: string;
+}
+
+export interface RentalBooking {
+    id: string;
+    carId: string;
+    customerId?: string;
+    customerName: string;
+    startDate: string;
+    endDate: string;
+    totalPrice: number;
+    status?: string;
+    createdAt?: string;
+}
 export type Subscription = any;
 export type PromoCode = any;
 
 export interface Notification {
     id: string;
     recipientId: string;
+    recipientRole: 'customer' | 'mechanic' | 'admin';
+    bookingId?: string;
     title: string;
     message: string;
-    type: 'info' | 'success' | 'warning' | 'alert';
-    date: string;
-    read: boolean;
+    type: 'booking_status' | 'payment' | 'assignment' | 'system' | 'info' | 'success' | 'warning' | 'alert';
+    status: 'unread' | 'read';
+    createdAt: any;
+    createdBy: string;
+    metadata?: {
+        customerId?: string;
+        mechanicId?: string;
+        paymentStatus?: string;
+        bookingStatus?: string;
+        [key: string]: any;
+    };
     link?: string;
+    // Legacy fields for backwards compatibility
+    date?: string;
+    read?: boolean;
     timestamp?: number;
 }
 
@@ -499,4 +665,80 @@ export interface Warranty {
     itemName: string;
     purchaseDate: string;
     expiryDate: string;
+}
+
+export interface LiaisonStaff {
+    id: string;
+    name: string;
+    phone: string;
+    imageUrl: string;
+    rating: number;
+    assignedBranches: string[]; // Branch IDs
+    isAvailable: boolean;
+    description?: string;
+    totalJobs?: number;
+}
+
+export interface LiaisonBranch {
+    id: string;
+    name: string;
+    address: string;
+    city: string;
+    phone: string;
+    isAvailable: boolean;
+    lat?: number;
+    lng?: number;
+}
+
+export interface LiaisonBooking {
+    id: string;
+    customerId: string;
+    customerName: string;
+    customerPhone: string;
+    customerEmail: string;
+    serviceType: string;
+    vehicleDetails: {
+        plateNumber: string;
+        type: string;
+        brand: string;
+        model: string;
+        year: number;
+        color?: string;
+        engineNumber?: string;
+        chassisNumber?: string;
+        currentOrNumber?: string;
+        currentCrNumber?: string;
+        province?: string;
+    };
+    branchId: string;
+    branchName: string;
+    liaisonId: string;
+    liaisonName: string;
+    appointmentDate: string;
+    appointmentTime: string;
+    pickupOption: 'Customer brings documents' | 'Home Pickup' | 'Office Pickup';
+    pickupAddress?: string;
+    documents: Array<{
+        name: string;
+        type: string;
+        size: number;
+        url: string; // Simulated base64 or file URL
+    }>;
+    status: 'Booking Received' | 'Documents Verified' | 'Payment Confirmed' | 'Liaison Assigned' | 'Processing at LTO' | 'Awaiting Approval' | 'Completed' | 'Ready for Pickup' | 'Delivered';
+    paymentStatus: 'Pending' | 'Paid' | 'Failed' | 'Refunded';
+    paymentMethod: 'GCash' | 'Maya' | 'Credit Card' | 'Debit Card' | 'Cash' | 'Bank Transfer';
+    fees: {
+        serviceFee: number;
+        governmentFee: number;
+        pickupFee: number;
+        discount: number;
+        total: number;
+    };
+    statusHistory: Array<{
+        status: string;
+        timestamp: string;
+        officerName?: string;
+        notes?: string;
+    }>;
+    createdAt: string;
 }

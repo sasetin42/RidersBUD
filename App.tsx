@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
 import { CallProvider } from './context/CallContext';
-import { IncomingCallModal, OutgoingCallModal, ActiveCallBar } from './components/CallUI';
+import { IncomingCallModal, OutgoingCallModal, ActiveCallBar, FullScreenCallModal } from './components/CallUI';
 import { AdminAuthProvider, useAdminAuth } from './context/AdminAuthContext';
 import AdminLayout from './components/admin/AdminLayout';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -77,6 +77,10 @@ const MechanicJobDetailScreen = React.lazy(() => import('./pages/mechanic/Mechan
 const MechanicProfileManagementScreen = React.lazy(() => import('./pages/mechanic/MechanicProfileManagementScreen'));
 const MechanicNotificationSettingsScreen = React.lazy(() => import('./pages/mechanic/MechanicNotificationSettingsScreen'));
 const CompleteProfileScreen = React.lazy(() => import('./pages/CompleteProfileScreen'));
+const AppServicesListScreen = React.lazy(() => import('./pages/services/ServicesListScreen'));
+const AppServiceDetailScreen = React.lazy(() => import('./pages/services/AppServiceDetailScreen'));
+const ServiceBookingFlow = React.lazy(() => import('./pages/services/ServiceBookingFlow'));
+const LiaisonBookingFlow = React.lazy(() => import('./pages/services/LiaisonBookingFlow'));
 
 import { customerTourSteps, mechanicTourSteps } from './data/tourSteps';
 import { requestNotificationPermission } from './utils/notificationManager';
@@ -117,13 +121,13 @@ const AppInitializer: React.FC = () => {
     const [appLoading, setAppLoading] = useState(true);
 
     useEffect(() => {
-        const timer = setTimeout(() => setAppLoading(false), 2500);
+        const timer = setTimeout(() => setAppLoading(false), 700);
         return () => clearTimeout(timer);
     }, []);
 
     useEffect(() => {
         if (dbLoading) {
-            const safetyTimer = setTimeout(() => setAppLoading(false), 8000);
+            const safetyTimer = setTimeout(() => setAppLoading(false), 3000);
             return () => clearTimeout(safetyTimer);
         }
     }, [dbLoading]);
@@ -158,6 +162,24 @@ const AppInitializer: React.FC = () => {
 
 const AppContent: React.FC = () => {
     const location = useLocation();
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    useEffect(() => {
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
+
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, [location.pathname]);
 
     // Prevent browser from restoring scroll position on navigation
     useLayoutEffect(() => {
@@ -177,9 +199,14 @@ const AppContent: React.FC = () => {
         location.pathname.includes('/booking/') || 
         location.pathname.includes('/payment') || 
         location.pathname.includes('/service-payment') ||
+        location.pathname.includes('/app-services/book/') ||
+        location.pathname.includes('/app-services/liaison-book/') ||
         location.pathname.includes('/cart')
     ) && !location.pathname.includes('-confirmation') && !location.search.includes('success=true');
-    const isDetailView = location.pathname.includes('/service/') || location.pathname.includes('/part/');
+    const isDetailView = 
+        location.pathname.includes('/service/') || 
+        location.pathname.includes('/part/') ||
+        (location.pathname.includes('/app-services/') && !location.pathname.includes('/book/') && !location.pathname.includes('/liaison-book/'));
     const isSupport = location.pathname.includes('/support-chat');
     const hideCustomerBottomPadding = isBookingProcess || isDetailView || isSupport;
     const isMapScreen = location.pathname.includes('/booking/') && !location.pathname.includes('-confirmation');
@@ -250,6 +277,9 @@ const AppContent: React.FC = () => {
                 lng: position.coords.longitude
             };
 
+            // Save to localStorage for future fallback
+            localStorage.setItem('ridersbud_last_known_location', JSON.stringify(coords));
+
             try {
                 if (isAuthenticated && user && updateCustomerLocation) {
                     await updateCustomerLocation(user.id, coords);
@@ -258,12 +288,45 @@ const AppContent: React.FC = () => {
                 }
             } catch (err) {
                 console.warn('[Location] Failed to save location to database:', err);
-                // Don't block UI — location is still granted
             }
         };
 
         const handleError = (error: GeolocationPositionError) => {
             setLocationChecking(false);
+
+            // Attempt fallback to last known cached location
+            const lastKnown = localStorage.getItem('ridersbud_last_known_location');
+            const isNative = (window as any).Capacitor !== undefined;
+
+            if (lastKnown) {
+                try {
+                    const coords = JSON.parse(lastKnown);
+                    setIsLocationBlocked(false);
+                    setLocationError(null);
+                    
+                    if (isAuthenticated && user && updateCustomerLocation) {
+                        updateCustomerLocation(user.id, coords);
+                    } else if (isMechanicAuthenticated && mechanic && updateMechanicLocation) {
+                        updateMechanicLocation(mechanic.id, coords);
+                    }
+                    return;
+                } catch (e) {}
+            }
+
+            // Fallback for native APK mobile wrappers if no cache is available
+            if (isNative) {
+                const defaultCoords = { lat: 14.5995, lng: 120.9842 }; // Manila default
+                setIsLocationBlocked(false);
+                setLocationError(null);
+                
+                if (isAuthenticated && user && updateCustomerLocation) {
+                    updateCustomerLocation(user.id, defaultCoords);
+                } else if (isMechanicAuthenticated && mechanic && updateMechanicLocation) {
+                    updateMechanicLocation(mechanic.id, defaultCoords);
+                }
+                return;
+            }
+
             setIsLocationBlocked(true);
 
             switch (error.code) {
@@ -281,11 +344,11 @@ const AppContent: React.FC = () => {
             }
         };
 
-        // Attempt fine location, fallback to coarse if timeout
+        // Attempt fine location, fallback to coarse if timeout or position unavailable
         navigator.geolocation.getCurrentPosition(
             handleSuccess,
             (error) => {
-                if (error.code === error.TIMEOUT) {
+                if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
                     navigator.geolocation.getCurrentPosition(
                         handleSuccess,
                         handleError,
@@ -393,7 +456,7 @@ const AppContent: React.FC = () => {
         // --- CUSTOMER NOTIFICATIONS ---
         if (isAuthenticated && user) {
             db.bookings.forEach(currentBooking => {
-                if (currentBooking.customerName !== user.name) return;
+                if (currentBooking.customerId !== user.id && currentBooking.customerName !== user.name) return;
                 
                 // Track status transitions
                 const oldBooking = prevDb.bookings.find(b => b.id === currentBooking.id);
@@ -779,10 +842,35 @@ const AppContent: React.FC = () => {
             }
         };
 
+        const handleBypassLocation = () => {
+            const defaultCoords = { lat: 14.5995, lng: 120.9842 }; // Default to Manila
+            setIsLocationBlocked(false);
+            setLocationError(null);
+            localStorage.setItem('ridersbud_last_known_location', JSON.stringify(defaultCoords));
+            
+            const saveLocation = async () => {
+                try {
+                    if (isAuthenticated && user && updateCustomerLocation) {
+                        await updateCustomerLocation(user.id, defaultCoords);
+                    } else if (isMechanicAuthenticated && mechanic && updateMechanicLocation) {
+                        await updateMechanicLocation(mechanic.id, defaultCoords);
+                    }
+                } catch (err) {
+                    console.warn('[Location Bypass] Failed to save bypass location to database:', err);
+                }
+            };
+            saveLocation();
+        };
+
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A0A0A] text-white p-6">
                 <div className="max-w-sm w-full text-center space-y-5 z-10">
-                    <img src="/riders-logo.png" alt="RidersBUD Logo" className="w-20 h-20 mx-auto" style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} />
+                    <img 
+                        src={db?.settings?.appLogoUrl || "/riders-logo.png"} 
+                        alt="RidersBUD Logo" 
+                        className="w-20 h-20 mx-auto rounded-2xl object-contain" 
+                        style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} 
+                    />
 
                     <div className="space-y-1.5">
                         <h1 className="text-xl font-black tracking-tight text-white">Location Access Required</h1>
@@ -809,27 +897,37 @@ const AppContent: React.FC = () => {
                         </div>
                     )}
 
-                    <button
-                        onClick={checkLocationPermission}
-                        disabled={locationChecking}
-                        className={`w-full text-white text-sm font-bold py-3 rounded-xl transition duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${
-                            permissionState === 'denied'
-                                ? 'bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/30 animate-pulse-glow'
-                                : 'bg-primary hover:bg-orange-600 shadow-lg shadow-primary/20'
-                        }`}
-                        style={permissionState === 'denied' ? { boxShadow: '0 0 18px 4px rgba(245,158,11,0.35)' } : undefined}
-                    >
-                        {locationChecking ? (
-                            <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                <span>Checking location...</span>
-                            </>
-                        ) : permissionState === 'denied' ? (
-                            <span>I&apos;ve Enabled Location — Retry</span>
-                        ) : (
-                            <span>Enable Location Access</span>
-                        )}
-                    </button>
+                    <div className="space-y-2.5">
+                        <button
+                            onClick={checkLocationPermission}
+                            disabled={locationChecking}
+                            className={`w-full text-white text-sm font-bold py-3 rounded-xl transition duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${
+                                permissionState === 'denied'
+                                    ? 'bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/30 animate-pulse-glow'
+                                    : 'bg-primary hover:bg-orange-600 shadow-lg shadow-primary/20'
+                            }`}
+                            style={permissionState === 'denied' ? { boxShadow: '0 0 18px 4px rgba(245,158,11,0.35)' } : undefined}
+                        >
+                            {locationChecking ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    <span>Checking location...</span>
+                                </>
+                            ) : permissionState === 'denied' ? (
+                                <span>I&apos;ve Enabled Location — Retry</span>
+                            ) : (
+                                <span>Enable Location Access</span>
+                            )}
+                        </button>
+
+                        <button
+                            onClick={handleBypassLocation}
+                            className="w-full py-3 bg-[#1C1C1E] border border-white/5 hover:bg-[#2C2C2E] text-gray-300 hover:text-white text-xs font-bold rounded-xl transition-all duration-200"
+                        >
+                            Use Default Location (Bypass)
+                        </button>
+                    </div>
+
                     {permissionState === 'denied' && !locationChecking && (
                         <p className="text-[10px] text-gray-500 text-center -mt-2">
                             The page will automatically detect when location is enabled.
@@ -857,7 +955,7 @@ const AppContent: React.FC = () => {
                                 <>
                                     <p><strong className="text-white">1.</strong> Tap the <strong className="text-white">lock icon</strong> next to the address bar.</p>
                                     <p><strong className="text-white">2.</strong> Select <strong className="text-white">Site Settings</strong> → <strong className="text-primary">Allow</strong> Location.</p>
-                                </>
+                                 </>
                             )}
                             {activeInstructionTab === 'safari' && (
                                 <>
@@ -884,6 +982,12 @@ const AppContent: React.FC = () => {
 
     return (
         <>
+            {!isOnline && (
+                <div className="fixed top-0 left-0 right-0 z-[999999] bg-[#FF6B00] text-white px-4 py-2.5 text-center text-xs font-black tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg animate-in slide-in-from-top duration-300">
+                    <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                    Offline Mode Active (Using Cached Data)
+                </div>
+            )}
             {showTour && (
                 <TourOverlay
                     steps={tourRole === 'customer' ? customerTourSteps : mechanicTourSteps}
@@ -905,7 +1009,7 @@ const AppContent: React.FC = () => {
                             adminLoading && localStorage.getItem('ridersbud_admin_session') === 'true' ? (
                                 <AppLoadingScreen message="Verifying session..." />
                             ) : isAdminAuthenticated ? (
-                                <Navigate to="/admin-portal/dashboard" />
+                                <Navigate to="/admin-portal/dashboard" replace />
                             ) : (
                                 <AdminLoginScreen />
                             )
@@ -936,12 +1040,12 @@ const AppContent: React.FC = () => {
                                             <Route path="gcash-payments" element={<AdminGCashPaymentsScreen />} />
                                             <Route path="satisfaction" element={<AdminSatisfactionScreen />} />
                                             <Route path="notifications" element={<AdminNotificationsScreen />} />
-                                            <Route path="*" element={<Navigate to="/admin-portal/dashboard" />} />
+                                            <Route path="*" element={<Navigate to="/admin-portal/dashboard" replace />} />
                                         </Routes>
                                     </React.Suspense>
                                 </AdminLayout>
                             ) : (
-                                <Navigate to="/admin-login" />
+                                <Navigate to="/admin-login" replace />
                             )
                         }
                     />
@@ -976,14 +1080,14 @@ const AppContent: React.FC = () => {
                                             <Route path="profile" element={<MechanicProfileManagementScreen />} />
                                             <Route path="notification-settings" element={<MechanicNotificationSettingsScreen />} />
                                             <Route path="support-chat" element={<SupportChatScreen />} />
-                                            <Route path="*" element={<Navigate to="/mechanic-portal/dashboard" />} />
+                                            <Route path="*" element={<Navigate to="/mechanic-portal/dashboard" replace />} />
                                         </Routes>
                                     </ErrorBoundary>
                                     <MechanicBottomNav />
                                     <GlobalPayoutApprovalListener />
                                 </div>
                             ) : (
-                                <Navigate to="/login" state={{ from: 'mechanic' }} />
+                                <Navigate to="/login" replace state={{ from: 'mechanic' }} />
                             )
                         }
                     />
@@ -994,7 +1098,7 @@ const AppContent: React.FC = () => {
                         element={
                             <div className={`max-w-md mx-auto bg-secondary text-white font-sans ${
                                 isMapScreen 
-                                    ? 'h-screen h-[100dvh] overflow-hidden' 
+                                    ? 'h-[100dvh] overflow-hidden' 
                                     : isAuthenticated && !hideCustomerBottomPadding 
                                         ? 'min-h-screen pb-20' 
                                         : 'min-h-screen'
@@ -1004,12 +1108,16 @@ const AppContent: React.FC = () => {
                                     <Routes>
                                         {isAuthenticated ? (
                                             isProfileIncomplete() ? (
-                                                <Route path="*" element={<Navigate to="/complete-profile" />} />
+                                                <Route path="*" element={<Navigate to="/complete-profile" replace />} />
                                             ) : (
                                                 <>
                                                     <Route path="/" element={<HomeScreen />} />
                                                     <Route path="/services" element={<ServicesScreen />} />
                                                     <Route path="/service/:id" element={<ServiceDetailScreen />} />
+                                                    <Route path="/app-services" element={<AppServicesListScreen />} />
+                                                    <Route path="/app-services/:slug" element={<AppServiceDetailScreen />} />
+                                                    <Route path="/app-services/book/:slug" element={<ServiceBookingFlow />} />
+                                                    <Route path="/app-services/liaison-book/:slug" element={<LiaisonBookingFlow />} />
                                                     <Route path="/parts-store" element={<PartsStoreScreen />} />
                                                     <Route path="/part/:id" element={<PartDetailScreen />} />
                                                     <Route path="/booking/:serviceId" element={<BookingScreen />} />
@@ -1034,7 +1142,7 @@ const AppContent: React.FC = () => {
                                                     <Route path="/rent-a-car" element={<RentCarScreen />} />
                                                     <Route path="/hire-a-driver" element={<HireDriverScreen />} />
                                                     <Route path="/support-chat" element={<SupportChatScreen />} />
-                                                    <Route path="*" element={<Navigate to="/customer-portal/" />} />
+                                                    <Route path="*" element={<Navigate to="/customer-portal/" replace />} />
                                                 </>
                                             )
                                         ) : (
@@ -1084,6 +1192,7 @@ const AppContent: React.FC = () => {
                 {/* Global Call UI — always mounted */}
                 <IncomingCallModal />
                 <OutgoingCallModal />
+                <FullScreenCallModal />
                 <ActiveCallBar />
             </React.Suspense>
         </>

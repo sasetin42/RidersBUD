@@ -6,9 +6,14 @@ import { useDatabase } from '../context/DatabaseContext';
 import { Service, Mechanic, Booking, Vehicle, Settings } from '../types';
 import { getNotificationSettings, showNotification } from '../utils/notificationManager';
 import GCashPaymentModal from '../components/GCashPaymentModal';
-import { Clock, Star } from 'lucide-react';
+import { Clock, Star, CalendarRange } from 'lucide-react';
+import CustomerHeader from '../components/CustomerHeader';
 import { getFallbackImageForCategory } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
+import { doc, collection } from 'firebase/firestore';
+import { db as firestore } from '../firebase';
+import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers } from '../data/mockData';
+
 
 declare const L: any;
 
@@ -43,7 +48,7 @@ const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, on
                 </h4>
                 
                 <p className="text-xs font-black" style={{ color: isSelected ? '#FF6B00' : '#9CA3AF' }}>
-                    {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Request Quote'}
+                    ₱{(service.price || 0).toLocaleString()}
                 </p>
             </div>
 
@@ -98,8 +103,9 @@ const MechanicAvailabilityCard: React.FC<{
         >
             <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/10 to-orange-600/10 rounded-2xl opacity-0 group-hover:opacity-100 transition duration-300 blur-sm pointer-events-none"></div>
             
-            <div className="relative p-5 flex flex-col md:flex-row md:items-center justify-between gap-5">
-                <div className="flex items-start gap-4 flex-1 min-w-0">
+            <div className="relative p-5 flex flex-col gap-4">
+                {/* Top Row: Profile Image + Name & Ratings */}
+                <div className="flex items-start gap-4">
                     {/* Profile Image with Pulsing Status Indicator */}
                     <div className="relative flex-shrink-0">
                         <img
@@ -152,34 +158,41 @@ const MechanicAvailabilityCard: React.FC<{
                                 {status.label}
                             </span>
                         </div>
-
-                        {/* Bio snippet */}
-                        {mechanic.bio && (
-                            <p className="text-[11px] text-gray-500 line-clamp-1 font-medium group-hover:text-gray-400 transition-colors">
-                                {mechanic.bio}
-                            </p>
-                        )}
-
-                        {/* Specializations list */}
-                        <div className="pt-1 flex flex-wrap gap-1.5">
-                            {mechanic.specializations.slice(0, 3).map(spec => (
-                                <span key={spec} className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-[9px] font-extrabold px-2.5 py-1 rounded-lg border border-white/5 transition-colors">
-                                    {spec}
-                                </span>
-                            ))}
-                        </div>
                     </div>
                 </div>
 
+                {/* Middle Row: Bio Snippet & Skills tags below profile image */}
+                <div className="space-y-2">
+                    {/* Bio snippet */}
+                    {mechanic.bio && (
+                        <p className="text-xs text-gray-400 font-medium group-hover:text-gray-300 transition-colors">
+                            {mechanic.bio.split(' ').length > 15 
+                                ? mechanic.bio.split(' ').slice(0, 15).join(' ') + '...'
+                                : mechanic.bio}
+                        </p>
+                    )}
+
+                    {/* Specializations list */}
+                    <div className="flex flex-wrap gap-1.5">
+                        {mechanic.specializations.slice(0, 3).map(spec => (
+                            <span key={spec} className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-[9px] font-extrabold px-2.5 py-1 rounded-lg border border-white/5 transition-colors">
+                                {spec}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Divider Line */}
+                <div className="border-t border-white/5 my-0.5"></div>
+
                 {/* Right Side Actions Panel */}
-                <div className="flex sm:flex-row md:flex-col items-center md:items-stretch gap-2 flex-shrink-0 pt-3 md:pt-0 border-t md:border-t-0 border-white/5 md:justify-center">
-                    {/* View Profile Shortcut */}
+                <div className="flex items-center gap-3 w-full">
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
                             navigate(`/customer-portal/mechanic-profile/${mechanic.id}`);
                         }}
-                        className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white font-bold py-2.5 px-4 rounded-xl text-[10px] tracking-wider uppercase border border-white/5 transition-all duration-200 active:scale-95"
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-[#2A2A32] hover:bg-[#3A3A42] text-white font-bold py-3 px-3 rounded-xl text-[10px] tracking-wider uppercase border border-white/5 transition-all duration-200 active:scale-95 whitespace-nowrap mechanic-card-btn"
                     >
                         Info Profile
                     </button>
@@ -191,7 +204,7 @@ const MechanicAvailabilityCard: React.FC<{
                                 e.stopPropagation();
                                 onSelect(mechanic);
                             }}
-                            className="flex-[2] md:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-primary to-orange-600 hover:from-orange-600 hover:to-primary text-white font-black py-2.5 px-5 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 shadow-md shadow-primary/10 hover:shadow-primary/20"
+                            className="flex-[2] flex items-center justify-center gap-1.5 bg-gradient-to-r from-primary to-orange-600 hover:from-orange-600 hover:to-primary text-white font-black py-3 px-4 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 shadow-md shadow-primary/10 hover:shadow-primary/20 whitespace-nowrap mechanic-card-btn"
                         >
                             Select Mechanic
                         </button>
@@ -217,6 +230,9 @@ const getInitialState = (serviceIdFromUrl?: string, locationState?: any) => {
                 state = parsedState;
                 if (state.selectedDate) {
                     state.selectedDate = new Date(state.selectedDate);
+                }
+                if (state.selectedEndDate) {
+                    state.selectedEndDate = new Date(state.selectedEndDate);
                 }
                 //selectedMechanic and selectedTime don't need special parsing as they are plain objects/strings
             }
@@ -284,6 +300,13 @@ const BookingScreen: React.FC = () => {
         return now;
     });
 
+    const [selectedEndDate, setSelectedEndDate] = useState<Date | null>(() => {
+        if (initialState?.selectedEndDate) {
+            return new Date(initialState.selectedEndDate);
+        }
+        return null;
+    });
+
     const [serviceLocation, setServiceLocation] = useState<{ lat: number; lng: number } | null>(initialState?.serviceLocation || null);
     const [locationStatus, setLocationStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
     const [locationError, setLocationError] = useState('');
@@ -301,6 +324,13 @@ const BookingScreen: React.FC = () => {
         const now = new Date();
         return now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     });
+    const [selectedEndTime, setSelectedEndTime] = useState(() => {
+        if (initialState?.selectedEndTime) return initialState.selectedEndTime;
+        // Default end time = start time + 1 hour
+        const now = new Date();
+        now.setHours(now.getHours() + 1);
+        return now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    });
     const [selectedMechanic, setSelectedMechanic] = useState<Mechanic | null>(initialState?.selectedMechanic || null);
 
     const [isSpecializationOpen, setIsSpecializationOpen] = useState(false);
@@ -311,7 +341,22 @@ const BookingScreen: React.FC = () => {
     const [userHasGoneBack, setUserHasGoneBack] = useState(false);
     const [showGCashModal, setShowGCashModal] = useState(false);
     const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
+    const [temporaryBookingData, setTemporaryBookingData] = useState<any>(null);
     const [gcashReferenceNumber, setGcashReferenceNumber] = useState('');
+
+    const [selectedCar, setSelectedCar] = useState<any | null>(initialState?.selectedCar || null);
+    const [selectedDriver, setSelectedDriver] = useState<any | null>(initialState?.selectedDriver || null);
+    const [startLocation, setStartLocation] = useState<string>(initialState?.startLocation || '');
+    const [endLocation, setEndLocation] = useState<string>(initialState?.endLocation || '');
+
+    const cars = useMemo(() => {
+        return (db?.rentalCars && db.rentalCars.length > 0) ? db.rentalCars : mockCars;
+    }, [db?.rentalCars, mockCars]);
+
+    const drivers = useMemo(() => {
+        return (db?.hireDrivers && db.hireDrivers.length > 0) ? db.hireDrivers : mockDrivers;
+    }, [db?.hireDrivers, mockDrivers]);
+
 
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
@@ -319,12 +364,286 @@ const BookingScreen: React.FC = () => {
     const confirmationMapRef = useRef<HTMLDivElement>(null);
     const confirmationMapInstanceRef = useRef<any>(null);
 
+    // Live Route Map Refs & States
+    const routeMapRef = useRef<HTMLDivElement>(null);
+    const routeMapInstanceRef = useRef<any>(null);
+    const routeStartMarkerRef = useRef<any>(null);
+    const routeEndMarkerRef = useRef<any>(null);
+    const routePolylineRef = useRef<any>(null);
+
+    const [isLocating, setIsLocating] = useState(false);
+    const [startCoords, setStartCoords] = useState<[number, number] | null>(null);
+    const [endCoords, setEndCoords] = useState<[number, number] | null>(null);
+
+    // Auto-suggestions states
+    const [startSuggestions, setStartSuggestions] = useState<any[]>([]);
+    const [endSuggestions, setEndSuggestions] = useState<any[]>([]);
+    const [showStartSuggestions, setShowStartSuggestions] = useState(false);
+    const [showEndSuggestions, setShowEndSuggestions] = useState(false);
+
     useEffect(() => {
         if (user && user.vehicles.length > 0 && !selectedVehiclePlate) {
             const primaryVehicle = user.vehicles.find(v => v.isPrimary);
             setSelectedVehiclePlate(primaryVehicle?.plateNumber || user.vehicles[0].plateNumber);
         }
     }, [user, selectedVehiclePlate]);
+
+    // Geocoding and Map effect for Step 4
+    const handleUseLiveLocation = () => {
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser');
+            return;
+        }
+        setIsLocating(true);
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                const { latitude, longitude } = position.coords;
+                setStartCoords([latitude, longitude]);
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+                    const data = await res.json();
+                    if (data && data.display_name) {
+                        setStartLocation(data.display_name);
+                    } else {
+                        setStartLocation(`My Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+                    }
+                } catch (e) {
+                    setStartLocation(`My Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+                } finally {
+                    setIsLocating(false);
+                }
+            },
+            (error) => {
+                console.error(error);
+                alert('Unable to retrieve your location');
+                setIsLocating(false);
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    };
+
+    // Fetch suggestions for Start Location (Philippines only)
+    useEffect(() => {
+        if (!startLocation || startLocation.startsWith('My Location') || startLocation.length < 2) {
+            setStartSuggestions([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=ph&q=${encodeURIComponent(startLocation)}&limit=5`);
+                const data = await res.json();
+                if (data) {
+                    setStartSuggestions(data);
+                }
+            } catch (e) {
+                console.warn("Start suggestions fetch failed", e);
+            }
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [startLocation]);
+
+    // Fetch suggestions for End Location (Philippines only)
+    useEffect(() => {
+        if (!endLocation || endLocation.length < 2) {
+            setEndSuggestions([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=ph&q=${encodeURIComponent(endLocation)}&limit=5`);
+                const data = await res.json();
+                if (data) {
+                    setEndSuggestions(data);
+                }
+            } catch (e) {
+                console.warn("End suggestions fetch failed", e);
+            }
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [endLocation]);
+
+    const handleSelectStartSuggestion = (suggestion: any) => {
+        setStartLocation(suggestion.display_name);
+        setStartCoords([parseFloat(suggestion.lat), parseFloat(suggestion.lon)]);
+        setStartSuggestions([]);
+        setShowStartSuggestions(false);
+    };
+
+    const handleSelectEndSuggestion = (suggestion: any) => {
+        setEndLocation(suggestion.display_name);
+        setEndCoords([parseFloat(suggestion.lat), parseFloat(suggestion.lon)]);
+        setEndSuggestions([]);
+        setShowEndSuggestions(false);
+    };
+
+    // Instantiate and update Route Map
+    useEffect(() => {
+        if (step !== 4 || !routeMapRef.current || typeof L === 'undefined') return;
+
+        // Clean up map instance if the container DOM element was unmounted and remounted
+        if (routeMapInstanceRef.current) {
+            try {
+                const container = routeMapInstanceRef.current.getContainer();
+                if (container !== routeMapRef.current) {
+                    routeMapInstanceRef.current.remove();
+                    routeMapInstanceRef.current = null;
+                    routeStartMarkerRef.current = null;
+                    routeEndMarkerRef.current = null;
+                    routePolylineRef.current = null;
+                }
+            } catch (e) {
+                routeMapInstanceRef.current = null;
+                routeStartMarkerRef.current = null;
+                routeEndMarkerRef.current = null;
+                routePolylineRef.current = null;
+            }
+        }
+
+        if (!routeMapInstanceRef.current) {
+            routeMapInstanceRef.current = L.map(routeMapRef.current, {
+                zoomControl: false,
+                attributionControl: false
+            }).setView([14.5995, 120.9842], 12);
+
+            const cartoTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                maxZoom: 20,
+                subdomains: 'abcd'
+            });
+            const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19
+            });
+
+            cartoTile.addTo(routeMapInstanceRef.current);
+
+            let tilesLoaded = false;
+            cartoTile.on('tileload', () => { tilesLoaded = true; });
+            setTimeout(() => {
+                if (!tilesLoaded && routeMapInstanceRef.current) {
+                    routeMapInstanceRef.current.removeLayer(cartoTile);
+                    osmTile.addTo(routeMapInstanceRef.current);
+                }
+            }, 5000);
+        }
+
+        const map = routeMapInstanceRef.current;
+
+        if (startCoords) {
+            if (routeStartMarkerRef.current) {
+                routeStartMarkerRef.current.setLatLng(startCoords);
+            } else {
+                const greenIcon = L.divIcon({
+                    html: `<div class="rb-location-pin-wrapper start-pin small-pin">
+                        <div class="rb-location-circle" style="border: 3px solid #10B981;">
+                            <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Start" onerror="this.style.display='none'" style="width:36px;height:36px;object-fit:contain;border-radius:50%;" />
+                        </div>
+                        <div class="rb-location-stem" style="background: #10B981;"></div>
+                        <div class="rb-location-dot" style="background: #10B981;"></div>
+                    </div>`,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [34, 46],
+                    iconAnchor: [17, 46]
+                });
+                routeStartMarkerRef.current = L.marker(startCoords, { icon: greenIcon }).addTo(map);
+            }
+        } else if (routeStartMarkerRef.current) {
+            routeStartMarkerRef.current.remove();
+            routeStartMarkerRef.current = null;
+        }
+
+        if (endCoords) {
+            if (routeEndMarkerRef.current) {
+                routeEndMarkerRef.current.setLatLng(endCoords);
+            } else {
+                const redIcon = L.divIcon({
+                    html: `<div class="rb-location-pin-wrapper end-pin small-pin">
+                        <div class="rb-location-circle" style="border: 3px solid #EF4444;">
+                            <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="End" onerror="this.style.display='none'" style="width:36px;height:36px;object-fit:contain;border-radius:50%;" />
+                        </div>
+                        <div class="rb-location-stem" style="background: #EF4444;"></div>
+                        <div class="rb-location-dot" style="background: #EF4444;"></div>
+                    </div>`,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [34, 46],
+                    iconAnchor: [17, 46]
+                });
+                routeEndMarkerRef.current = L.marker(endCoords, { icon: redIcon }).addTo(map);
+            }
+        } else if (routeEndMarkerRef.current) {
+            routeEndMarkerRef.current.remove();
+            routeEndMarkerRef.current = null;
+        }
+
+        if (startCoords && endCoords) {
+            const drawStraightLine = () => {
+                if (routePolylineRef.current) {
+                    routePolylineRef.current.setLatLngs([startCoords, endCoords]);
+                    routePolylineRef.current.setStyle({ dashArray: '5, 10', weight: 4 });
+                } else {
+                    routePolylineRef.current = L.polyline([startCoords, endCoords], {
+                        color: '#FE7803',
+                        weight: 4,
+                        opacity: 0.8,
+                        dashArray: '5, 10'
+                    }).addTo(map);
+                }
+                const bounds = L.latLngBounds([startCoords, endCoords]);
+                map.fitBounds(bounds, { padding: [50, 50] });
+            };
+
+            // Fetch real road route geometry from OpenStreetMap OSRM API (OSM Germany server)
+            fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startCoords[1]},${startCoords[0]};${endCoords[1]},${endCoords[0]}?overview=full&geometries=geojson`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.routes && data.routes.length > 0) {
+                        const routePoints = data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]]);
+                        if (routePolylineRef.current) {
+                            routePolylineRef.current.setLatLngs(routePoints);
+                            routePolylineRef.current.setStyle({ dashArray: '', weight: 5 });
+                        } else {
+                            routePolylineRef.current = L.polyline(routePoints, {
+                                color: '#FE7803',
+                                weight: 5,
+                                opacity: 0.9,
+                                lineJoin: 'round'
+                            }).addTo(map);
+                        }
+                        const bounds = L.latLngBounds(routePoints);
+                        map.fitBounds(bounds, { padding: [40, 40] });
+                    } else {
+                        drawStraightLine();
+                    }
+                })
+                .catch(err => {
+                    console.warn("OSRM routing failed, using fallback:", err);
+                    drawStraightLine();
+                });
+        } else {
+            if (routePolylineRef.current) {
+                routePolylineRef.current.remove();
+                routePolylineRef.current = null;
+            }
+            if (startCoords) {
+                map.setView(startCoords, 14);
+            } else if (endCoords) {
+                map.setView(endCoords, 14);
+            }
+        }
+
+        setTimeout(() => {
+            if (map) map.invalidateSize(true);
+        }, 300);
+
+    }, [step, startCoords, endCoords]);
+
+    useEffect(() => {
+        if (step !== 4 && routeMapInstanceRef.current) {
+            routeMapInstanceRef.current.remove();
+            routeMapInstanceRef.current = null;
+            routeStartMarkerRef.current = null;
+            routeEndMarkerRef.current = null;
+            routePolylineRef.current = null;
+        }
+    }, [step]);
 
     // Real-time listener for booking status change (Sync)
     useEffect(() => {
@@ -379,16 +698,22 @@ const BookingScreen: React.FC = () => {
             selectedServiceIds: Array.from(selectedServiceIds),
             selectedVehiclePlate,
             selectedDate: selectedDate.toISOString(),
+            selectedEndDate: selectedEndDate ? selectedEndDate.toISOString() : null,
             selectedTime,
+            selectedEndTime,
             selectedMechanic,
             serviceLocation,
             mechanicSearch,
             specializationFilter,
             sortOption,
             notes,
+            selectedCar,
+            selectedDriver,
+            startLocation,
+            endLocation
         };
         sessionStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-    }, [step, selectedServiceIds, selectedVehiclePlate, selectedDate, selectedTime, selectedMechanic, serviceLocation, mechanicSearch, specializationFilter, sortOption, notes]);
+    }, [step, selectedServiceIds, selectedVehiclePlate, selectedDate, selectedEndDate, selectedTime, selectedEndTime, selectedMechanic, serviceLocation, mechanicSearch, specializationFilter, sortOption, notes, selectedCar, selectedDriver, startLocation, endLocation]);
 
     useEffect(() => {
         if (step === 3) {
@@ -500,7 +825,7 @@ const BookingScreen: React.FC = () => {
         const locationIcon = L.divIcon({
             html: `<div class="rb-location-pin-wrapper">
                 <div class="rb-location-circle">
-                    <img src="/favicon.png" alt="Location" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:contain;" />
+                    <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:36px;height:36px;object-fit:contain;border-radius:50%;" />
                 </div>
                 <div class="rb-location-stem"></div>
                 <div class="rb-location-dot"></div>
@@ -547,8 +872,12 @@ const BookingScreen: React.FC = () => {
         setTimeout(inv, 1000);
 
         return () => {
-            if (step !== 3 && mapInstanceRef.current) {
-                mapInstanceRef.current.remove();
+            if (mapInstanceRef.current) {
+                try {
+                    mapInstanceRef.current.remove();
+                } catch (error) {
+                    console.warn('Map cleanup warning (ignored):', error);
+                }
                 mapInstanceRef.current = null;
                 markerRef.current = null;
                 accuracyCircleRef.current = null;
@@ -614,7 +943,7 @@ const BookingScreen: React.FC = () => {
             const locationIcon = L.divIcon({
                 html: `<div class="rb-location-pin-wrapper">
                     <div class="rb-location-circle">
-                        <img src="/favicon.png" alt="Location" style="width:28px;height:28px;object-fit:contain;" />
+                        <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:36px;height:36px;object-fit:contain;border-radius:50%;" />
                     </div>
                     <div class="rb-location-stem"></div>
                     <div class="rb-location-dot"></div>
@@ -633,8 +962,12 @@ const BookingScreen: React.FC = () => {
         }
 
         return () => {
-            if (step !== 5 && confirmationMapInstanceRef.current) {
-                confirmationMapInstanceRef.current.remove();
+            if (confirmationMapInstanceRef.current) {
+                try {
+                    confirmationMapInstanceRef.current.remove();
+                } catch (error) {
+                    console.warn('Confirmation map cleanup warning (ignored):', error);
+                }
                 confirmationMapInstanceRef.current = null;
             }
         };
@@ -653,25 +986,55 @@ const BookingScreen: React.FC = () => {
         }
     };
 
+    const { services, bookings, mechanics } = db || { services: [], bookings: [], mechanics: [] };
+
+    const selectedServices = useMemo(() => {
+        return services.filter(s => selectedServiceIds.has(s.id));
+    }, [services, selectedServiceIds]);
+    const isCarRental = selectedServices.some(s => s.isCarRental);
+    const isDriverHire = selectedServices.some(s => s.isDriverHire);
+    const isSpecialRentalOrDriver = isCarRental || isDriverHire;
+
     const getHeaderTitle = () => {
         switch (step) {
             case 1: return 'Select Service & Vehicle';
-            case 2: return 'Select a Date';
-            case 3: return 'Confirm Service Location';
-            case 4: return 'Select Mechanic';
+            case 2: return 'Select a Date and Time';
+            case 3:
+                if (isSpecialRentalOrDriver) {
+                    if (isCarRental && isDriverHire) return 'Select Car & Driver';
+                    return isCarRental ? 'Select Car' : 'Select Driver';
+                }
+                return 'Confirm Service Location';
+            case 4: return isSpecialRentalOrDriver ? 'Enter Route Locations' : 'Select Mechanic';
             case 5: return 'Confirm Booking';
             default: return 'Book a Service';
         }
     };
 
-    const { services, bookings, mechanics } = db || { services: [], bookings: [], mechanics: [] };
+    const rentalDays = useMemo(() => {
+        if (!isSpecialRentalOrDriver || !selectedEndDate) return 1;
+        const start = new Date(selectedDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(selectedEndDate);
+        end.setHours(0, 0, 0, 0);
+        const diffTime = end.getTime() - start.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        return Math.max(1, diffDays);
+    }, [isSpecialRentalOrDriver, selectedDate, selectedEndDate]);
 
     const totalPrice = useMemo(() => {
         if (!db) return 0;
-        return services
+        let price = services
             .filter(s => selectedServiceIds.has(s.id))
             .reduce((sum, s) => sum + s.price, 0);
-    }, [selectedServiceIds, services, db]);
+        if (isCarRental && selectedCar) {
+            price += selectedCar.pricePerDay * rentalDays;
+        }
+        if (isDriverHire && selectedDriver) {
+            price += selectedDriver.pricePerDay * rentalDays;
+        }
+        return price;
+    }, [selectedServiceIds, services, db, isCarRental, selectedCar, isDriverHire, selectedDriver, rentalDays]);
 
     const isQuoteRequest = useMemo(() => {
         if (!db || selectedServiceIds.size === 0) return false;
@@ -805,13 +1168,44 @@ const BookingScreen: React.FC = () => {
     };
 
     const handleStep2Continue = () => {
-        if (!selectedDate) setError('Please select a date.');
-        else { setError(''); setStep(3); }
+        if (!selectedDate) { setError('Please select a start date.'); return; }
+        if (isSpecialRentalOrDriver) {
+            if (!selectedTime) { setError('Please select a start time.'); return; }
+            if (!selectedEndDate) { setError('Please select a return / end date.'); return; }
+            if (selectedEndDate < selectedDate) { setError('End date must be on or after the start date.'); return; }
+            if (!selectedEndTime) { setError('Please select a return / end time.'); return; }
+        }
+        setError('');
+        setStep(3);
     };
 
     const handleStep3Continue = () => {
-        if (!serviceLocation) setError('Please confirm your location.');
-        else { setError(''); setStep(4); }
+        if (isSpecialRentalOrDriver) {
+            if (isCarRental && !selectedCar) {
+                setError('Please select a car.');
+            } else if (isDriverHire && !selectedDriver) {
+                setError('Please select a driver.');
+            } else {
+                setError('');
+                setStep(4);
+            }
+        } else {
+            if (!serviceLocation) setError('Please confirm your location.');
+            else { setError(''); setStep(4); }
+        }
+    };
+
+    const handleStep4Continue = () => {
+        if (isSpecialRentalOrDriver) {
+            if (!startLocation.trim()) {
+                setError('Please enter a start location.');
+            } else if (!endLocation.trim()) {
+                setError('Please enter an end location.');
+            } else {
+                setError('');
+                setStep(5);
+            }
+        }
     };
 
     const handleSelectTimeSlot = (mechanic: Mechanic, time: string) => {
@@ -824,40 +1218,74 @@ const BookingScreen: React.FC = () => {
     const handleBooking = async () => {
         const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
         const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
-        if (selectedServices.length === 0 || !user || !selectedMechanic || !selectedVehicle || !serviceLocation) {
+        if (selectedServices.length === 0 || !user || (!isSpecialRentalOrDriver && !selectedMechanic) || !selectedVehicle || (!isSpecialRentalOrDriver && !serviceLocation)) {
             setError('Missing booking information. Please start over.');
             return;
         }
         setError('');
         setIsBooking(true);
         try {
-            const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
-            const newBookingData = {
+            let computedTotalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
+            if (isSpecialRentalOrDriver) {
+                if (isCarRental && selectedCar) computedTotalPrice += selectedCar.pricePerDay * rentalDays;
+                if (isDriverHire && selectedDriver) computedTotalPrice += selectedDriver.pricePerDay * rentalDays;
+            }
+
+            const newBookingData: any = {
                 customerId: user.id,
                 customerName: user.name,
                 services: selectedServices,
-                service: selectedServices[0],
+                service: selectedServices[0] || null,
                 date: selectedDate.toISOString().split('T')[0],
                 time: selectedTime,
                 status: 'Upcoming' as const,
                 vehicle: selectedVehicle,
-                mechanic: selectedMechanic,
-                mechanicId: selectedMechanic.id,
-                mechanicName: selectedMechanic.name,
-                location: serviceLocation,
                 notes,
                 paymentStatus: 'pending' as const,
                 paidAmount: 0,
-                totalAmount: totalPrice,
+                totalAmount: computedTotalPrice,
                 paymentMethod: 'GCash' as const,
                 gcashPaymentStatus: 'awaiting_payment' as const,
                 isVerified: false,
             };
-            const created = await addBooking(newBookingData);
-            if (!created) throw new Error('Could not create booking.');
+
+            if (isSpecialRentalOrDriver) {
+                newBookingData.isSpecialRentalOrDriver = true;
+                newBookingData.startLocation = startLocation;
+                newBookingData.endLocation = endLocation;
+                newBookingData.endDate = selectedEndDate ? selectedEndDate.toISOString().split('T')[0] : null;
+                newBookingData.rentalDays = rentalDays;
+                newBookingData.startTime = selectedTime;
+                newBookingData.endTime = selectedEndTime;
+                if (isCarRental) {
+                    newBookingData.selectedCar = selectedCar;
+                    newBookingData.rentalCarDetails = selectedCar;
+                }
+                if (isDriverHire) {
+                    newBookingData.selectedDriver = selectedDriver;
+                    newBookingData.driverDetails = selectedDriver;
+                }
+            } else {
+                newBookingData.mechanic = selectedMechanic;
+                newBookingData.mechanicId = selectedMechanic?.id || '';
+                newBookingData.mechanicName = selectedMechanic?.name || '';
+                newBookingData.location = serviceLocation;
+            }
+
+            if (computedTotalPrice === 0) {
+                const createdBooking = await addBooking(newBookingData);
+                sessionStorage.removeItem(BOOKING_STATE_KEY);
+                navigate('/customer-portal/booking-confirmation', {
+                    state: { bookings: [createdBooking], bookingId: createdBooking.id }
+                });
+                return;
+            }
+            const newDocRef = doc(collection(firestore, 'bookings'));
+            const preGeneratedId = newDocRef.id;
+            setTemporaryBookingData(newBookingData);
+            setPendingBookingId(preGeneratedId);
+            setWaitingBookingId(preGeneratedId);
             sessionStorage.removeItem(BOOKING_STATE_KEY);
-            setPendingBookingId(created.id);
-            setWaitingBookingId(created.id);
             setShowGCashModal(true);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred.');
@@ -897,7 +1325,7 @@ const BookingScreen: React.FC = () => {
 
     const renderStep1 = () => (
         <>
-            <div className="p-6 space-y-6 flex-grow overflow-y-auto">
+            <div className="p-6 pb-32 space-y-6 flex-grow overflow-y-auto">
                 <div>
                     <h3 className="text-sm font-bold text-gray-400  tracking-wider mb-3">Select Your Vehicle</h3>
                     {user?.vehicles && user.vehicles.length > 0 ? (
@@ -922,6 +1350,9 @@ const BookingScreen: React.FC = () => {
                                                         src={vehicle.imageUrls[0]}
                                                         alt={`${vehicle.make} ${vehicle.model}`}
                                                         className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                                        }}
                                                     />
                                                 ) : (
                                                     <svg
@@ -1035,9 +1466,12 @@ const BookingScreen: React.FC = () => {
                         </span>
                         <input
                             type="text"
+                            id="service-search"
+                            name="serviceSearch"
                             placeholder="Search services (e.g. Oil Change, Tires...)"
                             value={serviceSearch}
                             onChange={(e) => setServiceSearch(e.target.value)}
+                            autoComplete="off"
                             className="w-full pl-10 pr-4 py-2.5 bg-[#1E1E1E] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-primary/30 focus:bg-[#252525]"
                         />
                     </div>
@@ -1074,29 +1508,45 @@ const BookingScreen: React.FC = () => {
                     </div>
                 </div>
             </div>
-            <div className="p-0 bg-transparent shrink-0 z-30">
-                {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
-                {totalPrice > 0 && (
-                    <div className="flex justify-between items-center mb-3 mx-4 p-3 bg-white/5 rounded-xl border border-white/5">
-                        <span className="text-gray-400 text-xs font-bold">Total for {selectedServiceIds.size} service(s)</span>
-                        <span className="font-black text-lg text-primary">₱{totalPrice.toLocaleString()}</span>
-                    </div>
-                )}
-                <Tooltip content="Proceed to date selection" className="w-full">
-                    <button onClick={handleStep1Continue} disabled={selectedServiceIds.size === 0 || !selectedVehiclePlate} className="w-full bg-primary text-white font-black py-3.5 hover:bg-orange-600 transition disabled:opacity-50 rounded-none uppercase tracking-wider text-base">
-                        Continue
-                    </button>
-                </Tooltip>
+            <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <div className="max-w-md mx-auto w-full">
+                    {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
+                    {selectedServiceIds.size > 0 && (
+                        <div className="flex justify-between items-center mb-3 mx-4 p-3 bg-white/5 rounded-xl border border-white/5">
+                            <span className="text-gray-400 text-xs font-bold">Total for {selectedServiceIds.size} service(s)</span>
+                            <span className="font-black text-lg text-primary">₱{totalPrice.toLocaleString()}</span>
+                        </div>
+                    )}
+                    <Tooltip content="Proceed to date selection" className="w-full">
+                        <button onClick={handleStep1Continue} disabled={selectedServiceIds.size === 0 || !selectedVehiclePlate} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition disabled:opacity-50 rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20">
+                            Continue
+                        </button>
+                    </Tooltip>
+                </div>
             </div>
         </>
     );
 
     const renderStep2 = () => {
         const todayStr = new Date().toISOString().split('T')[0];
+        const startDateStr = selectedDate.toISOString().split('T')[0];
 
         const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
             if (e.target.value) {
-                setSelectedDate(new Date(e.target.value));
+                const newStart = new Date(e.target.value);
+                setSelectedDate(newStart);
+                // Reset end date if it's now before the new start
+                if (selectedEndDate && selectedEndDate < newStart) {
+                    setSelectedEndDate(null);
+                }
+            }
+        };
+
+        const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            if (e.target.value) {
+                setSelectedEndDate(new Date(e.target.value));
+            } else {
+                setSelectedEndDate(null);
             }
         };
 
@@ -1104,67 +1554,537 @@ const BookingScreen: React.FC = () => {
             setSelectedTime(e.target.value);
         };
 
+        const handleEndTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            setSelectedEndTime(e.target.value);
+        };
+
+        const selectedServicesList = services.filter(s => selectedServiceIds.has(s.id));
+
         return (
             <>
-                <div className="p-6 space-y-8 flex-grow overflow-y-auto">
-                    <div className="space-y-4">
-                        <h3 className="text-xl font-bold text-white">Select Date & Time</h3>
-                        <p className="text-sm text-gray-400">Choose your preferred schedule for the service.</p>
+                <div className="px-6 py-4 pb-32 space-y-4 flex-grow overflow-y-auto">
+                    <div className="space-y-3">
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                            {/* Date Picker */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-gray-500  tracking-widest">Date</label>
-                                <div className="relative">
-                                    <input
-                                        type="date"
-                                        min={todayStr}
-                                        value={selectedDate.toISOString().split('T')[0]}
-                                        onChange={handleDateChange}
-                                        className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-4 text-white font-bold outline-none transition-all focus:border-white/20 custom-date-input"
-                                        style={{ colorScheme: 'dark' }}
-                                    />
+                        {isSpecialRentalOrDriver ? (
+                            /* ── Rental / Driver for Hire: 2-row grid ── */
+                            <>
+                                {/* Row 1: Start Date + Start Time */}
+                                <div className="grid grid-cols-2 gap-4 mt-1">
+                                    <div className="space-y-1.5">
+                                        <label htmlFor="booking-date" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Start Date</label>
+                                        <div className="relative">
+                                            <input
+                                                id="booking-date"
+                                                name="bookingDate"
+                                                type="date"
+                                                min={todayStr}
+                                                value={selectedDate.toISOString().split('T')[0]}
+                                                onChange={handleDateChange}
+                                                autoComplete="off"
+                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-date-input date-picker-primary-icon"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label htmlFor="booking-start-time" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Start Time</label>
+                                        <div className="relative">
+                                            <input
+                                                id="booking-start-time"
+                                                name="bookingStartTime"
+                                                type="time"
+                                                value={selectedTime}
+                                                onChange={handleTimeChange}
+                                                autoComplete="off"
+                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-time-input time-picker-primary-icon"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Row 2: End Date + End Time */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label htmlFor="booking-end-date" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Return Date</label>
+                                        <div className="relative">
+                                            <input
+                                                id="booking-end-date"
+                                                name="bookingEndDate"
+                                                type="date"
+                                                min={startDateStr}
+                                                value={selectedEndDate ? selectedEndDate.toISOString().split('T')[0] : ''}
+                                                onChange={handleEndDateChange}
+                                                autoComplete="off"
+                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-date-input date-picker-primary-icon"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label htmlFor="booking-end-time" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Return Time</label>
+                                        <div className="relative">
+                                            <input
+                                                id="booking-end-time"
+                                                name="bookingEndTime"
+                                                type="time"
+                                                value={selectedEndTime}
+                                                onChange={handleEndTimeChange}
+                                                autoComplete="off"
+                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-time-input time-picker-primary-icon"
+                                                style={{ colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Duration badge */}
+                                {selectedEndDate && (
+                                    <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-4 py-2.5">
+                                        <span className="text-primary text-lg">📅</span>
+                                        <div>
+                                            <p className="text-primary font-black text-sm">
+                                                {rentalDays} day{rentalDays !== 1 ? 's' : ''} selected
+                                            </p>
+                                            <p className="text-gray-500 text-[10px]">
+                                                {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {selectedTime}
+                                                {' → '}
+                                                {selectedEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {selectedEndTime}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            /* ── Standard service: Date + Time ── */
+                            <div className="grid grid-cols-2 gap-4 mt-1">
+                                <div className="space-y-1.5">
+                                    <label htmlFor="booking-date" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Date</label>
+                                    <div className="relative">
+                                        <input
+                                            id="booking-date"
+                                            name="bookingDate"
+                                            type="date"
+                                            min={todayStr}
+                                            value={selectedDate.toISOString().split('T')[0]}
+                                            onChange={handleDateChange}
+                                            autoComplete="off"
+                                            className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-white/20 custom-date-input date-picker-primary-icon"
+                                            style={{ colorScheme: 'dark' }}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label htmlFor="booking-time" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Time</label>
+                                    <div className="relative">
+                                        <input
+                                            id="booking-time"
+                                            name="bookingTime"
+                                            type="time"
+                                            value={selectedTime}
+                                            onChange={handleTimeChange}
+                                            autoComplete="off"
+                                            className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-white/20 custom-time-input time-picker-primary-icon"
+                                            style={{ colorScheme: 'dark' }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Selected Services Summary */}
+                        <div className="border border-white/5 bg-[#151515] rounded-xl p-4 mt-4 space-y-3">
+                            <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                                <div>
+                                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Services Summary</h4>
+                                    <p className="text-xs text-gray-500">{selectedServicesList.length} service(s) selected</p>
                                 </div>
                             </div>
 
-                            {/* Time Picker */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-gray-500  tracking-widest">Time</label>
-                                <div className="relative">
-                                    <input
-                                        type="time"
-                                        value={selectedTime}
-                                        onChange={handleTimeChange}
-                                        className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-4 text-white font-bold outline-none transition-all focus:border-white/20 custom-time-input"
-                                        style={{ colorScheme: 'dark' }}
-                                    />
-                                </div>
+                            <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                                {selectedServicesList.map(service => (
+                                    <div key={service.id} className="flex gap-3 bg-[#1A1A1E] border border-white/5 p-3 rounded-lg">
+                                        <div className="w-20 h-20 rounded-lg bg-[#222] border border-white/5 overflow-hidden flex-shrink-0 relative">
+                                            <img
+                                                src={service.imageUrl || getFallbackImageForCategory(service.category)}
+                                                alt={service.name}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }}
+                                            />
+                                        </div>
+                                        <div className="flex-grow min-w-0">
+                                            <div className="flex justify-between items-start gap-2">
+                                                <h5 className="text-xs font-bold text-white truncate">{service.name}</h5>
+                                                <span className="text-xs font-black text-primary flex-shrink-0">₱{(service.price || 0).toLocaleString()}</span>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500 truncate mt-0.5">{service.category}</p>
+                                            <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">{service.description}</p>
+                                            {service.estimatedTime && (
+                                                <div className="bg-primary/20 border border-primary/20 text-primary text-[9px] font-black rounded-lg inline-flex items-center gap-1.5 px-2.5 py-1 mt-1.5">
+                                                    <Clock size={10} />
+                                                    <span>Est: {service.estimatedTime}</span>
+                                                </div>
+                                            )}
+                                            {service.features && service.features.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-2">
+                                                    {service.features.map((feat, idx) => (
+                                                        <span key={idx} className="px-1.5 py-0.5 rounded bg-white/5 text-[8px] text-gray-400 border border-white/5">
+                                                            {feat}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex justify-between items-center border-t border-white/5 pt-3">
+                                <span className="text-xs font-bold text-gray-400">
+                                    {isSpecialRentalOrDriver && rentalDays > 1 ? `Total (${rentalDays} days):` : 'Total Price:'}
+                                </span>
+                                <span className="text-base font-black text-primary">₱{totalPrice.toLocaleString()}</span>
                             </div>
                         </div>
 
-                        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex gap-3 items-start mt-6">
+                        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex gap-3 items-start mt-4">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                             <p className="text-xs text-gray-300 leading-relaxed">
-                                Please note that the actual arrival time may vary slightly depending on traffic conditions and the mechanic's previous job status. We will keep you updated.
+                                {isSpecialRentalOrDriver
+                                    ? 'Select your rental start and return dates. Pricing is calculated per day based on the duration selected.'
+                                    : 'Please note that the actual arrival time may vary slightly depending on traffic conditions and the mechanic\'s previous job status. We will keep you updated.'}
                             </p>
                         </div>
                     </div>
                 </div>
-                <div className="p-0 bg-transparent shrink-0 z-30">
-                    {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
-                    <Tooltip content="Proceed to location confirmation" className="w-full">
-                        <button onClick={handleStep2Continue} disabled={!selectedDate || !selectedTime} className="w-full bg-primary text-white font-black py-3.5 hover:bg-orange-600 transition disabled:opacity-50 rounded-none uppercase tracking-wider text-base">
-                            Continue
-                        </button>
-                    </Tooltip>
+                <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                    <div className="max-w-md mx-auto w-full">
+                        {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
+                        <Tooltip content={isSpecialRentalOrDriver ? "Proceed to vehicle / driver selection" : "Proceed to location confirmation"} className="w-full">
+                            <button
+                                onClick={handleStep2Continue}
+                                disabled={!selectedDate || !selectedTime || (isSpecialRentalOrDriver && (!selectedEndDate || !selectedEndTime))}
+                                className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition disabled:opacity-50 rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20"
+                            >
+                                Continue
+                            </button>
+                        </Tooltip>
+                    </div>
                 </div>
             </>
         )
     };
 
     const renderStep3 = () => {
+        if (isSpecialRentalOrDriver) {
+            const totalItems = (isCarRental ? cars.filter(c => c.isAvailable !== false).length : 0) + (isDriverHire ? drivers.filter(d => d.isAvailable !== false).length : 0);
+            const selectedCount = (isCarRental && selectedCar ? 1 : 0) + (isDriverHire && selectedDriver ? 1 : 0);
+
+            return (
+                <div className="flex flex-col h-full">
+                    {/* ── Sticky Header ── */}
+                    <div className="shrink-0 px-5 pt-4 pb-3 bg-[#121212] border-b border-white/5 z-20">
+                        <div className="flex items-center justify-between gap-3">
+                            {/* Back button */}
+                            <button
+                                onClick={handleBack}
+                                className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 active:scale-95 transition-all"
+                                aria-label="Go back"
+                            >
+                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                                </svg>
+                            </button>
+
+                            {/* Title + subtitle */}
+                            <div className="flex-1 min-w-0">
+                                <h2 className="text-lg font-black text-white tracking-tight leading-tight">
+                                    {isCarRental && isDriverHire ? 'Select Car & Driver' : isCarRental ? 'Select a Car' : 'Select a Driver'}
+                                </h2>
+                                <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                    {isCarRental && isDriverHire
+                                        ? 'Choose one car and one driver for your trip'
+                                        : isCarRental
+                                        ? 'Choose a vehicle for your rental'
+                                        : 'Choose a professional driver for your trip'}
+                                </p>
+                            </div>
+
+                            {/* Available count badge */}
+                            <div className="bg-primary/10 border border-primary/20 rounded-xl px-3 py-1.5 text-right flex-shrink-0">
+                                <p className="text-[9px] font-black text-primary tracking-widest uppercase">Available</p>
+                                <p className="text-base font-black text-white">{totalItems}</p>
+                            </div>
+                        </div>
+
+                        {/* Selection status pills */}
+                        {(isCarRental || isDriverHire) && (
+                            <div className="flex gap-2 mt-3">
+                                {isCarRental && (
+                                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black border transition-all ${selectedCar ? 'bg-primary/20 border-primary/40 text-primary' : 'bg-white/5 border-white/10 text-gray-500'}`}>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${selectedCar ? 'bg-primary' : 'bg-gray-600'}`} />
+                                        {selectedCar ? `${(selectedCar.name || `${selectedCar.make} ${selectedCar.model}`).split(' ').slice(0,2).join(' ')} selected` : 'No car selected'}
+                                    </div>
+                                )}
+                                {isDriverHire && (
+                                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black border transition-all ${selectedDriver ? 'bg-primary/20 border-primary/40 text-primary' : 'bg-white/5 border-white/10 text-gray-500'}`}>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${selectedDriver ? 'bg-primary' : 'bg-gray-600'}`} />
+                                        {selectedDriver ? `${selectedDriver.name.split(' ')[0]} selected` : 'No driver selected'}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Scrollable List ── */}
+                    <div className="flex-1 overflow-y-auto pb-32 px-4 pt-4 space-y-6">
+
+                        {/* ── Car List ── */}
+                        {isCarRental && (
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">🚗</span>
+                                    <h3 className="text-xs font-black text-gray-400 tracking-widest uppercase">Available Vehicles ({cars.filter(c => c.isAvailable !== false).length})</h3>
+                                </div>
+                                {cars.map(car => {
+                                    const isSelected = selectedCar?.id === car.id;
+                                    const isAvailable = car.isAvailable !== false;
+                                    const carName = car.name || `${car.make} ${car.model}`;
+                                    return (
+                                        <div
+                                            key={car.id}
+                                            onClick={() => {
+                                                if (isAvailable) {
+                                                    setSelectedCar(car);
+                                                }
+                                            }}
+                                            className={`relative bg-[#1A1A1A] rounded-2xl overflow-hidden transition-all duration-200 border-2 ${
+                                                isSelected
+                                                    ? 'border-primary shadow-xl shadow-primary/20'
+                                                    : 'border-white/5 hover:border-primary/40 hover:shadow-lg'
+                                            } ${!isAvailable ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                                        >
+                                            {/* Selected glow strip */}
+                                            {isSelected && <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent" />}
+
+                                            <div className="flex gap-0">
+                                                {/* Left: Image */}
+                                                <div className="relative w-28 flex-shrink-0">
+                                                    <img
+                                                        src={car.imageUrl}
+                                                        alt={carName}
+                                                        className="w-full h-full object-cover"
+                                                        style={{ minHeight: '130px' }}
+                                                        onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1560958089-b8a1929cea89?w=400'; }}
+                                                    />
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#1A1A1A]/60" />
+                                                    {/* Type badge on image */}
+                                                    <span className="absolute top-2 left-2 bg-black/70 backdrop-blur-sm text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                                        {car.type}
+                                                    </span>
+                                                </div>
+
+                                                {/* Right: Details */}
+                                                <div className="flex-1 p-3 flex flex-col justify-between min-w-0">
+                                                    <div>
+                                                        <div className="flex items-start justify-between gap-2 mb-1">
+                                                            <h4 className={`font-black text-sm leading-tight transition-colors ${isSelected ? 'text-primary' : 'text-white'}`}>
+                                                                {carName}
+                                                            </h4>
+                                                            {/* Selection circle */}
+                                                            <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'bg-primary' : 'bg-white/10 border border-white/20'}`}>
+                                                                {isSelected && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Specs row */}
+                                                        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                                                            <span className="text-[9px] text-gray-500 flex items-center gap-0.5">⚙️ {car.transmission || 'Automatic'}</span>
+                                                            <span className="text-gray-700">•</span>
+                                                            <span className="text-[9px] text-gray-500 flex items-center gap-0.5">⛽ {car.fuelPolicy || 'Full to Full'}</span>
+                                                        </div>
+
+                                                        {/* Feature tags */}
+                                                        <div className="flex flex-wrap gap-1 mb-2">
+                                                            {(car.features || []).slice(0, 3).map(f => (
+                                                                <span key={f} className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium ${isSelected ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-white/5 border-white/10 text-gray-500'}`}>
+                                                                    {f}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Price + rental total */}
+                                                    <div className="flex items-end justify-between mt-1">
+                                                        <div>
+                                                            <p className="text-primary font-black text-base leading-none">₱{car.pricePerDay.toLocaleString()}</p>
+                                                            <p className="text-gray-600 text-[9px] mt-0.5">per day</p>
+                                                        </div>
+                                                        {rentalDays > 1 && (
+                                                            <div className="text-right">
+                                                                <p className="text-white font-black text-xs">₱{(car.pricePerDay * rentalDays).toLocaleString()}</p>
+                                                                <p className="text-gray-600 text-[9px]">{rentalDays} days total</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* ── Driver List ── */}
+                        {isDriverHire && (
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg">👨‍✈️</span>
+                                    <h3 className="text-xs font-black text-gray-400 tracking-widest uppercase">Available Drivers ({drivers.filter(d => d.isAvailable !== false).length})</h3>
+                                </div>
+                                {drivers.map(driver => {
+                                    const isSelected = selectedDriver?.id === driver.id;
+                                    const isAvailable = driver.isAvailable !== false;
+                                    const coverage = driver.coverage || driver.geoLimit || 'Province Wide';
+                                    return (
+                                        <div
+                                            key={driver.id}
+                                            onClick={() => {
+                                                if (isAvailable) {
+                                                    setSelectedDriver(driver);
+                                                }
+                                            }}
+                                            className={`relative bg-[#1A1A1A] rounded-2xl overflow-hidden transition-all duration-200 border-2 ${
+                                                isSelected
+                                                    ? 'border-primary shadow-xl shadow-primary/20'
+                                                    : 'border-white/5 hover:border-primary/40 hover:shadow-lg'
+                                            } ${!isAvailable ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+                                        >
+                                            {isSelected && <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent" />}
+
+                                            <div className="flex gap-0">
+                                                {/* Left: Photo */}
+                                                <div className="relative w-28 flex-shrink-0">
+                                                    <img
+                                                        src={driver.imageUrl}
+                                                        alt={driver.name}
+                                                        className="w-full h-full object-cover object-top"
+                                                        style={{ minHeight: '150px' }}
+                                                        onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400'; }}
+                                                    />
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#1A1A1A]/60" />
+                                                    {/* Duty status badge */}
+                                                    <span className={`absolute top-2 left-2 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider backdrop-blur-sm ${isAvailable ? 'bg-green-500/90 text-white' : 'bg-gray-600/90 text-white'}`}>
+                                                        {isAvailable ? 'Available' : 'Not Available'}
+                                                    </span>
+                                                    {/* Rating badge on photo */}
+                                                    <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-black/70 backdrop-blur-sm rounded-lg px-1.5 py-0.5">
+                                                        <span className="text-yellow-400 text-[10px]">★</span>
+                                                        <span className="text-white font-black text-[10px]">{driver.rating || 5.0}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Right: Details */}
+                                                <div className="flex-1 p-3 flex flex-col justify-between min-w-0">
+                                                    <div>
+                                                        <div className="flex items-start justify-between gap-2 mb-1">
+                                                            <h4 className={`font-black text-sm leading-tight transition-colors ${isSelected ? 'text-primary' : 'text-white'}`}>
+                                                                {driver.name}
+                                                            </h4>
+                                                            <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? 'bg-primary' : 'bg-white/10 border border-white/20'}`}>
+                                                                {isSelected && <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Type + experience + coverage */}
+                                                        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                                                            <span className="text-[9px] text-gray-500">{driver.type || 'Professional'}</span>
+                                                            <span className="text-gray-700">•</span>
+                                                            <span className="text-[9px] text-gray-500">🕐 {driver.experience}</span>
+                                                            <span className="text-gray-700">•</span>
+                                                            <span className={`text-[9px] font-bold ${coverage === 'Province Wide' ? 'text-blue-400' : 'text-green-400'}`}>
+                                                                📍 {coverage}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Phone & License badges */}
+                                                        <div className="flex flex-wrap gap-2 mb-2">
+                                                            {driver.phone && (
+                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md border font-medium flex items-center gap-1 ${isSelected ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+                                                                    📞 {driver.phone}
+                                                                </span>
+                                                            )}
+                                                            {driver.licenseType && (
+                                                                <span className={`text-[9px] px-1.5 py-0.5 rounded-md border font-medium flex items-center gap-1 ${isSelected ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+                                                                    🪪 {driver.licenseType}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Price + rental total */}
+                                                    <div className="flex items-end justify-between mt-1">
+                                                        <div>
+                                                            <p className="text-primary font-black text-base leading-none">₱{driver.pricePerDay.toLocaleString()}</p>
+                                                            <p className="text-gray-600 text-[9px] mt-0.5">per day</p>
+                                                        </div>
+                                                        {rentalDays > 1 && (
+                                                            <div className="text-right">
+                                                                <p className="text-white font-black text-xs">₱{(driver.pricePerDay * rentalDays).toLocaleString()}</p>
+                                                                <p className="text-gray-600 text-[9px]">{rentalDays} days total</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                    </div>
+
+                    {/* ── Sticky Footer ── */}
+                    <div className="shrink-0 border-t border-white/5 bg-[#121212] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] z-20">
+                        {/* Selection summary */}
+                        {selectedCount > 0 && (
+                            <div className="flex items-center justify-between mb-3 bg-white/5 rounded-xl px-4 py-2.5">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                                    <span className="text-xs font-bold text-gray-300">
+                                        {isCarRental && selectedCar && `${selectedCar.name}`}
+                                        {isCarRental && selectedCar && isDriverHire && selectedDriver && ' + '}
+                                        {isDriverHire && selectedDriver && `${selectedDriver.name}`}
+                                    </span>
+                                </div>
+                                <span className="text-primary font-black text-sm">
+                                    ₱{(
+                                        (isCarRental && selectedCar ? selectedCar.pricePerDay * rentalDays : 0) +
+                                        (isDriverHire && selectedDriver ? selectedDriver.pricePerDay * rentalDays : 0)
+                                    ).toLocaleString()}
+                                </span>
+                            </div>
+                        )}
+                        {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 rounded-lg border border-red-500/20">{error}</p>}
+                        <button
+                            onClick={handleStep3Continue}
+                            className="w-full bg-primary text-white font-black h-12 flex items-center justify-center gap-2 hover:bg-orange-600 transition rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20 disabled:opacity-50"
+                            disabled={
+                                (isCarRental && !selectedCar) ||
+                                (isDriverHire && !selectedDriver)
+                            }
+                        >
+                            <span>Continue</span>
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         const retryLocation = () => {
             setLocationStatus('idle');
             setServiceLocation(null);
@@ -1184,9 +2104,9 @@ const BookingScreen: React.FC = () => {
                     <div className="absolute top-0 left-0 right-0 p-4 pb-8 z-[500] bg-gradient-to-b from-black/95 via-black/75 to-transparent flex items-center gap-3 pointer-events-none">
                         <button
                             onClick={handleBack}
-                            className="p-2.5 bg-[#1E1E1E]/90 hover:bg-[#252525] rounded-full transition-all text-white border border-white/10 pointer-events-auto shadow-lg"
+                            className="p-2 bg-[#1E1E1E]/90 hover:bg-[#252525] rounded-full transition-all text-white border border-white/10 pointer-events-auto shadow-lg"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
@@ -1234,20 +2154,20 @@ const BookingScreen: React.FC = () => {
                         <>
                             {/* GPS Accuracy Pill */}
                             {locationAccuracy !== null && (
-                                <div className="absolute top-24 left-4 z-[400] bg-[#1a1a1ae0] backdrop-blur-md px-4 py-3 rounded-2xl border border-white/10 flex items-center gap-3 shadow-2xl transition-all duration-300 animate-slideDown">
-                                    <span className={`w-3 h-3 rounded-full flex-shrink-0 ${isTrackingLive ? 'bg-green-500 animate-pulse shadow-md shadow-green-500/50' : 'bg-amber-500'}`} />
+                                <div className="absolute top-24 left-4 z-[400] bg-[#1a1a1ae0] backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 flex items-center gap-2 shadow-2xl transition-all duration-300 animate-slideDown">
+                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isTrackingLive ? 'bg-green-500 animate-pulse shadow-md shadow-green-500/50' : 'bg-amber-500'}`} />
                                     <div className="flex flex-col">
-                                        <span className="text-xs text-white font-extrabold tracking-wider leading-none">
+                                        <span className="text-[10px] text-white font-extrabold tracking-wider leading-none">
                                             {isTrackingLive ? 'LIVE GPS ACTIVE' : 'MANUAL PIN PLACEMENT'}
                                         </span>
-                                        <span className="text-[10px] text-gray-400 font-bold mt-1.5 leading-none">
-                                            {isTrackingLive ? `Accurate to ±${Math.round(locationAccuracy)}m` : 'Tap recenter to resume tracking'}
+                                        <span className="text-[8px] text-gray-400 font-bold mt-1 leading-none">
+                                            {isTrackingLive ? `Accurate to ±${Math.round(locationAccuracy)}m` : 'Tap recenter to resume'}
                                         </span>
                                     </div>
                                     {!isTrackingLive && (
                                         <button
                                             onClick={() => setIsTrackingLive(true)}
-                                            className="border border-[#FE7803] hover:bg-[#FE7803] hover:text-white text-[#FE7803] text-[10px] font-bold px-3 py-1.5 rounded-lg ml-1 transition-all uppercase tracking-wide"
+                                            className="border border-[#FE7803] hover:bg-[#FE7803] hover:text-white text-[#FE7803] text-[8px] font-bold px-2 py-1 rounded-md ml-0.5 transition-all uppercase tracking-wide"
                                         >
                                             Resume
                                         </button>
@@ -1256,7 +2176,7 @@ const BookingScreen: React.FC = () => {
                             )}
 
                             {/* Zoom + Recenter Controls — right side */}
-                            <div className="absolute bottom-8 right-4 z-[400] flex flex-col gap-2.5">
+                            <div className="absolute top-1/2 -translate-y-1/2 right-4 z-[400] flex flex-col gap-2.5">
                                 {/* Zoom In */}
                                 <button
                                     onClick={() => { if (mapInstanceRef.current) mapInstanceRef.current.zoomIn(); }}
@@ -1304,7 +2224,7 @@ const BookingScreen: React.FC = () => {
                                             );
                                         }
                                     }}
-                                    className={`w-14 h-14 flex items-center justify-center rounded-2xl shadow-2xl transition-all duration-300 active:scale-90 relative overflow-hidden ${
+                                    className={`w-11 h-11 flex items-center justify-center rounded-full shadow-2xl transition-all duration-300 active:scale-90 relative overflow-hidden ${
                                         isTrackingLive
                                             ? 'bg-[#FE7803] border-2 border-white/30 shadow-[0_0_24px_rgba(254,120,3,0.5)]'
                                             : 'bg-[#FE7803]/90 border-2 border-[#FE7803]/60 hover:bg-[#FE7803] hover:shadow-[0_0_20px_rgba(254,120,3,0.4)]'
@@ -1313,10 +2233,10 @@ const BookingScreen: React.FC = () => {
                                 >
                                     {/* Animated ping ring when active */}
                                     {isTrackingLive && (
-                                        <span className="absolute inset-0 rounded-2xl border-2 border-white/40 animate-ping opacity-60" />
+                                        <span className="absolute inset-0 rounded-full border-2 border-white/40 animate-ping opacity-60" />
                                     )}
                                     {/* Crosshair / GPS target icon */}
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                         <circle cx="12" cy="12" r="3" fill="white" fillOpacity="0.3" />
                                         <line x1="12" y1="2" x2="12" y2="6" />
                                         <line x1="12" y1="18" x2="12" y2="22" />
@@ -1341,14 +2261,16 @@ const BookingScreen: React.FC = () => {
                     )}
 
                 </div>
-                <div className="p-0 bg-[#1D1D1D] border-t border-dark-gray z-30 relative w-full shrink-0">
-                    <Tooltip content="Confirm your service location" className="w-full">
-                        <button onClick={handleStep3Continue} disabled={locationStatus !== 'success'} className="w-full bg-primary text-white font-black py-3.5 hover:bg-orange-600 transition disabled:opacity-50 flex items-center justify-center gap-2 text-base uppercase tracking-wider">
-                            {locationStatus === 'success' ? (
-                                <>Confirm Location <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg></>
-                            ) : 'Determining Location...'}
-                        </button>
-                    </Tooltip>
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-[500] pointer-events-none flex justify-center pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                    <div className="w-full max-w-md pointer-events-auto">
+                        <Tooltip content="Confirm your service location" className="w-full">
+                            <button onClick={handleStep3Continue} disabled={locationStatus !== 'success'} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition disabled:opacity-50 gap-2 text-base uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/20">
+                                {locationStatus === 'success' ? (
+                                    <>Confirm Location <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg></>
+                                ) : 'Determining Location...'}
+                            </button>
+                        </Tooltip>
+                    </div>
                 </div>
             </div>
         );
@@ -1356,6 +2278,141 @@ const BookingScreen: React.FC = () => {
 
 
     const renderStep4 = () => {
+        if (isSpecialRentalOrDriver) {
+            return (
+                <div className="p-6 pb-32 space-y-6 flex-grow overflow-y-auto relative">
+                    {/* Click outside backdrop for suggestions */}
+                    {(showStartSuggestions || showEndSuggestions) && (
+                        <div
+                            className="fixed inset-0 z-[9990] bg-transparent"
+                            onClick={() => { setShowStartSuggestions(false); setShowEndSuggestions(false); }}
+                        />
+                    )}
+
+                    <div className="space-y-5 relative z-[9995]">
+                        <h3 className="text-sm font-bold text-gray-400 tracking-wider">Enter Route Locations</h3>
+                        <div className="space-y-4 bg-[#1E1E1E] p-4 rounded-xl border border-white/5 relative">
+                            <div className="space-y-2 relative">
+                                <label htmlFor="start-location" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Start Point Location</label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        id="start-location"
+                                        name="startLocation"
+                                        placeholder="Enter pickup address / start point..."
+                                        value={startLocation}
+                                        onChange={(e) => setStartLocation(e.target.value)}
+                                        onFocus={() => { setShowStartSuggestions(true); setShowEndSuggestions(false); }}
+                                        autoComplete="off"
+                                        className="w-full pl-4 pr-12 py-3 bg-[#151515] border border-white/10 rounded-xl text-white placeholder-gray-600 outline-none focus:border-primary/50 transition-all text-sm"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleUseLiveLocation}
+                                        disabled={isLocating}
+                                        className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 transition-all ${isLocating ? 'animate-pulse' : ''}`}
+                                        title="Use your real-time live location"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                                            <circle cx="12" cy="10" r="3" />
+                                        </svg>
+                                    </button>
+
+                                    {/* Suggestions dropdown */}
+                                    {showStartSuggestions && startSuggestions.length > 0 && (
+                                        <div className="absolute left-0 right-0 top-full bg-[#1a1a1a] border border-white/10 rounded-xl mt-1.5 z-[9999] overflow-y-auto max-h-48 shadow-2xl">
+                                            {startSuggestions.map((s: any) => (
+                                                <button
+                                                    key={s.place_id}
+                                                    type="button"
+                                                    onClick={() => handleSelectStartSuggestion(s)}
+                                                    className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 border-b border-white/5 last:border-b-0 truncate transition-colors flex items-center gap-2"
+                                                >
+                                                    <span className="text-primary text-[10px]">📍</span>
+                                                    <span className="truncate">{s.display_name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="space-y-2 relative">
+                                <label htmlFor="end-location" className="text-xs font-bold text-gray-500 tracking-widest uppercase">End Point Location</label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        id="end-location"
+                                        name="endLocation"
+                                        placeholder="Enter drop-off address / destination..."
+                                        value={endLocation}
+                                        onChange={(e) => setEndLocation(e.target.value)}
+                                        onFocus={() => { setShowEndSuggestions(true); setShowStartSuggestions(false); }}
+                                        autoComplete="off"
+                                        className="w-full px-4 py-3 bg-[#151515] border border-white/10 rounded-xl text-white placeholder-gray-600 outline-none focus:border-primary/50 transition-all text-sm"
+                                    />
+
+                                    {/* Suggestions dropdown */}
+                                    {showEndSuggestions && endSuggestions.length > 0 && (
+                                        <div className="absolute left-0 right-0 top-full bg-[#1a1a1a] border border-white/10 rounded-xl mt-1.5 z-[9999] overflow-y-auto max-h-48 shadow-2xl">
+                                            {endSuggestions.map((s: any) => (
+                                                <button
+                                                    key={s.place_id}
+                                                    type="button"
+                                                    onClick={() => handleSelectEndSuggestion(s)}
+                                                    className="w-full text-left px-4 py-2.5 text-xs text-gray-300 hover:bg-white/5 border-b border-white/5 last:border-b-0 truncate transition-colors flex items-center gap-2"
+                                                >
+                                                    <span className="text-primary text-[10px]">📍</span>
+                                                    <span className="truncate">{s.display_name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Interactive Route Map */}
+                        <div className="space-y-2">
+                            <div className="text-xs font-bold text-gray-500 tracking-widest uppercase flex items-center justify-between">
+                                <span>Route Preview Map</span>
+                                {startCoords && endCoords && <span className="text-[10px] text-green-400 font-black animate-pulse">● Live routing active</span>}
+                            </div>
+                            <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-lg shadow-black/40">
+                                <div ref={routeMapRef} className="relative w-full h-[240px] bg-[#121212] z-[1]" />
+                                {/* Custom Premium Overlay Map Controls */}
+                                <div className="absolute right-3 top-3 flex flex-col gap-2 z-20">
+                                    <button
+                                        type="button"
+                                        onClick={() => { if (routeMapInstanceRef.current) routeMapInstanceRef.current.zoomIn(); }}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#1a1a1a]/95 border border-white/10 text-white hover:bg-white/10 active:scale-95 transition-all text-lg font-black"
+                                    >
+                                        +
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => { if (routeMapInstanceRef.current) routeMapInstanceRef.current.zoomOut(); }}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#1a1a1a]/95 border border-white/10 text-white hover:bg-white/10 active:scale-95 transition-all text-lg font-black"
+                                    >
+                                        −
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                        <div className="max-w-md mx-auto w-full">
+                            {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
+                            <button onClick={handleStep4Continue} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20">
+                                Continue to Summary
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
 
         // Check which mechanics are currently busy
@@ -1384,11 +2441,14 @@ const BookingScreen: React.FC = () => {
                             </svg>
                         </span>
                         <input
+                            id="mechanic-search"
+                            name="mechanic-search"
                             type="text"
                             placeholder="Search by name..."
                             value={mechanicSearch}
                             onChange={(e) => setMechanicSearch(e.target.value)}
-                            className="w-full pl-11 pr-4 py-3 bg-[#151515] border border-white/10 rounded-xl text-white placeholder-gray-600 outline-none transition-all focus:border-white/20"
+                            className="w-full pr-4 py-3 bg-[#151515] border border-white/10 rounded-xl text-white placeholder-gray-600 outline-none transition-all focus:border-white/20"
+                            style={{ paddingLeft: '3rem' }}
                         />
                     </div>
 
@@ -1554,9 +2614,8 @@ const BookingScreen: React.FC = () => {
         const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
         const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
 
-        // Calculate estimated duration and price
+        // Calculate estimated duration
         const estimatedDuration = selectedServices.reduce((total, service) => total + (service.duration || 60), 0);
-        const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
         const isQuoteRequest = selectedServices.some(s => s.price === 0);
 
         // Generate Google Maps link
@@ -1573,7 +2632,7 @@ const BookingScreen: React.FC = () => {
             );
         }
 
-        if (selectedServices.length === 0 || !selectedVehicle || !selectedMechanic) {
+        if (selectedServices.length === 0 || !selectedVehicle || (!isSpecialRentalOrDriver && !selectedMechanic)) {
             return (
                 <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-4">
                     <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
@@ -1583,7 +2642,7 @@ const BookingScreen: React.FC = () => {
                     <p className="text-gray-400 text-sm">
                         {!selectedVehicle ? "Please select a vehicle. " : ""}
                         {selectedServices.length === 0 ? "Please select at least one service. " : ""}
-                        {!selectedMechanic ? "Please select a mechanic. " : ""}
+                        {(!isSpecialRentalOrDriver && !selectedMechanic) ? "Please select a mechanic. " : ""}
                     </p>
                     <Tooltip content="Start over from the beginning">
                         <button onClick={() => setStep(1)} className="px-6 py-2 bg-white/10 text-white rounded-lg font-bold hover:bg-white/20 transition">Restart Booking</button>
@@ -1594,7 +2653,7 @@ const BookingScreen: React.FC = () => {
 
         return (
             <div className="flex flex-col h-full bg-secondary overflow-hidden">
-                <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-24">
+                <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-32">
                     {/* Header Info */}
                     <div className="space-y-1">
                         <h3 className="text-2xl font-bold text-white tracking-tight">Booking Summary</h3>
@@ -1611,11 +2670,11 @@ const BookingScreen: React.FC = () => {
                                     {selectedServices.map(service => (
                                         <div key={service.id} className="flex justify-between items-start group">
                                             <div className="flex-1">
-                                                <p className="font-bold text-white text-base group-hover:text-primary transition-colors">{service.name}</p>
+                                                <p className="font-bold text-white text-sm group-hover:text-primary transition-colors">{service.name}</p>
                                                 <div className="flex items-center gap-3 mt-1">
-                                                    <span className="text-xs text-gray-500">{service.category}</span>
+                                                    <span className="text-[10px] text-gray-500">{service.category}</span>
                                                     {service.duration && (
-                                                        <span className="text-[10px] text-gray-600 flex items-center gap-1">
+                                                        <span className="text-[9px] text-gray-600 flex items-center gap-1">
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                                             {service.duration} mins
                                                         </span>
@@ -1623,134 +2682,250 @@ const BookingScreen: React.FC = () => {
                                                 </div>
                                             </div>
                                             {service.price > 0 ? (
-                                                <p className="font-bold text-white ml-4">₱{service.price.toLocaleString()}</p>
+                                                <p className="font-bold text-white text-sm ml-4">₱{service.price.toLocaleString()}</p>
                                             ) : (
-                                                <span className="px-2 py-1 bg-yellow-500/10 text-yellow-400 text-[10px] font-bold rounded ml-4 uppercase">Quote</span>
+                                                <span className="px-2 py-1 bg-yellow-500/10 text-yellow-400 text-[9px] font-bold rounded ml-4 uppercase">Quote</span>
                                             )}
                                         </div>
                                     ))}
+                                    {isCarRental && selectedCar && (
+                                        <div className="flex justify-between items-start group border-t border-white/5 pt-2">
+                                            <div className="flex-1">
+                                                <p className="font-bold text-white text-sm group-hover:text-primary transition-colors">{selectedCar.name} (Car Rental)</p>
+                                                <div className="flex items-center gap-3 mt-1">
+                                                    <span className="text-[10px] text-gray-500">{selectedCar.type} • {selectedCar.transmission}</span>
+                                                    {rentalDays > 1 && <span className="text-[9px] text-primary font-bold">{rentalDays} days</span>}
+                                                </div>
+                                            </div>
+                                            <div className="text-right ml-4">
+                                                <p className="font-bold text-white text-sm">₱{(selectedCar.pricePerDay * rentalDays).toLocaleString()}</p>
+                                                {rentalDays > 1 && <p className="text-[9px] text-gray-500">₱{selectedCar.pricePerDay.toLocaleString()}/day</p>}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {isDriverHire && selectedDriver && (
+                                        <div className="flex justify-between items-start group border-t border-white/5 pt-2">
+                                            <div className="flex-1">
+                                                <p className="font-bold text-white text-sm group-hover:text-primary transition-colors">{selectedDriver.name} (Driver for Hire)</p>
+                                                <div className="flex items-center gap-3 mt-1">
+                                                    <span className="text-[10px] text-gray-500">{selectedDriver.experience}</span>
+                                                    {rentalDays > 1 && <span className="text-[9px] text-primary font-bold">{rentalDays} days</span>}
+                                                </div>
+                                            </div>
+                                            <div className="text-right ml-4">
+                                                <p className="font-bold text-white text-sm">₱{(selectedDriver.pricePerDay * rentalDays).toLocaleString()}</p>
+                                                {rentalDays > 1 && <p className="text-[9px] text-gray-500">₱{selectedDriver.pricePerDay.toLocaleString()}/day</p>}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="mt-6 pt-6 border-t border-white/10 space-y-4">
+                                <div className="mt-5 pt-5 border-t border-white/10 space-y-3.5">
                                     <div className="flex justify-between items-center text-gray-400">
-                                        <p className="font-bold text-xs tracking-widest uppercase">Total Estimated Price</p>
-                                        <p className="font-black text-xl text-white">₱{totalPrice.toLocaleString()}</p>
+                                        <p className="font-bold text-[10px] tracking-widest uppercase">Total Estimated Price</p>
+                                        <p className="font-black text-base text-white">₱{totalPrice.toLocaleString()}</p>
                                     </div>
-                                    <div className="bg-primary/5 border border-primary/20 rounded-2xl p-5 space-y-4 relative overflow-hidden group">
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full -translate-y-16 translate-x-16 blur-3xl group-hover:bg-primary/20 transition-all duration-700"></div>
-                                        <div className="flex justify-between items-center relative z-10">
-                                            <div>
-                                                <p className="text-[10px] font-black text-primary tracking-widest leading-none mb-1 uppercase">Initial Downpayment</p>
-                                                <p className="text-white font-black text-2xl tracking-tight leading-none inline-flex items-baseline gap-1">
-                                                    ₱{Math.ceil(totalPrice * 0.5).toLocaleString()}
-                                                    <span className="text-[10px] text-gray-400 normal-case font-medium tracking-normal">(50%)</span>
-                                                </p>
+                                    {totalPrice > 0 && (
+                                        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3 relative overflow-hidden group">
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full -translate-y-16 translate-x-16 blur-3xl group-hover:bg-primary/20 transition-all duration-700"></div>
+                                            <div className="flex justify-between items-center relative z-10">
+                                                <div>
+                                                    <p className="text-[9px] font-black text-primary tracking-widest leading-none mb-1 uppercase">Initial Downpayment</p>
+                                                    <p className="text-white font-black text-lg tracking-tight leading-none inline-flex items-baseline gap-1">
+                                                        ₱{Math.ceil(totalPrice * 0.5).toLocaleString()}
+                                                        <span className="text-[9px] text-gray-400 normal-case font-medium tracking-normal">(50%)</span>
+                                                    </p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[9px] font-black text-gray-500 tracking-widest mb-1 leading-none uppercase">Final Balance</p>
+                                                    <p className="text-gray-400 font-black text-sm leading-none">₱{Math.floor(totalPrice * 0.5).toLocaleString()}</p>
+                                                </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-[10px] font-black text-gray-500 tracking-widest mb-1 leading-none uppercase">Final Balance</p>
-                                                <p className="text-gray-400 font-black text-lg leading-none">₱{Math.floor(totalPrice * 0.5).toLocaleString()}</p>
+                                            <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] font-black tracking-widest relative z-10">
+                                                <span className="text-gray-500 uppercase">Secured via GCash</span>
+                                                <span className="text-primary tracking-tighter uppercase">Payable on Completion</span>
                                             </div>
                                         </div>
-                                        <div className="pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-black tracking-widest relative z-10">
-                                            <span className="text-gray-500 uppercase">Secured via GCash</span>
-                                            <span className="text-primary tracking-tighter uppercase">Payable on Completion</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between items-center pt-2">
-                                        <p className="font-bold text-gray-500 text-xs tracking-widest uppercase">Estimated Duration</p>
-                                        <p className="font-bold text-white text-sm">{estimatedDuration} minutes</p>
+                                    )}
+                                    <div className="flex justify-between items-center pt-1">
+                                        <p className="font-bold text-gray-500 text-[10px] tracking-widest uppercase">Estimated Duration</p>
+                                        <p className="font-bold text-white text-xs">{estimatedDuration} minutes</p>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Appointment Info */}
-                            <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
+                            <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                     </div>
                                     <div className="flex-1">
-                                        <p className="text-[10px] font-bold text-gray-500 tracking-widest uppercase">Appointment</p>
-                                        <p className="text-white font-bold text-base">{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-                                        <p className="text-gray-400 text-sm">{selectedTime}</p>
+                                        <p className="text-[9px] font-bold text-gray-500 tracking-widest uppercase">Appointment</p>
+                                        {isSpecialRentalOrDriver ? (
+                                            <>
+                                                {/* Start row */}
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <span className="text-[9px] font-black text-green-400 tracking-widest uppercase">Pickup</span>
+                                                    <p className="text-white font-bold text-sm">
+                                                        {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                        <span className="text-primary ml-1.5">{selectedTime}</span>
+                                                    </p>
+                                                </div>
+                                                {/* End row */}
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-[9px] font-black text-red-400 tracking-widest uppercase">Return</span>
+                                                    <p className="text-white font-bold text-sm">
+                                                        {selectedEndDate
+                                                            ? selectedEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                                            : '—'}
+                                                        <span className="text-primary ml-1.5">{selectedEndTime}</span>
+                                                    </p>
+                                                </div>
+                                                <p className="text-primary text-[10px] font-black mt-1">{rentalDays} day{rentalDays !== 1 ? 's' : ''} total</p>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <p className="text-white font-bold text-sm">{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+                                                <p className="text-gray-400 text-xs">{selectedTime}</p>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
 
                             {/* Map & Location */}
-                            {serviceLocation && (
+                            {!isSpecialRentalOrDriver && serviceLocation && (
                                 <div className="bg-[#151515] rounded-xl overflow-hidden border border-white/5">
-                                    <div className="relative h-48 bg-gray-900">
+                                    <div className="relative h-40 bg-gray-900">
                                         <div ref={confirmationMapRef} className="absolute inset-0"></div>
                                         <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent p-3 z-10">
                                             <div className="flex items-center gap-2">
-                                                <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center text-green-400">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center text-green-400">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                 </div>
-                                                <span className="text-white font-bold text-sm">Service Location</span>
+                                                <span className="text-white font-bold text-xs">Service Location</span>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="p-4 space-y-3">
+                                    <div className="p-3 space-y-2.5">
                                         <div>
-                                            <p className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">Coordinates</p>
-                                            <p className="text-white font-mono text-sm font-bold">{serviceLocation.lat.toFixed(6)}, {serviceLocation.lng.toFixed(6)}</p>
+                                            <p className="text-[9px] text-gray-500 font-bold tracking-widest uppercase">Coordinates</p>
+                                            <p className="text-white font-mono text-xs font-bold">{serviceLocation.lat.toFixed(6)}, {serviceLocation.lng.toFixed(6)}</p>
                                         </div>
                                         <Tooltip content="View location in Google Maps">
-                                            <a href={googleMapsLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 hover:border-blue-500 font-bold py-3 px-4 rounded-xl transition-all group">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                <span className="text-sm">Open in Google Maps</span>
+                                            <a href={googleMapsLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 hover:border-blue-500 font-bold py-2.5 px-4 rounded-xl transition-all group">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                <span className="text-xs">Open in Google Maps</span>
                                             </a>
                                         </Tooltip>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Vehicle & Mechanic Details */}
-                            <div className="space-y-4">
-                                <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
-                                    <p className="text-[10px] font-bold text-gray-500 tracking-widest mb-3 uppercase">Your Vehicle</p>
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-12 h-12 rounded-xl bg-gray-700/30 flex items-center justify-center overflow-hidden">
-                                            {selectedVehicle.imageUrls && selectedVehicle.imageUrls.length > 0 ? (
-                                                <img src={selectedVehicle.imageUrls[0]} alt={`${selectedVehicle.make} ${selectedVehicle.model}`} className="w-full h-full object-cover" />
-                                            ) : (
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" /></svg>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <p className="text-base font-bold text-white">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</p>
-                                            <p className="text-xs text-gray-400 mt-0.5">Plate: {selectedVehicle.plateNumber}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
-                                    <p className="text-[10px] font-bold text-gray-500 tracking-widest mb-3 uppercase">Your Mechanic</p>
-                                    <div className="flex items-center gap-3">
-                                        {selectedMechanic.imageUrl ? (
-                                            <img src={selectedMechanic.imageUrl} alt={selectedMechanic.name} className="w-12 h-12 rounded-xl object-cover border-2 border-primary/20" />
-                                        ) : (
-                                            <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center text-primary font-bold text-lg">{selectedMechanic.name.charAt(0)}</div>
-                                        )}
-                                        <div className="flex-1">
-                                            <p className="text-base font-bold text-white">{selectedMechanic.name}</p>
-                                            <div className="flex items-center gap-2 mt-0.5">
-                                                <div className="flex items-center gap-1 text-yellow-400"><svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784-.57-1.838.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg><span className="text-xs font-bold">{(selectedMechanic.rating || 0).toFixed(1)}</span></div>
-                                                <span className="text-xs text-gray-500">• {selectedMechanic.reviews} jobs</span>
+                            {/* Special Rental/Driver Route & Profile Details */}
+                            {isSpecialRentalOrDriver && (
+                                <div className="space-y-3.5">
+                                    <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
+                                        <p className="text-[9px] font-bold text-gray-500 tracking-widest mb-2.5 uppercase">Route Details</p>
+                                        <div className="space-y-2">
+                                            <div>
+                                                <p className="text-[9px] text-gray-500 font-bold uppercase">Start Point</p>
+                                                <p className="text-white text-xs font-semibold">{startLocation}</p>
+                                            </div>
+                                            <div className="pt-2 border-t border-white/5">
+                                                <p className="text-[9px] text-gray-500 font-bold uppercase">End Point</p>
+                                                <p className="text-white text-xs font-semibold">{endLocation}</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {/* Vehicle & Mechanic Details */}
+                            {!isSpecialRentalOrDriver ? (
+                                <div className="space-y-3.5">
+                                    <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
+                                        <p className="text-[9px] font-bold text-gray-500 tracking-widest mb-2.5 uppercase">Your Vehicle</p>
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-gray-700/30 flex items-center justify-center overflow-hidden">
+                                                {selectedVehicle.imageUrls && selectedVehicle.imageUrls.length > 0 ? (
+                                                    <img
+                                                        src={selectedVehicle.imageUrls[0]}
+                                                        alt={`${selectedVehicle.make} ${selectedVehicle.model}`}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" /></svg>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-white">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</p>
+                                                <p className="text-[10px] text-gray-400 mt-0.5">Plate: {selectedVehicle.plateNumber}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
+                                        <p className="text-[9px] font-bold text-gray-500 tracking-widest mb-2.5 uppercase">Your Mechanic</p>
+                                        <div className="flex items-center gap-3">
+                                            {selectedMechanic.imageUrl ? (
+                                                <img src={selectedMechanic.imageUrl} alt={selectedMechanic.name} className="w-10 h-10 rounded-xl object-cover border-2 border-primary/20" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary font-bold text-base">{selectedMechanic.name.charAt(0)}</div>
+                                            )}
+                                            <div className="flex-1">
+                                                <p className="text-sm font-bold text-white">{selectedMechanic.name}</p>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <div className="flex items-center gap-1 text-yellow-400"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784-.57-1.838.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg><span className="text-[10px] font-bold">{(selectedMechanic.rating || 0).toFixed(1)}</span></div>
+                                                    <span className="text-[10px] text-gray-500">• {selectedMechanic.reviews} jobs</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3.5">
+                                    {selectedVehicle && (
+                                        <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
+                                            <p className="text-[9px] font-bold text-gray-500 tracking-widest mb-2.5 uppercase">Your Vehicle</p>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-gray-700/30 flex items-center justify-center overflow-hidden">
+                                                    {selectedVehicle.imageUrls && selectedVehicle.imageUrls.length > 0 ? (
+                                                        <img
+                                                            src={selectedVehicle.imageUrls[0]}
+                                                            alt={`${selectedVehicle.make} ${selectedVehicle.model}`}
+                                                            className="w-full h-full object-cover"
+                                                            onError={(e) => {
+                                                                (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" /></svg>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-white">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</p>
+                                                    <p className="text-[10px] text-gray-400 mt-0.5">Plate: {selectedVehicle.plateNumber}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 
                     {/* Notes Section */}
                     <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-500 tracking-widest ml-1 flex items-center gap-2 uppercase">
+                        <label htmlFor="booking-notes" className="text-xs font-bold text-gray-500 tracking-widest ml-1 flex items-center gap-2 uppercase">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                             Notes for Mechanic (Optional)
                         </label>
                         <textarea
+                            id="booking-notes"
+                            name="bookingNotes"
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             placeholder="Add special instructions, access codes, or specific details about the issue..."
@@ -1772,27 +2947,29 @@ const BookingScreen: React.FC = () => {
                 </div>
 
                 {/* Bottom Action */}
-                <div className="p-0 bg-transparent shrink-0 z-30">
-                    {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
-                    <Tooltip content={isQuoteRequest ? 'Submit a quote request' : 'Create booking and proceed to payment'} className="w-full">
-                        <button
-                            onClick={handleBooking}
-                            disabled={isBooking}
-                            className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-black py-3.5 hover:shadow-xl hover:shadow-primary/30 transition-all disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-3 rounded-none uppercase tracking-wider text-base"
-                        >
-                            {isBooking ? (
-                                <>
-                                    <Spinner size="sm" color="text-white" />
-                                    <span>Processing...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <span>{isQuoteRequest ? 'Request Quote' : 'Confirm & Book Now'}</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                                </>
-                            )}
-                        </button>
-                    </Tooltip>
+                <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                    <div className="max-w-md mx-auto w-full">
+                        {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
+                        <Tooltip content={isQuoteRequest ? 'Submit a quote request' : 'Create booking and proceed to payment'} className="w-full">
+                            <button
+                                onClick={handleBooking}
+                                disabled={isBooking}
+                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-black h-12 flex items-center justify-center hover:shadow-xl hover:shadow-primary/30 transition-all disabled:opacity-50 disabled:grayscale gap-3 rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20"
+                            >
+                                {isBooking ? (
+                                    <>
+                                        <Spinner size="sm" color="text-white" />
+                                        <span>Processing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>{isQuoteRequest ? 'Proceed for Payment' : 'Confirm & Book Now'}</span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                    </>
+                                )}
+                            </button>
+                        </Tooltip>
+                    </div>
                 </div>
             </div>
         );
@@ -1803,22 +2980,15 @@ const BookingScreen: React.FC = () => {
     }
 
     return (
-        <div className="flex flex-col h-screen h-[100dvh] bg-secondary overflow-hidden">
+        <div className="flex flex-col h-full bg-secondary overflow-hidden">
             {/* Main Header — hidden on step 3 for full-screen map */}
             {step !== 3 && (
-                <div className="flex items-center gap-4 p-4 border-b border-dark-gray bg-secondary shrink-0 z-50">
-                    <Tooltip content="Go back">
-                        <button
-                            onClick={handleBack}
-                            className="p-2 hover:bg-dark-gray rounded-full transition-colors text-gray-400"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                            </svg>
-                        </button>
-                    </Tooltip>
-                    <h1 className="text-xl font-bold text-white">{getHeaderTitle()}</h1>
-                </div>
+                <CustomerHeader
+                    title={getHeaderTitle()}
+                    showBackButton={true}
+                    onBack={handleBack}
+                    icon={<CalendarRange size={22} />}
+                />
             )}
 
             {/* Step Content */}
@@ -1833,15 +3003,22 @@ const BookingScreen: React.FC = () => {
             {/* GCash Payment Modal */}
             {showGCashModal && pendingBookingId && (() => {
                 const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
-                const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
+                const displayServices = selectedServices.map(s => ({ name: s.name, price: s.price }));
+                if (isCarRental && selectedCar) {
+                    displayServices.push({ name: `${selectedCar.name} (Rental)`, price: selectedCar.pricePerDay });
+                }
+                if (isDriverHire && selectedDriver) {
+                    displayServices.push({ name: `${selectedDriver.name} (Driver)`, price: selectedDriver.pricePerDay });
+                }
                 return (
                     <GCashPaymentModal
                         bookingId={pendingBookingId}
                         totalAmount={totalPrice}
                         customerName={user?.name || 'Customer'}
-                        services={selectedServices.map(s => ({ name: s.name, price: s.price }))}
+                        services={displayServices}
                         onPaymentVerified={handlePaymentVerified}
                         onClose={() => setShowGCashModal(false)}
+                        newBookingData={temporaryBookingData}
                     />
                 );
             })()}

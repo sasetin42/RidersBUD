@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { rtdb, auth } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { ref, set, push, onValue, off, update, remove, get, serverTimestamp } from 'firebase/database';
 
 type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'missed' | 'declined';
@@ -14,8 +15,8 @@ interface CallInfo {
   calleeRole: CallRole;
   callerName: string;
   calleeName: string;
-  callerImage?: string;
-  calleeImage?: string;
+  callerImage?: string | null;
+  calleeImage?: string | null;
   type: CallType;
   status: CallStatus;
   startedAt?: number;
@@ -44,6 +45,8 @@ interface CallContextType {
   callDuration: number;
   networkStats: NetworkStats | null;
   callHistory: CallHistoryEntry[];
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
   startCall: (params: {
     targetId: string;
     targetRole: CallRole;
@@ -90,16 +93,238 @@ const ALL_ICE_SERVERS: RTCConfiguration = {
 };
 
 function getLocalUserId(): string {
-  return auth.currentUser?.uid || '';
+  if (auth.currentUser?.uid) return auth.currentUser.uid;
+  
+  try {
+    if (localStorage.getItem('ridersbud_customer_session') === 'true') {
+      const customerDataStr = localStorage.getItem('ridersbud_customer_user_data');
+      if (customerDataStr) {
+        const customerData = JSON.parse(customerDataStr);
+        const uid = customerData.uid || customerData.id;
+        if (uid) return uid;
+      }
+    }
+  } catch (e) {
+    console.error('[CallContext] Error parsing ridersbud_customer_user_data:', e);
+  }
+
+  try {
+    if (localStorage.getItem('ridersbud_mechanic_session') === 'true') {
+      const mechanicDataStr = localStorage.getItem('ridersbud_mechanic_user_data');
+      if (mechanicDataStr) {
+        const mechanicData = JSON.parse(mechanicDataStr);
+        const uid = mechanicData.uid || mechanicData.id;
+        if (uid) return uid;
+      }
+    }
+  } catch (e) {
+    console.error('[CallContext] Error parsing ridersbud_mechanic_user_data:', e);
+  }
+
+  if (localStorage.getItem('ridersbud_admin_session') === 'true') {
+    return 'admin';
+  }
+
+  return '';
 }
 
 function getLocalUserRole(): CallRole {
-  const admin = sessionStorage.getItem('admin_authenticated');
+  const admin = sessionStorage.getItem('admin_authenticated') || localStorage.getItem('ridersbud_admin_session');
   const hint = sessionStorage.getItem('auth_type_hint');
+  const mechanicSession = localStorage.getItem('ridersbud_mechanic_session');
+  const customerSession = localStorage.getItem('ridersbud_customer_session');
   if (admin === 'true') return 'admin';
-  if (hint === 'mechanic') return 'mechanic';
+  if (hint === 'mechanic' || mechanicSession === 'true') return 'mechanic';
+  if (hint === 'customer' || customerSession === 'true') return 'customer';
   return 'customer';
 }
+
+class CallSoundEffects {
+  private ctx: AudioContext | null = null;
+  private interval: any = null;
+  private activeNodes: AudioNode[] = [];
+
+  private init() {
+    try {
+      if (!this.ctx) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          this.ctx = new AudioCtx();
+        }
+      }
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch (e) {
+      console.warn('[CallSoundEffects] Failed to initialize AudioContext:', e);
+    }
+  }
+
+  unlock() {
+    this.init();
+  }
+
+  stop() {
+    try {
+      if (this.interval) {
+        clearInterval(this.interval);
+        this.interval = null;
+      }
+      this.activeNodes.forEach(node => {
+        try {
+          (node as any).disconnect?.();
+          (node as any).stop?.();
+        } catch (_) {}
+      });
+      this.activeNodes = [];
+    } catch (e) {
+      console.warn('[CallSoundEffects] Failed to stop sound:', e);
+    }
+  }
+
+  playOutgoingRing() {
+    this.stop();
+    this.init();
+    if (!this.ctx) return;
+
+    const playTone = () => {
+      try {
+        if (!this.ctx || this.ctx.state === 'suspended') return;
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc1.frequency.value = 440;
+        osc2.frequency.value = 480;
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        const now = this.ctx.currentTime;
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + 0.1);
+        gain.gain.setValueAtTime(0.08, now + 1.9);
+        gain.gain.linearRampToValueAtTime(0, now + 2.0);
+
+        osc1.start(now);
+        osc2.start(now);
+
+        osc1.stop(now + 2.0);
+        osc2.stop(now + 2.0);
+
+        this.activeNodes.push(osc1, osc2, gain);
+      } catch (e) {
+        console.warn('[CallSoundEffects] playTone error:', e);
+      }
+    };
+
+    playTone();
+    this.interval = setInterval(playTone, 4000);
+  }
+
+  playIncomingRing() {
+    this.stop();
+    this.init();
+    if (!this.ctx) return;
+
+    const playToneSequence = () => {
+      try {
+        if (!this.ctx || this.ctx.state === 'suspended') return;
+        const now = this.ctx.currentTime;
+
+        const notes = [
+          { freq: 440, time: 0, duration: 0.15 },
+          { freq: 523, time: 0.2, duration: 0.15 },
+          { freq: 659, time: 0.4, duration: 0.15 },
+          { freq: 784, time: 0.6, duration: 0.3 },
+          
+          { freq: 440, time: 1.0, duration: 0.15 },
+          { freq: 523, time: 1.2, duration: 0.15 },
+          { freq: 659, time: 1.4, duration: 0.15 },
+          { freq: 784, time: 1.6, duration: 0.3 }
+        ];
+
+        notes.forEach(note => {
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'sine';
+          osc.frequency.value = note.freq;
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          gain.gain.setValueAtTime(0, now + note.time);
+          gain.gain.linearRampToValueAtTime(0.12, now + note.time + 0.02);
+          gain.gain.setValueAtTime(0.12, now + note.time + note.duration - 0.02);
+          gain.gain.linearRampToValueAtTime(0, now + note.time + note.duration);
+
+          osc.start(now + note.time);
+          osc.stop(now + note.time + note.duration);
+
+          this.activeNodes.push(osc, gain);
+        });
+      } catch (e) {
+        console.warn('[CallSoundEffects] playIncoming error:', e);
+      }
+    };
+
+    playToneSequence();
+    this.interval = setInterval(playToneSequence, 3000);
+  }
+}
+
+function createDummyMediaStream(audio: boolean, video: boolean): MediaStream {
+  const tracks: MediaStreamTrack[] = [];
+  
+  if (audio) {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const dst = ctx.createMediaStreamDestination();
+        osc.connect(dst);
+        osc.start();
+        const audioTrack = dst.stream.getAudioTracks()[0];
+        if (audioTrack) {
+          audioTrack.enabled = false; // Mute it so we don't play a continuous tone
+          tracks.push(audioTrack);
+        }
+      }
+    } catch (e) {
+      console.warn('[CallContext] Failed to create dummy audio track:', e);
+    }
+  }
+
+  if (video) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#1A1A1A';
+        ctx.fillRect(0, 0, 640, 480);
+      }
+      const stream = (canvas as any).captureStream ? (canvas as any).captureStream(30) : null;
+      if (stream) {
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          tracks.push(videoTrack);
+        }
+      }
+    } catch (e) {
+      console.warn('[CallContext] Failed to create dummy video track:', e);
+    }
+  }
+
+  return new MediaStream(tracks);
+}
+
+const callSounds = new CallSoundEffects();
 
 export const CallProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -111,6 +336,8 @@ export const CallProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [networkStats, setNetworkStats] = useState<NetworkStats | null>(null);
   const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([]);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -120,11 +347,65 @@ export const CallProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const durationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const callStartTimeRef = useRef<number>(0);
+  const callListenerUnsubscribeRef = useRef<(() => void) | null>(null);
+  const resetTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const callStatusRef = useRef<CallStatus>('idle');
+  const ringingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const userId = getLocalUserId();
-  const userRole = getLocalUserRole();
+  const [userId, setUserId] = useState<string>(getLocalUserId());
+  const [userRole, setUserRole] = useState<CallRole>(getLocalUserRole());
+
+  useEffect(() => {
+    const handleAuthUpdate = () => {
+      const id = getLocalUserId();
+      const role = getLocalUserRole();
+      setUserId(id);
+      setUserRole(role);
+    };
+
+    handleAuthUpdate();
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      handleAuthUpdate();
+    });
+
+    window.addEventListener('storage', handleAuthUpdate);
+    window.addEventListener('adminAuthChange', handleAuthUpdate);
+    window.addEventListener('customerAuthChange', handleAuthUpdate);
+    window.addEventListener('mechanicAuthChange', handleAuthUpdate);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', handleAuthUpdate);
+      window.removeEventListener('adminAuthChange', handleAuthUpdate);
+      window.removeEventListener('customerAuthChange', handleAuthUpdate);
+      window.removeEventListener('mechanicAuthChange', handleAuthUpdate);
+    };
+  }, []);
+
+  // Audio Context Autoplay Unlocking Listener
+  useEffect(() => {
+    const unlockAudio = () => {
+      callSounds.unlock();
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
 
 const cleanupPeerConnection = useCallback(() => {
+    callSounds.stop();
+    if (callListenerUnsubscribeRef.current) {
+      callListenerUnsubscribeRef.current();
+      callListenerUnsubscribeRef.current = null;
+    }
     // Clear duration timer
     if (durationTimerRef.current) {
       clearInterval(durationTimerRef.current);
@@ -150,9 +431,39 @@ const cleanupPeerConnection = useCallback(() => {
       localStreamRef.current = null;
     }
     remoteStreamRef.current = null;
+    setLocalStream(null);
+    setRemoteStream(null);
     candidatesQueueRef.current = [];
     setNetworkStats(null);
   }, []);
+
+  const handleCallTermination = useCallback((finalStatus: CallStatus, wasConnected: boolean) => {
+    if (resetTimeoutRef.current) {
+      clearTimeout(resetTimeoutRef.current);
+      resetTimeoutRef.current = null;
+    }
+
+    setCallStatus(finalStatus);
+    cleanupPeerConnection();
+
+    if (userId) {
+      remove(ref(rtdb, `calls/incoming/${userId}`)).catch(err => {
+        console.warn('[CallContext] Error removing incoming call node:', err);
+      });
+    }
+
+    if (!wasConnected) {
+      setCallStatus('idle');
+      setCallInfo(null);
+      incomingCallRef.current = null;
+    } else {
+      resetTimeoutRef.current = setTimeout(() => {
+        setCallStatus('idle');
+        setCallInfo(null);
+        incomingCallRef.current = null;
+      }, 2000);
+    }
+  }, [cleanupPeerConnection, userId]);
 
   // Start call duration timer when connected
   const startDurationTimer = useCallback(() => {
@@ -204,34 +515,102 @@ const cleanupPeerConnection = useCallback(() => {
     const incomingRef = ref(rtdb, `calls/incoming/${userId}`);
     const unsubscribe = onValue(incomingRef, (snapshot) => {
       const data = snapshot.val();
-      if (data && data.callId && callStatus === 'idle') {
-        const callId = data.callId;
-        incomingCallRef.current = callId;
-        const callRef = ref(rtdb, `calls/${callId}`);
-        get(callRef).then((callSnap) => {
-          const callData = callSnap.val();
-          if (callData && callData.status === 'ringing') {
-            setCallInfo({
-              callId,
-              callerId: callData.callerId,
-              calleeId: callData.calleeId,
-              callerRole: callData.callerRole,
-              calleeRole: callData.calleeRole,
-              callerName: callData.callerName,
-              calleeName: callData.calleeName,
-              callerImage: callData.callerImage,
-              calleeImage: callData.calleeImage,
-              type: callData.type || 'audio',
-              status: 'ringing',
-              startedAt: callData.startedAt,
-            });
-            setCallStatus('ringing');
+      if (data && data.callId) {
+        const canReceive = 
+          callStatusRef.current === 'idle' || 
+          callStatusRef.current === 'ended' || 
+          callStatusRef.current === 'declined' || 
+          callStatusRef.current === 'missed';
+
+        if (canReceive) {
+          if (resetTimeoutRef.current) {
+            clearTimeout(resetTimeoutRef.current);
+            resetTimeoutRef.current = null;
           }
-        });
+
+          const callId = data.callId;
+          incomingCallRef.current = callId;
+          const callRef = ref(rtdb, `calls/${callId}`);
+          
+          if (callListenerUnsubscribeRef.current) {
+            callListenerUnsubscribeRef.current();
+            callListenerUnsubscribeRef.current = null;
+          }
+
+          // Auto-decline ringing after 30 seconds
+          if (ringingTimeoutRef.current) {
+            clearTimeout(ringingTimeoutRef.current);
+            ringingTimeoutRef.current = null;
+          }
+          ringingTimeoutRef.current = setTimeout(async () => {
+            if (callStatusRef.current === 'ringing' && incomingCallRef.current === callId) {
+              try {
+                await update(ref(rtdb, `calls/${callId}`), { status: 'missed', endedAt: Date.now() });
+                await remove(ref(rtdb, `calls/incoming/${userId}`));
+              } catch {}
+              callSounds.stop();
+              cleanupPeerConnection();
+              setCallStatus('idle');
+              setCallInfo(null);
+              incomingCallRef.current = null;
+            }
+          }, 30000);
+
+          const callUnsub = onValue(callRef, (callSnap) => {
+            const callData = callSnap.val();
+            if (!callData) {
+              cleanupPeerConnection();
+              setCallStatus('idle');
+              setCallInfo(null);
+              incomingCallRef.current = null;
+              return;
+            }
+
+            // Clear ringing timeout if call is answered, ended, or declined
+            if (callData.status !== 'ringing' && ringingTimeoutRef.current) {
+              clearTimeout(ringingTimeoutRef.current);
+              ringingTimeoutRef.current = null;
+            }
+
+            if (callData.status === 'ringing') {
+              setCallInfo({
+                callId,
+                callerId: callData.callerId,
+                calleeId: callData.calleeId,
+                callerRole: callData.callerRole,
+                calleeRole: callData.calleeRole,
+                callerName: callData.callerName,
+                calleeName: callData.calleeName,
+                callerImage: callData.callerImage,
+                calleeImage: callData.calleeImage,
+                type: callData.type || 'audio',
+                status: 'ringing',
+                startedAt: callData.startedAt,
+              });
+              setCallStatus('ringing');
+              callSounds.playIncomingRing();
+            } else if (callData.status === 'ended' || callData.status === 'declined' || callData.status === 'missed') {
+              handleCallTermination(callData.status, callStatusRef.current === 'connected');
+            }
+          });
+          callListenerUnsubscribeRef.current = callUnsub;
+        }
+      } else {
+        if (callStatusRef.current === 'ringing') {
+          cleanupPeerConnection();
+          setCallStatus('idle');
+          setCallInfo(null);
+          incomingCallRef.current = null;
+        }
       }
     });
-    return () => off(incomingRef);
-  }, [userId, callStatus]);
+    return () => { off(incomingRef); };
+  }, [userId, cleanupPeerConnection, handleCallTermination]);
+
+  // Sync ref with state to avoid stale closures
+  useEffect(() => {
+    callStatusRef.current = callStatus;
+  }, [callStatus]);
 
   useEffect(() => {
     const unsub = listenForIncomingCalls();
@@ -241,6 +620,14 @@ const cleanupPeerConnection = useCallback(() => {
   useEffect(() => {
     return () => {
       cleanupPeerConnection();
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+        resetTimeoutRef.current = null;
+      }
+      if (ringingTimeoutRef.current) {
+        clearTimeout(ringingTimeoutRef.current);
+        ringingTimeoutRef.current = null;
+      }
       if (incomingCallRef.current) {
         remove(ref(rtdb, `calls/incoming/${userId}`));
       }
@@ -257,6 +644,11 @@ const startCall = useCallback(async (params: {
     if (!userId) return;
     try {
       cleanupPeerConnection();
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+        resetTimeoutRef.current = null;
+      }
+      callSounds.playOutgoingRing();
       const callId = push(ref(rtdb, 'calls')).key!;
       const myName = auth.currentUser?.displayName || userRole.charAt(0).toUpperCase() + userRole.slice(1);
 
@@ -268,8 +660,8 @@ const startCall = useCallback(async (params: {
         calleeRole: params.targetRole,
         callerName: myName,
         calleeName: params.targetName,
-        callerImage: auth.currentUser?.photoURL || undefined,
-        calleeImage: params.targetImage,
+        callerImage: auth.currentUser?.photoURL || '',
+        calleeImage: params.targetImage || '',
         type: params.type,
         status: 'ringing',
         startedAt: Date.now(),
@@ -281,13 +673,21 @@ const startCall = useCallback(async (params: {
       setIsFrontCamera(true);
 
       await set(ref(rtdb, `calls/${callId}`), callData);
+      await remove(ref(rtdb, `calls/incoming/${userId}`)); // Clean up any old incoming call node
       await set(ref(rtdb, `calls/incoming/${params.targetId}`), { callId });
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: params.type === 'video',
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: params.type === 'video',
+        });
+      } catch (err) {
+        console.warn('[CallContext] getUserMedia failed in startCall, falling back to dummy stream:', err);
+        stream = createDummyMediaStream(true, params.type === 'video');
+      }
       localStreamRef.current = stream;
+      setLocalStream(stream);
 
       // Use ALL_ICE_SERVERS for better connectivity
       const pc = new RTCPeerConnection(ALL_ICE_SERVERS);
@@ -297,12 +697,13 @@ const startCall = useCallback(async (params: {
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          set(ref(rtdb, `calls/${callId}/callerCandidates/${Date.now()}`), event.candidate.toJSON());
+          push(ref(rtdb, `calls/${callId}/callerCandidates`), event.candidate.toJSON());
         }
       };
 
       pc.ontrack = (event) => {
         remoteStreamRef.current = event.streams[0];
+        setRemoteStream(event.streams[0]);
       };
 
       const offer = await pc.createOffer();
@@ -310,7 +711,9 @@ const startCall = useCallback(async (params: {
       await set(ref(rtdb, `calls/${callId}/offer`), { type: offer.type, sdp: offer.sdp });
 
       const callRef = ref(rtdb, `calls/${callId}`);
-      onValue(callRef, async (snapshot) => {
+      const processedCandidates = new Set<string>();
+
+      const unsubscribe = onValue(callRef, async (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
 
@@ -320,6 +723,9 @@ const startCall = useCallback(async (params: {
           setCallStatus('connected');
           if (callInfo) setCallInfo({ ...callInfo, status: 'connected' });
           await update(ref(rtdb, `calls/${callId}`), { status: 'connected' });
+          
+          // Stop sounds
+          callSounds.stop();
           
           // Start duration timer
           startDurationTimer();
@@ -332,18 +738,28 @@ const startCall = useCallback(async (params: {
           }
         }
 
-        if (data.calleeCandidates && pc.remoteDescription) {
+        if (data.calleeCandidates) {
           const keys = Object.keys(data.calleeCandidates);
           for (const key of keys) {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(data.calleeCandidates[key]));
-            } catch { }
+            if (!processedCandidates.has(key)) {
+              try {
+                const candidate = new RTCIceCandidate(data.calleeCandidates[key]);
+                if (pc.remoteDescription) {
+                  await pc.addIceCandidate(candidate);
+                  processedCandidates.add(key);
+                } else {
+                  if (!candidatesQueueRef.current.some(c => c.candidate === candidate.candidate && c.sdpMid === candidate.sdpMid && c.sdpMLineIndex === candidate.sdpMLineIndex)) {
+                    candidatesQueueRef.current.push(candidate);
+                    processedCandidates.add(key);
+                  }
+                }
+              } catch { }
+            }
           }
         }
 
         if (data.status === 'ended' || data.status === 'declined' || data.status === 'missed') {
-          setCallStatus(data.status);
-          cleanupPeerConnection();
+          handleCallTermination(data.status, callStatusRef.current === 'connected');
           remove(ref(rtdb, `calls/incoming/${userId}`));
           remove(ref(rtdb, `calls/incoming/${params.targetId}`));
           
@@ -357,8 +773,8 @@ const startCall = useCallback(async (params: {
             calleeRole: params.targetRole,
             callerName: myName,
             calleeName: params.targetName,
-            callerImage: auth.currentUser?.photoURL || undefined,
-            calleeImage: params.targetImage,
+            callerImage: auth.currentUser?.photoURL || '',
+            calleeImage: params.targetImage || '',
             type: params.type,
             status: data.status,
             startedAt: Date.now(),
@@ -369,25 +785,37 @@ const startCall = useCallback(async (params: {
           setCallHistory(prev => [historyEntry, ...prev].slice(0, 50));
         }
       }, { onlyOnce: false });
+      callListenerUnsubscribeRef.current = unsubscribe;
     } catch (error) {
       console.error('[CallContext] startCall error:', error);
       setCallStatus('ended');
       cleanupPeerConnection();
     }
-  }, [userId, userRole, callInfo, cleanupPeerConnection, startDurationTimer, startNetworkStatsMonitoring, callDuration]);
+  }, [userId, userRole, callInfo, cleanupPeerConnection, startDurationTimer, startNetworkStatsMonitoring, callDuration, callStatus, handleCallTermination]);
 
 const answerCall = useCallback(async () => {
     const ci = callInfo;
     if (!ci || !incomingCallRef.current) return;
     const callId = ci.callId;
     try {
+      if (callListenerUnsubscribeRef.current) {
+        callListenerUnsubscribeRef.current();
+        callListenerUnsubscribeRef.current = null;
+      }
       cleanupPeerConnection();
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: ci.type === 'video',
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: ci.type === 'video',
+        });
+      } catch (err) {
+        console.warn('[CallContext] getUserMedia failed in answerCall, falling back to dummy stream:', err);
+        stream = createDummyMediaStream(true, ci.type === 'video');
+      }
       localStreamRef.current = stream;
+      setLocalStream(stream);
 
       // Use ALL_ICE_SERVERS for better connectivity
       const pc = new RTCPeerConnection(ALL_ICE_SERVERS);
@@ -397,12 +825,13 @@ const answerCall = useCallback(async () => {
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          set(ref(rtdb, `calls/${callId}/calleeCandidates/${Date.now()}`), event.candidate.toJSON());
+          push(ref(rtdb, `calls/${callId}/calleeCandidates`), event.candidate.toJSON());
         }
       };
 
       pc.ontrack = (event) => {
         remoteStreamRef.current = event.streams[0];
+        setRemoteStream(event.streams[0]);
       };
 
       const callRef = ref(rtdb, `calls/${callId}`);
@@ -425,22 +854,25 @@ const answerCall = useCallback(async () => {
         startNetworkStatsMonitoring();
       }
 
-      onValue(callRef, (snapshot) => {
+      const processedCandidates = new Set<string>();
+      const unsubscribe = onValue(callRef, (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
 
         if (data.callerCandidates && pc.remoteDescription) {
           const keys = Object.keys(data.callerCandidates);
           for (const key of keys) {
-            try {
-              pc.addIceCandidate(new RTCIceCandidate(data.callerCandidates[key]));
-            } catch { }
+            if (!processedCandidates.has(key)) {
+              try {
+                pc.addIceCandidate(new RTCIceCandidate(data.callerCandidates[key]));
+                processedCandidates.add(key);
+              } catch { }
+            }
           }
         }
 
         if (data.status === 'ended' || data.status === 'declined' || data.status === 'missed') {
-          setCallStatus(data.status);
-          cleanupPeerConnection();
+          handleCallTermination(data.status, callStatusRef.current === 'connected');
           remove(ref(rtdb, `calls/incoming/${userId}`));
           
           // Add to call history for incoming call
@@ -465,6 +897,7 @@ const answerCall = useCallback(async () => {
           setCallHistory(prev => [historyEntry, ...prev].slice(0, 50));
         }
       });
+      callListenerUnsubscribeRef.current = unsubscribe;
     } catch (error) {
       console.error('[CallContext] answerCall error:', error);
       setCallStatus('ended');
@@ -474,34 +907,54 @@ const answerCall = useCallback(async () => {
 
   const declineCall = useCallback(async () => {
     const ci = callInfo;
-    if (!ci) return;
-    await update(ref(rtdb, `calls/${ci.callId}`), { status: 'declined', endedAt: Date.now() });
-    await remove(ref(rtdb, `calls/incoming/${userId}`));
-    setCallStatus('idle');
-    setCallInfo(null);
-    incomingCallRef.current = null;
-    cleanupPeerConnection();
-  }, [callInfo, userId, cleanupPeerConnection]);
-
-  const endCall = useCallback(async () => {
-    const ci = callInfo;
-    if (!ci) return;
-    await update(ref(rtdb, `calls/${ci.callId}`), { status: 'ended', endedAt: Date.now() });
-    await remove(ref(rtdb, `calls/incoming/${userId}`));
-    if (ci.calleeId) {
-      await remove(ref(rtdb, `calls/incoming/${ci.calleeId}`));
+    callSounds.stop();
+    if (ringingTimeoutRef.current) {
+      clearTimeout(ringingTimeoutRef.current);
+      ringingTimeoutRef.current = null;
     }
     setCallStatus('idle');
     setCallInfo(null);
     incomingCallRef.current = null;
     cleanupPeerConnection();
+
+    if (!ci) return;
+    try {
+      await update(ref(rtdb, `calls/${ci.callId}`), { status: 'declined', endedAt: Date.now() });
+      await remove(ref(rtdb, `calls/incoming/${userId}`));
+    } catch (e) {
+      console.error('[CallContext] declineCall error:', e);
+    }
+  }, [callInfo, userId, cleanupPeerConnection]);
+
+  const endCall = useCallback(async () => {
+    const ci = callInfo;
+    callSounds.stop();
+    if (ringingTimeoutRef.current) {
+      clearTimeout(ringingTimeoutRef.current);
+      ringingTimeoutRef.current = null;
+    }
+    setCallStatus('idle');
+    setCallInfo(null);
+    incomingCallRef.current = null;
+    cleanupPeerConnection();
+
+    if (!ci) return;
+    try {
+      await update(ref(rtdb, `calls/${ci.callId}`), { status: 'ended', endedAt: Date.now() });
+      await remove(ref(rtdb, `calls/incoming/${userId}`));
+      if (ci.calleeId) {
+        await remove(ref(rtdb, `calls/incoming/${ci.calleeId}`));
+      }
+    } catch (e) {
+      console.error('[CallContext] endCall error:', e);
+    }
   }, [callInfo, userId, cleanupPeerConnection]);
 
   const toggleMute = useCallback(() => {
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
-        audioTrack.enabled = isMuted;
+        audioTrack.enabled = !isMuted;
         setIsMuted(!isMuted);
       }
     }
@@ -545,17 +998,24 @@ const toggleSpeaker = useCallback(() => {
       );
       
       // Get new stream with switched camera
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: {
-          deviceId: newDevice ? { exact: newDevice.deviceId } : undefined,
-          facingMode: newFacingMode,
-        },
-      });
+      let newStream: MediaStream;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: {
+            deviceId: newDevice ? { exact: newDevice.deviceId } : undefined,
+            facingMode: newFacingMode,
+          },
+        });
+      } catch (err) {
+        console.error('[CallContext] switchCamera getUserMedia error:', err);
+        return;
+      }
       
       // Replace audio track (keep existing) and add new video track
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       localStreamRef.current = newStream;
+      setLocalStream(newStream);
       
       if (pcRef.current && audioTrack) {
         const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
@@ -583,6 +1043,8 @@ const toggleSpeaker = useCallback(() => {
       callDuration,
       networkStats,
       callHistory,
+      localStream,
+      remoteStream,
       startCall,
       answerCall,
       declineCall,
@@ -599,6 +1061,28 @@ const toggleSpeaker = useCallback(() => {
 
 export const useCall = () => {
   const context = useContext(CallContext);
-  if (!context) throw new Error('useCall must be used within a CallProvider');
+  if (!context) {
+    console.warn('useCall must be used within a CallProvider. Returning dummy context to prevent HMR crashes.');
+    return {
+      callStatus: 'idle',
+      callInfo: null,
+      isCallActive: false,
+      isMuted: false,
+      isSpeakerOn: false,
+      callDuration: 0,
+      networkStats: null,
+      callHistory: [],
+      localStream: null,
+      remoteStream: null,
+      startCall: async () => {},
+      answerCall: async () => {},
+      declineCall: async () => {},
+      endCall: async () => {},
+      toggleMute: () => {},
+      toggleSpeaker: () => {},
+      toggleVideo: () => {},
+      switchCamera: async () => {},
+    } as CallContextType;
+  }
   return context;
 };

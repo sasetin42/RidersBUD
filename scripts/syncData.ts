@@ -31,7 +31,10 @@ async function syncDataToLocal() {
         'banners',
         'adminUsers',
         'roles',
-        'rentalCars'
+        'rentalCars',
+        'liaisonStaff',
+        'liaisonBranches',
+        'liaisonBookings'
     ];
 
     let totalSynced = 0;

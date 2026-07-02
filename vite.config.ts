@@ -11,6 +11,10 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       hmr: true,
       allowedHosts: true,
+      headers: {
+        'Cross-Origin-Opener-Policy': 'unsafe-none',
+        'Cross-Origin-Embedder-Policy': 'unsafe-none',
+      },
     },
     plugins: [react()],
     define: {

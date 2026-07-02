@@ -14,7 +14,7 @@ const NotificationToasts: React.FC = () => {
     useEffect(() => {
         const now = Date.now();
         const incoming = notifications.filter(n => {
-            if (n.read) return false;
+            if (n.status === 'read' || n.read === true) return false;
             if (now - (n.timestamp ?? 0) >= 10000) return false;
             if (seenIdsRef.current.has(n.id)) return false;
             const key = `${n.title}|${n.message}`;

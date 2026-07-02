@@ -72,6 +72,7 @@ const ReviewDeclinedModal: React.FC<ReviewDeclinedModalProps> = ({ isOpen, onClo
                 {selectedReason === 'Other' && (
                     <div className="mb-6 animate-slideDown">
                         <textarea
+                            id="declined-reason" name="declined-reason"
                             value={otherReason}
                             onChange={(e) => setOtherReason(e.target.value)}
                             placeholder="Please tell us more..."
