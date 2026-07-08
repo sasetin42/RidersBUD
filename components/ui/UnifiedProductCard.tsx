@@ -35,6 +35,11 @@ const UnifiedProductCard: React.FC<UnifiedProductCardProps> = React.memo(({
         onImageError?.();
     };
 
+    // Normalize image URL to ensure relative assets are requested from root (with leading slash)
+    const normalizedImageUrl = imageUrl && !imageUrl.startsWith('http://') && !imageUrl.startsWith('https://') && !imageUrl.startsWith('data:') && !imageUrl.startsWith('/')
+        ? `/${imageUrl}`
+        : imageUrl;
+
     return (
         <div
             className={`relative w-full overflow-hidden ${className}`}
@@ -44,7 +49,7 @@ const UnifiedProductCard: React.FC<UnifiedProductCardProps> = React.memo(({
         >
             {/* Image Container */}
             <img
-                src={imageUrl}
+                src={normalizedImageUrl}
                 alt={alt}
                 className={`absolute inset-0 w-full h-full ${cardImageStyles.objectFit} ${cardAnimations.imageScale} ${cardAnimations.transition} group-hover:scale-110`}
                 loading="lazy"

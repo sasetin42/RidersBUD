@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../context/NotificationContext';
 import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { useAuth } from '../context/AuthContext';
+import { useAdminAuth } from '../context/AdminAuthContext';
 import { Notification } from '../types';
 import { useDatabase } from '../context/DatabaseContext';
 import { getProfileImage } from '../utils/imageConstants';
@@ -121,8 +122,26 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
         (notif.title && m.name && notif.title.toLowerCase().includes(m.name.toLowerCase()))
     );
 
+    const bookingId = notif.bookingId || notif.metadata?.bookingId || (() => {
+        if (!notif.link) return undefined;
+        const match = notif.link.match(/\/booking-detail\/([a-zA-Z0-9_-]+)/) || notif.link.match(/\/job\/([a-zA-Z0-9_-]+)/);
+        return match ? match[1] : undefined;
+    })();
+
+    const booking = bookingId ? db?.bookings?.find(b => b.id === bookingId) : undefined;
+
+    const driverId = notif.metadata?.driverId;
+    const driver = db?.hireDrivers?.find(d =>
+        (driverId && d.id === driverId) ||
+        (notif.message && d.name && notif.message.toLowerCase().includes(d.name.toLowerCase())) ||
+        (notif.title && d.name && notif.title.toLowerCase().includes(d.name.toLowerCase()))
+    ) || booking?.driverDetails || booking?.selectedDriver;
+
     const showMechanicImg = !!mechanic;
     const mechanicImgUrl = mechanic ? getProfileImage(mechanic.imageUrl, 'mechanic') : '';
+
+    const showDriverImg = !showMechanicImg && !!driver;
+    const driverImgUrl = driver ? getProfileImage(driver.imageUrl, 'driver') : '';
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -158,10 +177,10 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
             {!notif.read && (
                 <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${config.leftBar} ${config.leftBarGlow}`} />
             )}
-
+ 
             <div className="p-2 sm:p-3 pl-3 sm:pl-4">
                 <div className="flex items-start gap-2.5 sm:gap-3.5">
-                    {/* Icon or Mechanic Image with color-coded container */}
+                    {/* Icon or Mechanic/Driver Image with color-coded container */}
                     <div className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 border overflow-hidden ${config.bg} ${config.border} shadow-lg ${config.glow} mt-0.5`}>
                         {showMechanicImg && mechanicImgUrl && !imgError ? (
                             <img
@@ -170,7 +189,14 @@ const NotificationCard: React.FC<NotificationCardProps> = ({ notif, onMarkRead, 
                                 onError={() => setImgError(true)}
                                 className="w-full h-full object-cover"
                             />
-                        ) : showMechanicImg ? (
+                        ) : showDriverImg && driverImgUrl && !imgError ? (
+                            <img
+                                src={driverImgUrl}
+                                alt={driver?.name || 'Driver'}
+                                onError={() => setImgError(true)}
+                                className="w-full h-full object-cover"
+                            />
+                        ) : (showMechanicImg || showDriverImg) ? (
                             <User size={14} className={config.text} strokeWidth={2.5} />
                         ) : (
                             <IconComponent size={14} className={config.text} strokeWidth={2.5} />
@@ -271,7 +297,8 @@ const NotificationBell: React.FC<{ className?: string }> = ({ className = "" }) 
     const [clearConfirm, setClearConfirm] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const isAdmin = localStorage.getItem('ridersbud_admin_session') === 'true';
+    // Consume admin auth reactively from context — localStorage reads are stale on first render
+    const { isAdminAuthenticated: isAdmin } = useAdminAuth();
 
     // Determine current user recipient ID for actions (clear/mark all)
     const recipientId = isAdmin

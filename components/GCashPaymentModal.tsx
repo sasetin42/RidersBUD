@@ -41,6 +41,7 @@ interface Props {
     customerName: string;
     services?: { name: string; price: number }[];
     isOrder?: boolean;
+    isRental?: boolean;
     onPaymentVerified: () => void;
     onClose: () => void;
     newBookingData?: any;
@@ -56,11 +57,12 @@ const GCashPaymentModal: React.FC<Props> = ({
     customerName,
     services = [],
     isOrder = false,
+    isRental = false,
     onPaymentVerified,
     onClose,
     newBookingData,
 }) => {
-    const { db, updateBooking, notifyAdminGCashReceiptUploaded, setDb } = useDatabase();
+    const { db, updateBooking, updateRentalBooking, notifyAdminGCashReceiptUploaded } = useDatabase();
     const settings = db?.settings;
 
     const [qrLoadError, setQrLoadError] = useState(false);
@@ -102,8 +104,11 @@ const GCashPaymentModal: React.FC<Props> = ({
 
     // ── Lock body scroll ──────────────────────────────────────────────────────
     useEffect(() => {
+        const originalOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
-        return () => { document.body.style.overflow = ''; };
+        return () => {
+            document.body.style.overflow = originalOverflow;
+        };
     }, []);
 
     // ── Real-time Firestore listener on the booking/order doc ───────────────────────
@@ -115,7 +120,11 @@ const GCashPaymentModal: React.FC<Props> = ({
         // If this is a new booking, wait until the user has submitted the receipt and the doc is created.
         if (newBookingData && step !== 'waiting') return;
 
-        const docRef = isOrder ? doc(firestore, 'orders', bookingId) : doc(firestore, 'bookings', bookingId);
+        const docRef = isRental 
+            ? doc(firestore, 'rentalBookings', bookingId) 
+            : isOrder 
+                ? doc(firestore, 'orders', bookingId) 
+                : doc(firestore, 'bookings', bookingId);
         const unsubscribe = onSnapshot(docRef, (snap) => {
             if (!snap.exists()) return;
             const data = snap.data();
@@ -184,8 +193,11 @@ const GCashPaymentModal: React.FC<Props> = ({
                             { status: 'Receipt Uploaded', timestamp: new Date().toISOString() }
                         ]
                     };
-                    await setDoc(doc(firestore, 'bookings', bookingId), bookingToSave);
-                    setDb(prev => prev ? { ...prev, bookings: [bookingToSave, ...prev.bookings] } : null);
+                    if (isRental) {
+                        await setDoc(doc(firestore, 'rentalBookings', bookingId), bookingToSave);
+                    } else {
+                        await setDoc(doc(firestore, 'bookings', bookingId), bookingToSave);
+                    }
                 }
                 setPaymentStatus('verified');
                 setTimeout(() => onPaymentVerified(), 1200);
@@ -220,6 +232,57 @@ const GCashPaymentModal: React.FC<Props> = ({
                     read: false,
                     link: '/admin-portal/orders'
                 });
+            } else if (isRental) {
+                const isSecondPayment = bookingData?.paymentStatus === 'partial';
+
+                if (newBookingData && !bookingData) {
+                    const bookingToSave = {
+                        ...newBookingData,
+                        id: bookingId,
+                        gcashReceiptUrl: downloadUrl,
+                        gcashDownpaymentReceiptUrl: downloadUrl,
+                        gcashReference: referenceNumber,
+                        gcashDownpaymentReference: referenceNumber,
+                        gcashPaymentStatus: 'receipt_uploaded',
+                        paymentStatus: 'partial',
+                        createdAt: new Date().toISOString(),
+                        statusHistory: [
+                            { status: newBookingData.status, timestamp: new Date().toISOString() },
+                            { status: 'Receipt Uploaded', timestamp: new Date().toISOString() }
+                        ]
+                    };
+
+                    await setDoc(doc(firestore, 'rentalBookings', bookingId), bookingToSave);
+
+                    // Add to admin notifications for rental
+                    await addDoc(collection(firestore, 'notifications'), {
+                        recipientId: 'admin',
+                        title: '🚗 New Rental Booking Created',
+                        message: `New rental booking for ${services.map(s => s.name).join(', ') || 'Car Rental'} by ${customerName}.`,
+                        type: 'info',
+                        timestamp: Date.now(),
+                        read: false,
+                        link: '/admin-portal/rentals'
+                    });
+                } else {
+                    // Update existing rental booking payment
+                    await updateRentalBooking(bookingId, {
+                        gcashReceiptUrl: downloadUrl,
+                        ...(isSecondPayment 
+                            ? { gcashBalanceReceiptUrl: downloadUrl, gcashBalanceReference: referenceNumber } 
+                            : { gcashDownpaymentReceiptUrl: downloadUrl, gcashReference: referenceNumber, gcashDownpaymentReference: referenceNumber }
+                        ),
+                        gcashPaymentStatus: isSecondPayment ? 'balance_receipt_uploaded' : 'receipt_uploaded',
+                        paymentStatus: 'partial',
+                    });
+                }
+
+                // Send custom notifications for rental bookings
+                await notifyAdminGCashReceiptUploaded(
+                    bookingId,
+                    customerName,
+                    services[0]?.name || 'Car Rental'
+                );
             } else {
                 const isSecondPayment = bookingData?.paymentStatus === 'partial';
 
@@ -306,25 +369,32 @@ const GCashPaymentModal: React.FC<Props> = ({
 
     const handleConfirmCancelBooking = async () => {
         setShowCancelCaution(false);
-        if (newBookingData && !bookingData && bookingId) {
+        if (newBookingData && bookingId) {
             try {
-                await deleteDoc(doc(firestore, 'bookings', bookingId));
-                console.log("Successfully deleted cancelled booking:", bookingId);
+                const collectionName = isRental ? 'rentalBookings' : 'bookings';
+                await deleteDoc(doc(firestore, collectionName, bookingId));
+                console.log(`Successfully deleted cancelled ${collectionName}:`, bookingId);
             } catch (err) {
                 console.error("Failed to delete booking document on cancel:", err);
             }
         }
         onClose();
-        navigate('/customer-portal/', { replace: true });
+        if (window.location.pathname.includes('/service-payment')) {
+            navigate(-1);
+        } else if (window.history.state && window.history.state.idx > 0) {
+            navigate(-1);
+        } else {
+            navigate('/customer-portal/', { replace: true });
+        }
     };
 
     return (
         <div
-            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-4"
+            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-4 animate-fadeIn"
             style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         >
             <div
-                className="relative w-full max-w-sm sm:rounded-2xl rounded-t-2xl overflow-hidden bg-[#15151A]/85 backdrop-blur-xl border border-white/10 shadow-2xl flex flex-col"
+                className="relative w-full max-w-sm sm:rounded-2xl rounded-t-2xl overflow-hidden bg-[#15151A]/85 backdrop-blur-xl border border-white/10 shadow-2xl flex flex-col animate-scaleUp"
                 style={{ maxHeight: 'calc(100dvh - 48px)' }}
             >
                 {/* ── Header ───────────────────────────────────────────────── */}
@@ -626,7 +696,7 @@ const GCashPaymentModal: React.FC<Props> = ({
             {/* Caution Cancel Booking Modal */}
             {showCancelCaution && (
                 <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-fadeIn text-center">
-                    <div className="bg-[#1C1C1E] border border-red-500/30 rounded-3xl p-6 max-w-sm w-full space-y-6 shadow-2xl relative overflow-hidden">
+                    <div className="bg-[#1C1C1E] border border-red-500/30 rounded-3xl p-6 max-w-sm w-full space-y-6 shadow-2xl relative overflow-hidden animate-scaleUp">
                         <div className="absolute -top-12 -right-12 w-28 h-28 bg-red-500/10 rounded-full blur-2xl pointer-events-none"></div>
                         <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto relative animate-bounce">
                             <AlertCircle className="w-7 h-7" />

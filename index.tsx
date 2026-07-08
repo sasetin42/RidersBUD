@@ -123,6 +123,11 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 }, true);
 
+// Disable browser scroll restoration before React mounts — ensures every route starts at top
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
@@ -134,6 +139,20 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// Clear stale Service Worker and Cache Storage on localhost
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      registrations.forEach(registration => registration.unregister());
+    });
+  }
+  if (window.caches) {
+    window.caches.keys().then(keys => {
+      keys.forEach(key => window.caches.delete(key));
+    });
+  }
+}
 
 // Register Service Worker for PWA (production only — prevents HMR message channel errors in dev)
 if ('serviceWorker' in navigator && !location.hostname.includes('localhost') && !location.hostname.includes('127.0.0.1')) {

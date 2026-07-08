@@ -53,6 +53,26 @@ self.addEventListener('fetch', (event) => {
 
   if (url.origin !== location.origin) return;
   if (request.method !== 'GET') return;
+
+  // Handle navigation/HTML requests by falling back to index.html when offline
+  if (request.mode === 'navigate' || (request.headers.get('accept') && request.headers.get('accept').includes('text/html'))) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          return (await cache.match('/')) || (await cache.match('/index.html')) || Response.error();
+        })
+    );
+    return;
+  }
+
   if (request.mode === 'navigate') return;
   if (isViteInternal(url)) return;
   if (request.headers.get('upgrade') === 'websocket') return;

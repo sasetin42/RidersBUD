@@ -8,7 +8,7 @@ import { getNotificationSettings, showNotification } from '../utils/notification
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import { Clock, Star, CalendarRange } from 'lucide-react';
 import CustomerHeader from '../components/CustomerHeader';
-import { getFallbackImageForCategory } from '../utils/fallbackImages';
+import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
@@ -28,7 +28,12 @@ const ServiceSelectionCard: React.FC<{ service: Service, isSelected: boolean, on
         <div className="flex items-center gap-4">
             {/* Image / Icon Section */}
             <div className={`w-20 h-20 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors overflow-hidden relative ${isSelected ? 'bg-primary/10' : 'bg-white/5 group-hover:bg-primary/5'}`}>
-                <img src={service.imageUrl || getFallbackImageForCategory(service.category)} alt={service.name} className={`w-full h-full object-cover transition-transform duration-500 ${isSelected ? 'scale-110 opacity-90' : 'group-hover:scale-110 opacity-70'}`} onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }} />
+                {(() => {
+                    const normalized = normalizeServiceImage(service.imageUrl, service.category);
+                    return (
+                        <img src={normalized} alt={service.name} className={`w-full h-full object-cover transition-transform duration-500 ${isSelected ? 'scale-110 opacity-90' : 'group-hover:scale-110 opacity-70'}`} onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }} />
+                    );
+                })()}
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-[#1E1E1E]/20" />
             </div>
 
@@ -371,6 +376,19 @@ const BookingScreen: React.FC = () => {
     const routeEndMarkerRef = useRef<any>(null);
     const routePolylineRef = useRef<any>(null);
 
+    const [leafletLoaded, setLeafletLoaded] = useState(typeof window !== 'undefined' && !!(window as any).L);
+
+    useEffect(() => {
+        if (leafletLoaded) return;
+        const interval = setInterval(() => {
+            if ((window as any).L) {
+                setLeafletLoaded(true);
+                clearInterval(interval);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [leafletLoaded]);
+
     const [isLocating, setIsLocating] = useState(false);
     const [startCoords, setStartCoords] = useState<[number, number] | null>(null);
     const [endCoords, setEndCoords] = useState<[number, number] | null>(null);
@@ -633,7 +651,7 @@ const BookingScreen: React.FC = () => {
             if (map) map.invalidateSize(true);
         }, 300);
 
-    }, [step, startCoords, endCoords]);
+    }, [step, startCoords, endCoords, leafletLoaded]);
 
     useEffect(() => {
         if (step !== 4 && routeMapInstanceRef.current) {
@@ -883,7 +901,7 @@ const BookingScreen: React.FC = () => {
                 accuracyCircleRef.current = null;
             }
         };
-    }, [step, serviceLocation === null]); // eslint-disable-line
+    }, [step, serviceLocation === null, leafletLoaded]); // eslint-disable-line
 
     // Live updater: smoothly follow GPS when tracking is active
     useEffect(() => {
@@ -936,7 +954,8 @@ const BookingScreen: React.FC = () => {
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
                 subdomains: 'abcd',
-                maxZoom: 20
+                maxZoom: 20,
+                crossOrigin: true
             }).addTo(confirmationMapInstanceRef.current);
 
             // Add marker
@@ -971,7 +990,7 @@ const BookingScreen: React.FC = () => {
                 confirmationMapInstanceRef.current = null;
             }
         };
-    }, [step, serviceLocation]);
+    }, [step, serviceLocation, leafletLoaded]);
 
 
     const handleBack = () => {
@@ -1705,12 +1724,17 @@ const BookingScreen: React.FC = () => {
                                 {selectedServicesList.map(service => (
                                     <div key={service.id} className="flex gap-3 bg-[#1A1A1E] border border-white/5 p-3 rounded-lg">
                                         <div className="w-20 h-20 rounded-lg bg-[#222] border border-white/5 overflow-hidden flex-shrink-0 relative">
-                                            <img
-                                                src={service.imageUrl || getFallbackImageForCategory(service.category)}
-                                                alt={service.name}
-                                                className="w-full h-full object-cover"
-                                                onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }}
-                                            />
+                                            {(() => {
+                                                const normalized = normalizeServiceImage(service.imageUrl, service.category);
+                                                return (
+                                                    <img
+                                                        src={normalized}
+                                                        alt={service.name}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }}
+                                                    />
+                                                );
+                                            })()}
                                         </div>
                                         <div className="flex-grow min-w-0">
                                             <div className="flex justify-between items-start gap-2">

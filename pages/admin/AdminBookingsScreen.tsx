@@ -6,11 +6,12 @@ import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
 import { useNotification } from '../../context/NotificationContext';
-import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink, X, Wrench } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink, X, Wrench, MapPin } from 'lucide-react';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
 import MapComponent, { MapMarker } from '../../components/MapComponent';
 import { ref, onValue } from 'firebase/database';
-import { rtdb } from '../../firebase';
+import { rtdb, db as firestoreDB } from '../../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { getProfileImage } from '../../utils/imageConstants';
 import Tooltip from '../../components/ui/Tooltip';
@@ -924,21 +925,23 @@ const formatTimeToAmPm = (timeStr: string): string => {
 
 const AdminBookingsScreen: React.FC = () => {
     const navigate = useNavigate();
-    const { db, updateBookingStatus, cancelBooking, updateBooking, updateBookingPayment, assignMechanicToBooking, verifyBookingPayment, loading, deleteAllBookings, deleteBooking } = useDatabase();
+    const { db, updateBookingStatus, cancelBooking, updateBooking, updateBookingPayment, assignMechanicToBooking, verifyBookingPayment, loading, deleteAllBookings, deleteBooking, updateLiaisonBookingStatus } = useDatabase();
     const { addNotification } = useNotification();
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [selectedMechanicId, setSelectedMechanicId] = useState<string>('all');
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
-    const [selectedStatus, setSelectedStatus] = useState<BookingStatus | 'all'>('all');
+    const [selectedStatus, setSelectedStatus] = useState<string>('all');
     const [paymentFilter, setPaymentFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
     const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
     const [datePreset, setDatePreset] = useState<string>('all');
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'date', direction: 'descending' });
+    const [activeAdminTab, setActiveAdminTab] = useState<'Services' | 'Car Rental' | 'Driver for Hire' | 'Liaison' | 'Towing'>('Services');
     const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
     const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
     const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
     const [viewingMapBooking, setViewingMapBooking] = useState<Booking | null>(null);
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [previewDocName, setPreviewDocName] = useState<string | null>(null);
     const [previewImageLoading, setPreviewImageLoading] = useState<boolean>(true);
 
     useEffect(() => {
@@ -951,13 +954,26 @@ const AdminBookingsScreen: React.FC = () => {
     const [assigningBooking, setAssigningBooking] = useState<Booking | null>(null);
     const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
     const [isDeletingAll, setIsDeletingAll] = useState(false);
+    const [editingDriverFields, setEditingDriverFields] = useState<{[key: string]: {driverName: string; driverPhone: string; estimatedArrivalTime: string; remarks: string}}>({});
 
     const handleDeleteAllBookings = async () => {
         setIsDeletingAll(true);
         try {
-            await deleteAllBookings();
+            let collectionName = 'bookings';
+            let categoryName = 'bookings';
+            if (activeAdminTab === 'Liaison') {
+                collectionName = 'liaisonBookings';
+                categoryName = 'Liaison bookings';
+            } else if (activeAdminTab === 'Car Rental') {
+                collectionName = 'rentalBookings';
+                categoryName = 'Car Rental bookings';
+            } else if (activeAdminTab === 'Driver for Hire' || activeAdminTab === 'Towing') {
+                collectionName = 'serviceRequests';
+                categoryName = 'Service Request bookings';
+            }
+            await deleteAllBookings(collectionName);
             setShowDeleteAllConfirm(false);
-            alert("All bookings have been successfully deleted from the database.");
+            alert(`All ${categoryName} have been successfully deleted from the database.`);
         } catch (err) {
             console.error("Failed to delete bookings", err);
             alert("Failed to delete bookings. Please try again.");
@@ -974,7 +990,162 @@ const AdminBookingsScreen: React.FC = () => {
         return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
     }
 
-    const { bookings, mechanics, settings } = db;
+    const { mechanics, settings } = db;
+
+    const bookings = React.useMemo(() => {
+        if (!db) return [];
+        
+        if (activeAdminTab === 'Services') {
+            return db.bookings || [];
+        } else if (activeAdminTab === 'Car Rental') {
+            return (db.rentalBookings || []).map(b => {
+                const customer = db.customers?.find(c => c.id === b.customerId);
+                const car = db.rentalCars?.find(c => c.id === b.carId);
+                return {
+                    id: b.id,
+                    customerId: b.customerId,
+                    customerName: customer?.name || b.customerName || 'Unknown Customer',
+                    customerEmail: customer?.email || 'No email',
+                    customerPhone: customer?.phone || 'No phone',
+                    vehicle: {
+                        make: car?.make || 'Car Rental',
+                        model: car?.model || '',
+                        year: car?.year || '',
+                        plateNumber: car?.plateNumber || ''
+                    },
+                    services: [{
+                        id: b.carId,
+                        name: `Car Rental (${car?.make} ${car?.model})`,
+                        category: 'Car Rental',
+                        price: b.totalPrice
+                    }],
+                    date: b.startDate,
+                    time: '08:00',
+                    status: b.status || 'Received',
+                    // Pass all payment fields so 1st/Final payment panels render correctly
+                    isPaid: b.isPaid ?? false,
+                    totalAmount: b.totalPrice,
+                    paidAmount: b.paidAmount,
+                    paymentMethod: b.paymentMethod,
+                    paymentStatus: b.paymentStatus,
+                    isVerified: b.isVerified,
+                    gcashPaymentStatus: b.gcashPaymentStatus,
+                    gcashReference: b.gcashReference,
+                    gcashReceiptUrl: b.gcashReceiptUrl,
+                    gcashDownpaymentReceiptUrl: b.gcashDownpaymentReceiptUrl,
+                    gcashDownpaymentReference: b.gcashDownpaymentReference,
+                    gcashBalanceReceiptUrl: b.gcashBalanceReceiptUrl,
+                    gcashBalanceReference: b.gcashBalanceReference,
+                    gcashDeclineReason: b.gcashDeclineReason,
+                    additionalCosts: b.additionalCosts,
+                    createdAt: b.createdAt,
+                    vehicleDesc: `${b.startDate} to ${b.endDate}`,
+                    statusHistory: b.statusHistory || [],
+                    notes: b.notes,
+                    isRental: true,
+                };
+            });
+        } else if (activeAdminTab === 'Driver for Hire') {
+            const requests = (db.serviceRequests || []).filter(req => 
+                (req.serviceName || '').toLowerCase().includes('driver')
+            );
+            return requests.map(req => {
+                const customer = db.customers?.find(c => c.id === req.customerId);
+                return {
+                    id: req.id,
+                    customerId: req.customerId,
+                    customerName: customer?.name || req.customerName || 'Unknown Customer',
+                    customerEmail: customer?.email || 'No email',
+                    customerPhone: customer?.phone || 'No phone',
+                    vehicle: {
+                        make: 'Driver service request',
+                        model: '',
+                        year: '',
+                        plateNumber: ''
+                    },
+                    services: [{
+                        id: req.id,
+                        name: req.serviceName || 'Driver for Hire',
+                        category: 'Driver for Hire',
+                        price: 0
+                    }],
+                    date: req.scheduledDate || req.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+                    time: '08:00',
+                    status: req.status || 'Pending',
+                    isPaid: false,
+                    totalAmount: 0,
+                    createdAt: req.createdAt,
+                    notes: req.notes
+                };
+            });
+        } else if (activeAdminTab === 'Liaison') {
+            return (db.liaisonBookings || []).map(b => {
+                const customer = db.customers?.find(c => c.id === b.customerId);
+                return {
+                    id: b.id,
+                    customerId: b.customerId,
+                    customerName: customer?.name || b.customerName || 'Unknown Customer',
+                    customerEmail: customer?.email || 'No email',
+                    customerPhone: customer?.phone || 'No phone',
+                    vehicle: {
+                        make: b.vehicleDetails?.brand || '',
+                        model: b.vehicleDetails?.model || '',
+                        year: b.vehicleDetails?.year || '',
+                        plateNumber: b.vehicleDetails?.plateNumber || ''
+                    },
+                    services: [{
+                        id: b.id,
+                        name: `LTO Liaison (${b.serviceType})`,
+                        category: 'Liason Services',
+                        price: b.paymentStatus === 'Paid' ? 500 : 0
+                    }],
+                    date: b.appointmentDate,
+                    time: b.appointmentTime,
+                    status: b.status || 'Booking Received',
+                    isPaid: b.paymentStatus === 'Paid',
+                    totalAmount: b.paymentStatus === 'Paid' ? 500 : 0,
+                    createdAt: b.createdAt || b.appointmentDate,
+                    agentName: b.liaisonName || 'Unassigned',
+                    branchName: b.branchName || '',
+                    documents: b.documents || []
+                };
+            });
+        } else if (activeAdminTab === 'Towing') {
+            const requests = (db.serviceRequests || []).filter(req => 
+                (req.serviceName || '').toLowerCase().includes('towing')
+            );
+            return requests.map(req => {
+                const customer = db.customers?.find(c => c.id === req.customerId);
+                return {
+                    id: req.id,
+                    customerId: req.customerId,
+                    customerName: customer?.name || req.customerName || 'Unknown Customer',
+                    customerEmail: customer?.email || 'No email',
+                    customerPhone: customer?.phone || 'No phone',
+                    vehicle: {
+                        make: 'Towing request',
+                        model: '',
+                        year: '',
+                        plateNumber: ''
+                    },
+                    services: [{
+                        id: req.id,
+                        name: req.serviceName || 'Towing / Roadside Assistance',
+                        category: 'Towing',
+                        price: 0
+                    }],
+                    date: req.scheduledDate || req.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+                    time: '08:00',
+                    status: req.status || 'Pending',
+                    isPaid: false,
+                    totalAmount: 0,
+                    createdAt: req.createdAt,
+                    notes: req.notes
+                };
+            });
+        }
+        return [];
+    }, [db, activeAdminTab]);
 
     const bookingSequences = useMemo(() => {
         if (!bookings) return {};
@@ -1015,7 +1186,22 @@ const AdminBookingsScreen: React.FC = () => {
         const uniqueCategories = Array.from(new Set(db.services.map(s => s.category).filter(Boolean)));
         return ['all', ...uniqueCategories];
     }, [db]);
-    const bookingStatuses: Array<BookingStatus | 'all'> = ['all', 'Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled', 'Reschedule Requested'];
+    const bookingStatuses = useMemo(() => {
+        switch (activeAdminTab) {
+            case 'Services':
+                return ['all', 'Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled', 'Reschedule Requested'];
+            case 'Car Rental':
+                return ['all', 'Received', 'Pending', 'Approved', 'Completed', 'Cancelled'];
+            case 'Driver for Hire':
+                return ['all', 'Pending', 'Assigned', 'Completed', 'Cancelled'];
+            case 'Liaison':
+                return ['all', 'Booking Received', 'LTO Processing', 'Completed', 'Cancelled'];
+            case 'Towing':
+                return ['all', 'Pending', 'Dispatched', 'Completed', 'Cancelled'];
+            default:
+                return ['all'];
+        }
+    }, [activeAdminTab]);
 
     // Date preset handler
     const handleDatePreset = (preset: string) => {
@@ -1083,12 +1269,20 @@ const AdminBookingsScreen: React.FC = () => {
         addNotification({ type: 'success', title: 'Export Successful', message: 'Bookings exported to CSV', recipientId: 'admin' });
     };
 
-    const handleStatusChange = async (booking: Booking, newStatus: BookingStatus) => {
+    const handleStatusChange = async (booking: any, newStatus: any) => {
         if (newStatus === 'Cancelled') {
             setCancellingBooking(booking);
         } else {
             try {
-                await updateBookingStatus(booking.id, newStatus);
+                if (activeAdminTab === 'Services') {
+                    await updateBookingStatus(booking.id, newStatus);
+                } else if (activeAdminTab === 'Liaison') {
+                    await updateLiaisonBookingStatus(booking.id, newStatus);
+                } else if (activeAdminTab === 'Car Rental') {
+                    await updateDoc(doc(firestoreDB, 'rentalBookings', booking.id), { status: newStatus });
+                } else {
+                    await updateDoc(doc(firestoreDB, 'serviceRequests', booking.id), { status: newStatus });
+                }
                 addNotification({ type: 'success', title: 'Status Updated', message: `Booking #${booking.id.slice(-6)} is now ${newStatus}.`, recipientId: 'admin' });
             } catch (e) {
                 addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'admin' });
@@ -1099,7 +1293,15 @@ const AdminBookingsScreen: React.FC = () => {
     const handleConfirmCancellation = async (reason: string) => {
         if (cancellingBooking) {
             try {
-                await cancelBooking(cancellingBooking.id, reason);
+                if (activeAdminTab === 'Services') {
+                    await cancelBooking(cancellingBooking.id, reason);
+                } else if (activeAdminTab === 'Liaison') {
+                    await updateLiaisonBookingStatus(cancellingBooking.id, 'Cancelled', reason);
+                } else if (activeAdminTab === 'Car Rental') {
+                    await updateDoc(doc(firestoreDB, 'rentalBookings', cancellingBooking.id), { status: 'Cancelled', cancelReason: reason });
+                } else {
+                    await updateDoc(doc(firestoreDB, 'serviceRequests', cancellingBooking.id), { status: 'Cancelled', cancelReason: reason });
+                }
                 addNotification({ type: 'success', title: 'Booking Cancelled', message: `Booking #${cancellingBooking.id.slice(-6)} has been cancelled.`, recipientId: 'admin' });
                 setCancellingBooking(null);
             } catch (e) {
@@ -1147,6 +1349,31 @@ const AdminBookingsScreen: React.FC = () => {
     const sortedAndFilteredBookings = useMemo(() => {
         let filteredBookings = bookings.filter(booking => {
             const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+            
+            // Tab routing matching logic
+            const firstSvcName = svcs[0]?.name || '';
+            const firstSvcCat = svcs[0]?.category || '';
+            
+            let tabMatch = false;
+            if (activeAdminTab === 'Services') {
+                // Default Mechanic / Maintenance / Repair / Emergency Services (not Car Rental, Driver for Hire, Liaison, Towing)
+                const isCarRental = firstSvcCat === 'Car Rental' || firstSvcName.toLowerCase().includes('rental') || firstSvcName.toLowerCase().includes('car rent');
+                const isDriver = firstSvcCat === 'Driver for Hire' || firstSvcName.toLowerCase().includes('driver for hire') || firstSvcName.toLowerCase().includes('hire driver');
+                const isLiaison = firstSvcCat === 'Liason Services' || firstSvcCat === 'Liaison' || firstSvcName.toLowerCase().includes('liaison') || firstSvcName.toLowerCase().includes('lto') || firstSvcName.toLowerCase().includes('registration');
+                const isTowing = firstSvcName.toLowerCase().includes('towing') || firstSvcName.toLowerCase().includes('roadside') || firstSvcName.toLowerCase().includes('wrecker');
+                tabMatch = !isCarRental && !isDriver && !isLiaison && !isTowing;
+            } else if (activeAdminTab === 'Car Rental') {
+                tabMatch = firstSvcCat === 'Car Rental' || firstSvcName.toLowerCase().includes('rental') || firstSvcName.toLowerCase().includes('car rent');
+            } else if (activeAdminTab === 'Driver for Hire') {
+                tabMatch = firstSvcCat === 'Driver for Hire' || firstSvcName.toLowerCase().includes('driver for hire') || firstSvcName.toLowerCase().includes('hire driver');
+            } else if (activeAdminTab === 'Liaison') {
+                tabMatch = firstSvcCat === 'Liason Services' || firstSvcCat === 'Liaison' || firstSvcName.toLowerCase().includes('liaison') || firstSvcName.toLowerCase().includes('lto') || firstSvcName.toLowerCase().includes('registration');
+            } else if (activeAdminTab === 'Towing') {
+                tabMatch = firstSvcName.toLowerCase().includes('towing') || firstSvcName.toLowerCase().includes('roadside') || firstSvcName.toLowerCase().includes('wrecker');
+            }
+
+            if (!tabMatch) return false;
+
             const mechanicMatch = selectedMechanicId === 'all' || booking.mechanic?.id === selectedMechanicId;
             const categoryMatch = selectedCategory === 'all' || svcs.some(s => s.category === selectedCategory);
             const statusMatch = selectedStatus === 'all' || booking.status === selectedStatus;
@@ -1194,7 +1421,7 @@ const AdminBookingsScreen: React.FC = () => {
             });
         }
         return filteredBookings;
-    }, [selectedMechanicId, selectedCategory, selectedStatus, searchQuery, bookings, sortConfig, dateFilter, paymentFilter, bookingSequences]);
+    }, [selectedMechanicId, selectedCategory, selectedStatus, searchQuery, bookings, sortConfig, dateFilter, paymentFilter, bookingSequences, activeAdminTab]);
 
     const getSortIndicator = (key: SortableKeys) => {
         if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-600 ml-1" />;
@@ -1219,8 +1446,32 @@ const AdminBookingsScreen: React.FC = () => {
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-        const last30Days = bookings.filter(b => new Date(b.date) >= thirtyDaysAgo);
-        const previous30Days = bookings.filter(b => {
+        // Filter bookings by the active tab domain first
+        const tabBookings = bookings.filter(booking => {
+            const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+            const firstSvcName = svcs[0]?.name || '';
+            const firstSvcCat = svcs[0]?.category || '';
+            
+            if (activeAdminTab === 'Services') {
+                const isCarRental = firstSvcCat === 'Car Rental' || firstSvcName.toLowerCase().includes('rental') || firstSvcName.toLowerCase().includes('car rent');
+                const isDriver = firstSvcCat === 'Driver for Hire' || firstSvcName.toLowerCase().includes('driver for hire') || firstSvcName.toLowerCase().includes('hire driver');
+                const isLiaison = firstSvcCat === 'Liason Services' || firstSvcCat === 'Liaison' || firstSvcName.toLowerCase().includes('liaison') || firstSvcName.toLowerCase().includes('lto') || firstSvcName.toLowerCase().includes('registration');
+                const isTowing = firstSvcName.toLowerCase().includes('towing') || firstSvcName.toLowerCase().includes('roadside') || firstSvcName.toLowerCase().includes('wrecker');
+                return !isCarRental && !isDriver && !isLiaison && !isTowing;
+            } else if (activeAdminTab === 'Car Rental') {
+                return firstSvcCat === 'Car Rental' || firstSvcName.toLowerCase().includes('rental') || firstSvcName.toLowerCase().includes('car rent');
+            } else if (activeAdminTab === 'Driver for Hire') {
+                return firstSvcCat === 'Driver for Hire' || firstSvcName.toLowerCase().includes('driver for hire') || firstSvcName.toLowerCase().includes('hire driver');
+            } else if (activeAdminTab === 'Liaison') {
+                return firstSvcCat === 'Liason Services' || firstSvcCat === 'Liaison' || firstSvcName.toLowerCase().includes('liaison') || firstSvcName.toLowerCase().includes('lto') || firstSvcName.toLowerCase().includes('registration');
+            } else if (activeAdminTab === 'Towing') {
+                return firstSvcName.toLowerCase().includes('towing') || firstSvcName.toLowerCase().includes('roadside') || firstSvcName.toLowerCase().includes('wrecker');
+            }
+            return true;
+        });
+
+        const last30Days = tabBookings.filter(b => new Date(b.date) >= thirtyDaysAgo);
+        const previous30Days = tabBookings.filter(b => {
             const date = new Date(b.date);
             return date >= sixtyDaysAgo && date < thirtyDaysAgo;
         });
@@ -1230,11 +1481,11 @@ const AdminBookingsScreen: React.FC = () => {
             const svcs = b.services && b.services.length > 0 ? b.services : b.service ? [b.service] : [];
             return svcs.reduce((s, svc) => s + svc.price, 0);
         };
-        const totalRevenue = bookings.filter(b => b.status === 'Completed' && b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0);
-        const pendingRevenue = bookings.filter(b => b.status === 'Completed' && !b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0);
-        const avgBookingValue = bookings.length > 0 ? totalRevenue / bookings.filter(b => b.status === 'Completed' && b.isPaid).length : 0;
+        const totalRevenue = tabBookings.filter(b => b.status === 'Completed' && b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0);
+        const pendingRevenue = tabBookings.filter(b => b.status === 'Completed' && !b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0);
+        const avgBookingValue = tabBookings.length > 0 ? totalRevenue / (tabBookings.filter(b => b.status === 'Completed' && b.isPaid).length || 1) : 0;
 
-        const todayBookings = bookings.filter(b => b.date === new Date().toISOString().split('T')[0]).length;
+        const todayBookings = tabBookings.filter(b => b.date === new Date().toISOString().split('T')[0]).length;
 
         const trendCalc = (current: number, previous: number) => {
             if (previous === 0) return { value: 0, isPositive: current > 0 };
@@ -1242,16 +1493,34 @@ const AdminBookingsScreen: React.FC = () => {
             return { value: Math.round(Math.abs(change)), isPositive: change >= 0 };
         };
 
+        const getUpcomingStatuses = () => {
+            switch (activeAdminTab) {
+                case 'Services':
+                    return ['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Reschedule Requested'];
+                case 'Car Rental':
+                    return ['Received', 'Pending', 'Approved', 'Active'];
+                case 'Driver for Hire':
+                    return ['Pending', 'Assigned'];
+                case 'Liaison':
+                    return ['Booking Received', 'LTO Processing'];
+                case 'Towing':
+                    return ['Pending', 'Dispatched'];
+                default:
+                    return [];
+            }
+        };
+        const upcomingStatuses = getUpcomingStatuses();
+
         return {
-            total: bookings.length,
+            total: tabBookings.length,
             totalTrend: trendCalc(last30Days.length, previous30Days.length),
-            upcoming: bookings.filter(b => b.status === 'Upcoming' || b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Reschedule Requested').length,
-            completed: bookings.filter(b => b.status === 'Completed').length,
+            upcoming: tabBookings.filter(b => upcomingStatuses.includes(b.status || '')).length,
+            completed: tabBookings.filter(b => b.status === 'Completed').length,
             completedTrend: trendCalc(
                 last30Days.filter(b => b.status === 'Completed').length,
                 previous30Days.filter(b => b.status === 'Completed').length
             ),
-            cancelled: bookings.filter(b => b.status === 'Cancelled').length,
+            cancelled: tabBookings.filter(b => b.status === 'Cancelled').length,
             totalRevenue,
             revenueTrend: trendCalc(
                 last30Days.filter(b => b.status === 'Completed' && b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0),
@@ -1261,7 +1530,7 @@ const AdminBookingsScreen: React.FC = () => {
             avgBookingValue,
             todayBookings
         };
-    }, [bookings]);
+    }, [bookings, activeAdminTab]);
 
     const activeFiltersCount = [
         selectedMechanicId !== 'all',
@@ -1284,32 +1553,64 @@ const AdminBookingsScreen: React.FC = () => {
     return (
         <div className="text-admin-text-primary flex flex-col h-full overflow-hidden">
             <div className="flex-shrink-0">
-                {/* Header */}
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                    <div>
-                        <h1 className="text-4xl font-black text-white tracking-tighter leading-none">Manage Bookings</h1>
-                        <div className="flex items-center gap-2 mt-2">
-                            <div className="h-1 w-8 bg-primary rounded-full"></div>
-                            <p className="text-gray-500 font-bold tracking-[0.3em] text-[9px]">Operations & Scheduling</p>
+                {/* Header Title, Tabs, & Actions Inline Layout */}
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5 pb-5 border-b border-white/10">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+                        <div>
+                            <h1 className="text-3xl font-black text-white tracking-tighter leading-none">Manage Bookings</h1>
+                            <div className="flex items-center gap-2 mt-2">
+                                <div className="h-1 w-6 bg-primary rounded-full"></div>
+                                <p className="text-gray-500 font-bold tracking-[0.3em] text-[8px] uppercase">Operations & Scheduling</p>
+                            </div>
+                        </div>
+
+                        {/* Vertical Divider */}
+                        <div className="hidden sm:block w-px h-8 bg-white/10" />
+
+                        {/* Inline Service Tab Switchers */}
+                        <div className="flex items-center gap-1 p-1 bg-white/5 border border-white/10 rounded-xl overflow-x-auto whitespace-nowrap scrollbar-hide max-w-full sm:max-w-max">
+                            {(['Services', 'Car Rental', 'Driver for Hire', 'Liaison', 'Towing'] as const).map(tab => {
+                                const isActive = activeAdminTab === tab;
+                                return (
+                                    <button
+                                        key={tab}
+                                        onClick={() => {
+                                            setActiveAdminTab(tab);
+                                            setExpandedBookingId(null);
+                                            setSelectedStatus('all');
+                                            setSelectedMechanicId('all');
+                                            setSearchQuery('');
+                                        }}
+                                        className={`px-3.5 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all duration-200 active:scale-95 cursor-pointer ${isActive ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        {tab}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
+
                     <div className="flex items-center gap-3">
+                        {/* Action Buttons Inline */}
                         <Tooltip content="Delete all bookings from database">
                             <button
                                 onClick={() => setShowDeleteAllConfirm(true)}
-                                className="px-5 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl font-black tracking-widest text-xs border border-red-500/20 transition-all flex items-center gap-2 active:scale-95 animate-pulse"
+                                className="h-9 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl font-bold tracking-widest text-xs border border-red-500/25 transition-all flex items-center gap-2 active:scale-95 cursor-pointer"
                             >
-                                <Trash2 size={16} />
+                                <Trash2 size={14} />
                                 Delete All
                             </button>
                         </Tooltip>
+                        
+                        {/* Divider */}
+                        <div className="w-px h-6 bg-white/10" />
+
                         <Tooltip content="Export bookings to CSV file">
                             <button
                                 onClick={exportToCSV}
-                                className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black tracking-widest text-xs border border-white/5 transition-all flex items-center gap-2 active:scale-95"
+                                className="h-9 px-4 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold tracking-widest text-xs border border-white/10 transition-all flex items-center gap-2 active:scale-95 cursor-pointer"
                             >
-                                <Download size={16} />
+                                <Download size={14} />
                                 Export CSV
                             </button>
                         </Tooltip>
@@ -1367,29 +1668,37 @@ const AdminBookingsScreen: React.FC = () => {
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search Customer or Service..."
-                                    className="w-full bg-white/5 border border-white/5 rounded-lg pl-10 pr-3 py-1.5 text-white text-xs font-bold placeholder-gray-600 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                                    placeholder={
+                                        activeAdminTab === 'Services' ? "Search Customer or Service..." :
+                                        activeAdminTab === 'Car Rental' ? "Search Customer or Car..." :
+                                        activeAdminTab === 'Driver for Hire' ? "Search Customer..." :
+                                        activeAdminTab === 'Liaison' ? "Search Customer or Liaison Service..." :
+                                        "Search Customer or Towing Location..."
+                                    }
+                                    className="h-9 w-full bg-white/5 border border-white/10 rounded-lg pl-10 pr-3 text-white text-xs font-bold placeholder-gray-600 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all hover:bg-white/10 hover:border-white/20"
                                 />
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <select
-                                    id="selectedMechanicId"
-                                    name="selectedMechanicId"
-                                    value={selectedMechanicId}
-                                    onChange={(e) => setSelectedMechanicId(e.target.value)}
-                                    className="bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 text-white text-xs font-bold outline-none focus:border-primary"
-                                >
-                                    <option value="all">All Mechanics</option>
-                                    {mechanics.filter(m => m.status === 'Active').map(mechanic => (
-                                        <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>
-                                    ))}
-                                </select>
+                                {activeAdminTab === 'Services' && (
+                                    <select
+                                        id="selectedMechanicId"
+                                        name="selectedMechanicId"
+                                        value={selectedMechanicId}
+                                        onChange={(e) => setSelectedMechanicId(e.target.value)}
+                                        className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white text-xs font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
+                                    >
+                                        <option value="all">All Mechanics</option>
+                                        {mechanics.filter(m => m.status === 'Active').map(mechanic => (
+                                            <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>
+                                        ))}
+                                    </select>
+                                )}
                                 <select
                                     id="selectedStatus"
                                     name="selectedStatus"
                                     value={selectedStatus}
                                     onChange={(e) => setSelectedStatus(e.target.value as any)}
-                                    className="bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 text-white text-xs font-bold outline-none focus:border-primary"
+                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white text-xs font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
                                 >
                                     {bookingStatuses.map(status => (
                                         <option key={status} value={status}>
@@ -1402,7 +1711,7 @@ const AdminBookingsScreen: React.FC = () => {
                                     name="paymentFilter"
                                     value={paymentFilter}
                                     onChange={(e) => setPaymentFilter(e.target.value as any)}
-                                    className="bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 text-white text-xs font-bold outline-none focus:border-primary"
+                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white text-xs font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
                                 >
                                     <option value="all">All Payments</option>
                                     <option value="paid">Paid Only</option>
@@ -1412,16 +1721,16 @@ const AdminBookingsScreen: React.FC = () => {
                         </div>
 
                         {/* Date Filters & Presets */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-white/5">
-                            <div className="flex items-center gap-2">
-                                <span className="text-[9px] font-black tracking-widest text-gray-500 mr-2">Quick Range:</span>
+                        <div className="flex flex-wrap gap-2.5 items-center pt-2.5 border-t border-white/10">
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-xs font-bold text-gray-500 mr-2">Quick Range:</span>
                                 {['all', 'today', 'week', 'month'].map(preset => (
                                     <Tooltip key={preset} content={`Filter by ${preset === 'all' ? 'all dates' : preset}`}>
                                         <button
                                             onClick={() => handleDatePreset(preset)}
-                                            className={`px-2.5 py-1 rounded-lg text-[9px] font-black tracking-widest transition-all ${datePreset === preset
+                                            className={`h-9 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${datePreset === preset
                                                 ? 'bg-primary text-white shadow-lg'
-                                                : 'bg-white/5 text-gray-500 hover:text-white'
+                                                : 'bg-white/5 border border-white/10 text-gray-500 hover:text-white hover:bg-white/10 hover:border-white/20'
                                                 }`}
                                         >
                                             {preset === 'all' ? 'All' : preset}
@@ -1430,14 +1739,14 @@ const AdminBookingsScreen: React.FC = () => {
                                 ))}
                             </div>
 
-                            <div className="flex items-center gap-2 ml-auto">
+                            <div className="flex items-center gap-2">
                                 <input
                                     id="dateFilterStart"
                                     name="dateFilterStart"
                                     type="date"
                                     value={dateFilter.start}
                                     onChange={e => { setDateFilter(prev => ({ ...prev, start: e.target.value })); setDatePreset('custom'); }}
-                                    className="bg-white/5 border border-white/5 rounded-lg px-2.5 py-1 text-white font-bold outline-none focus:border-primary text-[10px]"
+                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
                                 />
                                 <span className="text-gray-600">-</span>
                                 <input
@@ -1447,20 +1756,20 @@ const AdminBookingsScreen: React.FC = () => {
                                     value={dateFilter.end}
                                     min={dateFilter.start}
                                     onChange={e => { setDateFilter(prev => ({ ...prev, end: e.target.value })); setDatePreset('custom'); }}
-                                    className="bg-white/5 border border-white/5 rounded-lg px-2.5 py-1 text-white font-bold outline-none focus:border-primary text-[10px]"
+                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
                                 />
                             </div>
 
-                            {activeFiltersCount > 0 && (
+                            <div className={`transition-all duration-300 ease-in-out overflow-hidden flex items-center ${activeFiltersCount > 0 ? 'max-w-[180px] opacity-100' : 'max-w-0 opacity-0 pointer-events-none'}`}>
                                 <Tooltip content="Remove all applied filters">
                                     <button
                                         onClick={clearAllFilters}
-                                        className="px-4 py-1.5 bg-red-500/10 text-red-500 rounded-lg font-black tracking-widest text-[9px] hover:bg-red-500 hover:text-white transition-all ml-4"
+                                        className="h-9 px-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg font-bold text-xs hover:bg-red-500 hover:text-white transition-all whitespace-nowrap cursor-pointer"
                                     >
                                         Clear Filters ({activeFiltersCount})
                                     </button>
                                 </Tooltip>
-                            )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1482,15 +1791,42 @@ const AdminBookingsScreen: React.FC = () => {
                                         </button>
                                     </Tooltip>
                                 </th>
-                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Service</th>
-                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px] hidden lg:table-cell">Vehicle</th>
-                                <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">
-                                    <Tooltip content="Sort by mechanic name">
-                                        <button onClick={() => requestSort('mechanicName')} className="flex items-center gap-2 hover:text-white transition-colors group">
-                                            Mechanic {getSortIndicator('mechanicName')}
-                                        </button>
-                                    </Tooltip>
-                                </th>
+                                {activeAdminTab === 'Services' && (
+                                    <>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Service</th>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px] hidden lg:table-cell">Vehicle</th>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">
+                                            <Tooltip content="Sort by mechanic name">
+                                                <button onClick={() => requestSort('mechanicName')} className="flex items-center gap-2 hover:text-white transition-colors group">
+                                                    Mechanic {getSortIndicator('mechanicName')}
+                                                </button>
+                                            </Tooltip>
+                                        </th>
+                                    </>
+                                )}
+                                {activeAdminTab === 'Car Rental' && (
+                                    <>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Car Model</th>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Rental Period</th>
+                                    </>
+                                )}
+                                {activeAdminTab === 'Driver for Hire' && (
+                                    <>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Driver Requirements</th>
+                                    </>
+                                )}
+                                {activeAdminTab === 'Liaison' && (
+                                    <>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">LTO Action</th>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px] hidden lg:table-cell">Vehicle</th>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Agent Assigned</th>
+                                    </>
+                                )}
+                                {activeAdminTab === 'Towing' && (
+                                    <>
+                                        <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">Details & Location</th>
+                                    </>
+                                )}
                                 <th className="py-2.5 px-3 font-black text-gray-500 tracking-[0.2em] text-[10px]">
                                     <Tooltip content="Sort by date">
                                         <button onClick={() => requestSort('date')} className="flex items-center gap-2 hover:text-white transition-colors group">
@@ -1558,53 +1894,105 @@ const AdminBookingsScreen: React.FC = () => {
                                                     );
                                                 })()}
                                             </td>
-                                            <td className="py-2 px-3">
-                                                {(() => {
-                                                    const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
-                                                    const names = svcs.map(s => s.name).join(', ') || 'Unknown Service';
-                                                    const cats = [...new Set(svcs.map(s => s.category).filter(Boolean))].join(', ') || 'N/A';
-                                                    return (
-                                                        <div>
-                                                            <p className="font-bold text-gray-300 text-sm">{names}</p>
-                                                            <span className="inline-block mt-1 px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-[9px] font-black  tracking-widest border border-blue-500/20">{cats}</span>
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </td>
-                                            <td className="py-2 px-3 hidden lg:table-cell">
-                                                <p className="text-xs font-bold text-gray-300">{booking.vehicle?.make || ''} {booking.vehicle?.model || 'N/A'}</p>
-                                                <p className="text-[10px] text-gray-600 font-mono mt-0.5  tracking-widest">{booking.vehicle?.plateNumber || 'No Plate'}</p>
-                                            </td>
-                                            <td className="py-2 px-3 text-sm">
-                                                {(() => {
-                                                    const liveMechanic = db.mechanics.find(m => m.id === booking.mechanicId) || booking.mechanic;
-                                                    return liveMechanic ? (
-                                                        <div className="flex items-center gap-2.5 max-w-[180px]">
-                                                            {liveMechanic.imageUrl ? (
-                                                                <img 
-                                                                    src={liveMechanic.imageUrl} 
-                                                                    alt={liveMechanic.name} 
-                                                                    className="w-7 h-7 rounded-full object-cover border border-white/10 shrink-0" 
-                                                                />
-                                                            ) : (
-                                                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-[10px] font-black text-white shrink-0">
-                                                                    {liveMechanic.name.charAt(0)}
+                                            {activeAdminTab === 'Services' && (
+                                                <>
+                                                    <td className="py-2 px-3">
+                                                        {(() => {
+                                                            const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+                                                            const names = svcs.map(s => s.name).join(', ') || 'Unknown Service';
+                                                            const cats = [...new Set(svcs.map(s => s.category).filter(Boolean))].join(', ') || 'N/A';
+                                                            return (
+                                                                <div>
+                                                                    <p className="font-bold text-gray-300 text-sm">{names}</p>
+                                                                    <span className="inline-block mt-1 px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-[9px] font-black tracking-widest border border-blue-500/20">{cats}</span>
                                                                 </div>
-                                                            )}
-                                                            <div className="flex flex-col min-w-0">
-                                                                <span className="font-bold text-gray-300 text-xs truncate" title={liveMechanic.name}>
-                                                                    {liveMechanic.name}
-                                                                </span>
-                                                                <span className="text-[9px] text-gray-500 font-bold truncate">
-                                                                    {liveMechanic.specializations?.[0] || liveMechanic.specialization || 'Mechanic'}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <span className="text-gray-600 font-bold text-xs">Unassigned</span>
-                                                    );
-                                                })()}
-                                            </td>
+                                                            );
+                                                        })()}
+                                                    </td>
+                                                    <td className="py-2 px-3 hidden lg:table-cell">
+                                                        <p className="text-xs font-bold text-gray-300">{booking.vehicle?.make || ''} {booking.vehicle?.model || 'N/A'}</p>
+                                                        <p className="text-[10px] text-gray-600 font-mono mt-0.5 tracking-widest">{booking.vehicle?.plateNumber || 'No Plate'}</p>
+                                                    </td>
+                                                    <td className="py-2 px-3 text-sm">
+                                                        {(() => {
+                                                            const liveMechanic = db.mechanics.find(m => m.id === booking.mechanicId) || booking.mechanic;
+                                                            return liveMechanic ? (
+                                                                <div className="flex items-center gap-2.5 max-w-[180px]">
+                                                                    {liveMechanic.imageUrl ? (
+                                                                        <img 
+                                                                            src={liveMechanic.imageUrl} 
+                                                                            alt={liveMechanic.name} 
+                                                                            className="w-7 h-7 rounded-full object-cover border border-white/10 shrink-0" 
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-[10px] font-black text-white shrink-0">
+                                                                            {liveMechanic.name.charAt(0)}
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="font-bold text-gray-300 text-xs truncate" title={liveMechanic.name}>
+                                                                            {liveMechanic.name}
+                                                                        </span>
+                                                                        <span className="text-[9px] text-gray-500 font-bold truncate">
+                                                                            {liveMechanic.specializations?.[0] || liveMechanic.specialization || 'Mechanic'}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-gray-600 font-bold text-xs">Unassigned</span>
+                                                            );
+                                                        })()}
+                                                    </td>
+                                                </>
+                                            )}
+
+                                            {activeAdminTab === 'Car Rental' && (
+                                                <>
+                                                    <td className="py-2 px-3">
+                                                        <p className="font-bold text-gray-300 text-sm">{(booking.services?.[0]?.name) || 'Car Rental'}</p>
+                                                        <span className="inline-block mt-1 px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-[9px] font-black tracking-widest border border-blue-500/20">RENTAL</span>
+                                                    </td>
+                                                    <td className="py-2 px-3">
+                                                        <p className="text-xs font-bold text-gray-300">{booking.vehicleDesc}</p>
+                                                    </td>
+                                                </>
+                                            )}
+
+                                            {activeAdminTab === 'Driver for Hire' && (
+                                                <>
+                                                    <td className="py-2 px-3">
+                                                        <p className="font-bold text-gray-300 text-sm">
+                                                            {booking.driverDetails?.name || booking.selectedDriver?.name || 'Driver Service'}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500 truncate max-w-[200px]" title={booking.notes}>{booking.notes || 'No special requirements'}</p>
+                                                    </td>
+                                                </>
+                                            )}
+
+                                            {activeAdminTab === 'Liaison' && (
+                                                <>
+                                                    <td className="py-2 px-3">
+                                                        <p className="font-black text-white text-[11px] truncate leading-tight">{booking.services?.[0]?.name || 'LTO Liaison'}</p>
+                                                    </td>
+                                                    <td className="py-2 px-3 hidden lg:table-cell">
+                                                        <p className="text-xs font-bold text-gray-300">{booking.vehicle?.make || ''} {booking.vehicle?.model || 'N/A'}</p>
+                                                        <p className="text-[10px] text-gray-600 font-mono mt-0.5 tracking-widest">{booking.vehicle?.plateNumber || 'No Plate'}</p>
+                                                    </td>
+                                                    <td className="py-2 px-3">
+                                                        <span className="text-xs font-bold text-gray-300">{booking.agentName || 'Unassigned'}</span>
+                                                        {booking.branchName && <p className="text-[10px] text-gray-500">{booking.branchName}</p>}
+                                                    </td>
+                                                </>
+                                            )}
+
+                                            {activeAdminTab === 'Towing' && (
+                                                <>
+                                                    <td className="py-2 px-3">
+                                                        <p className="font-bold text-gray-300 text-sm">Towing Request</p>
+                                                        <p className="text-xs text-gray-500 truncate max-w-[200px]" title={booking.notes}>{booking.notes || 'No details provided'}</p>
+                                                    </td>
+                                                </>
+                                            )}
                                             <td className="py-2 px-3 whitespace-nowrap">
                                                 <div>
                                                     <p className="font-bold text-white text-xs">{booking.date}</p>
@@ -1727,125 +2115,132 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                                     onClick={() => setPriceDetailsBooking(booking)}
                                                                                                     title="Click to view price breakdown"
                                                                                                 >
-                                                                                                    <span className="text-lg font-black text-white group-hover/price:text-primary transition-colors">{total > 0 ? `₱${total.toLocaleString()}` : 'For Quotation'}</span>
-                                                                                                    <span className="text-[9px] font-black text-gray-400 tracking-widest uppercase border-b border-dashed border-gray-500 pb-0.5">
-                                                                                                        {booking.paymentMethod === 'GCash' ? 'Services Price' : 
-                                                                                                         booking.isPaid ? 'Payment Confirmed' : 'Awaiting Payment'}
-                                                                                                    </span>
+                                                                                                    <span className="text-sm font-black text-white group-hover/price:text-primary transition-colors">{total > 0 ? `₱${total.toLocaleString()}` : 'For Quotation'}</span>
                                                                                                 </div>
                                                                                             );
                                                                                         })()}
                                                                                     </div>
-                                                                                    {!booking.isPaid && booking.paymentMethod !== 'GCash' && (
-                                                                                        <Tooltip content="Mark as fully paid">
-                                                                                            <button
-                                                                                                onClick={(e) => { e.stopPropagation(); handleMarkPaid(booking.id); }}
-                                                                                                className="p-2 bg-green-500/10 text-green-400 rounded-lg hover:bg-green-50 hover:text-white transition-all border border-green-500/20"
-                                                                                            >
-                                                                                                <DollarSign size={14} />
-                                                                                            </button>
-                                                                                        </Tooltip>
-                                                                                    )}
-                                                                                    {booking.isPaid && <Tooltip content="Payment confirmed"><div className="p-2 bg-green-500/10 text-green-400 rounded-lg border border-green-500/20"><CheckCircle size={14} /></div></Tooltip>}
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <button
+                                                                                            onClick={(e) => { e.stopPropagation(); setPriceDetailsBooking(booking); }}
+                                                                                            className="px-2.5 py-1 bg-[#FF7903] hover:bg-[#e06800] text-white font-black text-[9px] uppercase tracking-wider rounded transition-colors shadow-md"
+                                                                                        >
+                                                                                            DETAILS
+                                                                                        </button>
+                                                                                        {!booking.isPaid && booking.paymentMethod !== 'GCash' && (
+                                                                                            <Tooltip content="Mark as fully paid">
+                                                                                                <button
+                                                                                                    onClick={(e) => { e.stopPropagation(); handleMarkPaid(booking.id); }}
+                                                                                                    className="p-1.5 bg-green-500/10 text-green-400 rounded-lg hover:bg-green-50 hover:text-white transition-all border border-green-500/20"
+                                                                                                >
+                                                                                                    <DollarSign size={12} />
+                                                                                                </button>
+                                                                                            </Tooltip>
+                                                                                        )}
+                                                                                        {booking.isPaid && <Tooltip content="Payment confirmed"><div className="p-1.5 bg-green-500/10 text-green-400 rounded-lg border border-green-500/20"><CheckCircle size={12} /></div></Tooltip>}
+                                                                                    </div>
                                                                                 </div>
 
-                                                                                {booking.paymentMethod === 'GCash' && (
-                                                                                    <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
-                                                                                        <div className="grid grid-cols-2 gap-2">
-                                                                                            {/* Down Payment Receipt */}
-                                                                                            <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5 flex flex-col justify-between min-h-[140px]">
-                                                                                                {(() => {
-                                                                                                    const originalServicesFee = booking.services && booking.services.length > 0
-                                                                                                        ? booking.services.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0)
-                                                                                                        : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
-                                                                                                    const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
-                                                                                                    return (
-                                                                                                        <div>
-                                                                                                            <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-0.5">Down Payment</p>
-                                                                                                            <p className="text-[11px] font-black text-primary mt-0.5">{originalServicesFee > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}</p>
+                                                                                {/* Always-visible 2-column payment receipt section */}
+                                                                                <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                                        {/* Down Payment Receipt */}
+                                                                                        <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5 flex flex-col gap-2">
+                                                                                            {(() => {
+                                                                                                const originalServicesFee = booking.services && booking.services.length > 0
+                                                                                                    ? booking.services.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0)
+                                                                                                    : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+                                                                                                const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
+                                                                                                return (
+                                                                                                    <div>
+                                                                                                        <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-0.5">1st Payment</p>
+                                                                                                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                                                            <span className="text-[11px] font-black text-primary">{originalServicesFee > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}</span>
                                                                                                             {booking.isVerified && (
-                                                                                                                <span className="inline-flex items-center gap-0.5 bg-green-500/10 text-green-400 border border-green-500/20 text-[7px] font-black uppercase tracking-wider px-1 py-0.5 rounded mt-1">
-                                                                                                                    <ShieldCheck size={10} /> Verified
+                                                                                                                <span className="inline-flex items-center bg-green-500/10 text-green-400 border border-green-500/20 text-[7px] font-black uppercase tracking-wider px-1 py-0.5 rounded">
+                                                                                                                    PAID
                                                                                                                 </span>
                                                                                                             )}
                                                                                                         </div>
-                                                                                                    );
-                                                                                                })()}
-                                                                                                {(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) ? (
-                                                                                                    <div 
-                                                                                                        className="mt-1.5 rounded-lg border border-white/10 overflow-hidden bg-black/40 h-16 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
-                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl)}
-                                                                                                    >
-                                                                                                        <img 
-                                                                                                            src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl} 
-                                                                                                            alt="Down Payment" 
-                                                                                                            className="w-full h-full object-contain"
-                                                                                                        />
                                                                                                     </div>
-                                                                                                ) : (
-                                                                                                    <div className="mt-1.5 rounded-lg border border-white/5 border-dashed h-16 flex flex-col items-center justify-center text-center p-1 bg-black/20">
-                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting Upload</span>
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-
-                                                                                            {/* Final Payment Receipt */}
-                                                                                            <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5 flex flex-col justify-between min-h-[140px]">
-                                                                                                {(() => {
-                                                                                                    const originalServicesFee = booking.services && booking.services.length > 0
-                                                                                                        ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
-                                                                                                        : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
-                                                                                                    const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
-                                                                                                    const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
-                                                                                                    const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-                                                                                                    const finalPaymentAmount = serviceBalance + additionalCostsTotal;
-                                                                                                    return (
-                                                                                                        <div>
-                                                                                                            <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-0.5">Final Payment</p>
-                                                                                                            <p className="text-[11px] font-black text-primary mt-0.5">{finalPaymentAmount > 0 ? `₱${finalPaymentAmount.toLocaleString()}` : 'For Quotation'}</p>
-                                                                                                            {booking.isPaid && (
-                                                                                                                <span className="inline-flex items-center gap-0.5 bg-green-500/10 text-green-400 border border-green-500/20 text-[7px] font-black uppercase tracking-wider px-1 py-0.5 rounded mt-1">
-                                                                                                                    <ShieldCheck size={10} /> Verified
-                                                                                                                </span>
-                                                                                                            )}
-                                                                                                        </div>
-                                                                                                    );
-                                                                                                })()}
-                                                                                                {booking.gcashBalanceReceiptUrl ? (
-                                                                                                    <div 
-                                                                                                        className="mt-1.5 rounded-lg border border-white/10 overflow-hidden bg-black/40 h-16 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
-                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashBalanceReceiptUrl)}
-                                                                                                    >
-                                                                                                        <img 
-                                                                                                            src={booking.gcashBalanceReceiptUrl} 
-                                                                                                            alt="Final Payment" 
-                                                                                                            className="w-full h-full object-contain"
-                                                                                                        />
-                                                                                                    </div>
-                                                                                                ) : (
-                                                                                                    <div className="mt-1.5 rounded-lg border border-white/5 border-dashed h-16 flex flex-col items-center justify-center text-center p-1 bg-black/20">
-                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting Upload</span>
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
+                                                                                                );
+                                                                                            })()}
+                                                                                            {(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) ? (
+                                                                                                <div
+                                                                                                    className="rounded-lg border border-white/10 overflow-hidden bg-black/40 h-20 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                                                                                                    onClick={() => setPreviewImageUrl(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl)}
+                                                                                                >
+                                                                                                    <img
+                                                                                                        src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
+                                                                                                        alt="1st Payment"
+                                                                                                        className="w-full h-full object-contain"
+                                                                                                    />
+                                                                                                </div>
+                                                                                            ) : (
+                                                                                                <div className="rounded-lg border border-white/5 border-dashed h-20 flex flex-col items-center justify-center text-center p-1 bg-black/20">
+                                                                                                    <span className="text-[8px] font-bold text-gray-600">Awaiting Upload</span>
+                                                                                                </div>
+                                                                                            )}
                                                                                         </div>
 
-                                                                                        {!booking.isVerified && (booking.gcashReference || booking.gcashReceiptUrl) && (
-                                                                                            <div className="pt-1">
-                                                                                                <Tooltip content="Verify GCash payment" className="w-full">
-                                                                                                    <button
-                                                                                                        onClick={(e) => { e.stopPropagation(); verifyBookingPayment(booking.id); }}
-                                                                                                        className="w-full h-9 py-2 bg-[#FF7903] hover:bg-[#e06800] text-white font-black tracking-widest text-[9px] rounded-lg transition-all shadow-lg flex items-center justify-center gap-1.5"
-                                                                                                    >
-                                                                                                        <ShieldCheck size={11} /> Verify Payment
-                                                                                                    </button>
-                                                                                                </Tooltip>
-                                                                                            </div>
-                                                                                        )}
+                                                                                        {/* Final Payment Receipt */}
+                                                                                        <div className="bg-white/[0.02] p-2.5 rounded-lg border border-white/5 flex flex-col gap-2">
+                                                                                            {(() => {
+                                                                                                const originalServicesFee = booking.services && booking.services.length > 0
+                                                                                                    ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                                                                                                    : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+                                                                                                const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
+                                                                                                const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                                                                                                const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                                                                                                const finalPaymentAmount = serviceBalance + additionalCostsTotal;
+                                                                                                return (
+                                                                                                    <div>
+                                                                                                        <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-0.5">Final Payment</p>
+                                                                                                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                                                            <span className="text-[11px] font-black text-primary">{finalPaymentAmount > 0 ? `₱${finalPaymentAmount.toLocaleString()}` : 'For Quotation'}</span>
+                                                                                                            {booking.isPaid && (
+                                                                                                                <span className="inline-flex items-center bg-green-500/10 text-green-400 border border-green-500/20 text-[7px] font-black uppercase tracking-wider px-1 py-0.5 rounded">
+                                                                                                                    PAID
+                                                                                                                </span>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                );
+                                                                                            })()}
+                                                                                            {booking.gcashBalanceReceiptUrl ? (
+                                                                                                <div
+                                                                                                    className="rounded-lg border border-white/10 overflow-hidden bg-black/40 h-20 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                                                                                                    onClick={() => setPreviewImageUrl(booking.gcashBalanceReceiptUrl)}
+                                                                                                >
+                                                                                                    <img
+                                                                                                        src={booking.gcashBalanceReceiptUrl}
+                                                                                                        alt="Final Payment"
+                                                                                                        className="w-full h-full object-contain"
+                                                                                                    />
+                                                                                                </div>
+                                                                                            ) : (
+                                                                                                <div className="rounded-lg border border-white/5 border-dashed h-20 flex flex-col items-center justify-center text-center p-1 bg-black/20">
+                                                                                                    <span className="text-[8px] font-bold text-gray-600">Awaiting Upload</span>
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
                                                                                     </div>
-                                                                                )}
+
+                                                                                    {!booking.isVerified && (booking.gcashReference || booking.gcashReceiptUrl) && (
+                                                                                        <div className="pt-1">
+                                                                                            <Tooltip content="Verify GCash payment" className="w-full">
+                                                                                                <button
+                                                                                                    onClick={(e) => { e.stopPropagation(); verifyBookingPayment(booking.id); }}
+                                                                                                    className="w-full h-9 py-2 bg-[#FF7903] hover:bg-[#e06800] text-white font-black tracking-widest text-[9px] rounded-lg transition-all shadow-lg flex items-center justify-center gap-1.5"
+                                                                                                >
+                                                                                                    <ShieldCheck size={11} /> Verify Payment
+                                                                                                </button>
+                                                                                            </Tooltip>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
                                                                             </div>
-                                                                            {/* Legacy GCash Verified card removed */}
+                                            {/* Legacy GCash Verified card removed */}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -1856,93 +2251,619 @@ const AdminBookingsScreen: React.FC = () => {
                                                             <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full flex flex-col">
                                                                 <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
                                                                     <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                                                        <Edit size={14} />
+                                                                        <Wrench size={14} />
                                                                     </div>
-                                                                    Service & Management
+                                                                    Service Details
                                                                 </h4>
                                                                 <div className="space-y-3 flex-1 flex flex-col">
-                                                                    <div className="flex gap-3 items-start">
-                                                                        <img 
-                                                                            src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)} 
-                                                                            alt={booking.service?.name || 'Service'} 
-                                                                            className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
-                                                                            onError={(e) => {
-                                                                                (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category);
-                                                                            }}
-                                                                        />
-                                                                        <div className="min-w-0 flex-1">
-                                                                            <p className="text-primary font-black text-sm leading-tight truncate">{booking.service?.name || 'Unknown Service'}</p>
-                                                                            <p className="text-[10px] text-gray-500 mt-1 leading-normal line-clamp-2">{booking.service?.description || 'No description.'}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                                    <div className="grid grid-cols-2 gap-2">
-                                                                                        <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
-                                                                                            <Clock size={14} className="text-primary shrink-0" />
-                                                                                            <div>
-                                                                                                <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Duration</p>
-                                                                                                <p className="text-[11px] font-black text-white mt-0.5">{booking.service?.estimatedTime || 'N/A'}</p>
+                                                                    {activeAdminTab === 'Services' && (
+                                                                        <>
+                                                                            <div className="flex gap-3 items-start">
+                                                                                <img 
+                                                                                    src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)} 
+                                                                                    alt={booking.service?.name || 'Service'} 
+                                                                                    className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
+                                                                                    onError={(e) => {
+                                                                                        (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category);
+                                                                                    }}
+                                                                                />
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="text-primary font-black text-sm leading-tight truncate">{booking.service?.name || 'Unknown Service'}</p>
+                                                                                    <p className="text-[10px] text-gray-500 mt-1 leading-normal line-clamp-2">{booking.service?.description || 'No description.'}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="grid grid-cols-2 gap-2">
+                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                    <Clock size={14} className="text-primary shrink-0" />
+                                                                                    <div>
+                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Duration</p>
+                                                                                        <p className="text-[11px] font-black text-white mt-0.5">{booking.service?.duration || 'N/A'}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                    <Calendar size={14} className="text-primary shrink-0" />
+                                                                                    <div>
+                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Scheduled</p>
+                                                                                        <p className="text-[11px] font-black text-white mt-0.5">{booking.date}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="pt-2 border-t border-white/5 mt-auto">
+                                                                                <h4 className="text-[9px] font-black tracking-widest text-gray-600 mb-2 ml-1">Assigned Mechanic</h4>
+                                                                                {booking.mechanic ? (
+                                                                                    <div className="flex items-center gap-2.5 bg-white/5 p-2.5 rounded-lg border border-white/5">
+                                                                                        {booking.mechanic.imageUrl ? (
+                                                                                            <img
+                                                                                                src={getProfileImage(booking.mechanic.imageUrl, 'mechanic')}
+                                                                                                alt={booking.mechanic.name}
+                                                                                                className="w-8 h-8 rounded-xl object-cover border border-white/10 shrink-0"
+                                                                                            />
+                                                                                        ) : (
+                                                                                            <div className="w-8 h-8 bg-primary/20 rounded-xl flex items-center justify-center text-sm font-black text-primary shrink-0">
+                                                                                                {booking.mechanic.name.charAt(0)}
+                                                                                            </div>
+                                                                                        )}
+                                                                                        <div>
+                                                                                            <p className="font-black text-white text-xs">{booking.mechanic.name}</p>
+                                                                                            <p className="text-[9px] text-gray-500 font-bold">Elite Professional</p>
+                                                                                        </div>
+                                                                                        <Tooltip content="Reassign mechanic">
+                                                                                            <button
+                                                                                                onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
+                                                                                                className="ml-auto p-1.5 text-gray-500 hover:text-primary transition-colors"
+                                                                                            >
+                                                                                                <Edit size={14} />
+                                                                                            </button>
+                                                                                        </Tooltip>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <Tooltip content="Assign a mechanic to this booking">
+                                                                                        <button
+                                                                                            onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
+                                                                                            className="w-full py-2 bg-primary text-white font-black tracking-widest text-[9px] rounded-lg hover:bg-orange-600 transition-all flex items-center justify-center gap-1.5"
+                                                                                        >
+                                                                                            <Users size={12} /> Assign Mechanic
+                                                                                        </button>
+                                                                                    </Tooltip>
+                                                                                )}
+                                                                            </div>
+                                                                        </>
+                                                                    )}
+
+                                                                    {activeAdminTab === 'Liaison' && (
+                                                                        <>
+                                                                            {/* Service type header */}
+                                                                            <div className="flex gap-3 items-start">
+                                                                                <img 
+                                                                                    src={booking.service?.imageUrl || getFallbackImageForCategory('Liason Services')} 
+                                                                                    alt={booking.services?.[0]?.name || 'LTO Liaison Service'} 
+                                                                                    className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
+                                                                                    onError={(e) => {
+                                                                                        (e.target as HTMLImageElement).src = getFallbackImageForCategory('Liason Services');
+                                                                                    }}
+                                                                                />
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="text-primary font-black text-sm leading-tight truncate">{booking.services?.[0]?.name || 'LTO Liaison Service'}</p>
+                                                                                    <p className="text-[10px] text-gray-500 mt-0.5">LTO Office: <span className="text-gray-300 font-black">{booking.branchName || 'Any Branch'}</span></p>
+                                                                                    <p className="text-[10px] text-gray-500 mt-0.5">Type: <span className="text-gray-300 font-black">{(booking as any).serviceType || booking.services?.[0]?.category || 'General Liaison'}</span></p>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Liaison Agent */}
+                                                                            <div className="pt-2 border-t border-white/5">
+                                                                                <h4 className="text-[9px] font-black tracking-widest text-gray-600 mb-2 ml-1">Liaison Agent</h4>
+                                                                                {(() => {
+                                                                                    const agentId = (booking as any).agentId || (booking as any).liaisonId;
+                                                                                    const agentName = booking.agentName || (booking as any).liaisonName;
+                                                                                    const agentObj = db.liaisonStaff?.find((s: any) => s.id === agentId || s.name === agentName);
+                                                                                    const staffList = db.liaisonStaff || [];
+
+                                                                                    return (
+                                                                                        <div className="space-y-2">
+                                                                                            {agentName && agentName !== 'Pending Assignment' && agentName !== 'Assigned Liaison' ? (
+                                                                                                <div className="bg-white/5 rounded-xl border border-white/10 p-3 flex gap-3 items-start">
+                                                                                                    {agentObj?.imageUrl ? (
+                                                                                                        <img
+                                                                                                            src={agentObj.imageUrl}
+                                                                                                            alt={agentName}
+                                                                                                            className="w-14 h-14 rounded-xl object-cover border-2 border-primary/30 shrink-0"
+                                                                                                        />
+                                                                                                    ) : (
+                                                                                                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center text-xl font-black text-white shrink-0">
+                                                                                                            {agentName.charAt(0)}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    <div className="flex-1 min-w-0">
+                                                                                                        <p className="text-white font-black text-xs leading-tight">{agentName}</p>
+                                                                                                        <p className="text-[9px] text-gray-500 mt-0.5 truncate">{booking.branchName || 'LTO Office'}</p>
+                                                                                                        {agentObj?.phone && <p className="text-[9px] text-primary font-bold mt-0.5">{agentObj.phone}</p>}
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            ) : (
+                                                                                                <p className="text-[9px] text-gray-500 italic ml-1 mb-1">No liaison officer assigned yet.</p>
+                                                                                            )}
+                                                                                            
+                                                                                            {/* Staff assignment dropdown */}
+                                                                                            <div className="relative group/assign select-none">
+                                                                                                <select 
+                                                                                                    value={agentId || 'unassigned'}
+                                                                                                    onChange={async (e) => {
+                                                                                                        const selectedId = e.target.value;
+                                                                                                        const foundStaff = staffList.find((s: any) => s.id === selectedId);
+                                                                                                        if (foundStaff) {
+                                                                                                            await updateDoc(doc(firestoreDB, 'liaisonBookings', booking.id), {
+                                                                                                                liaisonId: foundStaff.id,
+                                                                                                                liaisonName: foundStaff.name,
+                                                                                                                status: 'Assigned'
+                                                                                                            });
+                                                                                                            addNotification({ type: 'success', title: 'Liaison Assigned', message: `Assigned ${foundStaff.name} to booking.`, recipientId: 'admin' });
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    onClick={e => e.stopPropagation()}
+                                                                                                    className="w-full bg-white/5 border border-white/10 py-1.5 px-3 rounded-lg text-[9px] font-black tracking-widest text-gray-400 hover:text-white hover:border-primary transition-all outline-none appearance-none cursor-pointer"
+                                                                                                >
+                                                                                                    <option value="unassigned" className="bg-[#121212]">{agentName === 'Pending Assignment' ? 'Select liaison officer to assign...' : 'Change Assignment...'}</option>
+                                                                                                    {staffList.map((s: any) => (
+                                                                                                        <option key={s.id} value={s.id} className="bg-[#121212]">{s.name} ({s.isAvailable ? 'Available' : 'Busy'})</option>
+                                                                                                    ))}
+                                                                                                </select>
+                                                                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover/assign:text-primary transition-colors" size={12} />
                                                                                             </div>
                                                                                         </div>
-                                                                                        <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
-                                                                                            <Calendar size={14} className="text-primary shrink-0" />
-                                                                                            <div>
-                                                                                                <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Scheduled</p>
-                                                                                                <p className="text-[11px] font-black text-white mt-0.5">{booking.date}</p>
+                                                                                    );
+                                                                                })()}
+                                                                            </div>
+
+                                                                            {/* Appointment & Pickup Info (Row layout) */}
+                                                                            <div className="flex flex-col gap-2">
+                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                    <Calendar size={13} className="text-primary shrink-0" />
+                                                                                    <div>
+                                                                                        <p className="text-[8px] font-black text-gray-500 tracking-widest uppercase">Appointment Details</p>
+                                                                                        <p className="text-[10px] font-black text-white mt-0.5">{booking.date || (booking as any).appointmentDate || 'TBD'} • {booking.time || (booking as any).appointmentTime || ''}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                    <MapPin size={13} className="text-primary shrink-0" />
+                                                                                    <div className="min-w-0">
+                                                                                        <p className="text-[8px] font-black text-gray-500 tracking-widest uppercase">Pickup Info</p>
+                                                                                        <p className="text-[10px] font-black text-white mt-0.5 truncate">{(booking as any).pickupOption || 'Customer Brings'}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </>
+                                                                    )}
+
+                                                                    {activeAdminTab === 'Car Rental' && (
+                                                                        <>
+                                                                            <div className="flex gap-3 items-start">
+                                                                                <div className="w-12 h-12 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 shrink-0">
+                                                                                    <Calendar size={24} />
+                                                                                </div>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="text-primary font-black text-sm leading-tight truncate">{booking.services?.[0]?.name || 'Rental Vehicle'}</p>
+                                                                                    <p className="text-[10px] text-gray-500 mt-1 leading-normal line-clamp-2">Option: {booking.deliveryOption || 'Self Pickup'}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="grid grid-cols-2 gap-2 mt-auto">
+                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                    <Calendar size={14} className="text-primary shrink-0" />
+                                                                                    <div className="min-w-0">
+                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Rental Period</p>
+                                                                                        <p className="text-[10px] font-black text-white mt-0.5 truncate" title={booking.vehicleDesc}>{booking.vehicleDesc}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
+                                                                                    <Search size={14} className="text-primary shrink-0" />
+                                                                                    <div className="min-w-0">
+                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Pickup Location</p>
+                                                                                        <p className="text-[10px] font-black text-white mt-0.5 truncate" title={booking.pickupLocation}>{booking.pickupLocation || 'Branch Office'}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </>
+                                                                    )}
+
+                                                                    {activeAdminTab === 'Driver for Hire' && (() => {
+                                                                        const currentFields = editingDriverFields[booking.id] || {
+                                                                            driverName: booking.driverName || 'Pending Assignment',
+                                                                            driverPhone: booking.driverPhone || '',
+                                                                            estimatedArrivalTime: booking.estimatedArrivalTime || '',
+                                                                            remarks: booking.remarks || ''
+                                                                        };
+
+                                                                        const handleFieldChange = (field: string, val: string) => {
+                                                                            setEditingDriverFields(prev => ({
+                                                                                ...prev,
+                                                                                [booking.id]: {
+                                                                                    ...currentFields,
+                                                                                    [field]: val
+                                                                                }
+                                                                            }));
+                                                                        };
+
+                                                                        const handleSaveDetails = async () => {
+                                                                            try {
+                                                                                await updateDoc(doc(firestoreDB, 'serviceRequests', booking.id), {
+                                                                                    driverName: currentFields.driverName,
+                                                                                    driverPhone: currentFields.driverPhone,
+                                                                                    estimatedArrivalTime: currentFields.estimatedArrivalTime,
+                                                                                    remarks: currentFields.remarks
+                                                                                });
+                                                                                addNotification({ type: 'success', title: 'Driver Assigned', message: 'Driver details updated successfully.', recipientId: 'admin' });
+                                                                            } catch (e) {
+                                                                                addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'admin' });
+                                                                            }
+                                                                        };
+
+                                                                        return (
+                                                                            <div className="space-y-3 flex-1 flex flex-col justify-between">
+                                                                                <div className="space-y-2.5">
+                                                                                    {/* Trip details overview */}
+                                                                                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl space-y-1 text-[10px]">
+                                                                                        <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Route:</span> <span className="text-white font-medium">{booking.details?.pickupLocation || 'N/A'} ➔ {booking.details?.destination || 'N/A'}</span></div>
+                                                                                        <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Vehicle:</span> <span className="text-white font-medium">{booking.vehicleDetails ? `${booking.vehicleDetails.brand} ${booking.vehicleDetails.model} (${booking.vehicleDetails.plateNumber})` : 'Driver provides vehicle'}</span></div>
+                                                                                        <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Duration:</span> <span className="text-white font-medium">{booking.details?.duration || 'N/A'}</span></div>
+                                                                                        <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Customer Notes:</span> <span className="text-gray-400 italic">"{booking.notes || 'No notes'}"</span></div>
+                                                                                    </div>
+
+                                                                                    <div className="pt-2 border-t border-white/5">
+                                                                                        <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-2">// Coordinate & Assign Driver</h4>
+                                                                                        
+                                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                                            {/* Driver Selector */}
+                                                                                            <div className="space-y-1">
+                                                                                                <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Driver Name</label>
+                                                                                                <select 
+                                                                                                    value={currentFields.driverName}
+                                                                                                    onChange={e => handleFieldChange('driverName', e.target.value)}
+                                                                                                    className="w-full bg-white/5 border border-white/10 p-2 rounded-lg text-[10px] text-white outline-none cursor-pointer"
+                                                                                                >
+                                                                                                    {['Pending Assignment', 'Cristopher Cruz', 'Danilo Santos', 'Generoso Reyes', 'Efren Salonga'].map(name => (
+                                                                                                        <option key={name} value={name} className="bg-[#121212]">{name}</option>
+                                                                                                    ))}
+                                                                                                </select>
+                                                                                            </div>
+
+                                                                                            {/* Driver Phone */}
+                                                                                            <div className="space-y-1">
+                                                                                                <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Driver Contact</label>
+                                                                                                <input 
+                                                                                                    type="tel"
+                                                                                                    value={currentFields.driverPhone}
+                                                                                                    onChange={e => handleFieldChange('driverPhone', e.target.value)}
+                                                                                                    placeholder="Phone number"
+                                                                                                    className="w-full bg-white/5 border border-white/10 p-2 rounded-lg text-[10px] text-white outline-none"
+                                                                                                />
+                                                                                            </div>
+                                                                                        </div>
+
+                                                                                        <div className="grid grid-cols-2 gap-2 mt-2">
+                                                                                            {/* ETA */}
+                                                                                            <div className="space-y-1">
+                                                                                                <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Est. Arrival Time</label>
+                                                                                                <input 
+                                                                                                    type="text"
+                                                                                                    value={currentFields.estimatedArrivalTime}
+                                                                                                    onChange={e => handleFieldChange('estimatedArrivalTime', e.target.value)}
+                                                                                                    placeholder="e.g. 10:30 AM"
+                                                                                                    className="w-full bg-white/5 border border-white/10 p-2 rounded-lg text-[10px] text-white outline-none"
+                                                                                                />
+                                                                                            </div>
+                                                                                            
+                                                                                            {/* Remarks */}
+                                                                                            <div className="space-y-1">
+                                                                                                <label className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Remarks / Remarks</label>
+                                                                                                <input 
+                                                                                                    type="text"
+                                                                                                    value={currentFields.remarks}
+                                                                                                    onChange={e => handleFieldChange('remarks', e.target.value)}
+                                                                                                    placeholder="Remarks"
+                                                                                                    className="w-full bg-white/5 border border-white/10 p-2 rounded-lg text-[10px] text-white outline-none"
+                                                                                                />
                                                                                             </div>
                                                                                         </div>
                                                                                     </div>
+                                                                                </div>
 
-                                                                                    <div className="pt-2 border-t border-white/5 mt-auto">
-                                                                                        <h4 className="text-[9px] font-black tracking-widest text-gray-600 mb-2 ml-1">Assigned Mechanic</h4>
-                                                                                        {booking.mechanic ? (
-                                                                                            <div className="flex items-center gap-2.5 bg-white/5 p-2.5 rounded-lg border border-white/5">
-                                                                                                {booking.mechanic.imageUrl ? (
-                                                                                                    <img
-                                                                                                        src={getProfileImage(booking.mechanic.imageUrl, 'mechanic')}
-                                                                                                        alt={booking.mechanic.name}
-                                                                                                        className="w-8 h-8 rounded-xl object-cover border border-white/10 shrink-0"
-                                                                                                    />
+                                                                                <button
+                                                                                    onClick={handleSaveDetails}
+                                                                                    className="w-full bg-primary hover:bg-[#e06800] text-white font-bold py-2 rounded-lg transition-all text-[10px] mt-2 shadow-lg shadow-primary/20 uppercase tracking-widest"
+                                                                                    style={{ backgroundColor: accentColor }}
+                                                                                >
+                                                                                    Save Driver Assignment
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    })()}
+
+                                                                    {activeAdminTab === 'Towing' && (
+                                                                        <>
+                                                                            <div className="flex gap-3 items-start">
+                                                                                <div className="w-12 h-12 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
+                                                                                    <Search size={24} />
+                                                                                </div>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="text-primary font-black text-sm leading-tight truncate">Emergency Towing Request</p>
+                                                                                    <p className="text-[10px] text-gray-500 mt-1 leading-normal line-clamp-2">Date: {booking.date} at {formatTimeToAmPm(booking.time)}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="pt-2 border-t border-white/5 space-y-2">
+                                                                                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                                                                                    <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase">Pickup Location</p>
+                                                                                    <p className="text-[10px] font-bold text-gray-300 truncate mt-0.5" title={booking.location ? `${booking.location.latitude}, ${booking.location.longitude}` : 'Current GPS location'}>
+                                                                                        {booking.location ? `Latitude: ${booking.location.latitude}, Longitude: ${booking.location.longitude}` : 'Current GPS location'}
+                                                                                    </p>
+                                                                                </div>
+                                                                                <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+                                                                                    <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase">Destination</p>
+                                                                                    <p className="text-[10px] font-bold text-gray-300 truncate mt-0.5" title={booking.destination ? `${booking.destination.latitude}, ${booking.destination.longitude}` : 'Not Specified'}>
+                                                                                        {booking.destination ? `Latitude: ${booking.destination.latitude}, Longitude: ${booking.destination.longitude}` : 'RidersBUD Main HQ'}
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+                                                                        </>
+                                                                    )}
+
+                                                                    {activeAdminTab !== 'Liaison' && (
+                                                                        <div className="pt-2 border-t border-white/5 space-y-2 mt-auto">
+                                                                            <h4 className="text-[9px] font-black  tracking-widest text-gray-600 ml-1">Update Status</h4>
+                                                                            <div className="flex gap-2">
+                                                                                <div className="flex-1 relative group/select">
+                                                                                    <select id={`booking-status-${booking.id}`} name={`booking-status-${booking.id}`}
+                                                                                        value={booking.status}
+                                                                                        onChange={(e) => handleStatusChange(booking, e.target.value)}
+                                                                                        onClick={e => e.stopPropagation()}
+                                                                                        className="w-full bg-white/5 border border-white/10 py-2.5 px-3 rounded-lg text-[10px] font-black  tracking-widest text-white hover:border-primary transition-all outline-none appearance-none cursor-pointer"
+                                                                                    >
+                                                                                        {(() => {
+                                                                                            let options = ['Pending', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled'];
+                                                                                            if (activeAdminTab === 'Liaison') {
+                                                                                                options = ['Booking Received', 'Processing', 'Assigned', 'Completed', 'Cancelled'];
+                                                                                            } else if (activeAdminTab === 'Car Rental') {
+                                                                                                options = ['Received', 'Pending', 'Approved', 'Completed', 'Cancelled'];
+                                                                                            } else if (activeAdminTab === 'Driver for Hire') {
+                                                                                                options = ['Pending Admin Review', 'For Verification', 'Awaiting Driver Availability', 'Driver Assigned', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
+                                                                                            } else if (activeAdminTab === 'Towing') {
+                                                                                                options = ['Pending', 'In Progress', 'Completed', 'Cancelled'];
+                                                                                            }
+                                                                                            return options.map(s => <option key={s} value={s} className="bg-[#121212]">{s}</option>);
+                                                                                        })()}
+                                                                                    </select>
+                                                                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover/select:text-primary transition-colors" size={14} />
+                                                                                </div>
+                                                                                {booking.status !== 'Cancelled' && (
+                                                                                    <Tooltip content="Cancel this booking">
+                                                                                        <button
+                                                                                            onClick={(e) => { e.stopPropagation(); setCancellingBooking(booking); }}
+                                                                                            className="px-4 py-2.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-500/20 font-black  tracking-widest text-[9px]"
+                                                                                        >
+                                                                                            Cancel
+                                                                                        </button>
+                                                                                    </Tooltip>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* TIMELINE / DOCUMENTS CARD — conditional by tab */}
+                                                        {activeAdminTab === 'Liaison' ? (
+                                                            /* Uploaded Documents Panel for Liaison tab */
+                                                            <div className="flex flex-col">
+                                                                <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-blue-500/30 transition-all flex flex-col">
+                                                                    <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
+                                                                        <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400">
+                                                                            <ExternalLink size={14} />
+                                                                        </div>
+                                                                        Uploaded Documents
+                                                                        <span className="ml-auto bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[9px] font-black px-2 py-0.5 rounded-full">
+                                                                            {((booking as any).documents?.length || 0)}
+                                                                        </span>
+                                                                    </h4>
+                                                                    <div className="flex-1 space-y-2 pr-0.5">
+                                                                        {(() => {
+                                                                            const docs: { name: string; url: string; type?: string; size?: number }[] = ((booking as any).documents || []);
+                                                                            if (docs.length === 0) {
+                                                                                return (
+                                                                                    <div className="flex flex-col items-center justify-center h-full text-center space-y-3 py-8">
+                                                                                        <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                                                                                            <ExternalLink size={18} className="text-gray-700" />
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <p className="text-[11px] font-black text-gray-500 tracking-wider">No Documents Uploaded</p>
+                                                                                            <p className="text-[9px] text-gray-700 mt-1">Customer has not uploaded any documents yet.</p>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                            return docs.map((doc, idx) => {
+                                                                                const isImage = doc.url && (
+                                                                                    doc.url.startsWith('data:image') || 
+                                                                                    doc.type?.startsWith('image/') || 
+                                                                                    /\.(jpg|jpeg|png|gif|webp|svg)/i.test(doc.url) || 
+                                                                                    /\.(jpg|jpeg|png|gif|webp|svg)/i.test(doc.name || '')
+                                                                                );
+                                                                                const isPdf = doc.type?.includes('pdf') || /\.pdf/i.test(doc.url || '') || /\.pdf/i.test(doc.name || '');
+                                                                                const ext = isPdf ? 'PDF' : isImage ? 'IMG' : 'FILE';
+                                                                                const extColor = isPdf ? 'text-red-400 bg-red-500/10 border-red-500/20' : isImage ? 'text-green-400 bg-green-500/10 border-green-500/20' : 'text-blue-400 bg-blue-500/10 border-blue-500/20';
+                                                                                
+                                                                                const handlePreview = (e: React.MouseEvent) => {
+                                                                                    e.stopPropagation();
+                                                                                    setPreviewDocName(doc.name);
+                                                                                    setPreviewImageUrl(doc.url);
+                                                                                };
+
+                                                                                return (
+                                                                                    <div key={idx} className="group/doc bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-blue-500/20 rounded-lg p-1.5 transition-all">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            {/* Icon / Thumbnail */}
+                                                                                            <div className="shrink-0">
+                                                                                                {isImage && doc.url ? (
+                                                                                                    <div
+                                                                                                        className="w-8 h-8 rounded overflow-hidden border border-white/10 cursor-pointer hover:border-blue-400/50 transition-colors"
+                                                                                                        onClick={handlePreview}
+                                                                                                    >
+                                                                                                        <img src={doc.url} alt={doc.name} className="w-full h-full object-cover" />
+                                                                                                    </div>
                                                                                                 ) : (
-                                                                                                    <div className="w-8 h-8 bg-primary/20 rounded-xl flex items-center justify-center text-sm font-black text-primary shrink-0">
-                                                                                                        {booking.mechanic.name.charAt(0)}
+                                                                                                    <div 
+                                                                                                        className={`w-8 h-8 rounded flex flex-col items-center justify-center border text-[7px] font-black tracking-wider cursor-pointer ${extColor}`}
+                                                                                                        onClick={handlePreview}
+                                                                                                    >
+                                                                                                        <ExternalLink size={10} />
+                                                                                                        <span className="mt-0.5">{ext}</span>
                                                                                                     </div>
                                                                                                 )}
-                                                                                                <div>
-                                                                                                    <p className="font-black text-white text-xs">{booking.mechanic.name}</p>
-                                                                                                    <p className="text-[9px] text-gray-500 font-bold">Elite Professional</p>
+                                                                                            </div>
+                                                                                            {/* Info */}
+                                                                                            <div className="flex-1 min-w-0">
+                                                                                                <p className="text-[9.5px] font-black text-white truncate leading-tight">{doc.name}</p>
+                                                                                                <div className="flex items-center gap-2 mt-0.5">
+                                                                                                    {doc.size && <span className="text-[8px] text-gray-600 font-medium">{(doc.size / 1024).toFixed(1)} KB</span>}
+                                                                                                    {doc.type && <span className="text-[8px] text-gray-650 truncate max-w-[80px]">{doc.type.split('/')[1] || doc.type}</span>}
                                                                                                 </div>
-                                                                                                <Tooltip content="Reassign mechanic">
+                                                                                            </div>
+                                                                                            {/* Actions */}
+                                                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                                                <Tooltip content="Preview document">
                                                                                                     <button
-                                                                                                        onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
-                                                                                                        className="ml-auto p-1.5 text-gray-500 hover:text-primary transition-colors"
+                                                                                                        onClick={handlePreview}
+                                                                                                        className="p-1 rounded bg-white/5 hover:bg-blue-500/10 text-gray-500 hover:text-blue-400 border border-white/5 hover:border-blue-500/20 transition-all"
                                                                                                     >
-                                                                                                        <Edit size={14} />
+                                                                                                        <Eye size={10} />
                                                                                                     </button>
                                                                                                 </Tooltip>
+                                                                                                {doc.url && (
+                                                                                                    <Tooltip content="Open document link">
+                                                                                                        <a
+                                                                                                            href={doc.url}
+                                                                                                            target="_blank"
+                                                                                                            rel="noopener noreferrer"
+                                                                                                            onClick={(e) => e.stopPropagation()}
+                                                                                                            className="p-1 rounded bg-white/5 hover:bg-blue-500/10 text-gray-500 hover:text-blue-400 border border-white/5 hover:border-blue-500/20 transition-all"
+                                                                                                        >
+                                                                                                            <ExternalLink size={10} />
+                                                                                                        </a>
+                                                                                                    </Tooltip>
+                                                                                                )}
                                                                                             </div>
-                                                                        ) : (
-                                                                            <Tooltip content="Assign a mechanic to this booking">
-                                                                                <button
-                                                                                    onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
-                                                                                    className="w-full py-2 bg-primary text-white font-black tracking-widest text-[9px] rounded-lg hover:bg-orange-600 transition-all flex items-center justify-center gap-1.5"
-                                                                                >
-                                                                                    <Users size={12} /> Assign Mechanic
-                                                                                </button>
-                                                                            </Tooltip>
-                                                                        )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            });
+                                                                        })()}
                                                                     </div>
-                                 
-                                                                    <div className="pt-2 border-t border-white/5 space-y-2">
-                                                                        <h4 className="text-[9px] font-black  tracking-widest text-gray-600 ml-1">Update Status</h4>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            /* Progress Tracking Timeline for all other tabs */
+                                                            <div className="flex flex-col h-full">
+                                                                <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full overflow-hidden flex flex-col">
+                                                                    <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
+                                                                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                                                            <Clock size={14} />
+                                                                        </div>
+                                                                        Progress Tracking
+                                                                    </h4>
+                                                                    <div className="flex-1 space-y-2 relative pl-3">
+                                                                        <div className="absolute left-[19px] top-2 bottom-6 w-0.5 bg-gradient-to-b from-primary via-primary/20 to-transparent"></div>
+                                                                        {(() => {
+                                                                            const timelineData = getTimelineData(booking.status, booking.statusHistory);
+                                                                            return timelineData.length > 0 ? (
+                                                                                timelineData.map((s, i) => (
+                                                                                    <div key={i} className="flex gap-3 relative group/step">
+                                                                                        <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black z-10 transition-all duration-300 ${i === timelineData.length - 1 ? 'bg-primary text-white shadow-lg' : 'bg-[#202020] text-gray-600 border border-white/5'}`}>
+                                                                                            {i + 1}
+                                                                                        </div>
+                                                                                        <div className="pt-0.5">
+                                                                                            <p className={`text-xs font-black  tracking-widest transition-colors ${i === timelineData.length - 1 ? 'text-white' : 'text-gray-600'}`}>{s.status}</p>
+                                                                                            <div className="flex items-center gap-1 mt-0.5">
+                                                                                                <Clock size={8} className="text-gray-700" />
+                                                                                                <p className="text-[8px] text-gray-700 font-black  tracking-widest">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ))
+                                                                            ) : (
+                                                                                <div className="flex flex-col items-center justify-center h-full text-center space-y-2 py-6">
+                                                                                    <Clock size={18} className="text-gray-700" />
+                                                                                    <p className="text-[10px] text-gray-600 font-bold tracking-wider">No timeline history recorded.</p>
+                                                                                </div>
+                                                                            );
+                                                                        })()}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* LIVE MAP OR ADDRESS/PICKUP DETAILS CARD */}
+                                                        {activeAdminTab === 'Liaison' ? (
+                                                            /* Address Details and Pickup Details for Liaison tab */
+                                                            <div className="flex flex-col h-full">
+                                                                <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-blue-500/30 transition-all h-full flex flex-col justify-between gap-4">
+                                                                    <div>
+                                                                        <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 mb-4 flex items-center gap-2">
+                                                                            <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400">
+                                                                                <MapPin size={14} />
+                                                                            </div>
+                                                                            Address & Pickup Details
+                                                                        </h4>
+
+                                                                        <div className="space-y-4">
+                                                                            {/* Pickup Option card */}
+                                                                            <div className="bg-white/5 rounded-xl border border-white/5 p-3">
+                                                                                <div className="flex items-center gap-2.5">
+                                                                                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                                                                                        <MapPin size={16} />
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase">Pickup Option</p>
+                                                                                        <p className="text-xs font-black text-white mt-0.5">{(booking as any).pickupOption || 'Customer brings documents to branch'}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Pickup Address card */}
+                                                                            <div className="bg-white/5 rounded-xl border border-white/5 p-3">
+                                                                                <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-1">Pickup Address</p>
+                                                                                <p className="text-xs font-bold text-gray-300 leading-relaxed">
+                                                                                    {(booking as any).pickupAddress || (booking as any).pickupOption === 'Customer brings documents' ? 'Not applicable (Documents will be delivered directly by customer to LTO Branch)' : 'No pickup address specified.'}
+                                                                                </p>
+                                                                            </div>
+
+                                                                            {/* Designated LTO Branch card */}
+                                                                            <div className="bg-white/5 rounded-xl border border-white/5 p-3">
+                                                                                <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-1">Designated LTO Branch</p>
+                                                                                <p className="text-xs font-black text-primary leading-relaxed">
+                                                                                    {booking.branchName || 'Any Available LTO Office'}
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Update Status for Liaison (Moved here) */}
+                                                                    <div className="pt-2 border-t border-white/5 space-y-2 mt-auto">
+                                                                        <h4 className="text-[9px] font-black tracking-widest text-gray-600 ml-1">Update Status</h4>
                                                                         <div className="flex gap-2">
                                                                             <div className="flex-1 relative group/select">
-                                                                                <select id={`booking-status-${booking.id}`} name={`booking-status-${booking.id}`}
+                                                                                <select id={`booking-status-liaison-${booking.id}`} name={`booking-status-liaison-${booking.id}`}
                                                                                     value={booking.status}
-                                                                                    onChange={(e) => handleStatusChange(booking, e.target.value as BookingStatus)}
+                                                                                    onChange={(e) => handleStatusChange(booking, e.target.value)}
                                                                                     onClick={e => e.stopPropagation()}
-                                                                                    className="w-full bg-white/5 border border-white/10 py-2.5 px-3 rounded-lg text-[10px] font-black  tracking-widest text-white hover:border-primary transition-all outline-none appearance-none cursor-pointer"
+                                                                                    className="w-full bg-white/5 border border-white/10 py-2 px-3 rounded-lg text-[10px] font-black tracking-widest text-white hover:border-primary transition-all outline-none appearance-none cursor-pointer"
                                                                                 >
-                                                                                    {bookingStatuses.slice(1).map(s => <option key={s} value={s} className="bg-[#121212]">{s}</option>)}
+                                                                                    <option value="Pending Admin Review" className="bg-[#121212]">Pending Admin Review</option>
+                                                                                    <option value="For Verification" className="bg-[#121212]">For Verification</option>
+                                                                                    <option value="For Processing" className="bg-[#121212]">For Processing</option>
+                                                                                    <option value="Assigned" className="bg-[#121212]">Assigned</option>
+                                                                                    <option value="In Progress" className="bg-[#121212]">In Progress</option>
+                                                                                    <option value="Booking Received" className="bg-[#121212]">Booking Received</option>
+                                                                                    <option value="Processing at LTO" className="bg-[#121212]">Processing at LTO</option>
+                                                                                    <option value="Completed" className="bg-[#121212]">Completed</option>
+                                                                                    <option value="Cancelled" className="bg-[#121212]">Cancelled</option>
                                                                                 </select>
                                                                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover/select:text-primary transition-colors" size={14} />
                                                                             </div>
@@ -1950,7 +2871,7 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                 <Tooltip content="Cancel this booking">
                                                                                     <button
                                                                                         onClick={(e) => { e.stopPropagation(); setCancellingBooking(booking); }}
-                                                                                        className="px-4 py-2.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-500/20 font-black  tracking-widest text-[9px]"
+                                                                                        className="px-4 py-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-500/20 font-black tracking-widest text-[9px]"
                                                                                     >
                                                                                         Cancel
                                                                                     </button>
@@ -1960,65 +2881,24 @@ const AdminBookingsScreen: React.FC = () => {
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                 
-                                                        {/* TIMELINE CARD */}
-                                                        <div className="flex flex-col h-full">
-                                                            <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full overflow-hidden flex flex-col">
-                                                                <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
-                                                                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                                                        <Clock size={14} />
-                                                                    </div>
-                                                                    Progress Tracking
-                                                                </h4>
-                                                                <div className="flex-1 space-y-2 relative pl-3">
-                                                                    <div className="absolute left-[19px] top-2 bottom-6 w-0.5 bg-gradient-to-b from-primary via-primary/20 to-transparent"></div>
-                                                                    {(() => {
-                                                                        const timelineData = getTimelineData(booking.status, booking.statusHistory);
-                                                                        return timelineData.length > 0 ? (
-                                                                            timelineData.map((s, i) => (
-                                                                                <div key={i} className="flex gap-3 relative group/step">
-                                                                                    <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black z-10 transition-all duration-300 ${i === timelineData.length - 1 ? 'bg-primary text-white shadow-lg' : 'bg-[#202020] text-gray-600 border border-white/5'}`}>
-                                                                                        {i + 1}
-                                                                                    </div>
-                                                                                    <div className="pt-0.5">
-                                                                                        <p className={`text-xs font-black  tracking-widest transition-colors ${i === timelineData.length - 1 ? 'text-white' : 'text-gray-600'}`}>{s.status}</p>
-                                                                                        <div className="flex items-center gap-1 mt-0.5">
-                                                                                            <Clock size={8} className="text-gray-700" />
-                                                                                            <p className="text-[8px] text-gray-700 font-black  tracking-widest">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))
-                                                                        ) : (
-                                                                            <div className="flex flex-col items-center justify-center h-full text-center space-y-2 py-6">
-                                                                                <Clock size={18} className="text-gray-700" />
-                                                                                <p className="text-[10px] text-gray-600 font-bold tracking-wider">No timeline history recorded.</p>
+                                                        ) : (
+                                                            /* LIVE MAP CARD for all other tabs */
+                                                            <div className="flex flex-col h-full">
+                                                                <div className="bg-[#151515] p-2 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full relative overflow-hidden flex flex-col">
+                                                                    <div className="p-4 pb-1">
+                                                                        <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 flex items-center gap-3">
+                                                                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                                                                <Search size={14} />
                                                                             </div>
-                                                                        );
-                                                                    })()}
+                                                                            Real-time Location
+                                                                        </h4>
+                                                                    </div>
+                                                                    <div className="flex-1 p-3">
+                                                                        <LiveMapCard booking={booking} />
+                                                                    </div>
                                                                 </div>
-
                                                             </div>
-                                                        </div>
-                                 
-                                                        {/* LIVE MAP CARD */}
-                                                        <div className="flex flex-col h-full">
-                                                            <div className="bg-[#151515] p-2 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full relative overflow-hidden flex flex-col">
-                                                                <div className="p-4 pb-1">
-                                                                    <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 flex items-center gap-3">
-                                                                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                                                            <Search size={14} />
-                                                                        </div>
-                                                                        Real-time Location
-                                                                    </h4>
-                                                                </div>
-                                                                <div className="flex-1 p-3">
-                                                                    <LiveMapCard booking={booking} />
-                                                                </div>
-
-                                                            </div>
-                                                        </div>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -2342,15 +3222,15 @@ const AdminBookingsScreen: React.FC = () => {
                 />
             )}
             {previewImageUrl && (
-                <div className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setPreviewImageUrl(null)}>
+                <div className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex items-center justify-center p-4" onClick={() => { setPreviewImageUrl(null); setPreviewDocName(null); }}>
                     <div className="relative max-w-4xl w-full bg-[#151515] rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
                         {/* Header bar */}
                         <div className="flex items-center justify-between p-4 border-b border-white/5 bg-black/20">
-                            <span className="text-xs font-black tracking-widest text-gray-400 uppercase">GCash Receipt Preview</span>
+                            <span className="text-xs font-black tracking-widest text-gray-400 uppercase truncate max-w-[50%]">{previewDocName || "Document Preview"}</span>
                             <div className="flex items-center gap-3">
                                 <a 
                                     href={previewImageUrl} 
-                                    download="gcash_receipt.png" 
+                                    download={previewDocName || "document.png"} 
                                     target="_blank" 
                                     rel="noreferrer"
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white font-black tracking-widest text-[9px] uppercase rounded-lg border border-white/10 transition-all"
@@ -2364,7 +3244,7 @@ const AdminBookingsScreen: React.FC = () => {
                                     <ExternalLink size={12} /> Open Original
                                 </button>
                                 <button 
-                                    onClick={() => setPreviewImageUrl(null)} 
+                                    onClick={() => { setPreviewImageUrl(null); setPreviewDocName(null); }} 
                                     className="p-2 bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white rounded-full transition-all border border-red-500/30 flex items-center justify-center shadow-lg shadow-red-500/10 shrink-0"
                                     aria-label="Close preview"
                                 >
@@ -2373,19 +3253,27 @@ const AdminBookingsScreen: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Image body container */}
+                        {/* Image / PDF body container */}
                         <div className="p-6 flex flex-col items-center justify-center bg-black/40 min-h-[300px] md:min-h-[500px] max-h-[70vh] overflow-y-auto relative">
                             {previewImageLoading && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[2px] z-10">
                                     <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
                                 </div>
                             )}
-                            <img 
-                                src={previewImageUrl} 
-                                alt="Receipt Preview" 
-                                className={`max-w-full max-h-[60vh] object-contain rounded-xl border border-white/5 shadow-2xl transition-opacity duration-300 ${previewImageLoading ? 'opacity-0' : 'opacity-100'}`}
-                                onLoad={() => setPreviewImageLoading(false)}
-                            />
+                            {previewImageUrl.startsWith('data:application/pdf') || previewDocName?.toLowerCase().endsWith('.pdf') ? (
+                                <iframe 
+                                    src={previewImageUrl} 
+                                    className="w-full h-[60vh] rounded-lg border border-white/10 bg-white"
+                                    onLoad={() => setPreviewImageLoading(false)}
+                                />
+                            ) : (
+                                <img 
+                                    src={previewImageUrl} 
+                                    alt={previewDocName || "Document Preview"} 
+                                    className={`max-w-full max-h-[60vh] object-contain rounded-xl border border-white/5 shadow-2xl transition-opacity duration-300 ${previewImageLoading ? 'opacity-0' : 'opacity-100'}`}
+                                    onLoad={() => setPreviewImageLoading(false)}
+                                />
+                            )}
                         </div>
                     </div>
                 </div>

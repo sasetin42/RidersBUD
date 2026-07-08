@@ -156,6 +156,22 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+    // Liaison System
+    match /liaisonStaff/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /liaisonBranches/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /liaisonBookings/{bookingId} {
+      allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
+      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if isAdmin();
     }

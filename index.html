@@ -5,7 +5,7 @@
     <script>
         // Suppress Tailwind Play CDN and Firebase snapshot console warnings/errors globally
         (function() {
-            // Immediately unregister any stale Service Worker from previous sessions
+            // Immediately unregister any stale Service Worker and clear cache from previous sessions on localhost
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.getRegistrations().then(function(regs) {
                     regs.forEach(function(r) { r.unregister(); });
@@ -14,6 +14,11 @@
                 navigator.serviceWorker.addEventListener('messageerror', function(e) {
                     e.preventDefault();
                     e.stopPropagation();
+                });
+            }
+            if (window.caches && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+                window.caches.keys().then(function(keys) {
+                    keys.forEach(function(key) { window.caches.delete(key); });
                 });
             }
             const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup'];

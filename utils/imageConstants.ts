@@ -3,6 +3,16 @@
  * Using high-quality fallbacks for a premium look
  */
 
+// Static cache buster for Firebase Storage URLs to work around Chrome ERR_CACHE_READ_FAILURE bug
+const CACHE_BUSTER = '_cb=1';
+
+const addCacheBuster = (url: string): string => {
+    if (url.includes('firebasestorage.googleapis.com') && !url.includes('_cb=')) {
+        return url + (url.includes('?') ? '&' : '?') + CACHE_BUSTER;
+    }
+    return url;
+};
+
 export const MOCKUPS = {
     LOGO_PREMIUM: 'https://images.unsplash.com/photo-1558981403-c5f91cbba527?auto=format&fit=crop&w=200&q=80', // Motorcycle silhouette
     DEFAULT_AVATAR: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
@@ -21,7 +31,7 @@ export const MOCKUPS = {
  * Helper to get a profile image URL with a fallback to premium avatar or ui-avatars
  */
 export const getProfileImage = (url?: string, name?: string) => {
-    if (url && url.trim() !== '' && !url.includes('placeholder') && !url.startsWith('blob:') && !url.startsWith('file:') && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) return url;
+    if (url && url.trim() !== '' && !url.includes('placeholder') && !url.startsWith('blob:') && !url.startsWith('file:') && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) return addCacheBuster(url);
     return '/riders-logo.png';
 };
 
@@ -37,7 +47,7 @@ export const getVehicleImage = (input?: string[] | string, type: 'Car' | 'Motorc
     if (typeof input === 'string') {
         const trimmed = input.trim();
         if (trimmed !== '' && !trimmed.includes('placeholder') && trimmed.length > 1) {
-            return trimmed;
+            return addCacheBuster(trimmed);
         }
     }
     
@@ -47,7 +57,7 @@ export const getVehicleImage = (input?: string[] | string, type: 'Car' | 'Motorc
         if (first && typeof first === 'string') {
             const trimmed = first.trim();
             if (trimmed !== '' && !trimmed.includes('placeholder') && trimmed.length > 1) {
-                return trimmed;
+                return addCacheBuster(trimmed);
             }
         }
     }
@@ -59,7 +69,7 @@ export const getVehicleImage = (input?: string[] | string, type: 'Car' | 'Motorc
  * Helper to get a product/part image URL
  */
 export const getProductImage = (url?: string) => {
-    if (url && url.trim() !== '' && !url.includes('placeholder')) return url;
+    if (url && url.trim() !== '' && !url.includes('placeholder')) return addCacheBuster(url);
     return MOCKUPS.PARTS_PLACEHOLDER;
 };
 

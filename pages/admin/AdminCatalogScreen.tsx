@@ -5,7 +5,7 @@ import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { fileToBase64 } from '../../utils/fileUtils';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
-import { Plus, Search, Package, Table as WrenchPen, TrendingUp, AlertCircle, ShoppingBag, Edit, Trash2, Camera, User, BadgeCheck, Clock, Shield, Tag, Star, DollarSign, ArrowUpDown, ChevronDown, Wrench, Download, Upload, Filter, Edit2, Check, X, Copy, Grid, List, ToggleLeft, ToggleRight, Eye, Image as ImageIcon, MoreVertical, Car, UserCheck, Users } from 'lucide-react';
+import { Plus, Search, Package, Table as WrenchPen, TrendingUp, AlertCircle, ShoppingBag, Edit, Trash2, Camera, User, BadgeCheck, Clock, Shield, Tag, Star, DollarSign, ArrowUpDown, ChevronDown, Wrench, Download, Upload, Filter, Edit2, Check, X, Copy, Grid, List, ToggleLeft, ToggleRight, Eye, Image as ImageIcon, MoreVertical, Car, UserCheck, Users, MapPin, FileText } from 'lucide-react';
 import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { doc, setDoc, addDoc, collection, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
@@ -1863,11 +1863,11 @@ const HireDriverForm: React.FC<{ driver?: HireDriver; onSave: (d: any) => void; 
 };
 
 const defaultLiaisonAgents: LiaisonStaff[] = [
-    { id: 'liaison-juan', name: 'Juan Dela Cruz', phone: '09181234567', imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200', rating: 4.8, assignedBranches: ['lto-qc', 'lto-pasay'], isAvailable: true, description: 'Experienced Liaison Officer specializing in registration and license renewals.', totalJobs: 24 },
-    { id: 'liaison-maria', name: 'Maria Santos', phone: '09182345678', imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', rating: 4.9, assignedBranches: ['lto-makati', 'lto-pasay', 'lto-manila'], isAvailable: true, description: 'Efficient and professional, handling LTO documents with care.', totalJobs: 18 },
-    { id: 'liaison-ramon', name: 'Ramon Valenzuela', phone: '09183456789', imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200', rating: 4.7, assignedBranches: ['lto-angeles', 'lto-pampanga', 'lto-dagupan'], isAvailable: true, description: 'Dedicated officer with deep knowledge of LTO policies and procedures.', totalJobs: 15 },
-    { id: 'liaison-sarah', name: 'Sarah Geronimo', phone: '09184567890', imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200', rating: 4.95, assignedBranches: ['lto-cebu', 'lto-mandaue', 'lto-lapulapu'], isAvailable: true, description: 'Visayas regional coordinator, handles all document liaisons with premium efficiency.', totalJobs: 32 },
-    { id: 'liaison-michael', name: 'Michael Dinglasan', phone: '09185678901', imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200', rating: 4.85, assignedBranches: ['lto-davao', 'lto-gensan'], isAvailable: true, description: 'Mindanao document handling specialist, fast processing speed and highly reliable.', totalJobs: 21 }
+    { id: 'liaison-juan', name: 'Juan Dela Cruz', phone: '09181234567', imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200', rating: 4.8, assignedBranches: ['lto-qc', 'lto-pasay'], assignedServices: ['Vehicle Registration Renewal', 'Transfer of Ownership'], isAvailable: true, description: 'Experienced Liaison Officer specializing in registration and license renewals.', totalJobs: 24 },
+    { id: 'liaison-maria', name: 'Maria Santos', phone: '09182345678', imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', rating: 4.9, assignedBranches: ['lto-makati', 'lto-pasay', 'lto-manila'], assignedServices: ['Vehicle Registration Renewal', 'Duplicate OR', 'Duplicate CR'], isAvailable: true, description: 'Efficient and professional, handling LTO documents with care.', totalJobs: 18 },
+    { id: 'liaison-ramon', name: 'Ramon Valenzuela', phone: '09183456789', imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200', rating: 4.7, assignedBranches: ['lto-angeles', 'lto-pampanga', 'lto-dagupan'], assignedServices: ['Vehicle Registration Renewal', 'Lost Plate', 'Replacement Plate'], isAvailable: true, description: 'Dedicated officer with deep knowledge of LTO policies and procedures.', totalJobs: 15 },
+    { id: 'liaison-sarah', name: 'Sarah Geronimo', phone: '09184567890', imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200', rating: 4.95, assignedBranches: ['lto-cebu', 'lto-mandaue', 'lto-lapulapu'], assignedServices: ['Vehicle Registration Renewal', 'Transfer of Ownership', 'Change Engine', 'Change Color'], isAvailable: true, description: 'Visayas regional coordinator, handles all document liaisons with premium efficiency.', totalJobs: 32 },
+    { id: 'liaison-michael', name: 'Michael Dinglasan', phone: '09185678901', imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200', rating: 4.85, assignedBranches: ['lto-davao', 'lto-gensan'], assignedServices: ['Vehicle Registration Renewal', 'New Registration', 'Other'], isAvailable: true, description: 'Mindanao document handling specialist, fast processing speed and highly reliable.', totalJobs: 21 }
 ];
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
@@ -1879,6 +1879,7 @@ const AdminCatalogScreen: React.FC = () => {
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'name', direction: 'ascending' });
     const [isLiaisonModalOpen, setIsLiaisonModalOpen] = useState(false);
     const [editingLiaison, setEditingLiaison] = useState<LiaisonStaff | undefined>(undefined);
+    const [viewingLiaison, setViewingLiaison] = useState<LiaisonStaff | undefined>(undefined);
     const [liaisonSearch, setLiaisonSearch] = useState('');
 
     const requestSort = (key: SortableKeys) => {
@@ -2320,7 +2321,7 @@ const AdminCatalogScreen: React.FC = () => {
                             {filteredCars.map((car: RentalCar) => (
                                 <div key={car.id} className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-cyan-500/40 transition-all duration-300 group shadow-xl">
                                     <div className="relative h-40 overflow-hidden">
-                                        <img src={car.imageUrl || 'https://picsum.photos/seed/car/400/250'} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/car/400/250'; }} />
+                                        <img src={car.imageUrl || '/placeholder.svg'} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                                         <div className="absolute top-2.5 right-2.5">
                                             <span className={`text-[10px] font-black px-2.5 py-1 rounded-full backdrop-blur-sm ${car.isAvailable ? 'bg-green-500/90 text-white' : 'bg-red-500/80 text-white'}`}>{car.isAvailable ? '● Available' : '● Unavailable'}</span>
@@ -2380,7 +2381,7 @@ const AdminCatalogScreen: React.FC = () => {
                             {filteredDrivers.map((driver: HireDriver) => (
                                 <div key={driver.id} className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-violet-500/40 transition-all duration-300 group shadow-xl">
                                     <div className="relative h-36 bg-gradient-to-br from-violet-900/40 to-black flex items-center justify-center overflow-hidden">
-                                        <img src={driver.imageUrl || 'https://picsum.photos/seed/driver/200/200'} alt={driver.name} className="w-20 h-20 rounded-full object-cover border-4 border-violet-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/driver/200/200'; }} />
+                                        <img src={driver.imageUrl || '/placeholder.svg'} alt={driver.name} className="w-20 h-20 rounded-full object-cover border-4 border-violet-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
                                         <div className="absolute top-2.5 right-2.5">
                                             <span className={`text-[10px] font-black px-2.5 py-1 rounded-full backdrop-blur-sm ${driver.isAvailable ? 'bg-green-500/90 text-white' : 'bg-gray-600/90 text-white'}`}>{driver.isAvailable ? '● Available' : '● Not Available'}</span>
                                         </div>
@@ -2441,49 +2442,54 @@ const AdminCatalogScreen: React.FC = () => {
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                             {filteredLiaison.map((staff: LiaisonStaff) => {
-                                const branchNames = (staff.assignedBranches || []).map(bId => {
-                                    const b = (db.liaisonBranches || []).find(x => x.id === bId);
-                                    return b ? b.name : bId;
-                                });
                                 return (
-                                    <div key={staff.id} className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-emerald-500/40 transition-all duration-300 group shadow-xl">
-                                        <div className="relative h-36 bg-gradient-to-br from-emerald-950/40 to-black flex items-center justify-center overflow-hidden">
-                                            <img src={staff.imageUrl || 'https://picsum.photos/seed/liaison/200/200'} alt={staff.name} className="w-20 h-20 rounded-full object-cover border-4 border-emerald-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/liaison/200/200'; }} />
+                                    <div 
+                                        key={staff.id} 
+                                        onClick={() => setViewingLiaison(staff)}
+                                        className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 group shadow-xl flex flex-col justify-between cursor-pointer"
+                                    >
+                                        <div className="relative h-32 bg-gradient-to-br from-emerald-950/40 to-black flex items-center justify-center overflow-hidden">
+                                            <img src={staff.imageUrl || '/placeholder.svg'} alt={staff.name} className="w-16 h-16 rounded-full object-cover border-4 border-emerald-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
                                             <div className="absolute top-2.5 right-2.5">
-                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full backdrop-blur-sm ${staff.isAvailable ? 'bg-green-500/90 text-white' : 'bg-gray-600/90 text-white'}`}>{staff.isAvailable ? '● Available' : '● Not Available'}</span>
+                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full backdrop-blur-sm ${staff.isAvailable ? 'bg-green-500/90 text-white animate-pulse' : 'bg-gray-600/90 text-white'}`}>
+                                                    {staff.isAvailable ? '● Available' : '● Inactive'}
+                                                </span>
                                             </div>
                                         </div>
-                                        <div className="p-4 flex flex-col justify-between h-[calc(100%-144px)]">
-                                            <div className="mb-2">
-                                                <p className="font-black text-white text-base truncate">{staff.name}</p>
-                                                {staff.description && <p className="text-[10px] text-gray-400 mt-1 line-clamp-2">{staff.description}</p>}
-                                                <div className="mt-2.5">
-                                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Assigned Branches</p>
-                                                    <div className="flex flex-wrap gap-1 mt-1">
-                                                        {branchNames.length > 0 ? (
-                                                            branchNames.map((name, i) => (
-                                                                <span key={i} className="text-[9px] bg-white/5 border border-white/5 rounded px-1.5 py-0.5 text-gray-300 truncate max-w-[150px]" title={name}>{name}</span>
-                                                            ))
-                                                        ) : (
-                                                            <span className="text-[9px] text-gray-600">None</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                {(staff.rating || staff.totalJobs) && (
-                                                    <div className="flex gap-3 mb-2">
-                                                        {staff.rating && <span className="text-[10px] text-yellow-400">⭐ {Number(staff.rating).toFixed(1)}</span>}
-                                                        {staff.totalJobs ? <span className="text-[10px] text-gray-500">{staff.totalJobs} jobs</span> : null}
+                                        <div className="p-4 flex-1 flex flex-col justify-between">
+                                            <div className="mb-3">
+                                                <p className="font-black text-white text-sm group-hover:text-emerald-400 transition-colors truncate">{staff.name}</p>
+                                                {staff.description && <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">{staff.description}</p>}
+                                                
+                                                {staff.assignedServices && staff.assignedServices.length > 0 && (
+                                                    <div className="mt-2.5">
+                                                        <p className="text-[8px] font-black text-gray-500 uppercase tracking-wider mb-1">Service Areas</p>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {staff.assignedServices.slice(0, 2).map((svc, i) => (
+                                                                <span key={i} className="text-[8px] bg-emerald-500/10 border border-emerald-500/10 rounded px-1.5 py-0.5 text-emerald-400 font-bold truncate max-w-[120px]">{svc}</span>
+                                                            ))}
+                                                            {staff.assignedServices.length > 2 && (
+                                                                <span className="text-[8px] bg-white/5 border border-white/5 rounded px-1.5 py-0.5 text-gray-400 font-bold">+{staff.assignedServices.length - 2} more</span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 )}
-                                                {staff.phone && <p className="text-[10px] text-gray-500 mb-3">📞 {staff.phone}</p>}
-                                                <div className="flex items-center gap-1.5 pt-2.5 border-t border-white/5">
-                                                    <button onClick={() => handleToggleLiaison(staff)} className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${staff.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-gray-500/10 text-gray-400 hover:bg-gray-500/20'}`}>
-                                                        {staff.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{staff.isAvailable ? 'Available' : 'Not Available'}
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center justify-between text-[10px] mb-2 text-gray-500 border-t border-white/5 pt-2.5">
+                                                    <div className="flex gap-2">
+                                                        <span className="text-yellow-400 font-bold">⭐ {Number(staff.rating || 5.0).toFixed(1)}</span>
+                                                        <span>•</span>
+                                                        <span>{staff.totalJobs || 0} jobs</span>
+                                                    </div>
+                                                    {staff.phone && <span className="font-mono">{staff.phone}</span>}
+                                                </div>
+                                                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                                    <button onClick={() => handleToggleLiaison(staff)} className={`flex-1 text-[9px] py-1.5 rounded-lg font-black transition-all ${staff.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-gray-500/10 text-gray-400 hover:bg-gray-500/20'}`}>
+                                                        {staff.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{staff.isAvailable ? 'Available' : 'Unavailable'}
                                                     </button>
-                                                    <button onClick={() => handleOpenLiaisonModal(staff)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={13} /></button>
-                                                    <button onClick={() => handleDeleteLiaison(staff.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={13} /></button>
+                                                    <button onClick={() => handleOpenLiaisonModal(staff)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={12} /></button>
+                                                    <button onClick={() => handleDeleteLiaison(staff.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={12} /></button>
                                                 </div>
                                             </div>
                                         </div>
@@ -2513,30 +2519,36 @@ const AdminCatalogScreen: React.FC = () => {
                             className="w-full h-10 pl-10 pr-4 bg-white/5 border border-white/5 rounded-xl text-white text-xs font-bold placeholder-gray-600 focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all"
                         />
                     </div>
-                    <select
-                        id="catalog-category-filter"
-                        name="catalogCategoryFilter"
-                        value={categoryFilter}
-                        onChange={e => setCategoryFilter(e.target.value)}
-                        className="bg-white/5 border border-white/5 rounded-xl px-3 h-10 text-white text-xs font-bold outline-none focus:border-primary appearance-none cursor-pointer hover:bg-white/10 transition-colors"
-                    >
-                        <option value="all">All Categories</option>
-                        {activeTab === 'services'
-                            ? serviceCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)
-                            : partCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)
-                        }
-                    </select>
+                    <div className="relative">
+                        <select
+                            id="catalog-category-filter"
+                            name="catalogCategoryFilter"
+                            value={categoryFilter}
+                            onChange={e => setCategoryFilter(e.target.value)}
+                            className="w-full bg-white/5 border border-white/5 rounded-xl pl-3 pr-10 h-10 text-white text-xs font-bold outline-none focus:border-primary appearance-none cursor-pointer hover:bg-white/10 transition-colors"
+                        >
+                            <option value="all">All Categories</option>
+                            {activeTab === 'services'
+                                ? serviceCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)
+                                : partCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)
+                            }
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                    </div>
 
                     {/* Status Filter */}
-                    <select
-                        value={statusFilter}
-                        onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-                        className="bg-white/5 border border-white/5 rounded-xl px-3 h-10 text-white text-xs font-bold outline-none focus:border-primary appearance-none cursor-pointer hover:bg-white/10 transition-colors"
-                    >
-                        <option value="all">All Status</option>
-                        <option value="active">Active Only</option>
-                        <option value="inactive">Inactive Only</option>
-                    </select>
+                    <div className="relative">
+                        <select
+                            value={statusFilter}
+                            onChange={e => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+                            className="w-full bg-white/5 border border-white/5 rounded-xl pl-3 pr-10 h-10 text-white text-xs font-bold outline-none focus:border-primary appearance-none cursor-pointer hover:bg-white/10 transition-colors"
+                        >
+                            <option value="all">All Status</option>
+                            <option value="active">Active Only</option>
+                            <option value="inactive">Inactive Only</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                    </div>
 
                     {/* View Mode Toggle */}
                     <div className="flex items-center bg-white/5 rounded-xl p-1 border border-white/5 h-10">
@@ -2975,6 +2987,78 @@ const AdminCatalogScreen: React.FC = () => {
                 isOpen={isLiaisonModalOpen} onClose={handleCloseLiaisonModal} sizeClass="max-w-2xl"
             >
                 <LiaisonStaffForm liaison={editingLiaison} onSave={handleSaveLiaison} onCancel={handleCloseLiaisonModal} branches={db?.liaisonBranches || []} />
+            </Modal>
+            <Modal
+                title={<div className="flex items-center gap-3"><div className="p-2 bg-emerald-500/15 rounded-xl"><UserCheck size={20} className="text-emerald-400" /></div><div><h2 className="text-xl font-black text-white">Liaison Agent Profile</h2><p className="text-xs text-gray-400 font-normal">Complete profile & service details</p></div></div>}
+                isOpen={!!viewingLiaison} onClose={() => setViewingLiaison(undefined)} sizeClass="max-w-xl"
+            >
+                {viewingLiaison && (
+                    <div className="space-y-5 text-white animate-fadeIn">
+                        <div className="flex flex-col sm:flex-row items-center gap-5 bg-white/[0.02] p-4.5 rounded-2xl border border-white/5">
+                            <img src={viewingLiaison.imageUrl || '/placeholder.svg'} alt={viewingLiaison.name} className="w-24 h-24 rounded-full object-cover border-4 border-emerald-500/25 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                            <div className="text-center sm:text-left space-y-1.5">
+                                <div className="flex flex-wrap justify-center sm:justify-start items-center gap-2.5">
+                                    <h3 className="text-lg font-black text-white leading-none">{viewingLiaison.name}</h3>
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${viewingLiaison.isAvailable ? 'bg-green-500/15 text-green-400 border border-green-500/25' : 'bg-white/5 text-gray-400 border border-white/10'}`}>
+                                        {viewingLiaison.isAvailable ? '● Available' : '● Inactive'}
+                                    </span>
+                                </div>
+                                <div className="flex justify-center sm:justify-start items-center gap-3 text-xs text-gray-400">
+                                    <span className="text-yellow-400 font-bold">⭐ {Number(viewingLiaison.rating || 5.0).toFixed(1)} Rating</span>
+                                    <span>•</span>
+                                    <span>{viewingLiaison.totalJobs || 0} Jobs Done</span>
+                                </div>
+                                {viewingLiaison.phone && <p className="text-xs font-bold text-gray-400">📞 Phone: <span className="font-mono text-white ml-1">{viewingLiaison.phone}</span></p>}
+                            </div>
+                        </div>
+
+                        {viewingLiaison.description && (
+                            <div className="space-y-1.5">
+                                <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><UserCheck size={10} className="text-emerald-400" /> Bio / Professional Summary</h4>
+                                <p className="text-xs text-gray-300 leading-relaxed bg-white/[0.01] border border-white/5 p-3.5 rounded-xl">{viewingLiaison.description}</p>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><MapPin size={10} className="text-emerald-400" /> Assigned LTO Branches</h4>
+                                <div className="bg-white/[0.01] border border-white/5 p-3.5 rounded-xl min-h-[100px] max-h-48 overflow-y-auto space-y-1.5">
+                                    {viewingLiaison.assignedBranches && viewingLiaison.assignedBranches.length > 0 ? (
+                                        viewingLiaison.assignedBranches.map(bId => {
+                                            const b = (db?.liaisonBranches || []).find(x => x.id === bId);
+                                            const name = b ? b.name : bId;
+                                            return (
+                                                <div key={bId} className="text-xs text-white flex items-center gap-2">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                                    <span className="truncate">{name}</span>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <p className="text-xs text-gray-600 italic">No branches assigned</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><FileText size={10} className="text-emerald-400" /> Service Capabilities</h4>
+                                <div className="bg-white/[0.01] border border-white/5 p-3.5 rounded-xl min-h-[100px] max-h-48 overflow-y-auto flex flex-wrap gap-1.5 items-start content-start">
+                                    {viewingLiaison.assignedServices && viewingLiaison.assignedServices.length > 0 ? (
+                                        viewingLiaison.assignedServices.map((svc, i) => (
+                                            <span key={i} className="text-[10px] bg-emerald-500/10 border border-emerald-500/15 rounded-lg px-2.5 py-1 text-emerald-400 font-bold">{svc}</span>
+                                        ))
+                                    ) : (
+                                        <p className="text-xs text-gray-600 italic w-full">No services assigned</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end pt-3 border-t border-white/5">
+                            <button type="button" onClick={() => setViewingLiaison(undefined)} className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-black hover:bg-emerald-500 transition-all text-xs shadow-lg shadow-emerald-600/20">Close Profile</button>
+                        </div>
+                    </div>
+                )}
             </Modal>
         </div>
     );

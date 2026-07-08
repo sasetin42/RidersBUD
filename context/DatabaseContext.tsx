@@ -48,7 +48,7 @@ interface DatabaseContextType {
     assignMechanicToBooking: (bookingId: string, mechanic: Mechanic) => Promise<void>;
     cancelBooking: (bookingId: string, reason: string) => Promise<void>;
     deleteBooking: (bookingId: string) => Promise<void>;
-    deleteAllBookings: () => Promise<void>;
+    deleteAllBookings: (collectionName?: string) => Promise<void>;
     addCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
     updateCustomer: (updatedCustomer: Customer) => Promise<void>;
     updateCustomerLocation: (customerId: string, location: { lat: number; lng: number }) => Promise<void>;
@@ -109,6 +109,9 @@ interface DatabaseContextType {
     addRentalCar: (car: Omit<RentalCar, 'id'>) => Promise<void>;
     updateRentalCar: (car: RentalCar) => Promise<void>;
     deleteRentalCar: (id: string) => Promise<void>;
+    addRentalBooking: (booking: Omit<RentalBooking, 'id'>) => Promise<RentalBooking>;
+    updateRentalBooking: (id: string, updates: Partial<RentalBooking>) => Promise<void>;
+    deleteRentalBooking: (id: string) => Promise<void>;
     // Hire Drivers
     addHireDriver: (driver: Omit<HireDriver, 'id'>) => Promise<void>;
     updateHireDriver: (driver: HireDriver) => Promise<void>;
@@ -118,7 +121,15 @@ interface DatabaseContextType {
     updateLiaisonBookingStatus: (id: string, status: LiaisonBooking['status'], notes?: string, officerName?: string) => Promise<void>;
 }
 
-const DatabaseContext = createContext<DatabaseContextType | undefined>(undefined);
+// Stable context reference across HMR to prevent "must be used within a Provider" errors
+// during Vite hot module reload when the context object reference changes.
+const _getDbCtx = () => {
+    if ((globalThis as any).__ridersbud_db_ctx) return (globalThis as any).__ridersbud_db_ctx;
+    const ctx = createContext<DatabaseContextType | undefined>(undefined);
+    (globalThis as any).__ridersbud_db_ctx = ctx;
+    return ctx;
+};
+const DatabaseContext = _getDbCtx();
 
 export const useDatabase = () => {
     const context = useContext(DatabaseContext);
@@ -349,6 +360,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                     imageUrl: '/assets/logo.png',
                                     rating: 4.8,
                                     assignedBranches: ['lto-qc', 'lto-pasay'],
+                                    assignedServices: ['Vehicle Registration Renewal', 'Transfer of Ownership'],
                                     isAvailable: true,
                                     description: 'Experienced Liaison Officer specializing in registration and license renewals.',
                                     totalJobs: 24
@@ -360,6 +372,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                     imageUrl: '/assets/logo.png',
                                     rating: 4.9,
                                     assignedBranches: ['lto-makati', 'lto-pasay'],
+                                    assignedServices: ['Vehicle Registration Renewal', 'Duplicate OR', 'Duplicate CR'],
                                     isAvailable: true,
                                     description: 'Efficient and professional, handling LTO documents with care.',
                                     totalJobs: 18
@@ -371,6 +384,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                     imageUrl: '/assets/logo.png',
                                     rating: 4.7,
                                     assignedBranches: ['lto-qc', 'lto-makati'],
+                                    assignedServices: ['Vehicle Registration Renewal', 'Lost Plate', 'Replacement Plate'],
                                     isAvailable: true,
                                     description: 'Dedicated officer with deep knowledge of LTO policies and procedures.',
                                     totalJobs: 15
@@ -426,6 +440,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                 imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
                                 rating: 4.8,
                                 assignedBranches: ['lto-qc', 'lto-pasay'],
+                                assignedServices: ['Vehicle Registration Renewal', 'Transfer of Ownership'],
                                 isAvailable: true,
                                 description: 'Experienced Liaison Officer specializing in registration and license renewals.',
                                 totalJobs: 24
@@ -437,6 +452,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                 imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
                                 rating: 4.9,
                                 assignedBranches: ['lto-makati', 'lto-pasay', 'lto-manila'],
+                                assignedServices: ['Vehicle Registration Renewal', 'Duplicate OR', 'Duplicate CR'],
                                 isAvailable: true,
                                 description: 'Efficient and professional, handling LTO documents with care.',
                                 totalJobs: 18
@@ -448,6 +464,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                 imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
                                 rating: 4.7,
                                 assignedBranches: ['lto-angeles', 'lto-pampanga', 'lto-dagupan'],
+                                assignedServices: ['Vehicle Registration Renewal', 'Lost Plate', 'Replacement Plate'],
                                 isAvailable: true,
                                 description: 'Dedicated officer with deep knowledge of LTO policies and procedures.',
                                 totalJobs: 15
@@ -459,6 +476,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                 imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200',
                                 rating: 4.95,
                                 assignedBranches: ['lto-cebu', 'lto-mandaue', 'lto-lapulapu'],
+                                assignedServices: ['Vehicle Registration Renewal', 'Transfer of Ownership', 'Change Engine', 'Change Color'],
                                 isAvailable: true,
                                 description: 'Visayas regional coordinator, handles all document liaisons with premium efficiency.',
                                 totalJobs: 32
@@ -470,6 +488,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                                 imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200',
                                 rating: 4.85,
                                 assignedBranches: ['lto-davao', 'lto-gensan'],
+                                assignedServices: ['Vehicle Registration Renewal', 'New Registration', 'Other'],
                                 isAvailable: true,
                                 description: 'Mindanao document handling specialist, fast processing speed and highly reliable.',
                                 totalJobs: 21
@@ -915,6 +934,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await addDoc(collection(firestore, 'services'), service);
         await sendNotification({
             recipientId: 'all',
+            recipientRole: 'customer',
             title: 'New Service Available',
             message: `Check out our new service: ${service.name}`,
             type: 'info',
@@ -1009,6 +1029,66 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await deleteDoc(doc(firestore, 'rentalCars', id));
     };
 
+    const addRentalBooking = async (booking: Omit<RentalBooking, 'id'>): Promise<RentalBooking> => {
+        const bookingData = {
+            ...booking,
+            status: booking.status || 'Received',
+            createdAt: booking.createdAt || new Date().toISOString()
+        };
+        
+        let newId = '';
+        if (auth.currentUser) {
+            const docRef = await addDoc(collection(firestore, 'rentalBookings'), bookingData);
+            newId = docRef.id;
+        } else {
+            newId = doc(collection(firestore, 'rentalBookings')).id;
+        }
+        
+        const createdBooking = { id: newId, ...bookingData } as RentalBooking;
+        
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                rentalBookings: [createdBooking, ...(prev.rentalBookings || [])]
+            };
+        });
+        
+        return createdBooking;
+    };
+
+    const updateRentalBooking = async (id: string, updates: Partial<RentalBooking>) => {
+        setDb(prev => {
+            if (!prev) return null;
+            const updated = (prev.rentalBookings || []).map(b => b.id === id ? { ...b, ...updates } : b);
+            return { ...prev, rentalBookings: updated };
+        });
+
+        if (auth.currentUser) {
+            try {
+                await updateDoc(doc(firestore, 'rentalBookings', id), updates);
+            } catch (e) {
+                console.warn(`[Firestore Write Failed] updateRentalBooking for ${id} failed, but local cache is updated:`, e);
+            }
+        }
+    };
+
+    const deleteRentalBooking = async (id: string) => {
+        setDb(prev => {
+            if (!prev) return null;
+            const filtered = (prev.rentalBookings || []).filter(b => b.id !== id);
+            return { ...prev, rentalBookings: filtered };
+        });
+
+        if (auth.currentUser) {
+            try {
+                await deleteDoc(doc(firestore, 'rentalBookings', id));
+            } catch (e) {
+                console.warn(`[Firestore Delete Failed] deleteRentalBooking for ${id} failed:`, e);
+            }
+        }
+    };
+
     // --- Hire Driver CRUD ---
     const addHireDriver = async (driver: Omit<HireDriver, 'id'>) => {
         await addDoc(collection(firestore, 'hireDrivers'), driver);
@@ -1098,17 +1178,18 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const addPart = async (part: Omit<Part, 'id'>) => {
-        await addDoc(collection(firestore, 'parts'), part);
-        await sendNotification({
-            recipientId: 'all',
-            title: 'New Tools & Parts',
-            message: `${part.name} is now available in the store.`,
-            type: 'info',
-            date: new Date().toISOString(),
-            read: false,
-            link: '/customer-portal/parts-store'
-        });
-    };
+         await addDoc(collection(firestore, 'parts'), part);
+         await sendNotification({
+             recipientId: 'all',
+             recipientRole: 'customer',
+             title: 'New Tools & Parts',
+             message: `${part.name} is now available in the store.`,
+             type: 'info',
+             date: new Date().toISOString(),
+             read: false,
+             link: '/customer-portal/parts-store'
+         });
+     };
 
     const updatePart = async (part: Part) => {
         await updateDoc(doc(firestore, 'parts', part.id), { ...part });
@@ -1674,30 +1755,36 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await deleteDoc(doc(firestore, 'bookings', bookingId));
     };
 
-    const deleteAllBookings = async () => {
+    const deleteAllBookings = async (collectionName: string = 'bookings') => {
         const batch = writeBatch(firestore);
-        const bookingsSnapshot = await getDocs(collection(firestore, 'bookings'));
+        const bookingsSnapshot = await getDocs(collection(firestore, collectionName));
         bookingsSnapshot.forEach((docSnap) => {
-            batch.delete(doc(firestore, 'bookings', docSnap.id));
+            batch.delete(doc(firestore, collectionName, docSnap.id));
         });
         await batch.commit();
     };
 
     const verifyBookingPayment = async (bookingId: string) => {
+        // Check regular bookings first, then rental bookings
         const booking = db?.bookings.find(b => b.id === bookingId);
-        if (!booking) return;
+        const rentalBooking = !booking ? db?.rentalBookings?.find(b => b.id === bookingId) : null;
+        const targetBooking = booking || rentalBooking;
+        const isRentalBooking = !booking && !!rentalBooking;
 
-        const batch = writeBatch(firestore);
-        const bookingRef = doc(firestore, 'bookings', bookingId);
+        if (!targetBooking) return;
 
-        const total = booking.totalAmount || booking.services?.[0]?.price || booking.service?.price || 0;
+        const total = (targetBooking as any).totalAmount || (targetBooking as any).totalPrice || (targetBooking as any).services?.[0]?.price || (targetBooking as any).service?.price || 0;
         const depositAmount = Math.ceil(total * 0.5);
-        const hasPartialPaid = (booking.paidAmount || 0) > 0 && (booking.paidAmount || 0) < total;
-        const isFinalBalancePayment = booking.isVerified === true && booking.paymentStatus === 'partial' && hasPartialPaid;
+        const hasPartialPaid = ((targetBooking as any).paidAmount || 0) > 0 && ((targetBooking as any).paidAmount || 0) < total;
+        const isFinalBalancePayment = (targetBooking as any).isVerified === true && (targetBooking as any).paymentStatus === 'partial' && hasPartialPaid;
 
         const updatedPaymentStatus = isFinalBalancePayment ? 'paid' : 'partial';
-        const updatedPaidAmount = isFinalBalancePayment ? total : Math.max(booking.paidAmount || 0, depositAmount);
+        const updatedPaidAmount = isFinalBalancePayment ? total : Math.max((targetBooking as any).paidAmount || 0, depositAmount);
         const updatedIsPaid = isFinalBalancePayment;
+
+        const collectionName = isRentalBooking ? 'rentalBookings' : 'bookings';
+        const batch = writeBatch(firestore);
+        const bookingRef = doc(firestore, collectionName, bookingId);
 
         batch.update(bookingRef, {
             isVerified: true,
@@ -1706,18 +1793,31 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             paidAmount: updatedPaidAmount,
             gcashPaymentStatus: 'verified',
             gcashDeclineReason: null,
-            status: booking.status === 'Upcoming' ? 'Booking Confirmed' : booking.status,
+            status: (targetBooking as any).status === 'Upcoming' ? 'Booking Confirmed' : (targetBooking as any).status,
         });
 
         await batch.commit();
 
-        const serviceName = booking.services?.[0]?.name || booking.service?.name || 'Service';
+        // Update local cache
+        if (isRentalBooking) {
+            setDb(prev => {
+                if (!prev) return null;
+                const updated = (prev.rentalBookings || []).map(b =>
+                    b.id === bookingId
+                        ? { ...b, isVerified: true, paymentStatus: updatedPaymentStatus as any, isPaid: updatedIsPaid, paidAmount: updatedPaidAmount, gcashPaymentStatus: 'verified' as any, gcashDeclineReason: undefined }
+                        : b
+                );
+                return { ...prev, rentalBookings: updated };
+            });
+        }
+
+        const serviceName = (targetBooking as any).services?.[0]?.name || (targetBooking as any).service?.name || 'Car Rental';
         const customerMessage = isFinalBalancePayment
             ? `Your GCash remaining balance for "${serviceName}" has been verified. Your booking is now fully paid!`
             : `Your GCash deposit for "${serviceName}" has been verified. Your booking is confirmed!`;
 
-await sendNotification({
-            recipientId: `customer-${booking.customerId}`,
+        await sendNotification({
+            recipientId: `customer-${(targetBooking as any).customerId}`,
             title: isFinalBalancePayment ? '✅ Remaining Balance Paid' : '✅ Payment Verified!',
             message: customerMessage,
             type: 'success',
@@ -1726,10 +1826,10 @@ await sendNotification({
             link: `/customer-portal/booking-detail/${bookingId}`
         });
 
-        // Also notify the mechanic when payment is verified (MAIN FIX)
-        if (booking.mechanicId) {
+        // Also notify the mechanic when payment is verified
+        if ((targetBooking as any).mechanicId) {
             await sendNotification({
-                recipientId: `mechanic-${booking.mechanicId}`,
+                recipientId: `mechanic-${(targetBooking as any).mechanicId}`,
                 title: isFinalBalancePayment ? '🎉 Job Fully Paid - Ready to Start!' : '💰 Deposit Received - Job Confirmed!',
                 message: `Payment verified for "${serviceName}". Customer ${isFinalBalancePayment ? 'has fully paid' : 'deposit confirmed'}. Please proceed with the service.`,
                 type: 'success',
@@ -2676,6 +2776,9 @@ await sendNotification({
             addRentalCar,
             updateRentalCar,
             deleteRentalCar,
+            addRentalBooking,
+            updateRentalBooking,
+            deleteRentalBooking,
             addHireDriver,
             updateHireDriver,
             deleteHireDriver,

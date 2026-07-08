@@ -10,7 +10,7 @@ import { useAdminOnlineStatus } from '../hooks/usePresence';
 import { compressAndEncodeImage } from '../utils/fileUtils';
 import { optimizeImageToWebP } from '../utils/imageOptimizer';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Paperclip, FileText, Trash2, MapPin, Phone, Search, Download, CheckCircle, RefreshCw, Star, Send, MoreHorizontal, CornerUpLeft } from 'lucide-react';
+import { X, Paperclip, FileText, Trash2, MapPin, Phone, Search, Download, CheckCircle, RefreshCw, Star, Send, MoreHorizontal, CornerUpLeft, ArrowLeft, Calendar } from 'lucide-react';
 import Tooltip from './ui/Tooltip';
 import { db as firestoreDB } from '../firebase';
 import { collection, addDoc, query, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
@@ -61,6 +61,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
     
     // UI states
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [showServiceSelection, setShowServiceSelection] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     
@@ -76,6 +77,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
         const handleClickOutside = (event: MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setIsMenuOpen(false);
+                setShowServiceSelection(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -110,6 +112,49 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
         photoUrl: adminUser.avatar || null,
         userType: 'admin' as const
     } : null;
+
+    const userSpecialServices = React.useMemo(() => {
+        const list: any[] = [];
+        if (!db || !currentUser) return list;
+
+        // 1. Liaison Bookings
+        const liaisonBookings = db.liaisonBookings?.filter(b => b.customerId === currentUser.id && ['Booking Received', 'Processing', 'Assigned'].includes(b.status)) || [];
+        liaisonBookings.forEach(b => {
+            list.push({
+                id: b.id,
+                title: `LTO Liaison (${b.serviceType})`,
+                details: `Date: ${b.appointmentDate} · Time: ${b.appointmentTime}\nVehicle: ${b.vehicleDetails ? `${b.vehicleDetails.year} ${b.vehicleDetails.brand} ${b.vehicleDetails.model} (${b.vehicleDetails.plateNumber})` : 'Unprovided'}\nAgent: ${b.liaisonName || 'Unassigned'}\nBranch: ${b.branchName || 'Unprovided'}\nPayment: ${b.paymentStatus || 'Pending'}`
+            });
+        });
+
+        // 2. Rent a Car Bookings
+        const rentalBookings = db.rentalBookings?.filter(b => b.customerId === currentUser.id && ['Approved', 'Pending', 'Received'].includes(b.status || '')) || [];
+        rentalBookings.forEach(b => {
+            const car = db.rentalCars?.find(c => c.id === b.carId);
+            const carName = car ? `${car.brand} ${car.model}` : 'Car Rental';
+            list.push({
+                id: b.id,
+                title: `Rent a Car: ${carName}`,
+                details: `Period: ${b.startDate} to ${b.endDate}\nTotal: ₱${b.totalPrice.toLocaleString()}\nStatus: ${b.status || 'Received'}`
+            });
+        });
+
+        // 3. Driver & Towing Requests
+        const serviceRequests = db.serviceRequests?.filter(req => req.customerId === currentUser.id && ['Pending', 'In Progress', 'Assigned'].includes(req.status)) || [];
+        serviceRequests.forEach(req => {
+            const name = req.serviceName || 'Special Service';
+            const isTarget = ['Towing', 'Driver for Hire', 'Driver for hire'].some(t => name.toLowerCase().includes(t.toLowerCase()));
+            if (isTarget) {
+                list.push({
+                    id: req.id,
+                    title: name,
+                    details: `Date: ${req.scheduledDate || req.createdAt.split('T')[0]}\nNotes: ${req.notes || 'No notes'}\nStatus: ${req.status}`
+                });
+            }
+        });
+
+        return list;
+    }, [db, currentUser]);
 
     // --- AI Logic ---
     useEffect(() => {
@@ -247,6 +292,11 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
 
             // Set startedAt and status to active
             await setDoc(chatDocRef, {
+                userId: currentUser.id,
+                userName: currentUser.name || 'Unknown User',
+                userEmail: currentUser.email || 'No Email',
+                userAvatar: currentUser.photoUrl || null,
+                userType: currentUser.userType,
                 status: 'active',
                 startedAt: serverTimestamp(),
                 completedAt: null,
@@ -458,6 +508,66 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
         );
     };
 
+    const shareSpecialServiceToChat = async (bookingText: string) => {
+        if (!currentUser) return;
+
+        // Optimistic update so message appears immediately in both modes
+        setMessages(prev => [...prev, { sender: 'user', text: bookingText }]);
+        if (mode === 'ai') {
+            setIsLoading(true);
+            setMessages(prev => [...prev, { sender: 'ai', text: "" }]);
+        }
+
+        try {
+            if (mode === 'admin') {
+                const messageData = {
+                    sender: 'user',
+                    text: bookingText,
+                    timestamp: serverTimestamp()
+                };
+
+                await addDoc(collection(firestoreDB, 'support_chats', currentUser.id, 'messages'), messageData).catch(() => {});
+
+                const isNewSession = isSessionLoaded && (!chatSession || chatSession.status !== 'active');
+
+                await setDoc(doc(firestoreDB, 'support_chats', currentUser.id), {
+                    userId: currentUser.id,
+                    userName: currentUser.name || 'Unknown User',
+                    userEmail: currentUser.email || 'No Email',
+                    userAvatar: currentUser.photoUrl || null,
+                    lastMessage: bookingText,
+                    lastTimestamp: serverTimestamp(),
+                    unread: true,
+                    userType: currentUser.userType || 'customer',
+                    ...(isNewSession ? {
+                        status: 'active',
+                        startedAt: serverTimestamp(),
+                        completedAt: null
+                    } : {
+                        status: chatSession?.status || 'active',
+                        lastUpdatedAt: serverTimestamp()
+                    })
+                }, { merge: true }).catch(() => {});
+            } else if (mode === 'ai' && chat) {
+                const responseStream = await chat.sendMessageStream([{ text: bookingText }]);
+
+                let fullText = "";
+                for await (const chunk of responseStream) {
+                    fullText += chunk.text;
+                    setMessages(prev => {
+                        const newMessages = [...prev];
+                        newMessages[newMessages.length - 1] = { sender: 'ai', text: fullText };
+                        return newMessages;
+                    });
+                }
+            }
+        } catch (error) {
+            console.error("Error sharing service details:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
         if ((!input.trim() && attachments.length === 0) || isLoading) return; 
@@ -647,10 +757,10 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                     className="w-full max-w-lg bg-[#111111] border border-white/10 rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col h-[85vh] sm:h-[80vh] overflow-hidden"
                 >
                     {/* Header */}
-                    <header className="p-2 px-3 bg-gradient-to-r from-[#1b1b1b] to-[#161616] border-b border-white/5 flex items-center justify-between shrink-0">
-                        <div className="flex items-center gap-2">
+                    <header className="h-[68px] px-4 bg-gradient-to-r from-[#1b1b1b] to-[#161616] border-b border-white/5 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-3">
                             <div className="relative">
-                                <div className={`w-7 h-7 rounded-full flex items-center justify-center overflow-hidden border border-white/10 bg-[#242424] shadow-sm`}>
+                                <div className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden border border-white/10 bg-[#242424] shadow-sm">
                                     <img 
                                         src={botImage} 
                                         alt={botName} 
@@ -660,29 +770,29 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                         }}
                                     />
                                 </div>
-                                <span className={`absolute bottom-0 right-0 w-2 h-2 border-[1.5px] border-[#111111] rounded-full shadow-sm ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                                <span className={`absolute bottom-0.5 right-0.5 w-2.5 h-2.5 border-[2px] border-[#111111] rounded-full shadow-sm ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
                             </div>
                             <div>
-                                <h3 className="text-white font-black text-[13px] tracking-tight leading-none mb-0.5">{botName}</h3>
-                                <p className="text-[9px] text-gray-400 font-bold tracking-widest uppercase">
+                                <h3 className="text-white font-black text-sm tracking-tight leading-tight">{botName}</h3>
+                                <p className="text-[10px] text-gray-400 font-bold tracking-wider uppercase mt-0.5">
                                     {isOnline ? <span className="text-green-500">Online</span> : 'Offline'} • {mode === 'ai' ? 'AI' : 'Live'}
                                 </p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                             {supportPhone && (
                                 <Tooltip content="Call Support" position="bottom">
                                     <button
                                         onClick={() => window.open(`tel:${supportPhone}`)}
-                                        className="text-gray-400 hover:text-green-500 transition-colors p-1.5 hover:bg-white/5 rounded-full"
+                                        className="text-gray-400 hover:text-green-500 transition-colors p-2 hover:bg-white/5 rounded-full"
                                     >
-                                        <Phone className="w-3.5 h-3.5" />
+                                        <Phone className="w-4 h-4" />
                                     </button>
                                 </Tooltip>
                             )}
                             <Tooltip content="Close" position="bottom">
-                                <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/5 rounded-full">
-                                    <X className="w-4 h-4" />
+                                <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-full">
+                                    <X className="w-4.5 h-4.5" />
                                 </button>
                             </Tooltip>
                         </div>
@@ -905,9 +1015,9 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                 ))}
                                 <div ref={messagesEndRef} />
                             </main>
-
+ 
                             {/* Footer / Preview */}
-                            <div className="bg-[#1e1e1e] border-t border-white/5 p-2 px-3 shrink-0">
+                            <div className="bg-[#1e1e1e] border-t border-white/5 p-3 shrink-0 flex flex-col justify-center">
                                 <AnimatePresence>
                                         {attachments.length > 0 && (
                                             <motion.div
@@ -942,7 +1052,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                             </motion.div>
                                         )}
                                     </AnimatePresence>
-
+ 
                                 <AnimatePresence>
                                     {replyingTo && (
                                         <motion.div
@@ -972,8 +1082,8 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
-
-                                <form onSubmit={handleSendMessage} className="flex gap-1.5 items-end">
+ 
+                                <form onSubmit={handleSendMessage} className="flex gap-1.5 items-center">
                                     <label htmlFor="chatFileInput" className="sr-only">Attach file</label>
                                     <input
                                         id="chatFileInput"
@@ -986,7 +1096,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                         className="hidden"
                                     />
 
-                                    <div className="flex-1 relative flex items-center bg-[#1f1f1f] border border-white/10 rounded-full focus-within:border-[#ff6a00]/50 focus-within:ring-1 focus-within:ring-[#ff6a00]/50 transition-all shadow-inner">
+                                    <div className="flex-1 h-11 relative flex items-center bg-[#1f1f1f] border border-white/10 rounded-full focus-within:border-[#ff6a00]/50 focus-within:ring-1 focus-within:ring-[#ff6a00]/50 transition-all shadow-inner">
                                         <div className="relative" ref={menuRef}>
                                             <button
                                                 type="button"
@@ -1003,34 +1113,83 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                                         animate={{ opacity: 1, y: 0, scale: 1 }}
                                                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                        className="absolute bottom-full left-0 mb-3 w-48 bg-[#1b1b1b] border border-white/10 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] overflow-hidden z-[60]"
+                                                        className="absolute bottom-full left-0 mb-3 w-56 bg-[#1b1b1b] border border-white/10 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.5)] overflow-hidden z-[60]"
                                                     >
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                fileInputRef.current?.click();
-                                                                setIsMenuOpen(false);
-                                                            }}
-                                                            className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors border-b border-white/5"
-                                                        >
-                                                            <div className="w-6 h-6 rounded-full bg-[#ff6a00]/10 flex items-center justify-center">
-                                                                <Paperclip className="w-3.5 h-3.5 text-[#ff6a00]" />
+                                                        {showServiceSelection ? (
+                                                            <div className="flex flex-col">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setShowServiceSelection(false)}
+                                                                    className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-primary hover:bg-white/5 transition-colors border-b border-white/5"
+                                                                >
+                                                                    <ArrowLeft size={13} className="text-primary" />
+                                                                    <span>Back</span>
+                                                                </button>
+                                                                <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                                                    {userSpecialServices.length > 0 ? (
+                                                                        userSpecialServices.map((service) => (
+                                                                            <button
+                                                                                key={service.id}
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    const detailsText = `📋 Service Booking Details:\n• Service: ${service.title}\n• ID: ${service.id}\n${service.details}`;
+                                                                                    shareSpecialServiceToChat(detailsText);
+                                                                                    setIsMenuOpen(false);
+                                                                                    setShowServiceSelection(false);
+                                                                                }}
+                                                                                className="w-full text-left px-3 py-2.5 hover:bg-white/5 transition-colors border-b border-white/5 last:border-b-0 flex flex-col gap-0.5"
+                                                                            >
+                                                                                <span className="text-[11px] font-bold text-white truncate w-full">{service.title}</span>
+                                                                                <span className="text-[9px] text-gray-500 font-mono">#{service.id.slice(-6).toUpperCase()}</span>
+                                                                            </button>
+                                                                        ))
+                                                                    ) : (
+                                                                        <p className="p-3 text-[11px] text-gray-500 font-bold text-center">No active special services</p>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                            Attach File
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                handleShareLocation();
-                                                                setIsMenuOpen(false);
-                                                            }}
-                                                            className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors"
-                                                        >
-                                                            <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center">
-                                                                <MapPin className="w-3.5 h-3.5 text-green-500" />
+                                                        ) : (
+                                                            <div className="flex flex-col">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        fileInputRef.current?.click();
+                                                                        setIsMenuOpen(false);
+                                                                    }}
+                                                                    className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors border-b border-white/5"
+                                                                >
+                                                                    <div className="w-6 h-6 rounded-full bg-[#ff6a00]/10 flex items-center justify-center">
+                                                                        <Paperclip className="w-3.5 h-3.5 text-[#ff6a00]" />
+                                                                    </div>
+                                                                    Attach File
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        handleShareLocation();
+                                                                        setIsMenuOpen(false);
+                                                                    }}
+                                                                    className={`w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors ${userSpecialServices.length > 0 ? 'border-b border-white/5' : ''}`}
+                                                                >
+                                                                    <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center">
+                                                                        <MapPin className="w-3.5 h-3.5 text-green-500" />
+                                                                    </div>
+                                                                    Share Location
+                                                                </button>
+                                                                {userSpecialServices.length > 0 && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setShowServiceSelection(true)}
+                                                                        className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors"
+                                                                    >
+                                                                        <div className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center">
+                                                                            <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                                                                        </div>
+                                                                        Share Booking Info
+                                                                    </button>
+                                                                )}
                                                             </div>
-                                                            Share Location
-                                                        </button>
+                                                        )}
                                                     </motion.div>
                                                 )}
                                             </AnimatePresence>

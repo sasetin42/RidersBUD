@@ -5,6 +5,7 @@ import NotificationBell from './NotificationBell';
 import { Settings, LogOut, ChevronLeft, User } from 'lucide-react';
 import { getProfileImage } from '../utils/imageConstants';
 import { useScrollDirection } from '../hooks/useScrollDirection';
+import { useDatabase } from '../context/DatabaseContext';
 
 interface CustomerHeaderProps {
     title: string;
@@ -16,6 +17,7 @@ interface CustomerHeaderProps {
 
 const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBackButton = false, icon, onBack }) => {
     const { user, logout } = useAuth();
+    const { db } = useDatabase();
     const navigate = useNavigate();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const scrollDirection = useScrollDirection();
@@ -28,8 +30,8 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
 
     return (
         <header
-            className={`sticky top-0 px-4 py-1.5 z-40 bg-[#121212]/90 backdrop-blur-md flex items-center justify-between border-b border-white/5 shadow-sm transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}
-            style={{ paddingTop: 'calc(0.375rem + env(safe-area-inset-top))' }}
+            className={`sticky top-0 px-4 py-3 z-40 bg-[#121212]/95 backdrop-blur-md flex items-center justify-between border-b border-white/5 shadow-sm transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}
+            style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))', paddingBottom: '0.75rem' }}
         >
             <div className="flex items-center gap-3">
                 {showBackButton && (
@@ -40,13 +42,19 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                         <ChevronLeft className="h-5 w-5" />
                     </button>
                 )}
-                <div className="flex items-center gap-2.5">
-                    {icon && (
-                        <span className="text-primary opacity-90">{icon}</span>
-                    )}
+                <div className="flex items-center gap-3">
+                    {/* Live Logo of RidersBUD */}
+                    <img 
+                        src={db?.settings?.appLogoUrl || "/ridersbud_logo.png"}
+                        alt="RidersBUD Logo"
+                        width={36}
+                        height={36}
+                        className="w-9 h-9 rounded-xl object-contain border border-white/10 p-0.5 bg-black/30"
+                        onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
+                    />
                     <div>
                         <h1 className="text-base font-black text-white tracking-tight leading-none">{title}</h1>
-                        {subtitle && <p className="text-[10px] text-gray-400 font-medium">{subtitle}</p>}
+                        {subtitle && <p className="text-[10px] text-gray-400 font-medium mt-0.5">{subtitle}</p>}
                     </div>
                 </div>
             </div>

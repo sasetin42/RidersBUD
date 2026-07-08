@@ -35,8 +35,7 @@ const HireDriverScreen: React.FC = () => {
     const navigate = useNavigate();
 
     const handleBookNow = () => {
-        // The service ID for "Driver for Hire" is '7'
-        navigate('/booking/7');
+        navigate('/app-services/driver-book/driver-for-hire');
     };
 
     return (

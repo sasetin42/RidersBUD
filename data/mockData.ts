@@ -313,9 +313,9 @@ export const seedParts: Part[] = [
         price: 1750.00,
         salesPrice: 1599.00,
         imageUrls: [
-            'https://picsum.photos/seed/engineoil/400/300',
-            'https://picsum.photos/seed/engineoil2/400/300',
-            'https://picsum.photos/seed/engineoil3/400/300'
+            '/placeholder.svg',
+            '/placeholder.svg',
+            '/placeholder.svg'
         ],
         category: 'Engine',
         sku: 'SYN-5W30-5QT',
@@ -328,8 +328,8 @@ export const seedParts: Part[] = [
         description: 'Front set of premium ceramic brake pads for superior stopping power, low dust, and quiet operation.',
         price: 2999.00,
         imageUrls: [
-            'https://picsum.photos/seed/brakepads/400/300',
-            'https://picsum.photos/seed/brakepads2/400/300'
+            '/placeholder.svg',
+            '/placeholder.svg'
         ],
         category: 'Brakes',
         sku: 'CER-PAD-F78',
@@ -342,7 +342,7 @@ export const seedParts: Part[] = [
         description: 'High-performance pleated paper engine air filter. Improves airflow and engine efficiency.',
         price: 999.00,
         imageUrls: [
-            'https://picsum.photos/seed/airfilter/400/300'
+            '/placeholder.svg'
         ],
         category: 'Engine',
         sku: 'AIR-FIL-H21',
@@ -356,8 +356,8 @@ export const seedParts: Part[] = [
         price: 1250.00,
         salesPrice: 1099.00,
         imageUrls: [
-            'https://picsum.photos/seed/wipers/400/300',
-            'https://picsum.photos/seed/wipers2/400/300',
+            '/placeholder.svg',
+            '/placeholder.svg',
         ],
         category: 'Exterior',
         sku: 'WPR-BLD-22',
@@ -375,7 +375,7 @@ export const seedRentalCars: RentalCar[] = [
         type: 'Sedan',
         pricePerDay: 2200,
         seats: 5,
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: '/images/cars/vios.jpg',
         isAvailable: true,
     },
     {
@@ -386,7 +386,7 @@ export const seedRentalCars: RentalCar[] = [
         type: 'SUV',
         pricePerDay: 3500,
         seats: 7,
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: '/images/cars/montero.jpg',
         isAvailable: true,
     },
     {
@@ -397,7 +397,7 @@ export const seedRentalCars: RentalCar[] = [
         type: 'Van',
         pricePerDay: 4000,
         seats: 12,
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: '/images/cars/hiace.jpg',
         isAvailable: false,
     },
     {
@@ -408,7 +408,7 @@ export const seedRentalCars: RentalCar[] = [
         type: 'Luxury',
         pricePerDay: 8000,
         seats: 4,
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: '/images/cars/mustang.jpg',
         isAvailable: true,
     }
 ];
@@ -490,7 +490,7 @@ export const seedMechanics: Mechanic[] = [
         specializations: ['Oil Change', 'Engine Diagnostics', 'Mitsubishi Expert', 'Brake Service'],
         status: 'Active',
         isOnline: true,
-        imageUrl: 'https://picsum.photos/seed/mech1/200/200',
+        imageUrl: '/placeholder.svg',
         lat: 14.5547,
         lng: 121.0244,
         registrationDate: '2022-01-15',
@@ -502,9 +502,9 @@ export const seedMechanics: Mechanic[] = [
             bankName: 'BDO Unibank',
         },
         portfolioImages: [
-            'https://picsum.photos/seed/portfolio1/400/300',
-            'https://picsum.photos/seed/portfolio2/400/300',
-            'https://picsum.photos/seed/portfolio3/400/300',
+            '/placeholder.svg',
+            '/placeholder.svg',
+            '/placeholder.svg',
         ],
         availability: {
             monday: { isAvailable: true, startTime: '09:00', endTime: '17:00' },
@@ -527,9 +527,9 @@ export const seedMechanics: Mechanic[] = [
             { id: 'r2', customerName: 'Maria Santos', rating: 4, comment: 'Good service, but arrived a bit late. The work itself was excellent though.', date: '2023-09-22T14:30:00Z' },
         ],
         verificationDocuments: {
-            nbiClearanceUrl: 'https://picsum.photos/seed/nbi1/800/600',
-            driversLicenseUrl: 'https://picsum.photos/seed/lic1/800/600',
-            certificateOfTrainingsUrl: 'https://picsum.photos/seed/cert1/800/600',
+            nbiClearanceUrl: '/placeholder.svg',
+            driversLicenseUrl: '/placeholder.svg',
+            certificateOfTrainingsUrl: '/placeholder.svg',
             verificationStatus: 'Approved'
         }
     },
@@ -545,7 +545,7 @@ export const seedMechanics: Mechanic[] = [
         specializations: ['Brake Systems', 'Honda Pro', 'Suspension', 'Brake Service'],
         status: 'Active',
         isOnline: true,
-        imageUrl: 'https://picsum.photos/seed/mech2/200/200',
+        imageUrl: '/placeholder.svg',
         lat: 14.6091,
         lng: 121.0223,
         registrationDate: '2022-03-20',
@@ -569,9 +569,9 @@ export const seedMechanics: Mechanic[] = [
             { id: 'r3', customerName: 'Alex Rider', rating: 5, comment: 'Jane fixed my brakes perfectly. My car feels brand new!', date: '2023-11-01T11:00:00Z' },
         ],
         verificationDocuments: {
-            nbiClearanceUrl: 'https://picsum.photos/seed/nbi2/800/600',
-            driversLicenseUrl: 'https://picsum.photos/seed/lic2/800/600',
-            certificateOfTrainingsUrl: 'https://picsum.photos/seed/cert2/800/600',
+            nbiClearanceUrl: '/placeholder.svg',
+            driversLicenseUrl: '/placeholder.svg',
+            certificateOfTrainingsUrl: '/placeholder.svg',
             verificationStatus: 'Approved'
         }
     },
@@ -587,7 +587,7 @@ export const seedMechanics: Mechanic[] = [
         specializations: ['BMW Specialist', 'EV Certified', 'Aircon Repair', 'Maintenance'],
         status: 'Active',
         isOnline: true,
-        imageUrl: 'https://picsum.photos/seed/mech3/200/200',
+        imageUrl: '/placeholder.svg',
         lat: 14.5825,
         lng: 121.0616,
         registrationDate: '2021-11-05',
@@ -609,9 +609,9 @@ export const seedMechanics: Mechanic[] = [
         },
         reviewsList: [],
         verificationDocuments: {
-            nbiClearanceUrl: 'https://picsum.photos/seed/nbi3/800/600',
-            driversLicenseUrl: 'https://picsum.photos/seed/lic3/800/600',
-            certificateOfTrainingsUrl: 'https://picsum.photos/seed/cert3/800/600',
+            nbiClearanceUrl: '/placeholder.svg',
+            driversLicenseUrl: '/placeholder.svg',
+            certificateOfTrainingsUrl: '/placeholder.svg',
             verificationStatus: 'Approved'
         }
     },
@@ -627,7 +627,7 @@ export const seedMechanics: Mechanic[] = [
         specializations: ['General Maintenance', 'Towing', 'Tire Services', 'Tire Rotation & Balancing'],
         status: 'Active',
         isOnline: true,
-        imageUrl: 'https://picsum.photos/seed/mech4/200/200',
+        imageUrl: '/placeholder.svg',
         lat: 14.5560, // Near m1
         lng: 121.0250,
         registrationDate: '2023-02-10',
@@ -649,9 +649,9 @@ export const seedMechanics: Mechanic[] = [
         },
         reviewsList: [],
         verificationDocuments: {
-            nbiClearanceUrl: 'https://picsum.photos/seed/nbi4/800/600',
-            driversLicenseUrl: 'https://picsum.photos/seed/lic4/800/600',
-            certificateOfTrainingsUrl: 'https://picsum.photos/seed/cert4/800/600',
+            nbiClearanceUrl: '/placeholder.svg',
+            driversLicenseUrl: '/placeholder.svg',
+            certificateOfTrainingsUrl: '/placeholder.svg',
             verificationStatus: 'Approved'
         }
     },
@@ -667,7 +667,7 @@ export const seedMechanics: Mechanic[] = [
         specializations: ['Ford Certified', 'Diagnostics', 'Electrical', 'Tire Rotation & Balancing', 'Engine Tune-up'],
         status: 'Active',
         isOnline: true,
-        imageUrl: 'https://picsum.photos/seed/mech5/200/200',
+        imageUrl: '/placeholder.svg',
         lat: 14.6105, // Near m2
         lng: 121.0235,
         registrationDate: '2022-08-01',
@@ -689,9 +689,9 @@ export const seedMechanics: Mechanic[] = [
         },
         reviewsList: [],
         verificationDocuments: {
-            nbiClearanceUrl: 'https://picsum.photos/seed/nbi5/800/600',
-            driversLicenseUrl: 'https://picsum.photos/seed/lic5/800/600',
-            certificateOfTrainingsUrl: 'https://picsum.photos/seed/cert5/800/600',
+            nbiClearanceUrl: '/placeholder.svg',
+            driversLicenseUrl: '/placeholder.svg',
+            certificateOfTrainingsUrl: '/placeholder.svg',
             verificationStatus: 'Approved'
         }
     },
@@ -709,7 +709,7 @@ export const seedMechanics: Mechanic[] = [
         specialties: ['Subaru Specialist', 'Body Repair', 'Engine Tune-up'],
         specializations: ['Subaru Specialist', 'Body Repair', 'Engine Tune-up'],
         status: 'Inactive',
-        imageUrl: 'https://picsum.photos/seed/mech6/200/200',
+        imageUrl: '/placeholder.svg',
         lat: 14.5530, // Near m1
         lng: 121.0261,
         registrationDate: '2023-05-18',
@@ -734,9 +734,9 @@ export const seedMechanics: Mechanic[] = [
         },
         reviewsList: [],
         verificationDocuments: {
-            nbiClearanceUrl: 'https://picsum.photos/seed/nbi6/800/600',
-            driversLicenseUrl: 'https://picsum.photos/seed/lic6/800/600',
-            certificateOfTrainingsUrl: 'https://picsum.photos/seed/cert6/800/600',
+            nbiClearanceUrl: '/placeholder.svg',
+            driversLicenseUrl: '/placeholder.svg',
+            certificateOfTrainingsUrl: '/placeholder.svg',
             verificationStatus: 'Approved' // Even if inactive, they should have docs if they were approved
         }
     },
@@ -754,7 +754,7 @@ export const seedMechanics: Mechanic[] = [
         specialties: ['Hyundai Master Tech', 'Battery Services'],
         specializations: ['Hyundai Master Tech', 'Battery Services'],
         status: 'Pending',
-        imageUrl: 'https://picsum.photos/seed/mech7/200/200',
+        imageUrl: '/placeholder.svg',
         lat: 14.6760, // North QC
         lng: 121.0437,
         registrationDate: '2023-09-01',
@@ -773,9 +773,9 @@ export const seedMechanics: Mechanic[] = [
         },
         reviewsList: [],
         verificationDocuments: {
-            nbiClearanceUrl: 'https://picsum.photos/seed/nbi7/800/600',
-            driversLicenseUrl: 'https://picsum.photos/seed/lic7/800/600',
-            certificateOfTrainingsUrl: 'https://picsum.photos/seed/cert7/800/600',
+            nbiClearanceUrl: '/placeholder.svg',
+            driversLicenseUrl: '/placeholder.svg',
+            certificateOfTrainingsUrl: '/placeholder.svg',
             verificationStatus: 'Pending'
         }
     }
@@ -991,7 +991,7 @@ export const seedCustomers: Customer[] = [
                 vin: 'NS1NVRA000777', mileage: 55000, insuranceProvider: 'Standard Insurance', insurancePolicyNumber: 'POL-STD-555444'
             }
         ],
-        picture: 'https://picsum.photos/seed/juan/200/200',
+        picture: '/placeholder.svg',
         lat: 14.5510,
         lng: 121.0232,
         status: 'Active',
@@ -1003,12 +1003,12 @@ export const seedCustomers: Customer[] = [
             make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         }],
-        picture: 'https://picsum.photos/seed/alex/200/200',
+        picture: '/placeholder.svg',
         lat: 14.6042, lng: 121.0485,
         status: 'Active',
         registrationDate: '2023-06-20',
     },
-    { id: 'c3', name: 'Maria Santos', email: 'maria.s@example.com', password: 'password', phone: '555-333-4444', vehicles: [], picture: 'https://picsum.photos/seed/maria/200/200', lat: 14.6521, lng: 121.0333, status: 'Active', registrationDate: '2023-11-10' },
+    { id: 'c3', name: 'Maria Santos', email: 'maria.s@example.com', password: 'password', phone: '555-333-4444', vehicles: [], picture: '/placeholder.svg', lat: 14.6521, lng: 121.0333, status: 'Active', registrationDate: '2023-11-10' },
 ];
 
 export const seedOrders: Order[] = [

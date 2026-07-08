@@ -41,7 +41,7 @@ const ServiceForm: React.FC<{ service?: Service; onSave: (service: any) => void;
         durationValue: parsedDuration.value,
         durationUnit: parsedDuration.unit,
         category: service?.category || '',
-        imageUrl: service?.imageUrl || 'https://picsum.photos/seed/new/400/300',
+        imageUrl: service?.imageUrl || '/placeholder.svg',
         isCarRental: service?.isCarRental || false,
         carRentalClass: service?.carRentalClass || 'Sedan',
         carRentalTransmission: service?.carRentalTransmission || 'Automatic',
@@ -330,7 +330,7 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
         color: car?.color || '',
         plateNumber: car?.plateNumber || '',
         isAvailable: car?.isAvailable ?? true,
-        imageUrl: car?.imageUrl || 'https://picsum.photos/seed/car/400/300',
+        imageUrl: car?.imageUrl || '/placeholder.svg',
         description: car?.description || '',
         features: (car?.features || []).join(', '),
     });
@@ -505,7 +505,7 @@ const HireDriverForm: React.FC<{ driver?: HireDriver; onSave: (driver: any) => v
         pricePerHour: driver?.pricePerHour || '',
         pricePerDay: driver?.pricePerDay || '',
         isAvailable: driver?.isAvailable ?? true,
-        imageUrl: driver?.imageUrl || 'https://picsum.photos/seed/driver/400/400',
+        imageUrl: driver?.imageUrl || '/placeholder.svg',
         rating: driver?.rating || 5.0,
         totalTrips: driver?.totalTrips || 0,
         languages: (driver?.languages || ['Filipino', 'English']).join(', '),
@@ -839,7 +839,7 @@ const AdminServicesScreen: React.FC = () => {
                                             src={car.imageUrl}
                                             alt={`${car.make} ${car.model}`}
                                             className="w-full h-36 object-cover group-hover:scale-105 transition-transform duration-300"
-                                            onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/car/400/300'; }}
+                                            onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
                                         />
                                         <div className="absolute top-2 right-2">
                                             <span className={`text-xs font-bold px-2 py-1 rounded-full ${car.isAvailable ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`}>
@@ -895,7 +895,7 @@ const AdminServicesScreen: React.FC = () => {
                                                 src={driver.imageUrl}
                                                 alt={driver.name}
                                                 className="w-24 h-24 rounded-full object-cover border-4 border-primary/30 group-hover:scale-105 transition-transform duration-300"
-                                                onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/driver/200/200'; }}
+                                                onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
                                             />
                                         </div>
                                         <div className="absolute top-2 right-2">

@@ -38,6 +38,19 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const markersLayerRef = useRef<any>(null);
     const markersRef = useRef<Record<string, any>>({}); // Store marker instances by id
 
+    const [leafletLoaded, setLeafletLoaded] = React.useState(typeof window !== 'undefined' && !!(window as any).L);
+
+    useEffect(() => {
+        if (leafletLoaded) return;
+        const interval = setInterval(() => {
+            if ((window as any).L) {
+                setLeafletLoaded(true);
+                clearInterval(interval);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [leafletLoaded]);
+
     // Initialize map on component mount
     useEffect(() => {
         if (!mapRef.current || mapInstanceRef.current || typeof L === 'undefined') {
@@ -76,7 +89,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 mapInstanceRef.current = null;
             }
         };
-    }, []); // Empty dependency array ensures this runs only once
+    }, [leafletLoaded]); // Re-run when leaflet finishes loading
 
     // Update map view when center or zoom props change
     useEffect(() => {

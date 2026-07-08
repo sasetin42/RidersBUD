@@ -25,7 +25,7 @@ const MechanicFormModal: React.FC<{
         phone: mechanic?.phone || '',
         bio: mechanic?.bio || '',
         specializations: mechanic?.specializations || [],
-        imageUrl: mechanic?.imageUrl || 'https://picsum.photos/seed/newmech/200/200',
+        imageUrl: mechanic?.imageUrl || '/placeholder.svg',
         birthday: mechanic?.birthday || '',
     });
     const [documents, setDocuments] = useState<{ nbi: string; license: string; certificate: string; nbiType?: string; licenseType?: string; certificateType?: string }>({
@@ -1110,7 +1110,7 @@ const AdminMechanicsScreen: React.FC = () => {
                                             <td className="p-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="relative flex-shrink-0">
-                                                        <img src={mechanic.imageUrl || 'https://picsum.photos/seed/mechanic/200/200'} alt={mechanic.name} className="w-11 h-11 object-cover rounded-xl ring-1 ring-white/10" />
+                                                        <img src={mechanic.imageUrl || '/placeholder.svg'} alt={mechanic.name} className="w-11 h-11 object-cover rounded-xl ring-1 ring-white/10" />
                                                         <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#121212] ${mechanic.isOnline ? 'bg-green-500' : mechanic.status === 'Pending' ? 'bg-yellow-500' : mechanic.status === 'Active' ? 'bg-gray-500' : 'bg-red-500'}`} />
                                                     </div>
                                                     <div>
@@ -1284,7 +1284,7 @@ const AdminMechanicsScreen: React.FC = () => {
                             {/* Header Row: Avatar + Name + Status */}
                             <div className="flex items-start gap-3 mb-3">
                                 <div className="relative flex-shrink-0">
-                                    <img src={mechanic.imageUrl || 'https://picsum.photos/seed/mechanic/200/200'} alt={mechanic.name} className="w-12 h-12 rounded-xl object-cover ring-2 ring-white/5" />
+                                    <img src={mechanic.imageUrl || '/placeholder.svg'} alt={mechanic.name} className="w-12 h-12 rounded-xl object-cover ring-2 ring-white/5" />
                                     <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#1a1a1a] ${mechanic.isOnline ? 'bg-green-500' : mechanic.status === 'Pending' ? 'bg-yellow-500' : mechanic.status === 'Active' ? 'bg-gray-500' : 'bg-red-500'}`}></div>
                                 </div>
                                 <div className="flex-1 min-w-0">

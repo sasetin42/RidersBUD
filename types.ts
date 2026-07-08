@@ -286,19 +286,26 @@ export interface ServiceRequest {
     id: string;
     customerId: string;
     customerName?: string;
+    customerPhone?: string;
+    customerEmail?: string;
     serviceId: string;
     serviceName?: string;
     pricingId?: string;
     providerId?: string;
-    status: 'Pending' | 'In Progress' | 'Completed' | 'Cancelled' | string;
+    status: 'Pending' | 'In Progress' | 'Completed' | 'Cancelled' | 'Pending Admin Review' | 'For Verification' | 'Awaiting Driver Availability' | 'Driver Assigned' | 'Confirmed' | string;
     details?: any;
     vehicleId?: string;
+    vehicleDetails?: any;
     scheduledDate?: string;
     completedDate?: string;
     notes?: string;
     totalAmount?: number;
     createdAt: string;
     updatedAt: string;
+    driverName?: string;
+    driverPhone?: string;
+    estimatedArrivalTime?: string;
+    remarks?: string;
 }
 
 export interface ServiceActivityLog {
@@ -488,6 +495,7 @@ export interface Booking {
     paidAmount?: number;
     totalAmount?: number;
     isPaid?: boolean;
+    isRental?: boolean;
     gcashReference?: string;
     gcashReceiptUrl?: string;
     gcashDeclineReason?: string;
@@ -631,6 +639,10 @@ export interface RentalBooking {
     totalPrice: number;
     status?: string;
     createdAt?: string;
+    paidAmount?: number;
+    paymentStatus?: string;
+    isPaid?: boolean;
+    includeDriver?: boolean;
 }
 export type Subscription = any;
 export type PromoCode = any;
@@ -674,6 +686,7 @@ export interface LiaisonStaff {
     imageUrl: string;
     rating: number;
     assignedBranches: string[]; // Branch IDs
+    assignedServices?: string[]; // Liaison Service Types (e.g. Registration Renewal, etc.)
     isAvailable: boolean;
     description?: string;
     totalJobs?: number;
@@ -724,9 +737,11 @@ export interface LiaisonBooking {
         size: number;
         url: string; // Simulated base64 or file URL
     }>;
-    status: 'Booking Received' | 'Documents Verified' | 'Payment Confirmed' | 'Liaison Assigned' | 'Processing at LTO' | 'Awaiting Approval' | 'Completed' | 'Ready for Pickup' | 'Delivered';
-    paymentStatus: 'Pending' | 'Paid' | 'Failed' | 'Refunded';
+    status: 'Booking Received' | 'Documents Verified' | 'Payment Confirmed' | 'Liaison Assigned' | 'Processing at LTO' | 'Awaiting Approval' | 'Completed' | 'Ready for Pickup' | 'Delivered' | 'Pending Admin Review' | 'For Verification' | 'For Processing' | 'Assigned' | 'In Progress' | 'Cancelled';
+    paymentStatus: 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'partial';
     paymentMethod: 'GCash' | 'Maya' | 'Credit Card' | 'Debit Card' | 'Cash' | 'Bank Transfer';
+    totalAmount?: number;
+    paidAmount?: number;
     fees: {
         serviceFee: number;
         governmentFee: number;

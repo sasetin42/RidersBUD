@@ -4,6 +4,7 @@ import { useDatabase } from './DatabaseContext';
 
 import { useAuth } from './AuthContext';
 import { useMechanicAuth } from './MechanicAuthContext';
+import { useAdminAuth } from './AdminAuthContext';
 
 interface NotificationContextType {
     notifications: Notification[];
@@ -45,10 +46,8 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     const { user, isAuthenticated } = useAuth();
     const { mechanic, isMechanicAuthenticated } = useMechanicAuth();
-    
-    const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(
-        localStorage.getItem('ridersbud_admin_session') === 'true'
-    );
+    // Consume admin auth reactively from context — avoids stale localStorage reads
+    const { isAdminAuthenticated } = useAdminAuth();
 
     // Track the timestamp at which the active user last cleared all notifications.
     // Any notification with timestamp <= clearedAt is hidden (covers broadcast 'all' docs too).
@@ -74,18 +73,6 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         }
     }, [activeRecipientId]);
 
-    useEffect(() => {
-        const handleAuthChange = () => {
-            setIsAdminAuthenticated(localStorage.getItem('ridersbud_admin_session') === 'true');
-        };
-        window.addEventListener('adminAuthChange', handleAuthChange);
-        window.addEventListener('storage', handleAuthChange);
-        return () => {
-            window.removeEventListener('adminAuthChange', handleAuthChange);
-            window.removeEventListener('storage', handleAuthChange);
-        };
-    }, []);
-
     // Live notifications from Firestore, sorted newest first, filtered strictly by active UID to prevent leakage.
     // Each user ONLY sees notifications that belong to them — NEVER cross-user notifications.
     const notifications = [...(db?.notifications || [])]
@@ -93,9 +80,16 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             // Hide notifications that were cleared (by timestamp)
             if (clearedAt > 0 && (n.timestamp ?? 0) <= clearedAt) return false;
 
-            // Strict filtering by recipientId
-            if (n.recipientId === 'all') return true;
-            if (activeRecipientId && n.recipientId === activeRecipientId) return true;
+            // Strict role and recipient filtering to prevent notifications leakage across accounts
+            if (isAdminAuthenticated) {
+                return n.recipientId === 'admin' || n.recipientRole === 'admin';
+            }
+            if (isMechanicAuthenticated && mechanic) {
+                return n.recipientId === mechanic.id || (n.recipientId === 'all' && n.recipientRole === 'mechanic');
+            }
+            if (isAuthenticated && user) {
+                return n.recipientId === user.id || (n.recipientId === 'all' && (!n.recipientRole || n.recipientRole === 'customer'));
+            }
 
             return false;
         })
@@ -176,6 +170,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     // --- Sound and Voice Announcements ---
     const [lastNotifiedId, setLastNotifiedId] = useState<string | null>(null);
+    const isInitialLoadRef = React.useRef(true);
 
     const playNotificationChime = useCallback(() => {
         try {
@@ -278,6 +273,12 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         const latestNotif = notifications[0];
         if (latestNotif && latestNotif.id && latestNotif.id !== lastNotifiedId) {
             setLastNotifiedId(latestNotif.id);
+
+            // Do not announce historical notifications on initial load/mount
+            if (isInitialLoadRef.current) {
+                isInitialLoadRef.current = false;
+                return;
+            }
 
             if (latestNotif.status === 'unread' || latestNotif.read === false) {
                 playNotificationChime();

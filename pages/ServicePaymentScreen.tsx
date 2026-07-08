@@ -15,16 +15,71 @@ const ServicePaymentScreen: React.FC = () => {
     const navigate = useNavigate();
     const queryParams = new URLSearchParams(location.search);
     const bookingIdParam = queryParams.get('bookingId');
+    const isRentalParam = queryParams.get('isRental') === 'true';
     const bookingState = (location.state as { booking?: Booking })?.booking;
-    const { db, updateBookingPayment } = useDatabase();
+    const { db, updateBookingPayment, updateRentalBooking } = useDatabase();
     const { user } = useAuth();
 
     const bookingFromQuery = useMemo(() => {
         if (!bookingIdParam || !db) return undefined;
+        if (isRentalParam) {
+            const rental = db.rentalBookings?.find(b => b.id === bookingIdParam);
+            if (rental) {
+                return {
+                    ...rental,
+                    isRental: true,
+                    totalAmount: rental.totalPrice,
+                    services: [{ name: `Rent a Car: ${rental.carId}`, price: rental.totalPrice }]
+                } as any;
+            }
+        }
         return db.bookings.find(b => b.id === bookingIdParam);
-    }, [bookingIdParam, db]);
+    }, [bookingIdParam, db, isRentalParam]);
 
-    const booking = bookingState || bookingFromQuery;
+    const bookingFromSession = useMemo(() => {
+        const pendingTx = sessionStorage.getItem('pendingHitPayServiceTx');
+        if (pendingTx) {
+            try {
+                const parsed = JSON.parse(pendingTx);
+                return parsed.fullBooking as Booking;
+            } catch (e) {
+                return undefined;
+            }
+        }
+        return undefined;
+    }, []);
+
+    const booking = bookingState || bookingFromQuery || bookingFromSession;
+
+    const services = useMemo(() => {
+        if (!booking) return [];
+        return booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+    }, [booking]);
+
+    const total = useMemo(() => {
+        return services.reduce((sum: number, s: any) => sum + (s.price || 0), 0);
+    }, [services]);
+
+    const paid = useMemo(() => {
+        if (!booking) return 0;
+        return booking.paidAmount || 0;
+    }, [booking]);
+
+    const serviceNames = useMemo(() => {
+        return services.map((s: any) => s.name).join(', ');
+    }, [services]);
+
+    const isDeposit = useMemo(() => {
+        return booking?.paymentStatus === 'deposit' || (paid === 0 && !booking?.isRental);
+    }, [booking, paid]);
+
+    const amountToPay = useMemo(() => {
+        if (isDeposit) {
+            return total / 2;
+        }
+        return total - paid;
+    }, [total, paid, isDeposit]);
+
     const [showGCashModal, setShowGCashModal] = useState(false);
     const [selectedMethod, setSelectedMethod] = useState('');
     const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '' });
@@ -32,32 +87,17 @@ const ServicePaymentScreen: React.FC = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState('');
 
-    React.useEffect(() => {
-        if (!booking && !isProcessing) {
-            navigate('/customer-portal/booking-history');
-        }
-    }, [booking, isProcessing, navigate]);
-
-    if (!booking) {
-        return <div className="flex items-center justify-center h-full bg-secondary"><Spinner size="lg" /></div>;
-    }
-
-    const services = booking.services || (booking.service ? [booking.service] : []);
-    const serviceNames = services.map(s => s.name).join(', ') || 'Unknown Service';
-    const basePrice = services.reduce((total, s) => total + (s.price || 0), 0);
-    const total = booking.totalAmount || basePrice;
-    const paid = booking.paidAmount || 0;
-    const isDeposit = booking?.paymentStatus === 'pending' || !booking?.paymentStatus;
-    const amountToPay = isDeposit ? total * 0.5 : (total - paid);
+    const finalizeRun = React.useRef(false);
 
     React.useEffect(() => {
         const queryParams = new URLSearchParams(window.location.search);
         const status = queryParams.get('status');
 
-        if (status === 'completed' && !isProcessing) {
+        if (status === 'completed' && !isProcessing && !finalizeRun.current) {
             const pendingTx = sessionStorage.getItem('pendingHitPayServiceTx');
             if (pendingTx) {
-                const { bookingId, amount, totalAmount, currentPaid, fullBooking } = JSON.parse(pendingTx);
+                finalizeRun.current = true;
+                const { bookingId, amount, totalAmount, currentPaid, fullBooking, isRental } = JSON.parse(pendingTx);
 
                 const finalizePayment = async () => {
                     try {
@@ -65,11 +105,28 @@ const ServicePaymentScreen: React.FC = () => {
                         const newPaidAmount = currentPaid + amount;
                         const newPaymentStatus = newPaidAmount >= totalAmount ? 'paid' : 'partial';
                         const isFullyPaid = newPaymentStatus === 'paid';
+                        const isRentalBooking = fullBooking?.isRental || isRental;
 
-                        await updateBookingPayment(bookingId, amount, newPaymentStatus);
+                        if (isRentalBooking && updateRentalBooking) {
+                            await updateRentalBooking(bookingId, {
+                                paidAmount: newPaidAmount,
+                                paymentStatus: newPaymentStatus,
+                                isPaid: isFullyPaid,
+                                status: 'Confirmed'
+                            });
+                        } else {
+                            await updateBookingPayment(bookingId, amount, newPaymentStatus);
+                        }
                         sessionStorage.removeItem('pendingHitPayServiceTx');
 
-                        const updatedBooking = { ...fullBooking, paidAmount: newPaidAmount, paymentStatus: newPaymentStatus, isPaid: isFullyPaid };
+                        const updatedBooking = { 
+                            ...fullBooking, 
+                            paidAmount: newPaidAmount, 
+                            paymentStatus: newPaymentStatus, 
+                            isPaid: isFullyPaid,
+                            isRental: isRentalBooking,
+                            status: isRentalBooking ? 'Confirmed' : (fullBooking?.status || 'pending')
+                        };
                         navigate('/customer-portal/service-payment-confirmation', { state: { booking: updatedBooking }, replace: true });
                     } catch (err) {
                         setError("Failed to verify payment status.");
@@ -88,9 +145,18 @@ const ServicePaymentScreen: React.FC = () => {
         if (!booking && !isProcessing && !status) {
             navigate('/customer-portal/booking-history');
         }
-    }, [booking, isProcessing, navigate, updateBookingPayment]);
+    }, [booking, isProcessing, navigate, updateBookingPayment, updateRentalBooking]);
 
-    if (!booking && !isProcessing && !sessionStorage.getItem('pendingHitPayServiceTx')) {
+    if (isProcessing) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full bg-secondary space-y-4">
+                <Spinner size="lg" />
+                <p className="text-white font-medium">Verifying your payment, please wait...</p>
+            </div>
+        );
+    }
+
+    if (!booking) {
         return <div className="flex items-center justify-center h-full bg-secondary"><Spinner size="lg" /></div>;
     }
 
@@ -150,7 +216,8 @@ const ServicePaymentScreen: React.FC = () => {
                 amount: amountToPay,
                 totalAmount: total,
                 currentPaid: paid,
-                fullBooking: booking
+                fullBooking: booking,
+                isRental: booking.isRental // Explicitly serialize isRental flag
             }));
 
             const returnUrl = `${window.location.origin}${window.location.pathname}`;
@@ -252,13 +319,27 @@ const ServicePaymentScreen: React.FC = () => {
                     paymentLabel={isDeposit ? 'Deposit (50%)' : 'Remaining Balance'}
                     customerName={user?.name || 'Customer'}
                     services={services.map(s => ({ name: s.name, price: s.price }))}
-                    onPaymentVerified={() => {
+                    onPaymentVerified={async () => {
                         setShowGCashModal(false);
-                        const updatedBooking: Booking = {
+                        const newPaidAmount = paid + amountToPay;
+                        const newPaymentStatus = isDeposit ? 'partial' : 'paid';
+                        const isFullyPaid = !isDeposit;
+
+                        if (booking.isRental && updateRentalBooking) {
+                            await updateRentalBooking(booking.id, {
+                                paidAmount: newPaidAmount,
+                                paymentStatus: newPaymentStatus,
+                                isPaid: isFullyPaid,
+                                status: 'Confirmed'
+                            });
+                        }
+
+                        const updatedBooking = {
                             ...booking,
-                            paidAmount: paid + amountToPay,
-                            paymentStatus: isDeposit ? 'partial' : 'paid',
-                            isPaid: !isDeposit
+                            paidAmount: newPaidAmount,
+                            paymentStatus: newPaymentStatus,
+                            isPaid: isFullyPaid,
+                            status: booking.isRental ? 'Confirmed' : booking.status
                         };
                         navigate('/customer-portal/service-payment-confirmation', { state: { booking: updatedBooking }, replace: true });
                     }}

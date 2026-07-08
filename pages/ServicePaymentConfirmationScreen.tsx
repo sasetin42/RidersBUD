@@ -7,7 +7,7 @@ import { Booking } from '../types';
 const ServicePaymentConfirmationScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { booking } = (location.state as { booking: Booking }) || {};
+    const { booking } = (location.state as { booking: any }) || {};
 
     React.useEffect(() => {
         if (!booking) {
@@ -33,7 +33,9 @@ const ServicePaymentConfirmationScreen: React.FC = () => {
                 </svg>
                 <h2 className="text-3xl font-bold text-white">Payment Successful!</h2>
                 <p className="text-light-gray max-w-sm">
-                    Thank you for your payment. Your booking #{booking.id.slice(-6)} is now fully paid. The mechanic has been notified.
+                    {booking.isRental
+                        ? `Thank you for your payment. Your car rental booking #${booking.id.slice(-6)} is now paid. The liaison agent has been notified.`
+                        : `Thank you for your payment. Your booking #${booking.id.slice(-6)} is now fully paid. The mechanic has been notified.`}
                 </p>
 
                 <div className="w-full max-w-sm bg-dark-gray p-4 rounded-lg text-left space-y-2">
@@ -48,7 +50,7 @@ const ServicePaymentConfirmationScreen: React.FC = () => {
                 </div>
                 <div className="w-full max-w-sm flex flex-col gap-3 mt-4">
                     <button
-                        onClick={() => navigate('/booking-history')}
+                        onClick={() => navigate(booking.isRental ? '/customer-portal/service-requests' : '/booking-history')}
                         className="w-full bg-field text-white font-bold py-3 rounded-lg hover:bg-gray-600 transition"
                     >
                         View Booking History

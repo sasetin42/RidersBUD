@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useAuth } from '../../context/AuthContext';
-import { ChevronLeft, ChevronRight, CheckCircle, Car, Calendar, MapPin, FileText, Camera, Shield, FileCheck, Check, AlertCircle, Search, Phone } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Car, Calendar, MapPin, FileText, Camera, Shield, FileCheck, Check, AlertCircle, Search, Phone, Home, Briefcase, Mail, Wallet, CreditCard, Banknote, Info } from 'lucide-react';
 import Spinner from '../../components/Spinner';
 import { VehicleFormModal } from '../MyGarageScreen';
 import { Vehicle } from '../../types';
@@ -20,9 +20,24 @@ const LiaisonBookingFlow: React.FC = () => {
     const { user, addUserVehicle } = useAuth();
     const navigate = useNavigate();
 
-    const service = db?.appServices?.find(s => s.id === slug);
+    const service = db?.appServices?.find(s => s.id === slug || s.slug === slug);
     const vehicles = user?.vehicles || [];
     
+    // Check if the service is Registration Assistance
+    const isRegAssist = slug === 'registration-assistance' || service?.slug === 'registration-assistance';
+    const totalSteps = isRegAssist ? 5 : 8;
+
+    // Registration Assistance specific state variables
+    const [regVehicleType, setRegVehicleType] = useState<string>('Sedan');
+    const [regPlateNumber, setRegPlateNumber] = useState<string>('');
+    const [regStatus, setRegStatus] = useState<string>('Active');
+    const [regAssistanceType, setRegAssistanceType] = useState<string>('Registration Renewal');
+    const [regLocation, setRegLocation] = useState<string>('');
+    const [regNotes, setRegNotes] = useState<string>('');
+    const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
+    const [branchSearchQuery, setBranchSearchQuery] = useState('');
+    const branchDropdownRef = useRef<HTMLDivElement>(null);
+
     const defaultBranches = [
         { id: 'lto-qc', name: 'LTO Quezon City District Office', address: 'East Avenue, Diliman, Quezon City', city: 'Quezon City', phone: '09171234567', isAvailable: true, lat: 14.6441, lng: 121.0483 },
         { id: 'lto-pasay', name: 'LTO Pasay District Office', address: 'Domestic Road, Pasay City', city: 'Pasay City', phone: '09172345678', isAvailable: true, lat: 14.5441, lng: 120.9942 },
@@ -48,11 +63,11 @@ const LiaisonBookingFlow: React.FC = () => {
     ];
     const branches = db?.liaisonBranches && db.liaisonBranches.length > 0 ? db.liaisonBranches : defaultBranches;
     const defaultStaff = [
-        { id: 'liaison-juan', name: 'Juan Dela Cruz', phone: '09181234567', imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200', rating: 4.8, assignedBranches: ['lto-qc', 'lto-pasay'], isAvailable: true, description: 'Experienced Liaison Officer specializing in registration and license renewals.', totalJobs: 24 },
-        { id: 'liaison-maria', name: 'Maria Santos', phone: '09182345678', imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', rating: 4.9, assignedBranches: ['lto-makati', 'lto-pasay', 'lto-manila'], isAvailable: true, description: 'Efficient and professional, handling LTO documents with care.', totalJobs: 18 },
-        { id: 'liaison-ramon', name: 'Ramon Valenzuela', phone: '09183456789', imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200', rating: 4.7, assignedBranches: ['lto-angeles', 'lto-pampanga', 'lto-dagupan'], isAvailable: true, description: 'Dedicated officer with deep knowledge of LTO policies and procedures.', totalJobs: 15 },
-        { id: 'liaison-sarah', name: 'Sarah Geronimo', phone: '09184567890', imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200', rating: 4.95, assignedBranches: ['lto-cebu', 'lto-mandaue', 'lto-lapulapu'], isAvailable: true, description: 'Visayas regional coordinator, handles all document liaisons with premium efficiency.', totalJobs: 32 },
-        { id: 'liaison-michael', name: 'Michael Dinglasan', phone: '09185678901', imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200', rating: 4.85, assignedBranches: ['lto-davao', 'lto-gensan'], isAvailable: true, description: 'Mindanao document handling specialist, fast processing speed and highly reliable.', totalJobs: 21 }
+        { id: 'liaison-juan', name: 'Juan Dela Cruz', phone: '09181234567', imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200', rating: 4.8, assignedBranches: ['lto-qc', 'lto-pasay'], assignedServices: ['Vehicle Registration Renewal', 'Transfer of Ownership'], isAvailable: true, description: 'Experienced Liaison Officer specializing in registration and license renewals.', totalJobs: 24 },
+        { id: 'liaison-maria', name: 'Maria Santos', phone: '09182345678', imageUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', rating: 4.9, assignedBranches: ['lto-makati', 'lto-pasay', 'lto-manila'], assignedServices: ['Vehicle Registration Renewal', 'Duplicate OR', 'Duplicate CR'], isAvailable: true, description: 'Efficient and professional, handling LTO documents with care.', totalJobs: 18 },
+        { id: 'liaison-ramon', name: 'Ramon Valenzuela', phone: '09183456789', imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200', rating: 4.7, assignedBranches: ['lto-angeles', 'lto-pampanga', 'lto-dagupan'], assignedServices: ['Vehicle Registration Renewal', 'Lost Plate', 'Replacement Plate'], isAvailable: true, description: 'Dedicated officer with deep knowledge of LTO policies and procedures.', totalJobs: 15 },
+        { id: 'liaison-sarah', name: 'Sarah Geronimo', phone: '09184567890', imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200', rating: 4.95, assignedBranches: ['lto-cebu', 'lto-mandaue', 'lto-lapulapu'], assignedServices: ['Vehicle Registration Renewal', 'Transfer of Ownership', 'Change Engine', 'Change Color'], isAvailable: true, description: 'Visayas regional coordinator, handles all document liaisons with premium efficiency.', totalJobs: 32 },
+        { id: 'liaison-michael', name: 'Michael Dinglasan', phone: '09185678901', imageUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200', rating: 4.85, assignedBranches: ['lto-davao', 'lto-gensan'], assignedServices: ['Vehicle Registration Renewal', 'New Registration', 'Other'], isAvailable: true, description: 'Mindanao document handling specialist, fast processing speed and highly reliable.', totalJobs: 21 }
     ];
     const staff = db?.liaisonStaff && db.liaisonStaff.length > 0 ? db.liaisonStaff : defaultStaff;
     const accentColor = db?.settings?.accentColor || '#FE7803';
@@ -93,6 +108,9 @@ const LiaisonBookingFlow: React.FC = () => {
     // Step 6: Schedule
     const [appointmentDate, setAppointmentDate] = useState<string>('');
     const [appointmentTime, setAppointmentTime] = useState<string>('');
+    const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+    const [calendarViewDate, setCalendarViewDate] = useState(new Date());
+    const calendarRef = useRef<HTMLDivElement>(null);
 
     // Step 7: Pickup & Contact Info
     const [pickupOption, setPickupOption] = useState<'Customer brings documents' | 'Home Pickup' | 'Office Pickup'>('Customer brings documents');
@@ -111,6 +129,29 @@ const LiaisonBookingFlow: React.FC = () => {
     const mapRef = React.useRef<HTMLDivElement | null>(null);
     const mapInstanceRef = React.useRef<any>(null);
     const markersRef = React.useRef<any[]>([]);
+    const dateInputRef = useRef<HTMLInputElement | null>(null);
+
+    // Close branch dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target as Node)) {
+                setIsBranchDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Close calendar on click outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+                setIsCalendarOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // Map cleanup when step changes
     useEffect(() => {
@@ -231,6 +272,14 @@ const LiaisonBookingFlow: React.FC = () => {
                 if (data.customerEmail) setCustomerEmail(data.customerEmail);
                 if (data.preferredContact) setPreferredContact(data.preferredContact);
                 if (data.paymentMethod) setPaymentMethod(data.paymentMethod);
+                
+                // Registration Assistance loads
+                if (data.regVehicleType) setRegVehicleType(data.regVehicleType);
+                if (data.regPlateNumber) setRegPlateNumber(data.regPlateNumber);
+                if (data.regStatus) setRegStatus(data.regStatus);
+                if (data.regAssistanceType) setRegAssistanceType(data.regAssistanceType);
+                if (data.regLocation) setRegLocation(data.regLocation);
+                if (data.regNotes) setRegNotes(data.regNotes);
             }
         } catch (_) {}
     }, []);
@@ -254,7 +303,15 @@ const LiaisonBookingFlow: React.FC = () => {
                 customerPhone: customerPhone || user?.phone || '',
                 customerEmail: customerEmail || user?.email || '',
                 preferredContact,
-                paymentMethod
+                paymentMethod,
+
+                // Registration Assistance saves
+                regVehicleType,
+                regPlateNumber,
+                regStatus,
+                regAssistanceType,
+                regLocation,
+                regNotes
             };
             sessionStorage.setItem('LIAISON_WIZARD_STATE', JSON.stringify(state));
         } catch (_) {}
@@ -277,24 +334,104 @@ const LiaisonBookingFlow: React.FC = () => {
         );
     }
 
+    // Auto-deselect liaison agent if they become unavailable in real-time
+    useEffect(() => {
+        if (selectedLiaisonId) {
+            const currentAgent = staff.find(s => s.id === selectedLiaisonId);
+            if (currentAgent && currentAgent.isAvailable === false) {
+                setSelectedLiaisonId('');
+            }
+        }
+    }, [staff, selectedLiaisonId]);
+
     // Dynamic Seeding fallback
     const selectedBranch = branches.find(b => b.id === selectedBranchId) || branches[0];
     const filteredStaff = (() => {
-        const activeStaff = (db?.liaisonStaff || staff).filter(s => s.isAvailable !== false);
-        const branchSpecific = activeStaff.filter(s => s.assignedBranches && s.assignedBranches.includes(selectedBranchId));
-        return branchSpecific.length > 0 ? branchSpecific : activeStaff;
+        const branchSpecific = staff.filter(s => s.assignedBranches && s.assignedBranches.includes(selectedBranchId));
+        const serviceAndBranchSpecific = branchSpecific.filter(s => s.assignedServices && s.assignedServices.includes(serviceType));
+        
+        let result = staff;
+        if (serviceAndBranchSpecific.length > 0) {
+            result = serviceAndBranchSpecific;
+        } else if (branchSpecific.length > 0) {
+            result = branchSpecific;
+        }
+        
+        return [...result].sort((a, b) => {
+            const aAvail = a.isAvailable !== false ? 1 : 0;
+            const bAvail = b.isAvailable !== false ? 1 : 0;
+            return bAvail - aAvail;
+        });
     })();
     const selectedLiaison = staff.find(s => s.id === selectedLiaisonId);
 
     // Fees calculation
-    const fees = {
+    const fees = isRegAssist ? {
+        serviceFee: 1500,
+        governmentFee: 0,
+        pickupFee: 0,
+        discount: 0,
+        total: 1500
+    } : {
         serviceFee: 1500,
         governmentFee: serviceType.includes('Ownership') ? 2200 : 1200,
         pickupFee: pickupOption === 'Customer brings documents' ? 0 : 250,
         discount: 0,
         total: 0
     };
-    fees.total = fees.serviceFee + fees.governmentFee + fees.pickupFee - fees.discount;
+    if (!isRegAssist) {
+        fees.total = fees.serviceFee + fees.governmentFee + fees.pickupFee - fees.discount;
+    }
+
+    const getFormattedDate = (dateStr: string) => {
+        if (!dateStr) return '';
+        try {
+            const selected = new Date(dateStr.replace(/-/g, '/'));
+            if (isNaN(selected.getTime())) return '';
+            
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            const normalizedSelected = new Date(selected.getFullYear(), selected.getMonth(), selected.getDate());
+            const diffTime = normalizedSelected.getTime() - today.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            
+            const formatOptions: Intl.DateTimeFormatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const formattedSelected = selected.toLocaleDateString('en-US', formatOptions);
+            const formattedToday = new Date().toLocaleDateString('en-US', formatOptions);
+            
+            if (diffDays === 1) {
+                return `${formattedToday} (Today) to ${formattedSelected} (Tomorrow)`;
+            } else if (diffDays === 2) {
+                return `${formattedToday} (Today) to ${formattedSelected} (In 2 Days)`;
+            } else if (diffDays === 3) {
+                return `${formattedToday} (Today) to ${formattedSelected} (In 3 Days)`;
+            }
+            
+            return formattedSelected;
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const handleQuickDateSelect = (daysOffset: number) => {
+        const target = new Date();
+        target.setDate(target.getDate() + daysOffset);
+        const yyyy = target.getFullYear();
+        const mm = String(target.getMonth() + 1).padStart(2, '0');
+        const dd = String(target.getDate()).padStart(2, '0');
+        setAppointmentDate(`${yyyy}-${mm}-${dd}`);
+    };
+
+    const handleInputContainerClick = () => {
+        if (dateInputRef.current) {
+            try {
+                dateInputRef.current.showPicker();
+            } catch (_) {
+                dateInputRef.current.focus();
+            }
+        }
+    };
 
     const handleNext = () => {
         const next = currentStep + 1;
@@ -312,13 +449,12 @@ const LiaisonBookingFlow: React.FC = () => {
         }
     };
 
-    // Document mock uploading simulator
-    const simulateUpload = (docKey: string, fileName: string, size: number, type: string) => {
+    const simulateUpload = (docKey: string, fileName: string, size: number, type: string, fileUrl?: string) => {
         let currentProgress = 0;
         setUploadedDocs(prev => ({
             ...prev,
             [docKey]: {
-                file: { name: fileName, size, type, url: 'data:text/plain;base64,U2ltdWxhdGVkRmlsZQ==' },
+                file: { name: fileName, size, type, url: fileUrl || 'data:text/plain;base64,U2ltdWxhdGVkRmlsZQ==' },
                 progress: 0
             }
         }));
@@ -343,6 +479,25 @@ const LiaisonBookingFlow: React.FC = () => {
     };
 
     const isStepValid = () => {
+        if (isRegAssist) {
+            if (currentStep === 1) return true; // Description step
+            if (currentStep === 2) {
+                // Form step: vehicle type, plate number, location, contact
+                return !!regVehicleType && !!regPlateNumber && !!regLocation && (!!customerPhone || !!user?.phone);
+            }
+            if (currentStep === 3) {
+                // Documents step - verify uploaded OR, CR, ID and Previous Registration if applicable
+                // Since this is documents, check if at least one file is uploaded to progress
+                return Object.keys(uploadedDocs).length > 0;
+            }
+            if (currentStep === 4) {
+                // Preferred schedule step
+                return !!appointmentDate && !!appointmentTime;
+            }
+            if (currentStep === 5) return true; // Review step
+            return true;
+        }
+
         if (currentStep === 1) {
             return !!selectedVehicleId;
         }
@@ -375,7 +530,14 @@ const LiaisonBookingFlow: React.FC = () => {
                 url: uploadedDocs[key].file.url
             }));
 
-            const vehicleData = (() => {
+            const vehicleData = isRegAssist ? {
+                plateNumber: regPlateNumber,
+                type: regVehicleType,
+                brand: 'Registration Assistance',
+                model: regAssistanceType,
+                year: new Date().getFullYear(),
+                color: regStatus
+            } : (() => {
                 const found = vehicles.find(v => v.id === selectedVehicleId || v.plateNumber === selectedVehicleId);
                 return {
                     plateNumber: found?.plateNumber || '',
@@ -392,33 +554,40 @@ const LiaisonBookingFlow: React.FC = () => {
                 customerName: user.name,
                 customerPhone: customerPhone || user.phone || '',
                 customerEmail: customerEmail || user.email || '',
-                serviceType,
+                serviceType: isRegAssist ? 'Registration Assistance' : serviceType,
                 vehicleDetails: vehicleData,
-                branchId: selectedBranchId,
-                branchName: selectedBranch?.name || 'LTO Branch',
-                liaisonId: selectedLiaisonId,
-                liaisonName: selectedLiaison?.name || 'Assigned Liaison',
+                branchId: isRegAssist ? 'registration-assistance' : selectedBranchId,
+                branchName: isRegAssist ? regLocation : (selectedBranch?.name || 'LTO Branch'),
+                liaisonId: isRegAssist ? 'unassigned' : selectedLiaisonId,
+                liaisonName: isRegAssist ? 'Pending Assignment' : (selectedLiaison?.name || 'Assigned Liaison'),
                 appointmentDate,
                 appointmentTime,
-                pickupOption,
-                pickupAddress: pickupOption === 'Customer brings documents' ? undefined : pickupAddress,
+                pickupOption: isRegAssist ? 'Customer brings documents' as const : pickupOption,
+                pickupAddress: isRegAssist ? undefined : (pickupOption === 'Customer brings documents' ? undefined : pickupAddress),
                 documents: docArray,
-                status: 'Booking Received' as const,
-                paymentStatus: paymentMethod === 'Cash' ? 'Pending' as const : 'Paid' as const,
-                paymentMethod,
+                status: isRegAssist ? 'Pending Admin Review' as const : 'Booking Received' as const,
+                paymentStatus: isRegAssist ? 'Pending' as const : (paymentMethod === 'Cash' ? 'Pending' as const : 'partial' as const),
+                paymentMethod: isRegAssist ? 'Cash' as const : paymentMethod,
+                totalAmount: fees.total,
+                paidAmount: isRegAssist ? 0 : (paymentMethod === 'Cash' ? 0 : fees.total * 0.5),
                 fees,
+                notes: isRegAssist ? regNotes : '',
                 statusHistory: [{
-                    status: 'Booking Received',
+                    status: isRegAssist ? 'Pending Admin Review' : 'Booking Received',
                     timestamp: new Date().toISOString(),
                     officerName: 'System',
-                    notes: 'Your Liaison booking request has been submitted.'
+                    notes: isRegAssist ? 'Your Registration Assistance request has been submitted and is pending admin review.' : 'Your Liaison booking request has been submitted.'
                 }],
                 createdAt: new Date().toISOString()
             };
 
             await addLiaisonBooking(bookingPayload);
             sessionStorage.removeItem('LIAISON_WIZARD_STATE');
-            navigate('/customer-portal/reminders'); // Navigation fallback to customer requests/reminders history
+            if (isRegAssist) {
+                navigate('/');
+            } else {
+                navigate('/customer-portal/reminders');
+            }
         } catch (e) {
             console.error(e);
         } finally {
@@ -434,8 +603,8 @@ const LiaisonBookingFlow: React.FC = () => {
                     <ChevronLeft size={18} />
                 </button>
                 <div>
-                    <h1 className="font-black uppercase text-xs tracking-wider">Registration Assistant</h1>
-                    <p className="text-[9px] text-gray-500 tracking-widest uppercase">Flow Wizard • Step {currentStep} of 8</p>
+                    <h1 className="font-black uppercase text-xs tracking-wider">{isRegAssist ? 'Registration Assistance' : 'LTO Liaison'}</h1>
+                    <p className="text-[9px] text-gray-500 tracking-widest uppercase">Flow Wizard • Step {currentStep} of {totalSteps}</p>
                 </div>
             </header>
 
@@ -443,7 +612,7 @@ const LiaisonBookingFlow: React.FC = () => {
             <div className="w-full h-[3px] bg-white/5 flex">
                 <div 
                     className="h-full transition-all duration-300" 
-                    style={{ width: `${(currentStep / 8) * 100}%`, backgroundColor: accentColor }}
+                    style={{ width: `${(currentStep / totalSteps) * 100}%`, backgroundColor: accentColor }}
                 ></div>
             </div>
 
@@ -451,7 +620,7 @@ const LiaisonBookingFlow: React.FC = () => {
             <main className="flex-1 max-w-lg mx-auto w-full px-5 py-6 pb-24 overflow-y-auto">
                 
                 {/* Step 1: Vehicle selection */}
-                {currentStep === 1 && (
+                {currentStep === 1 && !isRegAssist && (
                     <div className="space-y-6">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Select Vehicle</h2>
@@ -504,8 +673,36 @@ const LiaisonBookingFlow: React.FC = () => {
                     </div>
                 )}
 
+                {currentStep === 1 && isRegAssist && (
+                    <div className="space-y-6 animate-fadeIn">
+                        <div>
+                            <h2 className="text-xl font-black uppercase tracking-tight mb-2">Registration Assistance</h2>
+                            <p className="text-xs text-gray-400">Hassle-free vehicle registration, renewal, and LTO compliance documentation support.</p>
+                        </div>
+
+                        <div className="p-5 bg-[#111113] border border-white/5 rounded-2xl space-y-4">
+                            <div className="flex items-center gap-3 text-emerald-400">
+                                <FileText size={20} />
+                                <h3 className="font-bold text-sm">About this Service</h3>
+                            </div>
+                            <p className="text-xs text-gray-400 leading-relaxed">
+                                Avoid long queues and stressful LTO trips. Our professional liaison team reviews your documents, coordinates requirements, submits applications, and handles LTO processing on your behalf.
+                            </p>
+                            <div className="pt-2 border-t border-white/5">
+                                <h4 className="text-[10px] font-bold text-gray-300 uppercase tracking-wider mb-2">How it works:</h4>
+                                <ul className="space-y-2 text-xs text-gray-400 list-disc list-inside">
+                                    <li>Provide vehicle and contact coordinates.</li>
+                                    <li>Upload OR/CR and required identification.</li>
+                                    <li>Schedule a processing window.</li>
+                                    <li>Track live verification and completion in real-time.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Step 2: Service Type */}
-                {currentStep === 2 && (
+                {currentStep === 2 && !isRegAssist && (
                     <div className="space-y-6">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Service Type</h2>
@@ -540,8 +737,210 @@ const LiaisonBookingFlow: React.FC = () => {
                     </div>
                 )}
 
+                {currentStep === 2 && isRegAssist && (
+                    <div className="space-y-6 animate-fadeIn">
+                        <div>
+                            <h2 className="text-xl font-black uppercase tracking-tight mb-2">Request Details</h2>
+                            <p className="text-xs text-gray-400">Please provide all necessary details regarding your vehicle and registration request.</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            {/* Vehicle Type */}
+                            <div>
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Vehicle Type *</label>
+                                <select 
+                                    value={regVehicleType}
+                                    onChange={(e) => setRegVehicleType(e.target.value)}
+                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50"
+                                >
+                                    <option value="Sedan">Sedan</option>
+                                    <option value="SUV">SUV</option>
+                                    <option value="Hatchback">Hatchback</option>
+                                    <option value="Pickup Truck">Pickup Truck</option>
+                                    <option value="Motorcycle">Motorcycle</option>
+                                    <option value="Van">Van / MPV</option>
+                                </select>
+                            </div>
+
+                            {/* Plate Number */}
+                            <div>
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Plate Number *</label>
+                                <input 
+                                    type="text"
+                                    value={regPlateNumber}
+                                    onChange={(e) => setRegPlateNumber(e.target.value.toUpperCase())}
+                                    placeholder="e.g. ABC 1234"
+                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50 font-mono uppercase"
+                                />
+                            </div>
+
+                            {/* Registration Status */}
+                            <div>
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Current Registration Status *</label>
+                                <select 
+                                    value={regStatus}
+                                    onChange={(e) => setRegStatus(e.target.value)}
+                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50"
+                                >
+                                    <option value="Active">Active / Pending Renewal</option>
+                                    <option value="Expired">Expired</option>
+                                    <option value="For Transfer">For Transfer of Ownership</option>
+                                    <option value="No Plate Issued">No Plate Issued Yet</option>
+                                </select>
+                            </div>
+
+                            {/* Preferred Assistance Type */}
+                            <div>
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Preferred Assistance Type *</label>
+                                <select 
+                                    value={regAssistanceType}
+                                    onChange={(e) => setRegAssistanceType(e.target.value)}
+                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50"
+                                >
+                                    <option value="Registration Renewal">Vehicle Registration Renewal</option>
+                                    <option value="Transfer of Ownership">Transfer of Ownership</option>
+                                    <option value="Lost Plate Replacement">Lost Plate / Replacement Plate</option>
+                                    <option value="New Registration">New Vehicle Registration</option>
+                                    <option value="Other Concerns">Other Registration Concern</option>
+                                </select>
+                            </div>
+
+                            {/* Location / Preferred Branch */}
+                            <div className="relative" ref={branchDropdownRef}>
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Location or Preferred Branch/Area *</label>
+                                <div className="relative">
+                                    <input 
+                                        type="text"
+                                        readOnly
+                                        value={regLocation}
+                                        onClick={() => {
+                                            setIsBranchDropdownOpen(!isBranchDropdownOpen);
+                                            setBranchSearchQuery('');
+                                        }}
+                                        placeholder="Select or Search LTO Branch..."
+                                        className="w-full bg-[#111113] border border-white/5 p-4 pr-12 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50 cursor-pointer placeholder-gray-600"
+                                    />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+                                        <MapPin size={16} className="text-primary/70" />
+                                        <ChevronDown size={14} className="text-gray-500" />
+                                    </div>
+                                </div>
+
+                                {isBranchDropdownOpen && (
+                                    <div className="absolute left-0 right-0 z-50 mt-2 bg-[#141416]/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl max-h-[320px] flex flex-col overflow-hidden">
+                                        {/* Search Widget */}
+                                        <div className="p-3 border-b border-white/5 flex items-center gap-2 bg-white/[0.02]">
+                                            <Search size={14} className="text-gray-500 shrink-0" />
+                                            <input 
+                                                type="text"
+                                                autoFocus
+                                                value={branchSearchQuery}
+                                                onChange={(e) => setBranchSearchQuery(e.target.value)}
+                                                placeholder="Type to search LTO branches..."
+                                                className="w-full bg-transparent border-none text-xs text-white focus:outline-none placeholder-gray-600 py-1"
+                                            />
+                                            {branchSearchQuery && (
+                                                <button 
+                                                    onClick={() => setBranchSearchQuery('')}
+                                                    className="text-[10px] uppercase font-black text-gray-500 hover:text-white transition-colors tracking-widest"
+                                                >
+                                                    Clear
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Branches List */}
+                                        <div className="overflow-y-auto flex-1 divide-y divide-white/5 py-1">
+                                            {/* Option for Custom Typed Value */}
+                                            {branchSearchQuery.trim() !== '' && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRegLocation(branchSearchQuery.trim());
+                                                        setIsBranchDropdownOpen(false);
+                                                    }}
+                                                    className="w-full text-left p-3 hover:bg-white/[0.04] transition-all flex items-center gap-3 group text-primary"
+                                                >
+                                                    <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary group-hover:scale-105 transition-transform shrink-0">
+                                                        <Check size={13} />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-xs font-black leading-tight">Use Custom Location</p>
+                                                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">"{branchSearchQuery}"</p>
+                                                    </div>
+                                                </button>
+                                            )}
+
+                                            {/* Filtered LTO Branches */}
+                                            {(() => {
+                                                const filtered = branches.filter((b: any) => 
+                                                    b.name.toLowerCase().includes(branchSearchQuery.toLowerCase()) ||
+                                                    b.address.toLowerCase().includes(branchSearchQuery.toLowerCase()) ||
+                                                    b.city.toLowerCase().includes(branchSearchQuery.toLowerCase())
+                                                );
+
+                                                if (filtered.length === 0) {
+                                                    if (branchSearchQuery.trim() === '') {
+                                                        return <p className="text-[10px] text-gray-500 italic p-4 text-center">No branches found.</p>;
+                                                    }
+                                                    return null; // The Custom location button at the top handles this query
+                                                }
+
+                                                return filtered.map((b: any) => (
+                                                    <button
+                                                        key={b.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setRegLocation(b.name);
+                                                            setIsBranchDropdownOpen(false);
+                                                        }}
+                                                        className="w-full text-left p-3 hover:bg-white/[0.04] transition-all flex items-center gap-3 group"
+                                                    >
+                                                        <div className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-primary group-hover:bg-primary/10 group-hover:scale-105 transition-all shrink-0">
+                                                            <MapPin size={13} />
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-xs font-black text-white group-hover:text-primary transition-colors leading-tight truncate">{b.name}</p>
+                                                            <p className="text-[9px] text-gray-400 mt-0.5 truncate">{b.address}</p>
+                                                            {b.phone && <p className="text-[8px] text-gray-600 mt-0.5 font-mono">{b.phone}</p>}
+                                                        </div>
+                                                    </button>
+                                                ));
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Contact Number */}
+                            <div>
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Contact Number *</label>
+                                <input 
+                                    type="tel"
+                                    value={customerPhone}
+                                    onChange={(e) => setCustomerPhone(e.target.value)}
+                                    placeholder={user?.phone || 'e.g. 09171234567'}
+                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50 font-mono"
+                                />
+                            </div>
+
+                            {/* Notes */}
+                            <div>
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Additional Notes or Concerns</label>
+                                <textarea 
+                                    value={regNotes}
+                                    onChange={(e) => setRegNotes(e.target.value)}
+                                    placeholder="Provide any additional specifications or remarks..."
+                                    rows={4}
+                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50 resize-none"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Step 3: LTO Branches */}
-                {currentStep === 3 && (() => {
+                {currentStep === 3 && !isRegAssist && (() => {
                     const filteredBranches = branches.filter(b => 
                         b.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                         b.address.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -622,22 +1021,27 @@ const LiaisonBookingFlow: React.FC = () => {
                     );
                 })()}
 
-                {/* Step 4: Documents Uploads */}
-                {currentStep === 4 && (
-                    <div className="space-y-6">
+                {/* Step 4 (or 3 for RegAssist): Documents Uploads */}
+                {((currentStep === 4 && !isRegAssist) || (currentStep === 3 && isRegAssist)) && (
+                    <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Upload Documents</h2>
-                            <p className="text-xs text-gray-400">Provide LTO compliance files to continue. Progress is simulated.</p>
+                            <p className="text-xs text-gray-400">Provide required files to process your request. Progress is simulated.</p>
                         </div>
 
                         <div className="space-y-4">
-                            {[
+                            {(isRegAssist ? [
+                                { key: 'OR', label: 'OR/CR (Official Receipt / Certificate of Registration) *' },
+                                { key: 'ID', label: 'Valid Government Issued ID *' },
+                                { key: 'PrevReg', label: 'Previous Registration Document (if applicable)' },
+                                { key: 'Other', label: 'Other Supporting Files' }
+                            ] : [
                                 { key: 'OR', label: 'Official Receipt (OR) *' },
                                 { key: 'CR', label: 'Certificate of Registration (CR) *' },
                                 { key: 'ID', label: 'Government Issued ID *' },
                                 { key: 'Deed', label: 'Deed of Sale (Required for Ownership Transfer)' },
                                 { key: 'Insurance', label: 'Insurance Policy Certificate' }
-                            ].map((docItem) => {
+                            ]).map((docItem) => {
                                 const uploaded = uploadedDocs[docItem.key];
                                 return (
                                     <div key={docItem.key} className="bg-[#111113] border border-white/5 p-4 rounded-xl">
@@ -647,19 +1051,23 @@ const LiaisonBookingFlow: React.FC = () => {
                                         </div>
 
                                         {!uploaded ? (
-                                            <label className="flex items-center justify-center border border-dashed border-white/10 hover:border-white/20 p-4 rounded-lg cursor-pointer transition-colors bg-black/30">
+                                            <label htmlFor={`liaison-document-${docItem.key}`} className="flex items-center justify-center border border-dashed border-white/10 hover:border-white/20 p-4 rounded-lg cursor-pointer transition-colors bg-black/30">
                                                 <Camera size={18} className="text-gray-500 mr-2" />
                                                 <span className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Choose / Take Photo</span>
                                                 <input 
-                                                    id="liaison-document"
-                                                    name="liaison-document"
+                                                    id={`liaison-document-${docItem.key}`}
+                                                    name={`liaison-document-${docItem.key}`}
                                                     type="file" 
                                                     accept="image/*,application/pdf"
                                                     className="hidden" 
                                                     onChange={e => {
                                                         const file = e.target.files?.[0];
                                                         if (file) {
-                                                            simulateUpload(docItem.key, file.name, file.size, file.type);
+                                                            const reader = new FileReader();
+                                                            reader.onloadend = () => {
+                                                                simulateUpload(docItem.key, file.name, file.size, file.type, reader.result as string);
+                                                            };
+                                                            reader.readAsDataURL(file);
                                                         }
                                                     }}
                                                 />
@@ -686,11 +1094,11 @@ const LiaisonBookingFlow: React.FC = () => {
                 )}
 
                 {/* Step 5: Liaison Agent */}
-                {currentStep === 5 && (
+                {currentStep === 5 && !isRegAssist && (
                     <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Choose Liaison Agent</h2>
-                            <p className="text-xs text-gray-400">Select a verified liaison officer to manage LTO processing.</p>
+                            <p className="text-xs text-gray-400">Select a liaison officer to manage LTO processing.</p>
                         </div>
 
                         <div className="space-y-3">
@@ -701,14 +1109,19 @@ const LiaisonBookingFlow: React.FC = () => {
                             ) : (
                                 filteredStaff.map(s => {
                                     const isSelected = selectedLiaisonId === s.id;
+                                    const isAgentAvailable = s.isAvailable !== false;
                                     return (
                                         <div 
                                             key={s.id}
-                                            onClick={() => setSelectedLiaisonId(s.id)}
-                                            className="p-4 border transition-all duration-300 ease-out rounded-2xl cursor-pointer bg-[#111113] hover:bg-[#151518]/90 relative overflow-hidden flex flex-col gap-3.5 select-none"
+                                            onClick={() => {
+                                                if (isAgentAvailable) {
+                                                    setSelectedLiaisonId(s.id);
+                                                }
+                                            }}
+                                            className={`p-4 border transition-all duration-300 ease-out rounded-2xl relative overflow-hidden flex flex-col gap-3.5 select-none ${isAgentAvailable ? 'cursor-pointer bg-[#111113] hover:bg-[#151518]/90' : 'cursor-not-allowed bg-[#111113]/40 opacity-50'}`}
                                             style={{ 
-                                                borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.05)',
-                                                boxShadow: isSelected ? `0 0 20px -5px ${accentColor}33` : 'none',
+                                                borderColor: isSelected && isAgentAvailable ? accentColor : 'rgba(255, 255, 255, 0.05)',
+                                                boxShadow: isSelected && isAgentAvailable ? `0 0 20px -5px ${accentColor}33` : 'none',
                                                 transform: 'translate3d(0, 0, 0)',
                                                 willChange: 'transform, border-color, background-color, box-shadow'
                                             }}
@@ -737,28 +1150,30 @@ const LiaisonBookingFlow: React.FC = () => {
                                                         <span className="text-xs font-bold text-gray-400">{s.name.substring(0, 2).toUpperCase()}</span>
                                                     )}
                                                 </div>
-
+ 
                                                 {/* Agent Identity & Rating */}
                                                 <div className="flex-1 min-w-0">
-                                                    <h3 className="font-bold text-sm text-white truncate transition-colors duration-200">
-                                                        {s.name}
-                                                    </h3>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-bold text-sm text-white truncate transition-colors duration-200">
+                                                            {s.name}
+                                                        </h3>
+                                                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${isAgentAvailable ? 'bg-green-500/10 text-green-400 border border-green-500/25' : 'bg-red-500/10 text-red-400 border border-red-500/25'}`}>
+                                                            {isAgentAvailable ? 'Available' : 'Unavailable'}
+                                                        </span>
+                                                    </div>
                                                     <div className="flex items-center gap-2 mt-1">
                                                         <span className="text-[10px] text-amber-400 font-bold flex items-center gap-0.5 shrink-0">
-                                                            ★ {s.rating.toFixed(2)}
+                                                            ★ {Number(s.rating || 5.0).toFixed(1)}
                                                         </span>
                                                         <span className="text-[9px] text-gray-500 font-medium shrink-0">
                                                             ({s.totalJobs || 0} jobs)
                                                         </span>
-                                                        <span className="text-[8px] bg-white/5 border border-white/10 text-gray-400 font-black px-1.5 py-0.5 rounded uppercase tracking-wider scale-90 origin-left shrink-0">
-                                                            Verified
-                                                        </span>
                                                     </div>
                                                 </div>
-
+ 
                                                 {/* Selection Checkmark & Contact Actions */}
                                                 <div className="flex items-center gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                                    {s.phone && (
+                                                    {s.phone && isAgentAvailable && (
                                                         <a 
                                                             href={`tel:${s.phone}`}
                                                             className="w-8 h-8 rounded-full border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all duration-200 active:scale-95"
@@ -768,18 +1183,22 @@ const LiaisonBookingFlow: React.FC = () => {
                                                         </a>
                                                     )}
                                                     <div 
-                                                        onClick={() => setSelectedLiaisonId(s.id)}
-                                                        className="w-5 h-5 rounded-full border flex items-center justify-center transition-all duration-200"
+                                                        onClick={() => {
+                                                            if (isAgentAvailable) {
+                                                                setSelectedLiaisonId(s.id);
+                                                            }
+                                                        }}
+                                                        className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all duration-200 ${isAgentAvailable ? 'cursor-pointer' : 'cursor-not-allowed opacity-30'}`}
                                                         style={{ 
-                                                            backgroundColor: isSelected ? accentColor : 'transparent',
-                                                            borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.2)'
+                                                            backgroundColor: isSelected && isAgentAvailable ? accentColor : 'transparent',
+                                                            borderColor: isSelected && isAgentAvailable ? accentColor : 'rgba(255, 255, 255, 0.2)'
                                                         }}
                                                     >
-                                                        {isSelected && <Check size={12} className="text-white font-black" />}
+                                                        {isSelected && isAgentAvailable && <Check size={12} className="text-white font-black" />}
                                                     </div>
                                                 </div>
                                             </div>
-
+ 
                                             {/* Details Section: Bio & Availability */}
                                             {s.description && (
                                                 <div className="text-[11px] text-gray-400 leading-relaxed border-t border-white/5 pt-2.5">
@@ -795,27 +1214,187 @@ const LiaisonBookingFlow: React.FC = () => {
                 )}
 
                 {/* Step 6: Schedule */}
-                {currentStep === 6 && (
-                    <div className="space-y-6">
+                {((currentStep === 6 && !isRegAssist) || (currentStep === 4 && isRegAssist)) && (
+                    <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Select Date & Time</h2>
                             <p className="text-xs text-gray-400">Coordinate the LTO submission window slot.</p>
                         </div>
 
-                        <div className="bg-[#111113] border border-white/5 p-5 rounded-2xl space-y-4">
+                        <div className="bg-[#111113] border border-white/5 p-5 rounded-2xl space-y-5">
                             <div>
-                                <label htmlFor="liaison-appointment-date" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Preferred Appointment Date *</label>
-                                <input 
-                                    id="liaison-appointment-date"
-                                    name="liaison-appointment-date"
-                                    type="date" 
-                                    value={appointmentDate}
-                                    onChange={e => setAppointmentDate(e.target.value)}
-                                    className="w-full bg-black border border-white/5 text-xs px-4 py-3 rounded-lg focus:outline-none focus:border-white/15"
-                                />
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Preferred Appointment Date *</label>
+                                <div className="relative" ref={calendarRef}>
+                                    <div 
+                                        className="relative flex items-center cursor-pointer"
+                                        onClick={() => setIsCalendarOpen(!isCalendarOpen)}
+                                    >
+                                        <Calendar 
+                                            className="absolute left-4 pointer-events-none" 
+                                            size={16} 
+                                            style={{ color: accentColor }} 
+                                        />
+                                        <div className="w-full bg-black border border-white/5 text-xs pl-11 pr-4 py-3.5 rounded-xl text-white focus:outline-none focus:border-white/15 transition-colors duration-200 min-h-[46px] flex items-center">
+                                            {appointmentDate ? getFormattedDate(appointmentDate) : <span className="text-gray-600">Select Date...</span>}
+                                        </div>
+                                    </div>
+
+                                    {isCalendarOpen && (
+                                        <div className="absolute left-0 right-0 z-50 mt-2 bg-[#141416]/95 border border-white/10 p-4 rounded-xl shadow-2xl backdrop-blur-xl animate-fadeIn">
+                                            {/* Calendar Header */}
+                                            <div className="flex justify-between items-center mb-4">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const prevMonth = new Date(calendarViewDate);
+                                                        prevMonth.setMonth(prevMonth.getMonth() - 1);
+                                                        setCalendarViewDate(prevMonth);
+                                                    }}
+                                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors text-white"
+                                                >
+                                                    <ChevronLeft size={14} />
+                                                </button>
+                                                <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                                                    {calendarViewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                                </h3>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nextMonth = new Date(calendarViewDate);
+                                                        nextMonth.setMonth(nextMonth.getMonth() + 1);
+                                                        setCalendarViewDate(nextMonth);
+                                                    }}
+                                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors text-white"
+                                                >
+                                                    <ChevronRight size={14} />
+                                                </button>
+                                            </div>
+
+                                            {/* Weekdays Labels */}
+                                            <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                                                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                                                    <span key={day} className="text-[9px] font-black text-gray-500 uppercase tracking-wider py-1">{day}</span>
+                                                ))}
+                                            </div>
+
+                                            {/* Days Grid */}
+                                            <div className="grid grid-cols-7 gap-1">
+                                                {(() => {
+                                                    const year = calendarViewDate.getFullYear();
+                                                    const month = calendarViewDate.getMonth();
+                                                    const firstDayIndex = new Date(year, month, 1).getDay();
+                                                    const daysInMonth = new Date(year, month + 1, 0).getDate();
+                                                    const prevMonthDays = new Date(year, month, 0).getDate();
+                                                    
+                                                    const today = new Date();
+                                                    today.setHours(0, 0, 0, 0);
+
+                                                    const days = [];
+
+                                                    // Fill prefix empty spaces
+                                                    for (let i = firstDayIndex - 1; i >= 0; i--) {
+                                                        days.push({
+                                                            day: prevMonthDays - i,
+                                                            isCurrentMonth: false,
+                                                            date: new Date(year, month - 1, prevMonthDays - i)
+                                                        });
+                                                    }
+
+                                                    // Current month days
+                                                    for (let i = 1; i <= daysInMonth; i++) {
+                                                        days.push({
+                                                            day: i,
+                                                            isCurrentMonth: true,
+                                                            date: new Date(year, month, i)
+                                                        });
+                                                    }
+
+                                                    // Fill suffix empty spaces
+                                                    const remainingCells = 42 - days.length;
+                                                    for (let i = 1; i <= remainingCells; i++) {
+                                                        days.push({
+                                                            day: i,
+                                                            isCurrentMonth: false,
+                                                            date: new Date(year, month + 1, i)
+                                                        });
+                                                    }
+
+                                                    return days.map((cell, idx) => {
+                                                        const isSelected = appointmentDate === `${cell.date.getFullYear()}-${String(cell.date.getMonth() + 1).padStart(2, '0')}-${String(cell.date.getDate()).padStart(2, '0')}`;
+                                                        const isToday = cell.date.getTime() === today.getTime();
+                                                        
+                                                        // Disable past dates and weekends (LTO is closed)
+                                                        const isPast = cell.date.getTime() < today.getTime();
+                                                        const isWeekend = cell.date.getDay() === 0 || cell.date.getDay() === 6;
+                                                        const isDisabled = !cell.isCurrentMonth || isPast || isWeekend;
+
+                                                        return (
+                                                            <button
+                                                                key={idx}
+                                                                type="button"
+                                                                disabled={isDisabled}
+                                                                onClick={() => {
+                                                                    const yyyy = cell.date.getFullYear();
+                                                                    const mm = String(cell.date.getMonth() + 1).padStart(2, '0');
+                                                                    const dd = String(cell.date.getDate()).padStart(2, '0');
+                                                                    setAppointmentDate(`${yyyy}-${mm}-${dd}`);
+                                                                    setIsCalendarOpen(false);
+                                                                }}
+                                                                className={`h-8 w-full rounded-lg text-xs font-black transition-all flex items-center justify-center relative ${
+                                                                    !cell.isCurrentMonth ? 'text-gray-800/40 pointer-events-none' :
+                                                                    isDisabled ? 'text-gray-700 hover:bg-transparent cursor-not-allowed' :
+                                                                    isSelected ? 'bg-primary text-black scale-105 shadow-md shadow-primary/20' :
+                                                                    isToday ? 'border border-primary text-primary hover:bg-primary/10' :
+                                                                    'text-white hover:bg-white/5'
+                                                                }`}
+                                                            >
+                                                                {cell.day}
+                                                                {isToday && !isSelected && (
+                                                                    <span className="absolute bottom-1 w-1 h-1 rounded-full bg-primary" />
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    });
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
-                            <div>
+                            {/* Quick Select Buttons */}
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block">Quick Select Date</label>
+                                <div className="flex gap-2">
+                                    {[
+                                        { label: 'Tomorrow', offset: 1 },
+                                        { label: 'In 2 Days', offset: 2 },
+                                        { label: 'In 3 Days', offset: 3 }
+                                    ].map(opt => {
+                                        // Compute date string for comparison to highlight active chip
+                                        const d = new Date();
+                                        d.setDate(d.getDate() + opt.offset);
+                                        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                                        const isQuickSelected = appointmentDate === dateStr;
+                                        return (
+                                            <button
+                                                key={opt.label}
+                                                type="button"
+                                                onClick={() => handleQuickDateSelect(opt.offset)}
+                                                className={`flex-1 py-2 text-center border text-[9px] font-black uppercase tracking-wider rounded-lg transition-all duration-200 ${isQuickSelected ? 'text-white' : 'border-white/5 text-gray-400 bg-black/40 hover:text-white'}`}
+                                                style={{ 
+                                                    borderColor: isQuickSelected ? accentColor : 'rgba(255, 255, 255, 0.05)',
+                                                    backgroundColor: isQuickSelected ? `${accentColor}15` : undefined
+                                                }}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="border-t border-white/5 pt-4">
                                 <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2.5">Preferred Time Window *</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {[
@@ -827,7 +1406,7 @@ const LiaisonBookingFlow: React.FC = () => {
                                         <button
                                             key={timeSlot}
                                             onClick={() => setAppointmentTime(timeSlot)}
-                                            className={`py-3 text-center border text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors ${appointmentTime === timeSlot ? 'bg-white/5 text-white' : 'border-white/5 text-gray-400 bg-black/40 hover:text-white'}`}
+                                            className={`py-3 text-center border text-[10px] font-bold uppercase tracking-wider rounded-xl transition-colors ${appointmentTime === timeSlot ? 'bg-white/5 text-white' : 'border-white/5 text-gray-400 bg-black/40 hover:text-white'}`}
                                             style={{ borderColor: appointmentTime === timeSlot ? accentColor : undefined }}
                                         >
                                             {timeSlot}
@@ -835,127 +1414,411 @@ const LiaisonBookingFlow: React.FC = () => {
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Alert/Info Note */}
+                            <div className="p-3.5 bg-white/5 border border-white/10 rounded-xl flex gap-3 text-left">
+                                <AlertCircle size={16} className="shrink-0 mt-0.5" style={{ color: accentColor }} />
+                                <div className="space-y-0.5">
+                                    <h4 className="text-[10px] font-bold text-white uppercase tracking-wider">Submission cutoff notice</h4>
+                                    <p className="text-[9px] text-gray-400 leading-normal">
+                                        LTO submissions are processed on business days (Monday to Friday, 8:00 AM - 5:00 PM). Same-day slots must be coordinated at least 4 hours in advance.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}
 
-                {/* Step 7: Pickup & Contact details */}
-                {currentStep === 7 && (
-                    <div className="space-y-6">
+                {/* Step 7: Pickup & Contact coordinates */}
+                {currentStep === 7 && !isRegAssist && (
+                    <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Verification details</h2>
                             <p className="text-xs text-gray-400">Confirm document collection method and contact coordinates.</p>
                         </div>
 
-                        <div className="bg-[#111113] border border-white/5 p-5 rounded-2xl space-y-4">
+                        <div className="bg-[#111113] border border-white/5 p-5 rounded-2xl space-y-5">
                             <div>
-                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Document Retrieval Mode *</label>
-                                <div className="grid grid-cols-1 gap-2">
+                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-3">Document Retrieval Mode *</label>
+                                <div className="grid grid-cols-1 gap-2.5">
                                     {[
-                                        'Customer brings documents',
-                                        'Home Pickup',
-                                        'Office Pickup'
-                                    ].map((opt: any) => (
-                                        <button
-                                            key={opt}
-                                            onClick={() => setPickupOption(opt)}
-                                            className={`p-3 text-left border text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors ${pickupOption === opt ? 'bg-white/5 text-white' : 'border-white/5 text-gray-400 bg-black/40'}`}
-                                            style={{ borderColor: pickupOption === opt ? accentColor : undefined }}
-                                        >
-                                            {opt}
-                                        </button>
-                                    ))}
+                                        {
+                                            opt: 'Customer brings documents',
+                                            title: 'Customer brings documents',
+                                            subtitle: 'Deliver documents directly to the LTO branch office (Free)',
+                                            icon: FileCheck
+                                        },
+                                        {
+                                            opt: 'Home Pickup',
+                                            title: 'Home Pickup',
+                                            subtitle: 'Rider collects the documents from your home address (+₱250)',
+                                            icon: Home
+                                        },
+                                        {
+                                            opt: 'Office Pickup',
+                                            title: 'Office Pickup',
+                                            subtitle: 'Rider collects the documents from your office address (+₱250)',
+                                            icon: Briefcase
+                                        }
+                                    ].map((item) => {
+                                        const isSelected = pickupOption === item.opt;
+                                        const IconComp = item.icon;
+                                        return (
+                                            <div
+                                                key={item.opt}
+                                                onClick={() => setPickupOption(item.opt as any)}
+                                                className="p-3.5 border transition-all duration-300 ease-out rounded-xl cursor-pointer bg-black/40 hover:bg-[#151518]/90 flex items-start gap-3.5 select-none"
+                                                style={{ 
+                                                    borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.05)',
+                                                    boxShadow: isSelected ? `0 0 16px -4px ${accentColor}25` : 'none',
+                                                    willChange: 'border-color, background-color, box-shadow'
+                                                }}
+                                            >
+                                                <div 
+                                                    className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5"
+                                                >
+                                                    <IconComp size={16} style={{ color: isSelected ? accentColor : 'rgba(255, 255, 255, 0.6)' }} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="font-bold text-[11px] text-white uppercase tracking-wider">{item.title}</h4>
+                                                    <p className="text-[10px] text-gray-400 mt-0.5 leading-normal">{item.subtitle}</p>
+                                                </div>
+                                                <div 
+                                                    className="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors duration-200"
+                                                    style={{ 
+                                                        backgroundColor: isSelected ? accentColor : 'transparent',
+                                                        borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.2)'
+                                                    }}
+                                                >
+                                                    {isSelected && <Check size={10} className="text-white font-black" />}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
 
                             {pickupOption !== 'Customer brings documents' && (
-                                <div>
-                                    <label htmlFor="liaison-pickup" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Pickup Address *</label>
-                                    <input 
-                                        id="liaison-pickup"
-                                        name="liaison-pickup"
-                                        type="text" 
-                                        value={pickupAddress}
-                                        onChange={e => setPickupAddress(e.target.value)}
-                                        className="w-full bg-black border border-white/5 text-xs px-4 py-3 rounded-lg focus:outline-none"
-                                        placeholder="Full address details"
-                                    />
+                                <div className="space-y-1.5 animate-fadeIn">
+                                    <label htmlFor="liaison-pickup" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block">Pickup Address *</label>
+                                    <div className="relative flex items-center">
+                                        <MapPin className="absolute left-4 pointer-events-none text-gray-500" size={14} style={{ color: accentColor }} />
+                                        <input 
+                                            id="liaison-pickup"
+                                            name="liaison-pickup"
+                                            type="text" 
+                                            value={pickupAddress}
+                                            onChange={e => setPickupAddress(e.target.value)}
+                                            className="w-full bg-black border border-white/5 text-xs pl-10 pr-4 py-3 rounded-xl focus:outline-none focus:border-white/15 transition-colors"
+                                            placeholder="Enter complete pickup address details"
+                                        />
+                                    </div>
                                 </div>
                             )}
 
-                            <div className="grid grid-cols-2 gap-3 pt-2">
-                                <div>
-                                    <label htmlFor="liaison-phone" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Phone Coordinates *</label>
-                                    <input id="liaison-phone" name="liaison-phone" type="text" value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} className="w-full bg-black border border-white/5 text-xs px-3 py-2.5 rounded-lg focus:outline-none" placeholder={user?.phone || '09XXXXXXXXX'} />
+                            <div className="grid grid-cols-2 gap-3 pt-1">
+                                <div className="space-y-1.5">
+                                    <label htmlFor="liaison-phone" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block">Phone Coordinates *</label>
+                                    <div className="relative flex items-center">
+                                        <Phone className="absolute left-3.5 pointer-events-none text-gray-500" size={13} style={{ color: accentColor }} />
+                                        <input 
+                                            id="liaison-phone" 
+                                            name="liaison-phone" 
+                                            type="text" 
+                                            value={customerPhone} 
+                                            onChange={e => setCustomerPhone(e.target.value)} 
+                                            className="w-full bg-black border border-white/5 text-xs pl-9 pr-3 py-2.5 rounded-xl focus:outline-none focus:border-white/15 transition-colors" 
+                                            placeholder={user?.phone || '09XXXXXXXXX'} 
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label htmlFor="liaison-email" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Email *</label>
-                                    <input id="liaison-email" name="liaison-email" type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} className="w-full bg-black border border-white/5 text-xs px-3 py-2.5 rounded-lg focus:outline-none" placeholder={user?.email || 'name@domain.com'} />
+                                <div className="space-y-1.5">
+                                    <label htmlFor="liaison-email" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block">Email *</label>
+                                    <div className="relative flex items-center">
+                                        <Mail className="absolute left-3.5 pointer-events-none text-gray-500" size={13} style={{ color: accentColor }} />
+                                        <input 
+                                            id="liaison-email" 
+                                            name="liaison-email" 
+                                            type="email" 
+                                            value={customerEmail} 
+                                            onChange={e => setCustomerEmail(e.target.value)} 
+                                            className="w-full bg-black border border-white/5 text-xs pl-9 pr-3 py-2.5 rounded-xl focus:outline-none focus:border-white/15 transition-colors" 
+                                            placeholder={user?.email || 'name@domain.com'} 
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Step 8: Review & Payment Checkout */}
-                {currentStep === 8 && (
-                    <div className="space-y-6">
+                {/* Step 8 (or 5 for RegAssist): Review & Summary / Checkout */}
+                {((currentStep === 8 && !isRegAssist) || (currentStep === 5 && isRegAssist)) && (
+                    <div className="space-y-6 animate-fadeIn">
                         <div>
-                            <h2 className="text-xl font-black uppercase tracking-tight mb-2">Review & Payment</h2>
-                            <p className="text-xs text-gray-400">Confirm all details are correct and proceed with checkout.</p>
+                            <h2 className="text-xl font-black uppercase tracking-tight mb-2">Review Summary</h2>
+                            <p className="text-xs text-gray-400">Confirm all details are correct before final submission.</p>
                         </div>
 
                         {/* Breakdown summary */}
-                        <div className="bg-[#111113] border border-white/5 p-5 rounded-2xl space-y-4">
-                            <div className="border-b border-white/5 pb-3">
-                                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Assigned Branch & Liaison</span>
-                                <h4 className="font-bold text-sm text-white">{selectedBranch?.name}</h4>
-                                <p className="text-[10px] text-gray-400 mt-1">Liaison Agent: {selectedLiaison?.name || 'Unassigned'}</p>
+                        <div className="bg-[#111113] border border-white/5 p-5 rounded-2xl space-y-5">
+                            {/* Summary Card List */}
+                            <div className="space-y-3.5">
+                                {isRegAssist ? (
+                                    <>
+                                        {/* Service Type */}
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <FileText size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Selected Service</span>
+                                                <h4 className="font-bold text-[12px] text-white leading-tight">Registration Assistance</h4>
+                                                <p className="text-[10px] text-gray-500 mt-1">Assistance Type: <span className="text-white font-medium">{regAssistanceType}</span></p>
+                                            </div>
+                                        </div>
+
+                                        {/* Vehicle Details */}
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <Car size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Vehicle Details</span>
+                                                <h4 className="font-bold text-[12px] text-white leading-tight">{regVehicleType} • {regPlateNumber}</h4>
+                                                <p className="text-[10px] text-gray-500 mt-1">Status: <span className="text-amber-400 font-medium">{regStatus}</span></p>
+                                            </div>
+                                        </div>
+
+                                        {/* Customer Contact Details */}
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <Phone size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Customer Contact Details</span>
+                                                <h4 className="font-bold text-[12px] text-white leading-tight">{user.name}</h4>
+                                                <p className="text-[10px] text-gray-400 mt-0.5">{customerPhone || user.phone || 'No phone provided'}</p>
+                                                <p className="text-[10px] text-gray-500">{customerEmail || user.email || 'No email provided'}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Uploaded Documents */}
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <FileCheck size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Uploaded Documents</span>
+                                                {Object.keys(uploadedDocs).length === 0 ? (
+                                                    <p className="text-[10px] text-gray-500 mt-1">No documents uploaded.</p>
+                                                ) : (
+                                                    <div className="mt-1.5 space-y-1.5">
+                                                        {Object.keys(uploadedDocs).map(key => (
+                                                            <div key={key} className="flex items-center gap-1.5 text-[10px] text-gray-300">
+                                                                <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                                                                <span className="font-mono truncate max-w-[200px]">{uploadedDocs[key].file.name}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Preferred Schedule */}
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <Calendar size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Preferred Schedule</span>
+                                                <h4 className="font-bold text-[12px] text-white leading-tight">
+                                                    {appointmentDate ? getFormattedDate(appointmentDate) : 'Not selected'}
+                                                </h4>
+                                                <p className="text-[10px] text-gray-400 mt-1">Time: {appointmentTime || 'Not selected'}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Preferred branch location */}
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <MapPin size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Location / Branch Area</span>
+                                                <h4 className="font-bold text-[12px] text-white leading-tight">{regLocation}</h4>
+                                            </div>
+                                        </div>
+
+                                        {/* Notes or remarks */}
+                                        {regNotes && (
+                                            <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                                <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                    <Info size={15} style={{ color: accentColor }} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Notes or Remarks</span>
+                                                    <p className="text-[10px] text-gray-400 leading-normal mt-1" style={{ wordBreak: 'break-all', overflowWrap: 'break-word' }}>{regNotes}</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <MapPin size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Assigned LTO Branch</span>
+                                                <h4 className="font-bold text-[12px] text-white leading-tight">{selectedBranch?.name}</h4>
+                                                <p className="text-[10px] text-gray-500 mt-1 flex items-center gap-1.5">
+                                                    <span>Liaison Agent:</span> 
+                                                    <span className="font-semibold text-white">{selectedLiaison?.name || 'Unassigned'}</span>
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                <Calendar size={15} style={{ color: accentColor }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Process Action & Schedule</span>
+                                                <h4 className="font-bold text-[12px] text-white uppercase tracking-wider leading-tight">{serviceType}</h4>
+                                                <p className="text-[10px] text-gray-400 mt-1">
+                                                    {appointmentDate ? getFormattedDate(appointmentDate) : ''} • {appointmentTime}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
+                                            <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                                                {pickupOption.includes('Home') ? (
+                                                    <Home size={15} style={{ color: accentColor }} />
+                                                ) : pickupOption.includes('Office') ? (
+                                                    <Briefcase size={15} style={{ color: accentColor }} />
+                                                ) : (
+                                                    <FileCheck size={15} style={{ color: accentColor }} />
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Document Retrieval Mode</span>
+                                                <h4 className="font-bold text-[12px] text-white uppercase tracking-wider leading-tight">{pickupOption}</h4>
+                                                {pickupOption !== 'Customer brings documents' && pickupAddress && (
+                                                    <p className="text-[10px] text-gray-400 mt-1 truncate">{pickupAddress}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
-                            <div className="border-b border-white/5 pb-3">
-                                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Process Action & Schedule</span>
-                                <h4 className="font-bold text-xs uppercase tracking-wide text-white">{serviceType}</h4>
-                                <p className="text-[10px] text-gray-400 mt-1">{appointmentDate} • {appointmentTime}</p>
-                            </div>
-
-                            {/* Payment options */}
-                            <div>
-                                <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2.5">Select Payment Method</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {['GCash', 'Maya', 'Credit Card', 'Cash'].map((method: any) => (
-                                        <button
-                                            key={method}
-                                            onClick={() => setPaymentMethod(method)}
-                                            className={`py-3 text-center border text-[10px] font-bold uppercase tracking-wider rounded-lg transition-colors ${paymentMethod === method ? 'bg-white/5 text-white' : 'border-white/5 text-gray-400 bg-black/40'}`}
-                                            style={{ borderColor: paymentMethod === method ? accentColor : undefined }}
-                                        >
-                                            {method}
-                                        </button>
-                                    ))}
+                            {/* Payment options (Standard Liaison only) */}
+                            {!isRegAssist && (
+                                <div className="border-t border-white/5 pt-4">
+                                    <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-3">Select Payment Method</label>
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                        {[
+                                            { name: 'GCash', icon: Wallet },
+                                            { name: 'Maya', icon: Wallet },
+                                            { name: 'Credit Card', icon: CreditCard },
+                                            { name: 'Cash', icon: Banknote }
+                                        ].map((method) => {
+                                            const isSelected = paymentMethod === method.name;
+                                            const IconComp = method.icon;
+                                            return (
+                                                <button
+                                                    key={method.name}
+                                                    type="button"
+                                                    onClick={() => setPaymentMethod(method.name as any)}
+                                                    className="p-3 border transition-all duration-300 ease-out rounded-xl flex items-center gap-3 bg-black/40 hover:bg-[#151518]/90 text-left select-none"
+                                                    style={{ 
+                                                        borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.05)',
+                                                        boxShadow: isSelected ? `0 0 12px -2px ${accentColor}20` : 'none',
+                                                        willChange: 'border-color, background-color, box-shadow'
+                                                    }}
+                                                >
+                                                    <div 
+                                                        className="w-7 h-7 rounded-md bg-white/5 border border-white/10 flex items-center justify-center shrink-0"
+                                                    >
+                                                        <IconComp size={13} style={{ color: isSelected ? accentColor : 'rgba(255, 255, 255, 0.6)' }} />
+                                                    </div>
+                                                    <span className="flex-1 text-[10px] font-black uppercase tracking-wider text-white truncate">{method.name}</span>
+                                                    <div 
+                                                        className="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                                                        style={{ 
+                                                            backgroundColor: isSelected ? accentColor : 'transparent',
+                                                            borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.2)'
+                                                        }}
+                                                    >
+                                                        {isSelected && <Check size={8} className="text-white font-black" />}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Total fee list */}
-                            <div className="border-t border-white/5 pt-4 space-y-2">
+                            <div className="border-t border-white/5 pt-4 space-y-2.5">
                                 <div className="flex justify-between text-xs text-gray-400">
                                     <span>Liaison Service Fee</span>
-                                    <span>₱{fees.serviceFee.toLocaleString()}</span>
+                                    <span className="font-medium text-white">₱{fees.serviceFee.toLocaleString()}</span>
                                 </div>
-                                <div className="flex justify-between text-xs text-gray-400">
-                                    <span>Est. Government LTO Fees</span>
-                                    <span>₱{fees.governmentFee.toLocaleString()}</span>
+                                {!isRegAssist && (
+                                    <>
+                                        <div className="flex justify-between text-xs text-gray-400">
+                                            <span>Est. Government LTO Fees</span>
+                                            <span className="font-medium text-white">₱{fees.governmentFee.toLocaleString()}</span>
+                                        </div>
+                                        {fees.pickupFee > 0 && (
+                                            <div className="flex justify-between text-xs text-gray-400">
+                                                <span>Documents Courier Fee</span>
+                                                <span className="font-medium text-white">₱{fees.pickupFee.toLocaleString()}</span>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                                <div 
+                                    className="p-3.5 bg-white/5 rounded-xl flex justify-between items-center pt-2 border-t border-white/10"
+                                    style={{
+                                        borderLeft: `3px solid ${accentColor}`
+                                    }}
+                                >
+                                    <span className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">TOTAL AMOUNT</span>
+                                    <span className="text-base font-black" style={{ color: accentColor }}>₱{fees.total.toLocaleString()}</span>
                                 </div>
-                                {fees.pickupFee > 0 && (
-                                    <div className="flex justify-between text-xs text-gray-400">
-                                        <span>Documents Courier Fee</span>
-                                        <span>₱{fees.pickupFee.toLocaleString()}</span>
+
+                                {/* Downpayment / Final Payment Breakdown (Standard only) */}
+                                {!isRegAssist ? (
+                                    <div className="p-3.5 bg-white/[0.02] border border-dashed border-white/10 rounded-xl space-y-2">
+                                        <div className="flex justify-between text-xs text-gray-400">
+                                            <span className="flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                Downpayment (50%)
+                                            </span>
+                                            <span className="font-bold text-white">₱{(fees.total * 0.5).toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-gray-400">
+                                            <span className="flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
+                                                Final Payment (50%)
+                                            </span>
+                                            <span className="font-bold text-gray-400">₱{(fees.total * 0.5).toLocaleString()}</span>
+                                        </div>
+                                        <p className="text-[9px] text-gray-500 leading-normal pt-1 border-t border-white/5">
+                                            * You will pay the 50% downpayment now to process your order. The remaining 50% final payment will be settled upon LTO document handling completion.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                                        <p className="text-[10px] text-emerald-400 leading-normal text-center font-medium">
+                                            No immediate payment is required. Your request will be reviewed by our admin, who will verify documents and update your status in real-time.
+                                        </p>
                                     </div>
                                 )}
-                                <div className="flex justify-between text-sm font-black text-white pt-2 border-t border-white/5">
-                                    <span>TOTAL AMOUNT</span>
-                                    <span style={{ color: accentColor }}>₱{fees.total.toLocaleString()}</span>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -965,7 +1828,7 @@ const LiaisonBookingFlow: React.FC = () => {
             {/* Sticky wizard action bottom buttons */}
             <div className="fixed bottom-0 left-0 w-full bg-[#111113] border-t border-white/5 p-4 z-50">
                 <div className="max-w-lg mx-auto flex gap-4">
-                    {currentStep < 8 ? (
+                    {currentStep < totalSteps ? (
                         <button 
                             onClick={handleNext}
                             disabled={!isStepValid()}

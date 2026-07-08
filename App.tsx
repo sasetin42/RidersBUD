@@ -81,6 +81,7 @@ const AppServicesListScreen = React.lazy(() => import('./pages/services/Services
 const AppServiceDetailScreen = React.lazy(() => import('./pages/services/AppServiceDetailScreen'));
 const ServiceBookingFlow = React.lazy(() => import('./pages/services/ServiceBookingFlow'));
 const LiaisonBookingFlow = React.lazy(() => import('./pages/services/LiaisonBookingFlow'));
+const DriverBookingFlow = React.lazy(() => import('./pages/services/DriverBookingFlow'));
 
 import { customerTourSteps, mechanicTourSteps } from './data/tourSteps';
 import { requestNotificationPermission } from './utils/notificationManager';
@@ -177,10 +178,6 @@ const AppContent: React.FC = () => {
         };
     }, []);
 
-    useEffect(() => {
-        window.scrollTo(0, 0);
-    }, [location.pathname]);
-
     // Prevent browser from restoring scroll position on navigation
     useLayoutEffect(() => {
         if ('scrollRestoration' in window.history) {
@@ -212,6 +209,15 @@ const AppContent: React.FC = () => {
     const isMapScreen = location.pathname.includes('/booking/') && !location.pathname.includes('-confirmation');
 
     const prevDb = usePrevious<Database | null>(db);
+    const isInitialLoadRef = useRef(true);
+    const prevUserIdRef = useRef<string | null>(null);
+
+    const currentUserId = user?.id || mechanic?.id || null;
+    if (currentUserId !== prevUserIdRef.current) {
+        isInitialLoadRef.current = true;
+        prevUserIdRef.current = currentUserId;
+    }
+
     const watchIdRef = useRef<number | null>(null);
     const isCustomerLocationUpdatingRef = useRef<boolean>(false);
     const lastCustomerLocationUpdateRef = useRef<number>(0);
@@ -453,6 +459,28 @@ const AppContent: React.FC = () => {
     useEffect(() => {
         if (!prevDb || !db) return;
 
+        // Suppress notifications on initial database load/sync to avoid alerting about historical actions
+        if (isInitialLoadRef.current) {
+            db.bookings.forEach(b => {
+                trackEventNotification(`${b.id}:${b.status}`);
+                trackEventNotification(`pmt_status:${b.id}:${b.paymentStatus}`);
+                trackEventNotification(`pmt_required_work_done:${b.id}`);
+                trackEventNotification(`unassigned:${b.id}`);
+                if (mechanic) {
+                    trackEventNotification(`assigned:${b.id}:${mechanic.id}`);
+                }
+                trackEventNotification(`paid:${b.id}`);
+            });
+            if (db.orders && Array.isArray(db.orders)) {
+                db.orders.forEach(o => {
+                    trackEventNotification(`new_order:${o.id}`);
+                    trackEventNotification(`order_status:${o.id}:${o.status}`);
+                });
+            }
+            isInitialLoadRef.current = false;
+            return;
+        }
+
         // --- CUSTOMER NOTIFICATIONS ---
         if (isAuthenticated && user) {
             db.bookings.forEach(currentBooking => {
@@ -527,8 +555,11 @@ const AppContent: React.FC = () => {
 
                     const oldOrder = prevDb.orders?.find(o => o.id === currentOrder.id);
                     if (!oldOrder) {
+                        // Only notify for new orders created in the last 60 seconds to prevent notifications for historical orders on mount/refresh
+                        const orderTime = currentOrder.date ? new Date(currentOrder.date).getTime() : 0;
+                        const isRecent = !isNaN(orderTime) && (Date.now() - orderTime < 60000);
                         const eventKey = `new_order:${currentOrder.id}`;
-                        if (trackEventNotification(eventKey)) {
+                        if (isRecent && trackEventNotification(eventKey)) {
                             addNotification({
                                 type: 'success',
                                 title: 'Order Placed Successfully',
@@ -598,7 +629,8 @@ const AppContent: React.FC = () => {
                         title: 'New Job Available',
                         message: `A ${job.services?.[0]?.name || job.service?.name || 'service'} for a ${job.vehicle?.make || 'vehicle'} is available.`,
                         link: '/mechanic-portal/dashboard',
-                        recipientId: 'all'
+                        recipientId: 'all',
+                        recipientRole: 'mechanic'
                     });
                 }
             });
@@ -1118,6 +1150,7 @@ const AppContent: React.FC = () => {
                                                     <Route path="/app-services/:slug" element={<AppServiceDetailScreen />} />
                                                     <Route path="/app-services/book/:slug" element={<ServiceBookingFlow />} />
                                                     <Route path="/app-services/liaison-book/:slug" element={<LiaisonBookingFlow />} />
+                                                    <Route path="/app-services/driver-book/:slug" element={<DriverBookingFlow />} />
                                                     <Route path="/parts-store" element={<PartsStoreScreen />} />
                                                     <Route path="/part/:id" element={<PartDetailScreen />} />
                                                     <Route path="/booking/:serviceId" element={<BookingScreen />} />

@@ -5,7 +5,7 @@ import CustomerHeader from '../components/CustomerHeader';
 import { useDatabase } from '../context/DatabaseContext';
 import { Search, X, Star, Clock, TrendingUp, ChevronDown, Wrench, LayoutGrid, LayoutList } from 'lucide-react';
 import { Card, Badge, Skeleton, EmptyState } from '../components/ui';
-import { getFallbackImageForCategory } from '../utils/fallbackImages';
+import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
 import UnifiedProductCard from '../components/ui/UnifiedProductCard';
 
@@ -24,7 +24,7 @@ const EnhancedServiceCardComponent: React.FC<{
     };
 
     const fallbackImage = getFallbackImageForCategory(service.category);
-    const imageUrl = service.imageUrl || fallbackImage;
+    const imageUrl = normalizeServiceImage(service.imageUrl, service.category);
     const isGrid = viewMode === 'grid';
 
     const cardClasses = isGrid
@@ -203,14 +203,44 @@ const ServicesScreen: React.FC = () => {
         localStorage.setItem('ridersbud_services_viewmode', mode);
     };
 
-    const services = db?.services || [];
+    const services = useMemo(() => {
+        const rawServices = db?.services || [];
+        return rawServices.map(service => {
+            const nameLower = service.name?.toLowerCase() || '';
+            const isSpecial = service.category?.toLowerCase() === 'special services' ||
+                nameLower.includes('rent a car') ||
+                nameLower.includes('driver for hire') ||
+                nameLower.includes('registration') ||
+                nameLower.includes('towing');
+
+            if (isSpecial) {
+                const appService = db?.appServices?.find(as => {
+                    const asName = as.name?.toLowerCase() || '';
+                    return as.slug === (service as any).slug || 
+                           asName.includes(nameLower) || 
+                           nameLower.includes(asName);
+                });
+
+                return {
+                    ...service,
+                    category: 'SPECIAL Services',
+                    description: appService?.description || service.description,
+                    price: appService && (appService as any).price !== undefined ? (appService as any).price : service.price,
+                    estimatedTime: appService && (appService as any).estimatedTime || service.estimatedTime,
+                    imageUrl: appService?.imageUrl || service.imageUrl,
+                    slug: appService?.slug || (service as any).slug || service.name?.toLowerCase().replace(/\s+/g, '-')
+                } as Service & { slug?: string };
+            }
+            return service;
+        });
+    }, [db?.services, db?.appServices]);
 
     // Service Categories
     const serviceCategories = useMemo(() => {
-        if (!db?.services) return ['all'];
-        const uniqueCategories = Array.from(new Set(db.services.map(s => s.category).filter(Boolean)));
+        if (services.length === 0) return ['all'];
+        const uniqueCategories = Array.from(new Set(services.map(s => s.category).filter(Boolean)));
         return ['all', ...uniqueCategories];
-    }, [db]);
+    }, [services]);
 
     // Available Mechanic Specializations
     const availableMechanicSpecializations = useMemo(() => {
@@ -325,8 +355,20 @@ const ServicesScreen: React.FC = () => {
         return filtered;
     }, [searchQuery, filterCategory, priceRange, sortBy, services, availabilityFilter, availableMechanicSpecializations, serviceRatings]);
 
-    const handleBook = (service: Service) => {
-        navigate(`/customer-portal/service/${service.id}`);
+    const handleBook = (service: Service & { slug?: string }) => {
+        const nameLower = service.name?.toLowerCase() || '';
+        const isSpecial = service.category === 'SPECIAL Services' ||
+            nameLower.includes('rent a car') ||
+            nameLower.includes('driver for hire') ||
+            nameLower.includes('registration') ||
+            nameLower.includes('towing');
+
+        if (isSpecial) {
+            const slug = service.slug || nameLower.replace(/\s+/g, '-');
+            navigate(`/customer-portal/app-services/${slug}`);
+        } else {
+            navigate(`/customer-portal/service/${service.id}`);
+        }
     };
 
     const activeFiltersCount = [

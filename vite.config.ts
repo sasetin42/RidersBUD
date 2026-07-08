@@ -14,9 +14,23 @@ export default defineConfig(({ mode }) => {
       headers: {
         'Cross-Origin-Opener-Policy': 'unsafe-none',
         'Cross-Origin-Embedder-Policy': 'unsafe-none',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
       },
     },
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: 'disable-dev-cache-negotiation',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            // Remove headers that trigger 304 Not Modified cache validation
+            delete req.headers['if-none-match'];
+            delete req.headers['if-modified-since'];
+            next();
+          });
+        }
+      }
+    ],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)

@@ -13,7 +13,7 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
         category: part?.category || '',
         sku: part?.sku || '',
         // The form handles a single image, so we'll use the first one from the array.
-        imageUrl: part?.imageUrls?.[0] || 'https://picsum.photos/seed/newpart/400/300',
+        imageUrl: part?.imageUrls?.[0] || '/placeholder.svg',
     });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
 

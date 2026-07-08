@@ -23,7 +23,7 @@ const CustomerFormModal: React.FC<{
         email: customer?.email || '',
         phone: customer?.phone || '',
         password: '',
-        picture: customer?.picture || 'https://picsum.photos/seed/customer/200/200',
+        picture: customer?.picture || '/placeholder.svg',
         status: customer?.status || 'Active' as const,
         registrationDate: customer?.registrationDate || new Date().toISOString().split('T')[0],
         notes: customer?.notes || '',
@@ -90,7 +90,7 @@ const CustomerFormModal: React.FC<{
             mileage: vehicleForm.mileage || 0,
             insuranceProvider: vehicleForm.insuranceProvider?.trim() || '',
             insurancePolicyNumber: vehicleForm.insurancePolicyNumber?.trim() || '',
-            imageUrls: vehicleForm.imageUrls && vehicleForm.imageUrls.length > 0 ? vehicleForm.imageUrls : ['https://picsum.photos/seed/vehicle/400/300']
+            imageUrls: vehicleForm.imageUrls && vehicleForm.imageUrls.length > 0 ? vehicleForm.imageUrls : ['/placeholder.svg']
         };
         if (editingVehicleIndex !== null) {
             const updated = [...vehicles]; updated[editingVehicleIndex] = newVehicle; setVehicles(updated);
@@ -182,7 +182,7 @@ const CustomerFormModal: React.FC<{
                             <div className="flex flex-col sm:flex-row gap-4 items-center bg-white/5 p-4 rounded-2xl border border-white/5 mb-1">
                                 <div className="relative group flex-shrink-0">
                                     <div className="w-16 h-16 rounded-2xl bg-[#1A1A1A] border border-white/10 flex items-center justify-center overflow-hidden shadow-md">
-                                        <img src={profileImagePreview} alt="Profile" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/customer/200/200'; }} />
+                                        <img src={profileImagePreview} alt="Profile" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
                                     </div>
                                     <label className="absolute -bottom-1 -right-1 p-1.5 bg-primary hover:bg-orange-600 text-white rounded-lg shadow cursor-pointer transition-all transform hover:scale-105 active:scale-95">
                                         <Camera size={10} />

@@ -1,94 +1,54 @@
-import { useLayoutEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
-const ScrollToTop = () => {
-    const { pathname, search, hash } = useLocation();
+const ScrollToTop: React.FC = () => {
+    const { pathname, search } = useLocation();
 
-    useLayoutEffect(() => {
+    useEffect(() => {
+        // Disable browser default scroll restoration if supported
+        if ('scrollRestoration' in window.history) {
+            window.history.scrollRestoration = 'manual';
+        }
+    }, []);
+
+    useEffect(() => {
         const resetScroll = () => {
+            // 1. Reset main window scroll
             window.scrollTo(0, 0);
-            if (document.documentElement) {
-                document.documentElement.scrollTop = 0;
-            }
-            if (document.body) {
-                document.body.scrollTop = 0;
-            }
-            const scrollContainers = document.querySelectorAll(
-                '.overflow-y-auto, .overflow-y-scroll, .overflow-auto, [data-scroll-container]'
-            );
-            scrollContainers.forEach(el => {
-                if (el.scrollTop !== 0) {
+            if (document.documentElement) document.documentElement.scrollTo(0, 0);
+            if (document.body) document.body.scrollTo(0, 0);
+
+            // 2. Find and reset all custom scrollable containers in the DOM
+            const allElements = document.getElementsByTagName('*');
+            for (let i = 0; i < allElements.length; i++) {
+                const el = allElements[i] as HTMLElement;
+                if (el.scrollTop > 0) {
                     el.scrollTop = 0;
                 }
-            });
-        };
-
-        // Reset scroll position immediately
-        resetScroll();
-
-        // 1. Set up an animation frame loop for the active transition window (1s duration)
-        let rafId: number;
-        const startTime = performance.now();
-        const DURATION = 1000;
-
-        const tick = () => {
-            resetScroll();
-            const elapsed = performance.now() - startTime;
-            if (elapsed < DURATION) {
-                rafId = requestAnimationFrame(tick);
-            }
-        };
-        rafId = requestAnimationFrame(tick);
-
-        // 2. Set up multiple timers for discrete lazy-loaded page checkpoints
-        const timers: ReturnType<typeof setTimeout>[] = [];
-        const intervals = [50, 150, 300, 600, 800];
-        intervals.forEach(delay => {
-            const timer = setTimeout(() => {
-                resetScroll();
-            }, delay);
-            timers.push(timer);
-        });
-
-        // 3. Set up a MutationObserver to watch DOM tree changes and catch new scrollable elements
-        const observer = new MutationObserver((mutations) => {
-            let hasNewScrollable = false;
-            for (const mutation of mutations) {
-                if (mutation.addedNodes.length > 0) {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node instanceof HTMLElement) {
-                            if (
-                                node.matches('.overflow-y-auto, .overflow-y-scroll, .overflow-auto, [data-scroll-container]') ||
-                                node.querySelector('.overflow-y-auto, .overflow-y-scroll, .overflow-auto, [data-scroll-container]')
-                            ) {
-                                hasNewScrollable = true;
-                            }
-                        }
-                    });
+                if (el.scrollLeft > 0) {
+                    el.scrollLeft = 0;
                 }
             }
-            if (hasNewScrollable) {
-                resetScroll();
-            }
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        // 4. Cleanup mutation observers, timers, and animation frame on route change or unmount
-        return () => {
-            if (rafId) {
-                cancelAnimationFrame(rafId);
-            }
-            timers.forEach(clearTimeout);
-            observer.disconnect();
         };
-    }, [pathname, search, hash]);
+
+        // Reset immediately
+        resetScroll();
+
+        // Use requestAnimationFrame to catch lazy-loaded/delayed content renders
+        const frame1 = requestAnimationFrame(() => {
+            resetScroll();
+            const frame2 = requestAnimationFrame(resetScroll);
+            return () => {
+                cancelAnimationFrame(frame2);
+            };
+        });
+
+        return () => {
+            cancelAnimationFrame(frame1);
+        };
+    }, [pathname, search]);
 
     return null;
 };
 
 export default ScrollToTop;
-

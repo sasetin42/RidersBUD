@@ -413,9 +413,9 @@ export const liveParts = [
     "id": "p1",
     "description": "5 Quarts of 5W-30 Full Synthetic motor oil. Provides excellent engine protection and performance.",
     "imageUrls": [
-      "https://picsum.photos/seed/engineoil/400/300",
-      "https://picsum.photos/seed/engineoil2/400/300",
-      "https://picsum.photos/seed/engineoil3/400/300"
+      "/placeholder.svg",
+      "/placeholder.svg",
+      "/placeholder.svg"
     ],
     "sku": "SYN-5W30-5QT",
     "salesPrice": 1599,
@@ -429,8 +429,8 @@ export const liveParts = [
     "id": "p2",
     "description": "Front set of premium ceramic brake pads for superior stopping power, low dust, and quiet operation.",
     "imageUrls": [
-      "https://picsum.photos/seed/brakepads/400/300",
-      "https://picsum.photos/seed/brakepads2/400/300"
+      "/placeholder.svg",
+      "/placeholder.svg"
     ],
     "sku": "CER-PAD-F78",
     "name": "Ceramic Brake Pads",
@@ -449,7 +449,7 @@ export const liveParts = [
     "description": "High-performance pleated paper engine air filter. Improves airflow and engine efficiency.",
     "sku": "AIR-FIL-H21",
     "imageUrls": [
-      "https://picsum.photos/seed/airfilter/400/300"
+      "/placeholder.svg"
     ]
   },
   {
@@ -463,8 +463,8 @@ export const liveParts = [
     "description": "All-weather performance wiper blades for a clear, streak-free wipe. Easy to install.",
     "sku": "WPR-BLD-22",
     "imageUrls": [
-      "https://picsum.photos/seed/wipers/400/300",
-      "https://picsum.photos/seed/wipers2/400/300"
+      "/placeholder.svg",
+      "/placeholder.svg"
     ]
   }
 ];

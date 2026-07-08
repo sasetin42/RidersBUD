@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CustomerHeader from '../components/CustomerHeader';
-import { Bell } from 'lucide-react';
+import { Bell, Calendar, MapPin, Activity, Clock, Tag } from 'lucide-react';
 import { Reminder } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useDatabase } from '../context/DatabaseContext';
 import Spinner from '../components/Spinner';
 
 const ReminderFormModal: React.FC<{
@@ -113,6 +114,8 @@ const ReminderFormModal: React.FC<{
 
 
 const RemindersScreen: React.FC = () => {
+    const { db } = useDatabase();
+    const { user } = useAuth();
     const [reminders, setReminders] = useState<Reminder[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
@@ -238,7 +241,95 @@ const RemindersScreen: React.FC = () => {
         event.target.value = '';
     };
 
-    const sortedReminders = [...reminders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Real-time Firestore Live Bookings
+    const liaisonBookings = db?.liaisonBookings?.filter(b => b.customerId === user?.id) || [];
+    const rentalBookings = db?.rentalBookings?.filter(b => b.customerId === user?.id) || [];
+    const serviceRequests = db?.serviceRequests?.filter(req => req.customerId === user?.id) || [];
+    const accentColor = db?.settings?.accentColor || '#FE7803';
+
+    // Map live bookings to Reminder format
+    const liveReminders: (Reminder & { 
+        isLive: boolean; 
+        status: string; 
+        bookingType: string;
+        agentImageUrl?: string;
+        agentName?: string;
+        branchName?: string;
+        latestRemarks?: string;
+    })[] = [];
+
+    // 1. Liaison Registration Assistance
+    liaisonBookings.forEach(b => {
+        const staff = db?.liaisonStaff?.find(s => s.id === b.liaisonId || s.name === b.liaisonName);
+        liveReminders.push({
+            id: `live-liaison-${b.id}`,
+            serviceName: `LTO Liaison (${b.serviceType})`,
+            date: b.appointmentDate,
+            vehicle: b.vehicleDetails ? `${b.vehicleDetails.brand} ${b.vehicleDetails.model} (${b.vehicleDetails.plateNumber})` : 'Vehicle info unprovided',
+            notes: `Agent: ${b.liaisonName || 'Unassigned'} • Branch: ${b.branchName}`,
+            isLive: true,
+            status: b.status,
+            bookingType: 'Liaison',
+            agentImageUrl: staff?.imageUrl || '',
+            agentName: b.liaisonName || 'Unassigned Liaison',
+            branchName: b.branchName,
+            latestRemarks: b.notes || (b.statusHistory && b.statusHistory.length > 0 ? b.statusHistory[b.statusHistory.length - 1].notes : '')
+        });
+    });
+
+    // 2. Rent a Car
+    rentalBookings.forEach(b => {
+        const car = db?.rentalCars?.find(c => c.id === b.carId);
+        const carName = car ? `${car.brand} ${car.model}` : 'Car Rental';
+        liveReminders.push({
+            id: `live-rental-${b.id}`,
+            serviceName: 'Car Rental Booking',
+            date: b.startDate,
+            vehicle: carName,
+            notes: `Duration: ${b.startDate} to ${b.endDate}`,
+            isLive: true,
+            status: b.status || 'Received',
+            bookingType: 'Car Rental'
+        });
+    });
+
+    // 3. Driver for Hire & Towing (from serviceRequests)
+    serviceRequests.forEach(req => {
+        const name = req.serviceName || 'Special Service';
+        const isTarget = ['Towing', 'Driver for Hire', 'Driver for hire'].some(t => name.toLowerCase().includes(t.toLowerCase()));
+        if (isTarget) {
+            liveReminders.push({
+                id: `live-request-${req.id}`,
+                serviceName: name,
+                date: req.scheduledDate || req.createdAt.split('T')[0],
+                vehicle: req.vehicleDetails ? `${req.vehicleDetails.brand} ${req.vehicleDetails.model} (${req.vehicleDetails.plateNumber})` : 'Driver provides vehicle',
+                notes: req.notes || 'No notes provided',
+                isLive: true,
+                status: req.status,
+                bookingType: name.includes('Towing') ? 'Towing' : 'Driver',
+                driverName: req.driverName || '',
+                driverPhone: req.driverPhone || '',
+                estimatedArrivalTime: req.estimatedArrivalTime || '',
+                remarks: req.remarks || ''
+            } as any);
+        }
+    });
+
+    // Combine local reminders and live reminders
+    const combinedReminders = [
+        ...reminders.map(r => ({ 
+            ...r, 
+            isLive: false, 
+            status: '', 
+            bookingType: 'Maintenance', 
+            agentImageUrl: '', 
+            agentName: '', 
+            branchName: '' 
+        })),
+        ...liveReminders
+    ];
+
+    const sortedReminders = [...combinedReminders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     return (
         <div className="flex flex-col h-full bg-secondary">
@@ -282,25 +373,239 @@ const RemindersScreen: React.FC = () => {
                 ) : (
                     <div className="space-y-4">
                         {sortedReminders.map(reminder => (
-                            <div key={reminder.id} className="bg-dark-gray p-4 rounded-lg" role="listitem">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h3 className="text-lg font-bold text-primary pr-6">{reminder.serviceName}</h3>
+                            <div key={reminder.id} className="bg-dark-gray p-4 rounded-lg border border-white/5" role="listitem">
+                                <div className="flex justify-between items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                            <h3 className="text-base font-bold text-primary truncate">{reminder.serviceName}</h3>
+                                            {reminder.isLive && (
+                                                <span className="text-[8px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black uppercase tracking-widest shrink-0">
+                                                    Live: {reminder.status || 'Received'}
+                                                </span>
+                                            )}
+                                        </div>
                                         <p className="text-sm text-white font-medium">{reminder.vehicle}</p>
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => handleEditReminder(reminder)} className="text-light-gray hover:text-blue-400 transition-colors" aria-label={`Edit reminder for ${reminder.serviceName}`}>
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
-                                        </button>
-                                        <button onClick={() => handleDeleteReminder(reminder.id)} className="text-light-gray hover:text-red-500 transition-colors" aria-label={`Delete reminder for ${reminder.serviceName}`}>
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
-                                        </button>
+                                    <div className="flex items-center gap-3.5 shrink-0">
+                                        {/* Real-time Agent Profile Photo */}
+                                        {reminder.bookingType === 'Liaison' && (
+                                            <div className="relative">
+                                                {reminder.agentImageUrl ? (
+                                                    <img 
+                                                        src={reminder.agentImageUrl} 
+                                                        alt={reminder.agentName} 
+                                                        className="w-9 h-9 rounded-full border-2 border-emerald-500/30 object-cover shadow-sm bg-black/40"
+                                                    />
+                                                ) : (
+                                                    <div className="w-9 h-9 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[10px] font-black uppercase tracking-tighter text-gray-400">
+                                                        {(reminder.agentName || 'A').charAt(0)}
+                                                    </div>
+                                                )}
+                                                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border border-dark-gray rounded-full" title="Active Liaison Agent" />
+                                            </div>
+                                        )}
+                                        
+                                        <div className="flex gap-2">
+                                            {!reminder.isLive ? (
+                                                <>
+                                                    <button onClick={() => handleEditReminder(reminder as any)} className="text-light-gray hover:text-blue-400 transition-colors" aria-label={`Edit reminder for ${reminder.serviceName}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
+                                                    </button>
+                                                    <button onClick={() => handleDeleteReminder(reminder.id)} className="text-light-gray hover:text-red-500 transition-colors" aria-label={`Delete reminder for ${reminder.serviceName}`}>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <div className="w-5 h-5 rounded-full bg-white/5 flex items-center justify-center border border-white/10" title="Managed by Database">
+                                                    <Activity size={10} className="text-emerald-400" />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                                <p className="text-sm text-light-gray mt-1">
-                                    Due: {new Date(reminder.date.replace(/-/g, '/')).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                <p className="text-xs text-light-gray mt-2 flex items-center gap-1.5">
+                                    <Calendar size={11} className="text-gray-400" />
+                                    <span>Date: {new Date(reminder.date.replace(/-/g, '/')).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
                                 </p>
-                                {reminder.notes && <p className="text-sm text-light-gray mt-2 pt-2 border-t border-field">Notes: {reminder.notes}</p>}
+                                {reminder.notes && (
+                                    <p className="text-xs text-light-gray mt-2 pt-2 border-t border-field leading-relaxed flex items-start gap-1.5">
+                                        <Clock size={11} className="text-gray-400 mt-0.5 shrink-0" />
+                                        <span>{reminder.notes}</span>
+                                    </p>
+                                )}
+
+                                {/* Real-time process tracking step visualization */}
+                                {reminder.bookingType === 'Liaison' && (
+                                    <div className="mt-4 pt-4 border-t border-white/5 space-y-3.5">
+                                        <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">// Live Processing Milestones</h4>
+                                        <div className="flex justify-between items-center gap-1 overflow-x-auto py-1.5">
+                                            {[
+                                                { statusName: 'Pending Admin Review', short: 'Review' },
+                                                { statusName: 'For Verification', short: 'Verify' },
+                                                { statusName: 'For Processing', short: 'Process' },
+                                                { statusName: 'Assigned', short: 'Assigned' },
+                                                { statusName: 'In Progress', short: 'Active' },
+                                                { statusName: 'Completed', short: 'Done' }
+                                            ].map((step, idx, arr) => {
+                                                const statuses = arr.map(a => a.statusName);
+                                                const currentIdx = statuses.indexOf(reminder.status);
+                                                
+                                                // Map standard liaison states to nearest milestone if applicable
+                                                let checkIdx = currentIdx;
+                                                if (checkIdx === -1) {
+                                                    if (reminder.status === 'Booking Received') checkIdx = 0;
+                                                    else if (reminder.status === 'Documents Verified') checkIdx = 1;
+                                                    else if (reminder.status === 'Payment Confirmed') checkIdx = 2;
+                                                    else if (reminder.status === 'Liaison Assigned') checkIdx = 3;
+                                                    else if (reminder.status === 'Processing at LTO') checkIdx = 4;
+                                                    else if (reminder.status === 'Ready for Pickup' || reminder.status === 'Delivered') checkIdx = 5;
+                                                }
+
+                                                const isCompleted = checkIdx >= idx;
+                                                const isActive = checkIdx === idx;
+                                                const isCancelled = reminder.status === 'Cancelled';
+                                                
+                                                return (
+                                                    <React.Fragment key={step.statusName}>
+                                                        <div className="flex flex-col items-center shrink-0">
+                                                            <div 
+                                                                className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black border transition-all duration-300 ${
+                                                                    isCancelled ? 'border-red-500/30 text-red-400 bg-red-950/20' :
+                                                                    isActive ? 'border-primary bg-primary text-black scale-110 shadow-lg shadow-primary/25' : 
+                                                                    isCompleted ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400' : 
+                                                                    'border-white/10 text-gray-500 bg-white/5'
+                                                                }`}
+                                                            >
+                                                                {isCancelled ? '✖' : isCompleted && !isActive ? '✓' : idx + 1}
+                                                            </div>
+                                                            <span className={`text-[8px] font-black uppercase tracking-wider mt-1.5 ${
+                                                                isCancelled ? 'text-red-400' :
+                                                                isActive ? 'text-primary' : 
+                                                                isCompleted ? 'text-emerald-400' : 
+                                                                'text-gray-600'
+                                                            }`}>{step.short}</span>
+                                                        </div>
+                                                        {idx < arr.length - 1 && (
+                                                            <div className={`flex-1 h-[2px] min-w-[8px] transition-all duration-300 ${
+                                                                isCancelled ? 'bg-red-950/40' :
+                                                                isCompleted && checkIdx > idx ? 'bg-emerald-500/50' : 
+                                                                'bg-white/5'
+                                                            }`} />
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </div>
+                                        {reminder.latestRemarks && (
+                                            <p className="text-[10px] text-gray-400 bg-white/[0.02] p-2.5 rounded-lg border border-white/5 leading-normal mt-2">
+                                                <span className="font-bold text-gray-300">Remarks: </span>{reminder.latestRemarks}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Real-time process tracking step visualization for Driver for Hire */}
+                                {reminder.bookingType === 'Driver' && (
+                                    <div className="mt-4 pt-4 border-t border-white/5 space-y-3.5 animate-fadeIn">
+                                        <h4 className="text-[9px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-1.5">// Driver Service Milestones</h4>
+                                        <div className="flex justify-between items-center gap-1 overflow-x-auto py-1.5">
+                                            {[
+                                                { statusName: 'Pending Admin Review', short: 'Review' },
+                                                { statusName: 'For Verification', short: 'Verify' },
+                                                { statusName: 'Awaiting Driver Availability', short: 'Awaiting' },
+                                                { statusName: 'Driver Assigned', short: 'Assigned' },
+                                                { statusName: 'Confirmed', short: 'Confirm' },
+                                                { statusName: 'In Progress', short: 'Active' },
+                                                { statusName: 'Completed', short: 'Done' }
+                                            ].map((step, idx, arr) => {
+                                                const statuses = arr.map(a => a.statusName);
+                                                const currentIdx = statuses.indexOf(reminder.status);
+                                                
+                                                let checkIdx = currentIdx;
+                                                if (checkIdx === -1) {
+                                                    // Fallback standard states to milestones
+                                                    if (reminder.status === 'Pending') checkIdx = 0;
+                                                    else if (reminder.status === 'Assigned') checkIdx = 3;
+                                                    else if (reminder.status === 'In Progress') checkIdx = 5;
+                                                }
+
+                                                const isCompleted = checkIdx >= idx;
+                                                const isActive = checkIdx === idx;
+                                                const isCancelled = reminder.status === 'Cancelled';
+                                                
+                                                return (
+                                                    <React.Fragment key={step.statusName}>
+                                                        <div className="flex flex-col items-center shrink-0">
+                                                            <div 
+                                                                className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black border transition-all duration-300 ${
+                                                                    isCancelled ? 'border-red-500/30 text-red-400 bg-red-950/20' :
+                                                                    isActive ? 'border-primary bg-primary text-black scale-110 shadow-lg shadow-primary/25' : 
+                                                                    isCompleted ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400' : 
+                                                                    'border-white/10 text-gray-500 bg-white/5'
+                                                                }`}
+                                                                style={{ 
+                                                                    backgroundColor: isActive ? accentColor : undefined,
+                                                                    borderColor: isActive ? accentColor : undefined
+                                                                }}
+                                                            >
+                                                                {isCancelled ? '✖' : isCompleted && !isActive ? '✓' : idx + 1}
+                                                            </div>
+                                                            <span className={`text-[8px] font-black uppercase tracking-wider mt-1.5 ${
+                                                                isCancelled ? 'text-red-400' :
+                                                                isActive ? 'text-primary' : 
+                                                                isCompleted ? 'text-emerald-400' : 
+                                                                'text-gray-600'
+                                                            }`}
+                                                            style={{ color: isActive ? accentColor : undefined }}
+                                                            >{step.short}</span>
+                                                        </div>
+                                                        {idx < arr.length - 1 && (
+                                                            <div className={`flex-1 h-[2px] min-w-[8px] transition-all duration-300 ${
+                                                                isCancelled ? 'bg-red-950/40' :
+                                                                isCompleted && checkIdx > idx ? 'bg-emerald-500/50' : 
+                                                                'bg-white/5'
+                                                            }`} />
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Assigned Driver Details */}
+                                        {((reminder as any).driverName || (reminder as any).estimatedArrivalTime || (reminder as any).remarks) && (
+                                            <div className="mt-3.5 p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-2 text-xs">
+                                                {/* Driver Name */}
+                                                {(reminder as any).driverName && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Assigned Driver</span>
+                                                        <span className="font-bold text-white">{(reminder as any).driverName}</span>
+                                                    </div>
+                                                )}
+                                                {/* Driver Phone */}
+                                                {(reminder as any).driverPhone && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Driver Contact</span>
+                                                        <span className="font-mono text-gray-300">{(reminder as any).driverPhone}</span>
+                                                    </div>
+                                                )}
+                                                {/* Estimated Arrival Time */}
+                                                {(reminder as any).estimatedArrivalTime && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Est. Arrival Time</span>
+                                                        <span className="font-bold text-primary" style={{ color: accentColor }}>{(reminder as any).estimatedArrivalTime}</span>
+                                                    </div>
+                                                )}
+                                                {/* Remarks */}
+                                                {(reminder as any).remarks && (
+                                                    <div className="pt-2 border-t border-white/5">
+                                                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block mb-1">Remarks / Remarks</span>
+                                                        <p className="text-[10px] text-gray-300 leading-normal" style={{ wordBreak: 'break-all', overflowWrap: 'break-word' }}>{(reminder as any).remarks}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

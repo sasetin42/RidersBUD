@@ -18,7 +18,7 @@ import {
     BadgeCheck 
 } from 'lucide-react';
 import { Button, Card, Badge } from '../components/ui';
-import { getFallbackImageForCategory } from '../utils/fallbackImages';
+import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
 
 const getServiceIncludes = (serviceName: string): string[] => {
     const lower = serviceName.toLowerCase();
@@ -164,7 +164,7 @@ const ServiceDetailScreen: React.FC = () => {
             {/* Hero Image Section */}
             <div className="relative h-72 w-full">
                 <img
-                    src={service.imageUrl || getFallbackImageForCategory(service.category)}
+                    src={normalizeServiceImage(service.imageUrl, service.category)}
                     alt={service.name}
                     className="w-full h-full object-cover"
                     onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }}

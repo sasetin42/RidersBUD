@@ -1,75 +1,74 @@
-# Implementation Plan: Fix Liaison Agent Selection and Flow Progression
+# Implementation Plan: GCash Payment Cancellation Enhancements
 
-This document details the code modifications required to fix the Liaison Agent selection display in `pages/services/LiaisonBookingFlow.tsx` Step 5, ensure correct state updates and button enablement, and align database context types.
+This document describes the step-by-step technical implementation to enhance the GCash payment cancellation flow in `components/GCashPaymentModal.tsx`.
+
+---
+
+## 📋 Objectives
+1. **Firestore Clean-up Security**: Ensure that if the customer cancels the booking/rental payment *before* they upload a receipt, any pre-saved or pre-registered document matching the `bookingId` is completely deleted from the Firestore backend (specifically preventing leaks/dangling records).
+2. **Context-Aware Navigation**: Redirect the user back to the last section/flow of the services (meaning close the modal, and if the path is `/service-payment`, go back to the previous screen using `navigate(-1)` instead of hard-redirecting to `/customer-portal/` home page).
 
 ---
 
 ## 🛠️ Step-by-Step Implementation Details
 
-### Step 1: Fix `filteredStaff` and Render Logic in `pages/services/LiaisonBookingFlow.tsx`
-Modify [LiaisonBookingFlow.tsx](file:///c:/Users/User/OneDrive/Desktop/SASE%20PROJECT/RIDERSBUD%20APP/RidersBUD%20App/pages/services/LiaisonBookingFlow.tsx) Step 5.
+### 1. `components/GCashPaymentModal.tsx` Modifications
 
-1. **Verify the filtering function**:
-```typescript
-const filteredStaff = (() => {
-    const activeStaff = (db?.liaisonStaff || staff).filter(s => s.isAvailable !== false);
-    const branchSpecific = activeStaff.filter(s => s.assignedBranches && s.assignedBranches.includes(selectedBranchId));
-    return branchSpecific.length > 0 ? branchSpecific : activeStaff;
-})();
-```
-*Note: Ensure `selectedBranchId` is mapped correctly and verify that the fallback list is populated.*
+* **Objective 1: Cleanup Condition Fix**
+  - Locate the cancel handler function: `handleConfirmCancelBooking`.
+  - Currently, it contains:
+    ```typescript
+    if (newBookingData && !bookingData && bookingId) {
+        // delete doc...
+    }
+    ```
+    If `bookingData` is fetched and exists in the snapshot, `!bookingData` is `false`, which blocks the cleanup!
+  - **Proposed Fix**: Change this to check if the payment is still in the preparation phases (`step === 'qr'` or `step === 'upload'`). If the user hasn't successfully uploaded and submitted the receipt (`step` is not `'waiting'`), we must clean up the document regardless of whether it's already synchronized locally:
+    ```typescript
+    if (newBookingData && bookingId && (step === 'qr' || step === 'upload')) {
+        try {
+            const collectionName = isRental ? 'rentalBookings' : 'bookings';
+            await deleteDoc(doc(firestore, collectionName, bookingId));
+            console.log(`Successfully deleted cancelled ${collectionName}:`, bookingId);
+        } catch (err) {
+            console.error("Failed to delete booking document on cancel:", err);
+        }
+    }
+    ```
 
-2. **Verify selected card click handler**:
-Ensure the selection card triggers the update:
-```typescript
-onClick={() => setSelectedLiaisonId(s.id)}
-```
-Verify that the border style is dynamically computed using the `accentColor` of the app when `selectedLiaisonId === s.id`.
-
----
-
-### Step 2: Validate State Persistence and Step Validation
-Ensure that when a user selects an agent, the step validation changes state and enables the navigation action:
-
-1. **Check `isStepValid()` definition** around line 345:
-```typescript
-if (currentStep === 5) return !!selectedLiaisonId;
-```
-Ensure there are no state lag issues (using React state or caches).
-
-2. **Check the bottom navigation buttons**:
-Ensure the button updates dynamically:
-```typescript
-disabled={!isStepValid()}
-```
-
----
-
-### Step 3: Type and Database Integrity Check
-Verify there are no TypeScript compile-time errors due to database contexts or model alignments:
-
-1. **Verify definitions in `types.ts`**:
-Ensure the `Database` interface includes the `liaisonStaff` property:
-```typescript
-export interface Database {
-    ...
-    liaisonStaff: LiaisonStaff[];
-    liaisonBranches: LiaisonBranch[];
-    liaisonBookings: LiaisonBooking[];
-    ...
-}
-```
-
-2. **Verify variables in `DatabaseContext.tsx`**:
-Ensure all liaison-related methods and state match types defined in `types.ts`.
+* **Objective 2: Path-Based Navigation Redirection**
+  - Within `handleConfirmCancelBooking`, update the navigation target.
+  - Instead of unconditionally calling:
+    ```typescript
+    navigate('/customer-portal/', { replace: true });
+    ```
+  - **Proposed Fix**: Check if the current pathname is `/service-payment`. If so, navigate back to the previous screen. Otherwise, fall back to the customer portal homepage:
+    ```typescript
+    if (window.location.pathname.includes('/service-payment')) {
+        navigate(-1);
+    } else {
+        navigate('/customer-portal/', { replace: true });
+    }
+    ```
 
 ---
 
-## 🔍 Validation Checklist
+## 📊 Task Breakdown & Assignment
 
-1. **UI Selection Test**: Navigate through Steps 1-4. On Step 5, click an agent card and ensure the "Next Step" button becomes active.
-2. **TypeScript Compilation**: Run:
-   ```bash
-   npx tsc --noEmit
-   ```
-   to confirm no compiler errors exist.
+### Task 1: Modify `handleConfirmCancelBooking` Logic
+- **Agent**: `frontend-specialist`
+- **Skill**: `clean-code`
+- **Priority**: High
+- **Dependencies**: None
+- **INPUT**: Current `handleConfirmCancelBooking` in `components/GCashPaymentModal.tsx`.
+- **OUTPUT**: Modified `handleConfirmCancelBooking` function with the strict cleanup phase condition and context-aware pathname navigation.
+- **VERIFY**: Open modal on booking, trigger cancel before uploading receipt. Verify document is not present in the Firestore backend. Verify page goes back to the previous step if route is `/service-payment`.
+
+---
+
+## ✅ Phase X: Verification Checklist
+
+After the changes are proposed, perform the following verification:
+- [ ] Run `npm run lint` and `npx tsc --noEmit` to verify type safety.
+- [ ] Run `npm run build` to verify production bundling.
+- [ ] Validate color accessibility guidelines and that no standard templates are broken.

@@ -58,7 +58,7 @@ const WishlistScreen: React.FC = () => {
                             <div className="absolute inset-0 rounded-2xl border border-primary/40 animate-ping opacity-25"></div>
                         </div>
                         
-                        <h2 className="text-2xl font-black tracking-tight mb-2 uppercase">// Your Wishlist is Empty</h2>
+                        <h2 className="text-xl font-black tracking-tight mb-2 uppercase">Your Wishlist is Empty</h2>
                         <p className="text-xs text-gray-400 max-w-xs mb-8 leading-relaxed">
                             Explore our premium selection of motorcycle and car parts, tools, and accessories to curate your garage essentials.
                         </p>
@@ -123,46 +123,43 @@ const WishlistScreen: React.FC = () => {
                     {/* Glassmorphic Metrics Summary Card */}
                     <div className="bg-[#141416] border border-white/5 rounded-3xl p-5 flex items-center justify-between shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-2xl"></div>
-                        <div className="flex items-center gap-6 divide-x divide-white/5 w-full">
-                            <div className="flex flex-col gap-1 pr-6 flex-1 min-w-0">
+                        <div className="flex items-center gap-4 divide-x divide-white/5 w-full">
+                            <div className="flex flex-col gap-1 pr-4 flex-[1.6] min-w-0">
                                 <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Total Value</span>
-                                <span className="text-xl font-black text-white tracking-tight truncate">₱{totalValue.toLocaleString()}</span>
+                                <span className="text-base font-black text-white tracking-tight">₱{totalValue.toLocaleString()}</span>
                             </div>
-                            <div className="flex flex-col gap-1 pl-6 flex-1 min-w-0">
+                            <div className="flex flex-col gap-1 pl-4 flex-1 min-w-0">
                                 <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">On Sale</span>
-                                <span className="text-xl font-black text-primary tracking-tight">
-                                    {saleItemsCount} <Tag size={12} className="inline-block ml-1 align-baseline" />
+                                <span className="text-base font-black text-primary tracking-tight">
+                                    {saleItemsCount} <Tag size={11} className="inline-block ml-0.5 align-baseline" />
                                 </span>
                             </div>
-                            <div className="flex flex-col gap-1 pl-6 flex-1 min-w-0">
+                            <div className="flex flex-col gap-1 pl-4 flex-1 min-w-0">
                                 <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">In Stock</span>
-                                <span className="text-xl font-black text-green-400 tracking-tight">
-                                    {inStockItemsCount} <CheckCircle2 size={12} className="inline-block ml-1 align-baseline" />
+                                <span className="text-base font-black text-green-400 tracking-tight">
+                                    {inStockItemsCount} <CheckCircle2 size={11} className="inline-block ml-0.5 align-baseline" />
                                 </span>
                             </div>
                         </div>
                     </div>
 
                     {/* Actions Toolbar */}
-                    <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">// Saved Favorites</span>
-                        <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5 w-full">
                             {inStockItemsCount > 0 && (
                                 <button
                                     onClick={handleMoveAllToCart}
-                                    className="text-[10px] bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary font-black tracking-widest uppercase px-3 py-1.5 rounded-lg active:scale-95 transition-all flex items-center gap-1.5"
+                                    className="flex-1 text-[10px] bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary font-black tracking-widest uppercase px-2.5 py-2 rounded-lg active:scale-95 transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
                                 >
                                     <ShoppingCart size={11} /> Move all to cart
                                 </button>
                             )}
                             <button
                                 onClick={clearWishlist}
-                                className="text-[10px] bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 font-black tracking-widest uppercase px-3 py-1.5 rounded-lg active:scale-95 transition-all flex items-center gap-1.5"
+                                className="flex-1 text-[10px] bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 font-black tracking-widest uppercase px-2.5 py-2 rounded-lg active:scale-95 transition-all flex items-center justify-center gap-1.5 whitespace-nowrap"
                             >
                                 <Trash2 size={11} /> Clear Wishlist
                             </button>
                         </div>
-                    </div>
 
                     {/* Wishlist List Grid */}
                     <div className="flex flex-col gap-4">
@@ -222,31 +219,31 @@ const WishlistScreen: React.FC = () => {
                                                     <span className="text-gray-600 text-[10px] line-through font-bold">₱{origPrice.toLocaleString()}</span>
                                                 )}
                                             </div>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-1.5">
                                                 <Tooltip content="Remove">
                                                     <button
                                                         onClick={() => removeFromWishlist(item.id)}
-                                                        className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg hover:text-red-300 transition-colors"
+                                                        className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg hover:text-red-300 transition-colors"
                                                     >
-                                                        <Trash2 size={13} />
+                                                        <Trash2 size={11.5} />
                                                     </button>
                                                 </Tooltip>
                                                 
                                                 <Tooltip content="View">
                                                     <Link
                                                         to={`/customer-portal/part/${item.id}`}
-                                                        className="p-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg transition-colors flex items-center justify-center border border-white/5"
+                                                        className="p-1.5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg transition-colors flex items-center justify-center border border-white/5"
                                                     >
-                                                        <Eye size={13} />
+                                                        <Eye size={11.5} />
                                                     </Link>
                                                 </Tooltip>
 
                                                 <button
                                                     onClick={() => handleAddToCart(item)}
                                                     disabled={item.stock === 0}
-                                                    className="bg-white hover:bg-gray-200 disabled:bg-white/10 text-black disabled:text-gray-600 p-2 px-3 rounded-lg transition-colors shadow-lg active:scale-95 flex items-center justify-center gap-1 text-[11px] font-black uppercase tracking-wider disabled:shadow-none"
+                                                    className="bg-white hover:bg-gray-200 disabled:bg-white/10 text-black disabled:text-gray-600 p-1.5 px-2.5 rounded-lg transition-colors shadow-lg active:scale-95 flex items-center justify-center gap-1 text-[10px] font-black uppercase tracking-wider disabled:shadow-none"
                                                 >
-                                                    <ShoppingCart size={12} /> Add
+                                                    <ShoppingCart size={11} /> Add
                                                 </button>
                                             </div>
                                         </div>

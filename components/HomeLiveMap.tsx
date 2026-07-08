@@ -34,6 +34,18 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
     mechanicsRef.current = mechanics;
 
     const [retryTrigger, setRetryTrigger] = React.useState(0);
+    const [leafletLoaded, setLeafletLoaded] = React.useState(typeof window !== 'undefined' && !!(window as any).L);
+
+    useEffect(() => {
+        if (leafletLoaded) return;
+        const interval = setInterval(() => {
+            if ((window as any).L) {
+                setLeafletLoaded(true);
+                clearInterval(interval);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [leafletLoaded]);
 
     useEffect(() => {
         if (!mapRef.current || mapInstanceRef.current || typeof L === 'undefined') return;
@@ -131,7 +143,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
             markersLayerRef.current = null;
             markersRef.current = {};
         };
-    }, [navigate, retryTrigger]); // rerun if retryTrigger changes to retry initialization
+    }, [navigate, retryTrigger, leafletLoaded]); // rerun if retryTrigger or leafletLoaded changes to retry initialization
 
     useEffect(() => {
         if (!markersLayerRef.current || !mechanics) return;

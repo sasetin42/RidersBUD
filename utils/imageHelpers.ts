@@ -19,6 +19,11 @@ export const getVehicleFallbackImage = (type?: string): string => {
  * Returns a profile image with a fallback to UI Avatars.
  */
 export const getProfileImage = (photoURL?: string | null, name?: string | null): string => {
-  if (photoURL && !photoURL.startsWith('blob:') && !photoURL.startsWith('file:')) return photoURL;
+  if (photoURL && !photoURL.startsWith('blob:') && !photoURL.startsWith('file:')) {
+    if (photoURL.includes('firebasestorage.googleapis.com') && !photoURL.includes('_cb=')) {
+      return photoURL + (photoURL.includes('?') ? '&' : '?') + '_cb=1';
+    }
+    return photoURL;
+  }
   return '/riders-logo.png';
 };

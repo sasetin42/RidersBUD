@@ -513,6 +513,7 @@ const NotificationSettingsModal: React.FC<{
                                     >
                                         <input
                                             id={`modal-channel-${key}`}
+                                            name={`modal-channel-${key}`}
                                             type="checkbox"
                                             checked={settings.notificationChannels?.[key]}
                                             onChange={e => handleChannelChange(key, e.target.checked)}
@@ -691,8 +692,8 @@ const ProfileScreen: React.FC = () => {
                                 <img src={getProfileImage(user.picture, user.name)} alt={user.name} className="w-full h-full rounded-[1.25rem] object-cover shadow-2xl" />
                             </div>
 
-                            <label className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer rounded-3xl bg-black/50 backdrop-blur-sm">
-                                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
+                            <label htmlFor="profile-avatar-direct" className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity cursor-pointer rounded-3xl bg-black/50 backdrop-blur-sm">
+                                <input id="profile-avatar-direct" name="profile-avatar-direct" type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
                                 <Edit3 className="text-white w-6 h-6" />
                             </label>
                             {isUploading && (

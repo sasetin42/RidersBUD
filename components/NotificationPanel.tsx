@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { useMechanicAuth } from '../context/MechanicAuthContext';
+import { useAdminAuth } from '../context/AdminAuthContext';
 import { Notification } from '../types';
 import { CheckCircle, Info, AlertTriangle, AlertOctagon, Briefcase } from 'lucide-react';
 
@@ -21,9 +22,8 @@ const NotificationPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const { notifications, markAsRead, clearAllNotifications } = useNotification();
     const { user } = useAuth();
     const { mechanic } = useMechanicAuth();
+    const { isAdminAuthenticated: isAdmin } = useAdminAuth();
     const navigate = useNavigate();
-
-    const isAdmin = localStorage.getItem('ridersbud_admin_session') === 'true';
 
     const handleClick = (notification: Notification) => {
         markAsRead(notification.id);

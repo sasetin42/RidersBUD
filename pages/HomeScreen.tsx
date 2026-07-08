@@ -5,11 +5,11 @@ import MarketingBanner from '../components/MarketingBanner';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import CustomerHeader from '../components/CustomerHeader';
-import { Car, Calendar, FileText, Heart, ChevronRight, Wrench, Search, Bell, Settings, LogOut, User, Phone, MessageSquare, MapPin, Star, Package } from 'lucide-react';
+import { Car, Calendar, FileText, Heart, ChevronRight, Wrench, Search, Bell, Settings, LogOut, User, Phone, MessageSquare, MapPin, Star, Package, Activity, X } from 'lucide-react';
 import Spinner from '../components/Spinner';
 import NotificationBell from '../components/NotificationBell';
 import { MOCKUPS, getProfileImage } from '../utils/imageConstants';
-import { getFallbackImageForCategory } from '../utils/fallbackImages';
+import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
 
 const BookingImage: React.FC<{ src?: string; alt: string }> = ({ src, alt }) => {
@@ -39,6 +39,7 @@ const HomeScreen: React.FC = () => {
     const { user, logout } = useAuth();
     const { db, loading, cancelBooking } = useDatabase();
     const navigate = useNavigate();
+    const accentColor = db?.settings?.accentColor || '#FE7803';
     const [searchQuery, setSearchQuery] = useState('');
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [searchResults, setSearchResults] = useState<{
@@ -50,6 +51,9 @@ const HomeScreen: React.FC = () => {
     const [bookingToCancel, setBookingToCancel] = useState<string | null>(null);
     const [isCancelling, setIsCancelling] = useState(false);
     const [cancelReason, setCancelReason] = useState('');
+    const [selectedDetailsBooking, setSelectedDetailsBooking] = useState<any | null>(null);
+    const [viewingDocumentUrl, setViewingDocumentUrl] = useState<string | null>(null);
+    const [viewingDocumentName, setViewingDocumentName] = useState<string>('');
 
     const handleCancelBooking = async (bookingId: string) => {
         if (!cancelReason.trim()) return;
@@ -131,11 +135,109 @@ const HomeScreen: React.FC = () => {
     );
 
     const upcomingBookings = React.useMemo(() => {
-        if (!db?.bookings || !user) return [];
-        return db.bookings
-            .filter(b => (b.customerId === user.id || b.customerName === user.name) && ['Upcoming', 'Booking Confirmed'].includes(b.status))
-            .sort((a, b) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime());
-    }, [db?.bookings, user]);
+        const bookingsList: any[] = [];
+
+        // 1. Normal maintenance bookings
+        if (db?.bookings && user) {
+            db.bookings
+                .filter(b => (b.customerId === user.id || b.customerName === user.name) && ['Upcoming', 'Booking Confirmed'].includes(b.status))
+                .forEach(b => {
+                    bookingsList.push({
+                        id: b.id,
+                        type: 'maintenance',
+                        title: b.services?.map((s: any) => s.name).join(', ') || b.service?.name || 'Vehicle Service',
+                        dateTimeStr: `${b.date} · ${b.time}`,
+                        dateObj: new Date(`${b.date.replace(/-/g, '/')} ${b.time}`),
+                        detailsUrl: `/customer-portal/booking-detail/${b.id}`,
+                        image: b.services?.[0]?.imageUrl || b.service?.imageUrl || '',
+                        category: b.services?.[0]?.category || b.service?.category || '',
+                        vehicleDesc: `${b.vehicle?.year || ''} ${b.vehicle?.make || ''} ${b.vehicle?.model || ''}`,
+                        plateNumber: b.vehicle?.plateNumber || '',
+                        paymentStatus: b.isVerified ? 'Paid/Verified' : 'Pending Verification',
+                        isVerified: b.isVerified,
+                        isCancelable: true,
+                        totalAmount: b.totalAmount || b.services?.[0]?.price || b.service?.price || 0
+                    });
+                });
+        }
+
+        // 2. Liaison bookings
+        const liaisonBookings = db?.liaisonBookings?.filter(b => b.customerId === user?.id && ['Booking Received', 'Processing', 'Assigned', 'Pending Admin Review', 'For Verification', 'For Processing', 'In Progress', 'Processing at LTO'].includes(b.status)) || [];
+        liaisonBookings.forEach(b => {
+            const staff = db?.liaisonStaff?.find(s => s.id === b.liaisonId || s.name === b.liaisonName);
+            const uploadedImg = b.documents?.[0]?.url || b.documentUrls?.[0] || b.uploadedDocuments?.[0];
+            bookingsList.push({
+                id: b.id,
+                type: 'liaison',
+                title: `LTO Liaison (${b.serviceType})`,
+                dateTimeStr: `${b.appointmentDate} · ${b.appointmentTime}`,
+                dateObj: new Date(`${b.appointmentDate.replace(/-/g, '/')} ${b.appointmentTime}`),
+                detailsUrl: '/customer-portal/reminders',
+                image: uploadedImg || staff?.imageUrl || '/images/services/liaison.png',
+                vehicleDesc: b.vehicleDetails ? `${b.vehicleDetails.year} ${b.vehicleDetails.brand} ${b.vehicleDetails.model}` : 'Vehicle info unprovided',
+                plateNumber: b.vehicleDetails?.plateNumber || '',
+                paymentStatus: b.paymentStatus === 'Paid' ? 'Paid' : 'Pending Payment',
+                isVerified: b.paymentStatus === 'Paid',
+                status: b.status,
+                agentName: b.liaisonName || 'Unassigned',
+                branchName: b.branchName || 'LTO Branch',
+                agentPhone: staff?.phone || '',
+                agentImageUrl: staff?.imageUrl || '',
+                isCancelable: false,
+                rawBooking: b
+            });
+        });
+
+        // 3. Rent a Car bookings
+        const rentalBookings = db?.rentalBookings?.filter(b => b.customerId === user?.id && ['Approved', 'Pending', 'Received'].includes(b.status || '')) || [];
+        rentalBookings.forEach(b => {
+            const car = db?.rentalCars?.find(c => c.id === b.carId);
+            const carName = car ? `${car.brand} ${car.model}` : 'Car Rental';
+            bookingsList.push({
+                id: b.id,
+                type: 'rental',
+                title: `Car Rental: ${carName}`,
+                dateTimeStr: `${b.startDate} · 08:00 AM`,
+                dateObj: new Date(`${b.startDate.replace(/-/g, '/')} 08:00 AM`),
+                detailsUrl: '/customer-portal/reminders',
+                image: car?.imageUrl || '/images/services/rent_a_car.png',
+                vehicleDesc: `Rental Period: ${b.startDate} to ${b.endDate}`,
+                plateNumber: '',
+                paymentStatus: 'Total: ₱' + b.totalPrice.toLocaleString(),
+                isVerified: true,
+                status: b.status || 'Received',
+                isCancelable: false,
+                rawBooking: b
+            });
+        });
+
+        // 4. Driver & Towing requests
+        const serviceRequests = db?.serviceRequests?.filter(req => req.customerId === user?.id && ['Pending', 'In Progress', 'Assigned'].includes(req.status)) || [];
+        serviceRequests.forEach(req => {
+            const name = req.serviceName || 'Special Service';
+            const isTarget = ['Towing', 'Driver for Hire', 'Driver for hire'].some(t => name.toLowerCase().includes(t.toLowerCase()));
+            if (isTarget) {
+                bookingsList.push({
+                    id: req.id,
+                    type: 'special',
+                    title: name,
+                    dateTimeStr: `${req.scheduledDate || req.createdAt.split('T')[0]} · 08:00 AM`,
+                    dateObj: new Date(`${(req.scheduledDate || req.createdAt.split('T')[0]).replace(/-/g, '/')} 08:00 AM`),
+                    detailsUrl: '/customer-portal/reminders',
+                    image: req.imageUrl || req.image || (name.includes('Towing') ? '/images/services/towing.png' : '/images/services/driver_for_hire.png'),
+                    vehicleDesc: req.notes || 'Special service booking',
+                    plateNumber: '',
+                    paymentStatus: 'Status: ' + req.status,
+                    isVerified: req.status === 'Completed',
+                    status: req.status,
+                    isCancelable: false,
+                    rawBooking: req
+                });
+            }
+        });
+
+        return bookingsList.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+    }, [db?.bookings, db?.liaisonBookings, db?.liaisonStaff, db?.rentalBookings, db?.rentalCars, db?.serviceRequests, user]);
 
     const activeOrder = React.useMemo(() => {
         if (!db?.orders || !user) return null;
@@ -418,12 +520,10 @@ const HomeScreen: React.FC = () => {
                         return (
                             <div className="space-y-4 w-full">
                                 {upcomingBookings.map((booking) => {
-                                    const serviceImg = booking.services?.[0]?.imageUrl || booking.service?.imageUrl || getFallbackImageForCategory(booking.services?.[0]?.category || booking.service?.category || '');
-                                    const total = booking.totalAmount || booking.services?.[0]?.price || booking.service?.price || 0;
-                                    const deposit = Math.ceil(total * 0.5);
+                                    const serviceImg = normalizeServiceImage(booking.image, booking.category || '');
                                     return (
                                         <div 
-                                            key={booking.id}
+                                            key={`${booking.type}-${booking.id}`}
                                             className="bg-gradient-to-br from-[#1E1E1E] to-[#121212] border border-white/5 rounded-3xl p-5 relative overflow-hidden group shadow-lg w-full animate-slideUp"
                                         >
                                             {/* Accent glow */}
@@ -433,51 +533,112 @@ const HomeScreen: React.FC = () => {
                                                 <div className="flex gap-4">
                                                     {/* Service Image */}
                                                     <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-white/10 flex-shrink-0 bg-[#1A1A1A]">
-                                                        <BookingImage src={serviceImg} alt="Service" />
-                                                        <span className="absolute top-2 left-2 bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full tracking-wider uppercase border border-yellow-400/20">
-                                                            Upcoming
-                                                        </span>
+                                                        {(booking.type === 'liaison' && booking.image && booking.image.startsWith('http')) || booking.image ? (
+                                                            <img src={normalizeServiceImage(booking.image, booking.category)} alt={booking.title} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <BookingImage src={serviceImg} alt="Service" />
+                                                        )}
+                                                        {booking.type === 'maintenance' ? (
+                                                            <span className="absolute top-2 left-2 bg-yellow-500 text-black text-[9px] font-black px-2 py-0.5 rounded-full tracking-wider uppercase border border-yellow-400/20">
+                                                                Upcoming
+                                                            </span>
+                                                        ) : (
+                                                            <span className="absolute top-2 left-2 bg-primary text-black text-[8px] font-black px-1.5 py-0.5 rounded tracking-wider uppercase border border-primary/20">
+                                                                {booking.status || 'Received'}
+                                                            </span>
+                                                        )}
                                                     </div>
-
+ 
                                                     {/* Service Info */}
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex justify-between items-start">
-                                                            <h3 className="text-white font-bold text-base leading-tight truncate">
-                                                                {booking.services?.map((s: any) => s.name).join(', ') || booking.service?.name || 'Vehicle Service'}
+                                                            <h3 className="text-white font-bold text-base leading-tight truncate pr-2">
+                                                                {booking.title}
                                                             </h3>
                                                             <span className="text-xs font-mono text-gray-500">#{booking.id.slice(-6).toUpperCase()}</span>
                                                         </div>
-
-                                                        <p className="text-xs text-yellow-400 font-bold mt-1.5 flex items-center gap-1.5">
+ 
+                                                        <p className="text-[11px] text-yellow-400 font-bold mt-1.5 flex items-center gap-1.5">
                                                             <Calendar size={13} />
-                                                            {booking.date} · {booking.time}
+                                                            {booking.dateTimeStr}
                                                         </p>
-
+ 
+                                                        {booking.type === 'liaison' && (
+                                                            <div className="mt-2 space-y-1">
+                                                                <p className="text-[11px] text-gray-300 font-bold flex items-center gap-1">
+                                                                    <span>Agent:</span>
+                                                                    <span className="text-primary">{booking.agentName}</span>
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                                </p>
+                                                                <p className="text-[10px] text-gray-400 flex items-center gap-1">
+                                                                    <MapPin size={10} className="text-gray-500 shrink-0" />
+                                                                    <span className="truncate">{booking.branchName}</span>
+                                                                </p>
+                                                            </div>
+                                                        )}
+ 
                                                         <p className="text-xs text-gray-400 mt-2 font-medium">
-                                                            Vehicle: <span className="text-gray-300 font-bold">{booking.vehicle?.year} {booking.vehicle?.make} {booking.vehicle?.model}</span> · <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-gray-300">{booking.vehicle?.plateNumber}</span>
+                                                            {booking.plateNumber ? (
+                                                                <>
+                                                                    Vehicle: <span className="text-gray-300 font-bold">{booking.vehicleDesc}</span> · <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded text-[10px] text-gray-300">{booking.plateNumber}</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    Details: <span className="text-gray-300 font-bold">{booking.vehicleDesc}</span>
+                                                                </>
+                                                            )}
                                                         </p>
                                                     </div>
                                                 </div>
-
+ 
                                                 <div className="flex items-center justify-between mt-4 pt-3.5 border-t border-white/5">
                                                     <div className="text-[11px] text-gray-500">
-                                                        Payment: <span className={booking.isVerified ? 'text-green-400 font-bold' : 'text-yellow-500 font-bold'}>
-                                                            {booking.isVerified ? `Deposit ₱${deposit.toLocaleString()} Verified` : 'Pending Verification'}
-                                                        </span>
+                                                        {booking.type === 'maintenance' ? (
+                                                            <>
+                                                                Payment: <span className={booking.isVerified ? 'text-green-400 font-bold' : 'text-yellow-500 font-bold'}>
+                                                                    {booking.isVerified ? `Deposit Verified` : 'Pending Verification'}
+                                                                </span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                Payment Status: <span className="text-emerald-400 font-bold">{booking.paymentStatus}</span>
+                                                            </>
+                                                        )}
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
-                                                            className="text-xs font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-3 py-1.5 rounded-xl border border-white/5"
-                                                        >
-                                                            Details
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setBookingToCancel(booking.id)}
-                                                            className="text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors bg-red-500/5 px-3 py-1.5 rounded-xl border border-red-500/20"
-                                                        >
-                                                            Cancel
-                                                        </button>
+                                                        {booking.type === 'liaison' && booking.agentName !== 'Unassigned' && (
+                                                            <button
+                                                                onClick={() => navigate('/customer-portal/support-chat')}
+                                                                className="text-xs font-bold text-gray-300 hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-2.5 rounded-xl border border-white/5 flex items-center justify-center shrink-0"
+                                                                title={`Chat with ${booking.agentName}`}
+                                                            >
+                                                                <MessageSquare size={13} className="text-gray-400 hover:text-white" />
+                                                            </button>
+                                                        )}
+                                                        {booking.isCancelable ? (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => navigate(booking.detailsUrl)}
+                                                                    className="text-xs font-bold text-gray-400 hover:text-white transition-colors bg-white/5 px-3 py-1.5 rounded-xl border border-white/5"
+                                                                >
+                                                                    Details
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setBookingToCancel(booking.id)}
+                                                                    className="text-xs font-bold text-red-400 hover:bg-red-500/10 transition-colors bg-red-500/5 px-3 py-1.5 rounded-xl border border-red-500/20"
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => setSelectedDetailsBooking(booking)}
+                                                                className="text-xs font-bold text-primary hover:text-white transition-colors bg-primary/10 hover:bg-primary/20 px-3.5 py-1.5 rounded-xl border border-primary/20 flex items-center gap-1.5"
+                                                            >
+                                                                <FileText size={12} className="text-primary" />
+                                                                <span>View details</span>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -721,7 +882,12 @@ const HomeScreen: React.FC = () => {
                                     className="flex-shrink-0 w-44 group relative snap-start"
                                 >
                                     <div className="h-56 w-full rounded-2xl overflow-hidden relative shadow-lg bg-[#1E1E1E] group-hover:shadow-2xl group-hover:shadow-primary/20 transition-all duration-500">
-                                        <img src={service.imageUrl || getFallbackImageForCategory(service.category)} alt={service.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }} />
+                                        {(() => {
+                                            const normalized = normalizeServiceImage(service.imageUrl, service.category);
+                                            return (
+                                                <img src={normalized} alt={service.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }} />
+                                            );
+                                        })()}
                                         {/* Enhanced Gradient Overlay */}
                                         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black via-black/90 to-transparent"></div>
 
@@ -753,7 +919,12 @@ const HomeScreen: React.FC = () => {
                                     className="flex-shrink-0 w-44 group relative snap-start"
                                 >
                                     <div className="h-56 w-full rounded-2xl overflow-hidden relative shadow-lg bg-[#1E1E1E] group-hover:shadow-2xl group-hover:shadow-primary/20 transition-all duration-500 border border-white/5 group-hover:border-primary/30">
-                                        <img src={service.imageUrl || '/assets/logo.png'} alt={service.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" onError={(e) => { (e.target as HTMLImageElement).src = '/assets/logo.png'; }} />
+                                        {(() => {
+                                            const normalized = normalizeServiceImage(service.imageUrl, service.category);
+                                            return (
+                                                <img src={normalized} alt={service.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out" onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }} />
+                                            );
+                                        })()}
                                         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black via-black/90 to-transparent"></div>
 
                                         <div className="absolute bottom-4 left-4 right-4">
@@ -982,6 +1153,198 @@ const HomeScreen: React.FC = () => {
                             >
                                 {isCancelling ? <Spinner size="sm" /> : 'Yes, Cancel'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {selectedDetailsBooking && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-[#18181B] border border-white/10 rounded-3xl p-6 max-w-md w-full max-h-[85vh] overflow-y-auto custom-scrollbar shadow-2xl relative">
+                        {/* Close button */}
+                        <button
+                            onClick={() => setSelectedDetailsBooking(null)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-2 rounded-full border border-white/5 z-10"
+                        >
+                            <X size={16} />
+                        </button>
+
+                        {/* Title Section */}
+                        <div className="border-b border-white/5 pb-4 mb-4">
+                            <span className="text-[10px] font-black uppercase bg-primary/20 text-primary border border-primary/20 px-2.5 py-1 rounded-full tracking-wider">
+                                {selectedDetailsBooking.type === 'liaison' ? 'LTO Liaison' : selectedDetailsBooking.type === 'rental' ? 'Rental Booking' : 'Special Service'}
+                            </span>
+                            <h3 className="text-white font-black text-xl mt-3 tracking-tight leading-snug">
+                                {selectedDetailsBooking.title}
+                            </h3>
+                            <p className="text-[11px] text-gray-500 font-mono mt-1">ID: #{selectedDetailsBooking.id.toUpperCase()}</p>
+                        </div>
+
+                        {/* Details Sections */}
+                        <div className="space-y-4 text-xs">
+                            {/* Schedule details */}
+                            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex gap-3.5 items-center">
+                                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-yellow-500/10 border border-yellow-500/20 shrink-0">
+                                    <Calendar size={15} className="text-yellow-500" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="text-gray-400 font-bold uppercase text-[9px] tracking-wider mb-0.5">Schedule Details</h4>
+                                    <span className="text-white font-bold text-xs">{selectedDetailsBooking.dateTimeStr}</span>
+                                </div>
+                            </div>
+
+                            {/* Details/Vehicle */}
+                            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex gap-3.5 items-start">
+                                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-blue-500/10 border border-blue-500/20 shrink-0 mt-0.5">
+                                    <Car size={15} className="text-blue-400" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="text-gray-400 font-bold uppercase text-[9px] tracking-wider mb-1">
+                                        {selectedDetailsBooking.type === 'rental' ? 'Rental Details' : 'Vehicle Details'}
+                                    </h4>
+                                    <p className="text-white font-bold text-xs leading-relaxed whitespace-pre-wrap">
+                                        {selectedDetailsBooking.vehicleDesc}
+                                    </p>
+                                    {selectedDetailsBooking.plateNumber && (
+                                        <p className="text-[10px] font-mono text-gray-400 mt-1.5">
+                                            Plate No: <span className="bg-white/10 px-2 py-0.5 rounded font-bold text-white border border-white/5">{selectedDetailsBooking.plateNumber}</span>
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Assigned Staff Info with Live Profile Image */}
+                            {selectedDetailsBooking.type === 'liaison' && (
+                                <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex gap-3.5 items-center">
+                                    {selectedDetailsBooking.agentImageUrl ? (
+                                        <img 
+                                            src={selectedDetailsBooking.agentImageUrl} 
+                                            alt={selectedDetailsBooking.agentName} 
+                                            className="w-11 h-11 rounded-full object-cover border border-white/10 shrink-0 shadow-md" 
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop';
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                                            <User size={16} className="text-primary" />
+                                        </div>
+                                    )}
+                                    <div className="flex-1 min-w-0 space-y-0.5 text-white">
+                                        <h4 className="text-gray-400 font-bold uppercase text-[9px] tracking-wider mb-0.5">Assigned Agent Info</h4>
+                                        <p className="font-bold text-xs flex items-center gap-1.5">
+                                            <span style={{ color: accentColor }}>{selectedDetailsBooking.agentName}</span>
+                                        </p>
+                                        <p className="text-gray-400 text-[10px] flex items-center gap-1.5">
+                                            <span>Branch:</span>
+                                            <span className="truncate">{selectedDetailsBooking.branchName}</span>
+                                        </p>
+                                        {selectedDetailsBooking.agentPhone && (
+                                            <p className="text-gray-400 text-[10px] flex items-center gap-1.5">
+                                                <span>Contact:</span>
+                                                <span className="font-mono text-gray-300">{selectedDetailsBooking.agentPhone}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Documents Uploaded Section */}
+                            {selectedDetailsBooking.type === 'liaison' && selectedDetailsBooking.rawBooking?.documents && selectedDetailsBooking.rawBooking.documents.length > 0 && (
+                                <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5">
+                                    <h4 className="text-gray-400 font-bold uppercase text-[9px] tracking-wider mb-2.5 flex items-center gap-1.5">
+                                        <FileText size={11} className="text-gray-400" />
+                                        <span>Uploaded Documents</span>
+                                    </h4>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {selectedDetailsBooking.rawBooking.documents.map((doc: any, idx: number) => (
+                                            <button
+                                                key={idx}
+                                                type="button"
+                                                onClick={() => {
+                                                    setViewingDocumentUrl(doc.url);
+                                                    setViewingDocumentName(doc.name);
+                                                }}
+                                                className="bg-black/40 border border-white/5 p-2 rounded-xl flex flex-col items-center justify-center gap-1 hover:border-primary/50 transition-colors text-center w-full focus:outline-none"
+                                            >
+                                                <FileText size={15} className="text-primary" />
+                                                <span className="text-[9px] font-bold text-gray-300 truncate w-full">{doc.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Payment Status section */}
+                            <div className="bg-white/5 p-3.5 rounded-2xl border border-white/5 flex gap-3.5 items-center">
+                                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-500/10 border border-emerald-500/20 shrink-0">
+                                    <span className="text-emerald-400 font-black text-sm">₱</span>
+                                </div>
+                                <div className="flex-1 min-w-0 flex justify-between items-center">
+                                    <div>
+                                        <h4 className="text-gray-400 font-bold uppercase text-[9px] tracking-wider mb-0.5">Payment Details</h4>
+                                        <span className="text-white font-medium text-[11px]">Payment status:</span>
+                                    </div>
+                                    <span className="text-emerald-400 font-bold text-xs uppercase tracking-wider bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">{selectedDetailsBooking.paymentStatus}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="mt-6 flex gap-3">
+                            <button
+                                onClick={() => setSelectedDetailsBooking(null)}
+                                className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl border border-primary/20 transition-all text-xs"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Premium Document Viewer Modal */}
+            {viewingDocumentUrl && (
+                <div 
+                    className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fadeIn"
+                    onClick={() => setViewingDocumentUrl(null)}
+                >
+                    <div 
+                        className="relative max-w-3xl w-full bg-[#151517] border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-2xl animate-scaleUp"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="flex justify-between items-center px-4 py-3 bg-white/[0.02] border-b border-white/5">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <FileText size={14} className="text-primary" />
+                                <span className="text-xs font-black text-white truncate max-w-[200px] sm:max-w-md">{viewingDocumentName}</span>
+                            </div>
+                            <button
+                                onClick={() => setViewingDocumentUrl(null)}
+                                className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                        
+                        {/* Image/File Body */}
+                        <div className="p-4 flex items-center justify-center min-h-[300px] max-h-[80vh] overflow-auto bg-black/20">
+                            {viewingDocumentUrl.endsWith('.pdf') ? (
+                                <iframe 
+                                    src={viewingDocumentUrl} 
+                                    className="w-full h-[60vh] border-none rounded-lg"
+                                    title={viewingDocumentName}
+                                />
+                            ) : (
+                                <img
+                                    src={viewingDocumentUrl}
+                                    alt={viewingDocumentName}
+                                    className="max-w-full max-h-[70vh] object-contain rounded-lg border border-white/5"
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).src = getFallbackImageForCategory('Liason Services');
+                                    }}
+                                />
+                            )}
                         </div>
                     </div>
                 </div>

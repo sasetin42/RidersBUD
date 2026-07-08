@@ -33,3 +33,32 @@ export const getFallbackImageForCategory = (category?: string): string => {
     
     return FALLBACK_IMAGES['General'];
 };
+
+/**
+ * Normalizes service image URLs to prevent relative path routing issues and CORB blocks.
+ * If the image name is a known missing asset, falls back to a curated Unsplash image.
+ */
+export const normalizeServiceImage = (url?: string, category?: string): string => {
+    if (!url) return getFallbackImageForCategory(category);
+    
+    // If it's already an absolute or external URL, leave it as is (add cache buster for Firebase Storage)
+    if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('/')) {
+        if (url.includes('firebasestorage.googleapis.com') && !url.includes('_cb=')) {
+            return url + (url.includes('?') ? '&' : '?') + '_cb=1';
+        }
+        return url;
+    }
+    
+    // Map missing local image names directly to high-quality Unsplash fallbacks
+    const urlLower = url.toLowerCase();
+    if (urlLower.includes('diagnostics')) {
+        return FALLBACK_IMAGES['Diagnostics'];
+    }
+    if (urlLower.includes('body_repair') || urlLower.includes('body-repair') || urlLower.includes('bodywork') || urlLower.includes('body work')) {
+        return FALLBACK_IMAGES['Detailing'];
+    }
+    
+    // For local assets (e.g. service_brakes.png), prefix with a leading slash to route correctly from the root
+    return `/${url}`;
+};
+

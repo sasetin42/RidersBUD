@@ -55,7 +55,7 @@ const MechanicSignUpScreen: React.FC = () => {
                 basePrice: formData.basePrice ? Number(formData.basePrice) : undefined,
                 specializations: formData.specializations.split(',').map(s => s.trim()).filter(Boolean),
                 portfolioImages: [],
-                imageUrl: 'https://picsum.photos/seed/newmech/200/200',
+                imageUrl: '/placeholder.svg',
                 lat: 14.55 + (Math.random() - 0.5) * 0.1,
                 lng: 121.02 + (Math.random() - 0.5) * 0.1,
                 registrationDate: new Date().toISOString().split('T')[0],

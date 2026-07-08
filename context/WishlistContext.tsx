@@ -1,7 +1,8 @@
 
 
-import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect, useRef } from 'react';
 import { Product } from '../types';
+import { useAuth } from './AuthContext';
 
 interface WishlistContextType {
     wishlistItems: Product[];
@@ -22,24 +23,39 @@ export const useWishlist = () => {
     return context;
 };
 
+const WISHLIST_STORAGE_KEY = 'wishlist';
+
 export const WishlistProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [wishlistItems, setWishlistItems] = useState<Product[]>(() => {
-        try {
-            const storedWishlist = localStorage.getItem('wishlist');
-            return storedWishlist ? JSON.parse(storedWishlist) : [];
-        } catch (error) {
-            console.error("Failed to load wishlist from localStorage", error);
-            return [];
-        }
-    });
+    const { user } = useAuth();
+    const loadedUserIdRef = useRef<string | undefined>(undefined);
+    const [wishlistItems, setWishlistItems] = useState<Product[]>([]);
 
     useEffect(() => {
+        const currentUserId = user?.id;
+        const key = currentUserId ? `${WISHLIST_STORAGE_KEY}_${currentUserId}` : WISHLIST_STORAGE_KEY;
         try {
-            localStorage.setItem('wishlist', JSON.stringify(wishlistItems));
+            const storedWishlist = localStorage.getItem(key);
+            setWishlistItems(storedWishlist ? JSON.parse(storedWishlist) : []);
+            loadedUserIdRef.current = currentUserId;
+        } catch (error) {
+            console.error("Failed to load wishlist from localStorage", error);
+            setWishlistItems([]);
+            loadedUserIdRef.current = currentUserId;
+        }
+    }, [user?.id]);
+
+    useEffect(() => {
+        const currentUserId = user?.id;
+        if (loadedUserIdRef.current !== currentUserId) {
+            return;
+        }
+        try {
+            const key = currentUserId ? `${WISHLIST_STORAGE_KEY}_${currentUserId}` : WISHLIST_STORAGE_KEY;
+            localStorage.setItem(key, JSON.stringify(wishlistItems));
         } catch (error) {
             console.error("Failed to save wishlist to localStorage", error);
         }
-    }, [wishlistItems]);
+    }, [wishlistItems, user?.id]);
 
     const addToWishlist = (product: Product) => {
         setWishlistItems(prevItems => {

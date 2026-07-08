@@ -29,7 +29,7 @@ const ServiceBookingFlow: React.FC = () => {
         );
     }
 
-    const service = db?.appServices?.find(s => s.id === slug);
+    const service = db?.appServices?.find(s => s.id === slug || s.slug === slug);
     const vehicles = user?.vehicles || [];
 
     if (!service) {
