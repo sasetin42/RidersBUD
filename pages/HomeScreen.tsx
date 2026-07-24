@@ -140,7 +140,7 @@ const HomeScreen: React.FC = () => {
         // 1. Normal maintenance bookings
         if (db?.bookings && user) {
             db.bookings
-                .filter(b => (b.customerId === user.id || b.customerName === user.name) && ['Upcoming', 'Booking Confirmed'].includes(b.status))
+                .filter(b => (b.customerId === user.id || b.customerName === user.name) && ['Upcoming', 'Booking Confirmed'].includes(b.status) && b.status !== 'Cancelled')
                 .forEach(b => {
                     bookingsList.push({
                         id: b.id,
@@ -912,7 +912,16 @@ const HomeScreen: React.FC = () => {
                     </div>
 
                     <div className="flex gap-4 overflow-x-auto pb-4 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
-                        {db?.appServices?.filter((s: any) => s.category === 'Special Services' && s.isActive !== false).slice().sort((a: any, b: any) => (a.order || 99) - (b.order || 99)).map((service: any) => (
+                        {db?.appServices?.filter((s: any) => {
+                            if (s.category !== 'Special Services' || s.isActive === false) return false;
+                            const modules = db?.settings?.modules;
+                            if (!modules) return true;
+                            if (s.slug === 'rent-a-car') return modules.find(m => m.id === 'rent-a-car')?.enabled !== false;
+                            if (s.slug === 'driver-for-hire') return modules.find(m => m.id === 'driver-for-hire')?.enabled !== false;
+                            if (s.slug === 'registration-assistance') return modules.find(m => m.id === 'liaison-assistance')?.enabled !== false;
+                            if (s.slug === 'towing') return modules.find(m => m.id === 'towing')?.enabled !== false;
+                            return true;
+                        }).slice().sort((a: any, b: any) => (a.order || 99) - (b.order || 99)).map((service: any) => (
                             <Tooltip key={service.id} content={service.name}>
                                 <Link
                                     to={`/customer-portal/app-services/${service.id}`}

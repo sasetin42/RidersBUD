@@ -22,6 +22,7 @@ import DirectionsModal from '../../components/mechanic/DirectionsModal';
 import { CallButton } from '../../components/CallUI';
 import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { useCall } from '../../context/CallContext';
+import { Geolocation } from '@capacitor/geolocation';
 
 // Default currency configuration
 const DEFAULT_CURRENCY = 'PHP';
@@ -253,48 +254,74 @@ const MechanicJobDetailScreen: React.FC = () => {
         }
     }, [showWorkDoneModal]);
 
+
     // Real-time location tracking for "En Route" status
     useEffect(() => {
-        let watchId: number | null = null;
+        let nativeWatchId: string | null = null;
+        let webWatchId: number | null = null;
 
-        if (booking?.status === 'En Route' && bookingId && 'geolocation' in navigator) {
+        const isNative = (window as any).Capacitor !== undefined;
+
+        if (booking?.status === 'En Route' && bookingId) {
             console.log('📡 Starting live location tracking for En Route status...');
             
-            watchId = navigator.geolocation.watchPosition(
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    
-                    // 1. Update RTDB for high-performance live tracking
-                    const trackingRef = ref(rtdb, `tracking/${bookingId}/mechanicLocation`);
-                    set(trackingRef, {
-                        lat: latitude,
-                        lng: longitude,
-                        timestamp: Date.now()
-                    });
+            const handleSuccess = (lat: number, lng: number) => {
+                // 1. Update RTDB for high-performance live tracking
+                const trackingRef = ref(rtdb, `tracking/${bookingId}/mechanicLocation`);
+                set(trackingRef, {
+                    lat,
+                    lng,
+                    timestamp: Date.now()
+                }).catch(() => {});
 
-                    // 2. Also update Firestore for persistence
-                    const bookingDoc = doc(firestore, 'bookings', bookingId as string);
-                    updateDoc(bookingDoc, {
-                        mechanicLocation: {
-                            lat: latitude,
-                            lng: longitude,
-                            lastUpdated: new Date().toISOString()
+                // 2. Also update Firestore for persistence
+                const bookingDoc = doc(firestore, 'bookings', bookingId as string);
+                updateDoc(bookingDoc, {
+                    mechanicLocation: {
+                        lat,
+                        lng,
+                        lastUpdated: new Date().toISOString()
+                    }
+                }).catch(() => {});
+            };
+
+            if (isNative) {
+                Geolocation.watchPosition(
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                    (position) => {
+                        if (position) {
+                            handleSuccess(position.coords.latitude, position.coords.longitude);
                         }
-                    }).catch(() => {});
-                },
-                () => {},
-                {
-                    enableHighAccuracy: false,
-                    maximumAge: 10000,
-                    timeout: 30000
-                }
-            );
+                    }
+                ).then((id) => {
+                    nativeWatchId = id;
+                }).catch((err) => {
+                    console.warn('[Mechanic Location] Native watch failed, falling back to web watch:', err);
+                    if ('geolocation' in navigator) {
+                        webWatchId = navigator.geolocation.watchPosition(
+                            (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                            () => {},
+                            { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                        );
+                    }
+                });
+            } else if ('geolocation' in navigator) {
+                webWatchId = navigator.geolocation.watchPosition(
+                    (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                    () => {},
+                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                );
+            }
         }
 
         return () => {
-            if (watchId !== null) {
-                console.log('📡 Stopping live location tracking...');
-                navigator.geolocation.clearWatch(watchId);
+            if (nativeWatchId !== null) {
+                console.log('📡 Stopping native live location tracking...');
+                Geolocation.clearWatch({ id: nativeWatchId }).catch(() => {});
+            }
+            if (webWatchId !== null) {
+                console.log('📡 Stopping web live location tracking...');
+                navigator.geolocation.clearWatch(webWatchId);
             }
         };
     }, [booking?.status, bookingId]);

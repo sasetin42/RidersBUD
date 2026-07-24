@@ -111,13 +111,35 @@ const MechanicDashboardScreen: React.FC = () => {
     };
 
     const isBookingApprovedForMechanicView = useCallback((booking: Booking) => {
+        const modules = db?.settings?.modules;
+        if (modules) {
+            const services = booking.services || (booking.service ? [booking.service] : []);
+            for (const s of services) {
+                const nameLower = (s.name || '').toLowerCase();
+                const catLower = (s.category || '').toLowerCase();
+                
+                if (nameLower.includes('rent a car') || catLower.includes('rentals') || catLower.includes('rent a car')) {
+                    if (modules.find(m => m.id === 'rent-a-car')?.enabled === false) return false;
+                }
+                if (nameLower.includes('driver for hire') || catLower.includes('driver')) {
+                    if (modules.find(m => m.id === 'driver-for-hire')?.enabled === false) return false;
+                }
+                if (nameLower.includes('registration') || nameLower.includes('liaison') || catLower.includes('liaison') || catLower.includes('registration')) {
+                    if (modules.find(m => m.id === 'liaison-assistance')?.enabled === false) return false;
+                }
+                if (nameLower.includes('towing') || catLower.includes('towing')) {
+                    if (modules.find(m => m.id === 'towing')?.enabled === false) return false;
+                }
+            }
+        }
+
         const paymentMethod = (booking.paymentMethod || '').toLowerCase();
         const isGCashBooking = paymentMethod === 'gcash' || !!booking.gcashReceiptUrl || !!booking.gcashPaymentStatus;
 
         if (!isGCashBooking) return true;
 
         return booking.isVerified === true || booking.gcashPaymentStatus === 'verified';
-    }, []);
+    }, [db?.settings?.modules]);
 
     // Find the currently active job for the mechanic
     const ongoingJob = useMemo(() => {

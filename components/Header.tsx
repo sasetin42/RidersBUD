@@ -21,7 +21,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false
     const isHidden = scrollDirection === 'up';
 
     return (
-        <div className={`sticky top-0 z-40 bg-[#121212]/80 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 py-3 flex items-center justify-between shadow-2xl transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}>
+        <div className={`sticky top-0 z-50 bg-[#121212]/80 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 py-3 flex items-center justify-between shadow-2xl transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="flex items-center gap-3 sm:gap-4">
                 {(showBackButton || showBack) && (
                     <button

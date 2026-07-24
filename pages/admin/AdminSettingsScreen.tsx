@@ -61,10 +61,40 @@ const AdminSettingsScreen: React.FC = () => {
         }
     }, [db?.settings, hasChanges]);
 
-    const handleInputChange = (field: keyof Settings, value: any) => {
+     const handleInputChange = (field: keyof Settings, value: any) => {
         if (!localSettings) return;
         setLocalSettings(prev => prev ? { ...prev, [field]: value } : null);
         setHasChanges(true); // Keep this for "manual" save button if needed, although we do realtime for images
+    };
+
+    const handleModuleToggle = (moduleId: string) => {
+        if (!localSettings) return;
+        const currentModules = localSettings.modules || [
+            { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
+            { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
+            { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
+            { id: 'towing', name: 'Towing Service', enabled: true, bannerMessage: '' }
+        ];
+        const updatedModules = currentModules.map(m => 
+            m.id === moduleId ? { ...m, enabled: !m.enabled } : m
+        );
+        setLocalSettings(prev => prev ? { ...prev, modules: updatedModules } : null);
+        setHasChanges(true);
+    };
+
+    const handleModuleBannerChange = (moduleId: string, bannerMessage: string) => {
+        if (!localSettings) return;
+        const currentModules = localSettings.modules || [
+            { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
+            { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
+            { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
+            { id: 'towing', name: 'Towing Service', enabled: true, bannerMessage: '' }
+        ];
+        const updatedModules = currentModules.map(m => 
+            m.id === moduleId ? { ...m, bannerMessage } : m
+        );
+        setLocalSettings(prev => prev ? { ...prev, modules: updatedModules } : null);
+        setHasChanges(true);
     };
 
     const handleSocialChange = (network: 'facebook' | 'twitter' | 'instagram', value: string) => {
@@ -1129,6 +1159,51 @@ const AdminSettingsScreen: React.FC = () => {
                                                 )}
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-8">
+                                    <h2 className="text-2xl font-black text-white flex items-center gap-3  tracking-tighter">
+                                        <Layout className="text-primary" size={24} /> System Modules
+                                    </h2>
+                                    <p className="text-gray-400 text-sm leading-relaxed -mt-4 font-medium font-bold">
+                                        Enable or disable application modules. Disabling a module hides it from customer navigation and prevents providers from managing bookings for it.
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {(localSettings.modules || [
+                                            { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
+                                            { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
+                                            { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
+                                            { id: 'towing', name: 'Towing Service', enabled: true, bannerMessage: '' }
+                                        ]).map((mod) => (
+                                            <div key={mod.id} className="p-6 bg-white/5 border border-white/10 rounded-[2rem] flex flex-col justify-between space-y-4 transition-all hover:bg-white/10">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <h3 className="text-lg font-black text-white tracking-tight">{mod.name}</h3>
+                                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold mt-1 ${mod.enabled ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${mod.enabled ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                                                            {mod.enabled ? 'Active' : 'Disabled'}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleModuleToggle(mod.id)}
+                                                        className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${mod.enabled ? 'bg-emerald-500' : 'bg-gray-800'}`}
+                                                    >
+                                                        <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${mod.enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                                                    </button>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] tracking-widest font-black text-gray-500 block uppercase">Custom Alert / Warning Banner</label>
+                                                    <input
+                                                        type="text"
+                                                        value={mod.bannerMessage || ''}
+                                                        onChange={(e) => handleModuleBannerChange(mod.id, e.target.value)}
+                                                        placeholder="e.g. Undergoing maintenance until 3 PM..."
+                                                        className="w-full bg-black/25 text-gray-300 text-xs border border-white/5 focus:border-primary rounded-xl outline-none px-4 py-2 transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
 

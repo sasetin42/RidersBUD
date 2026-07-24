@@ -17,6 +17,10 @@ service cloud.firestore {
       return isAuth() && exists(/databases/$(database)/documents/mechanics/$(request.auth.uid));
     }
 
+    function isCustomer() {
+      return isAuth() && exists(/databases/$(database)/documents/customers/$(request.auth.uid));
+    }
+
     // Customers
     match /customers/{userId} {
       allow read: if true;
@@ -106,9 +110,17 @@ service cloud.firestore {
     // (stripped by sendNotification/addNotification). So the rule matches the raw UID directly.
     match /notifications/{notificationId} {
       allow read: if isAuth() && (
-        resource.data.recipientId == "all" || 
-        resource.data.recipientId == request.auth.uid ||
-        (resource.data.recipientId == "admin" && isAdmin())
+        isAdmin() ||
+        (
+          isMechanic() && 
+          resource.data.recipientRole == "mechanic" && 
+          (resource.data.recipientId == request.auth.uid || resource.data.recipientId == "all")
+        ) ||
+        (
+          isCustomer() && 
+          (resource.data.recipientId == request.auth.uid || resource.data.recipientId == "all") && 
+          (!("recipientRole" in resource.data) || resource.data.recipientRole == "customer" || resource.data.recipientRole == null || resource.data.recipientRole == "")
+        )
       );
       allow write: if isAuth();
     }

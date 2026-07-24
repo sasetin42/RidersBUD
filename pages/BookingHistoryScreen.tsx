@@ -28,6 +28,13 @@ const getStatusBadgeClass = (status: string) => {
         case 'Work Done': return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
         case 'Completed': return 'bg-green-500/20 text-green-400 border border-green-500/30';
         case 'Cancelled': return 'bg-red-500/20 text-red-400 border border-red-500/30';
+        
+        // Driver for Hire Custom Statuses
+        case 'Pending Admin Review': return 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+        case 'For Verification': return 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30';
+        case 'Awaiting Driver Availability': return 'bg-pink-500/20 text-pink-400 border border-pink-500/30';
+        case 'Driver Assigned': return 'bg-teal-500/20 text-teal-400 border border-teal-500/30';
+        case 'Confirmed': return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
         default: return 'bg-gray-500/20 text-gray-400 border border-gray-500/30';
     }
 };

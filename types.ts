@@ -186,6 +186,16 @@ export interface Settings {
     // Inventory & Catalog
     serviceCategories?: string[]; // Arrays of category names
     partCategories?: string[];
+
+    // System Modules Configurations
+    modules?: ModuleConfig[];
+}
+
+export interface ModuleConfig {
+    id: string; // 'rent-a-car' | 'driver-for-hire' | 'liaison-assistance' | 'towing'
+    name: string;
+    enabled: boolean;
+    bannerMessage?: string;
 }
 
 export interface HitPayConfig {
@@ -525,7 +535,7 @@ export interface Booking {
     } | null;
 }
 
-export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Work Done' | 'Completed' | 'Cancelled' | 'Reschedule Requested';
+export type BookingStatus = 'Upcoming' | 'Booking Confirmed' | 'Mechanic Assigned' | 'En Route' | 'In Progress' | 'Work Done' | 'Completed' | 'Cancelled' | 'Reschedule Requested' | 'On Hold';
 export type Order = any;
 export interface Review {
     id: string;

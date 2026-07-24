@@ -205,35 +205,58 @@ const ServicesScreen: React.FC = () => {
 
     const services = useMemo(() => {
         const rawServices = db?.services || [];
-        return rawServices.map(service => {
-            const nameLower = service.name?.toLowerCase() || '';
-            const isSpecial = service.category?.toLowerCase() === 'special services' ||
-                nameLower.includes('rent a car') ||
-                nameLower.includes('driver for hire') ||
-                nameLower.includes('registration') ||
-                nameLower.includes('towing');
+        const modules = db?.settings?.modules;
 
-            if (isSpecial) {
-                const appService = db?.appServices?.find(as => {
-                    const asName = as.name?.toLowerCase() || '';
-                    return as.slug === (service as any).slug || 
-                           asName.includes(nameLower) || 
-                           nameLower.includes(asName);
-                });
-
-                return {
-                    ...service,
-                    category: 'SPECIAL Services',
-                    description: appService?.description || service.description,
-                    price: appService && (appService as any).price !== undefined ? (appService as any).price : service.price,
-                    estimatedTime: appService && (appService as any).estimatedTime || service.estimatedTime,
-                    imageUrl: appService?.imageUrl || service.imageUrl,
-                    slug: appService?.slug || (service as any).slug || service.name?.toLowerCase().replace(/\s+/g, '-')
-                } as Service & { slug?: string };
+        const isModuleEnabled = (serviceName: string, category: string) => {
+            if (!modules) return true;
+            const nameLower = serviceName.toLowerCase();
+            const catLower = category.toLowerCase();
+            if (nameLower.includes('rent a car') || catLower.includes('rentals') || catLower.includes('rent a car')) {
+                return modules.find(m => m.id === 'rent-a-car')?.enabled !== false;
             }
-            return service;
-        });
-    }, [db?.services, db?.appServices]);
+            if (nameLower.includes('driver for hire') || catLower.includes('driver')) {
+                return modules.find(m => m.id === 'driver-for-hire')?.enabled !== false;
+            }
+            if (nameLower.includes('registration') || nameLower.includes('liaison') || catLower.includes('liaison') || catLower.includes('registration')) {
+                return modules.find(m => m.id === 'liaison-assistance')?.enabled !== false;
+            }
+            if (nameLower.includes('towing') || catLower.includes('towing')) {
+                return modules.find(m => m.id === 'towing')?.enabled !== false;
+            }
+            return true;
+        };
+
+        return rawServices
+            .filter(service => isModuleEnabled(service.name || '', service.category || ''))
+            .map(service => {
+                const nameLower = service.name?.toLowerCase() || '';
+                const isSpecial = service.category?.toLowerCase() === 'special services' ||
+                    nameLower.includes('rent a car') ||
+                    nameLower.includes('driver for hire') ||
+                    nameLower.includes('registration') ||
+                    nameLower.includes('towing');
+
+                if (isSpecial) {
+                    const appService = db?.appServices?.find(as => {
+                        const asName = as.name?.toLowerCase() || '';
+                        return as.slug === (service as any).slug || 
+                               asName.includes(nameLower) || 
+                               nameLower.includes(asName);
+                    });
+
+                    return {
+                        ...service,
+                        category: 'SPECIAL Services',
+                        description: appService?.description || service.description,
+                        price: appService && (appService as any).price !== undefined ? (appService as any).price : service.price,
+                        estimatedTime: appService && (appService as any).estimatedTime || service.estimatedTime,
+                        imageUrl: appService?.imageUrl || service.imageUrl,
+                        slug: appService?.slug || (service as any).slug || service.name?.toLowerCase().replace(/\s+/g, '-')
+                    } as Service & { slug?: string };
+                }
+                return service;
+            });
+    }, [db?.services, db?.appServices, db?.settings?.modules]);
 
     // Service Categories
     const serviceCategories = useMemo(() => {

@@ -219,7 +219,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             gcashAccountName: '',
             gcashQrCodeUrl: '',
             defaultCustomerImageUrl: '/assets/logo.png',
-            defaultMechanicImageUrl: '/assets/logo.png'
+            defaultMechanicImageUrl: '/assets/logo.png',
+            modules: [
+                { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
+                { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
+                { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
+                { id: 'towing', name: 'Towing Service', enabled: true, bannerMessage: '' }
+            ]
         };
     };
 
@@ -777,7 +783,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', user.uid)), 'payouts');
                 // Mechanic notifications: only their own + broadcast 'all'
                 subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                    where('recipientId', 'in', [user.uid, 'all'])
+                    where('recipientId', 'in', [user.uid, 'all']),
+                    where('recipientRole', '==', 'mechanic')
                 ), 'notifications');
                 setDb(prev => prev ? { ...prev, orders: [], rentalBookings: [] } : null);
             } else if (isMechanicSession && bypassMechanic) {
@@ -788,7 +795,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', mechanicId)), 'payouts');
                 // Mechanic notifications: only their own + broadcast 'all'
                 subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                    where('recipientId', 'in', [mechanicId, 'all'])
+                    where('recipientId', 'in', [mechanicId, 'all']),
+                    where('recipientRole', '==', 'mechanic')
                 ), 'notifications');
                 setDb(prev => prev ? { ...prev, orders: [], rentalBookings: [] } : null);
             } else if (user || bypassCustomer) {
@@ -810,7 +818,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     subscribePrivateQuery(query(collection(firestore, 'liaisonBookings'), where('customerId', '==', customerId)), 'liaisonBookings');
                     // Customer notifications: only their own + broadcast 'all'
                     subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                        where('recipientId', 'in', [customerId, 'all'])
+                        where('recipientId', 'in', [customerId, 'all']),
+                        where('recipientRole', '==', 'customer')
                     ), 'notifications');
                 }
                 setDb(prev => prev ? { ...prev, tasks: [], payouts: [] } : null);
@@ -1409,12 +1418,25 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     const addBooking = async (booking: Omit<Booking, 'id'>) => {
         const mechId = booking.mechanicId || booking.mechanic?.id || null;
         const mechName = booking.mechanicName || booking.mechanic?.name || 'Unassigned';
+        
+        let initialStatus = booking.status;
+        if (mechId && db?.bookings) {
+            const hasOngoing = db.bookings.some(b => 
+                b.mechanicId === mechId && 
+                ['Mechanic Assigned', 'En Route', 'In Progress'].includes(b.status)
+            );
+            if (hasOngoing) {
+                initialStatus = 'On Hold';
+            }
+        }
+
         const newBooking = {
             ...booking,
             mechanicId: mechId,
             mechanicName: mechName,
+            status: initialStatus,
             createdAt: new Date().toISOString(),
-            statusHistory: [{ status: booking.status, timestamp: new Date().toISOString() }]
+            statusHistory: [{ status: initialStatus, timestamp: new Date().toISOString() }]
         };
 
         if (!auth.currentUser) {
@@ -1644,10 +1666,34 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     link: '/mechanic-portal/earnings'
                 });
             }
+
+            if (status === 'Completed' || status === 'Cancelled') {
+                const mechanicId = booking.mechanicId;
+                if (mechanicId && db?.bookings) {
+                    const onHoldBookings = db.bookings.filter(b => b.mechanicId === mechanicId && b.status === 'On Hold');
+                    if (onHoldBookings.length > 0) {
+                        const oldestOnHold = onHoldBookings.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())[0];
+                        if (oldestOnHold) {
+                            await updateBookingStatus(oldestOnHold.id, 'Mechanic Assigned');
+                        }
+                    }
+                }
+            }
         }
     };
 
     const assignMechanicToBooking = async (bookingId: string, mechanic: Mechanic) => {
+        let assignedStatus: BookingStatus = 'Mechanic Assigned';
+        if (db?.bookings) {
+            const hasOngoing = db.bookings.some(b => 
+                b.mechanicId === mechanic.id && 
+                ['Mechanic Assigned', 'En Route', 'In Progress'].includes(b.status)
+            );
+            if (hasOngoing) {
+                assignedStatus = 'On Hold';
+            }
+        }
+
         await updateDoc(doc(firestore, 'bookings', bookingId), {
             mechanicId: mechanic.id,
             mechanicName: mechanic.name,
@@ -1660,7 +1706,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 rating: mechanic.rating || 0,
                 reviews: mechanic.reviews || 0
             },
-            status: 'Mechanic Assigned' as BookingStatus
+            status: assignedStatus,
+            statusHistory: arrayUnion({ status: assignedStatus, timestamp: new Date().toISOString() })
         });
 
         let booking = db?.bookings.find(b => b.id === bookingId);
@@ -2449,6 +2496,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const markNotificationAsRead = async (id: string) => {
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                notifications: (prev.notifications || []).map(n => 
+                    n.id === id ? { ...n, read: true, status: 'read' as const } : n
+                )
+            };
+        });
+
         try {
             await updateDoc(doc(firestore, 'notifications', id), { read: true, status: 'read' });
         } catch (e) {
@@ -2460,6 +2517,20 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         let cleanId = recipientId;
         if (cleanId.startsWith('customer-')) cleanId = cleanId.replace('customer-', '');
         else if (cleanId.startsWith('mechanic-')) cleanId = cleanId.replace('mechanic-', '');
+
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                notifications: (prev.notifications || []).map(n => {
+                    const isOwn = (n.recipientId === cleanId || n.recipientId === recipientId) && n.recipientId !== 'all';
+                    if (isOwn && !n.read) {
+                        return { ...n, read: true, status: 'read' as const };
+                    }
+                    return n;
+                })
+            };
+        });
 
         try {
             const batch = writeBatch(firestore);
@@ -2479,6 +2550,14 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const deleteNotification = async (id: string) => {
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                notifications: (prev.notifications || []).filter(n => n.id !== id)
+            };
+        });
+
         try {
             await deleteDoc(doc(firestore, 'notifications', id));
         } catch (e) {
@@ -2490,6 +2569,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         let cleanId = recipientId;
         if (cleanId.startsWith('customer-')) cleanId = cleanId.replace('customer-', '');
         else if (cleanId.startsWith('mechanic-')) cleanId = cleanId.replace('mechanic-', '');
+
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                notifications: (prev.notifications || []).filter(n =>
+                    !((n.recipientId === cleanId || n.recipientId === recipientId) && n.recipientId !== 'all')
+                )
+            };
+        });
 
         try {
             const batch = writeBatch(firestore);

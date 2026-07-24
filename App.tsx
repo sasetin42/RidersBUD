@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db as firebaseDb } from './firebase';
 import BottomNav from './components/BottomNav';
@@ -23,6 +23,9 @@ import NotificationToasts from './components/NotificationToasts';
 import TourOverlay from './components/TourOverlay';
 import AppLoadingScreen from './components/AppLoadingScreen';
 import ScrollToTop from './components/ScrollToTop';
+import { Shield } from 'lucide-react';
+import { Geolocation } from '@capacitor/geolocation';
+import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
 
 const LoginScreen = React.lazy(() => import('./pages/LoginScreen'));
 const SignUpScreen = React.lazy(() => import('./pages/SignUpScreen'));
@@ -161,6 +164,59 @@ const AppInitializer: React.FC = () => {
 };
 
 
+interface ModuleGuardProps {
+    moduleId: string;
+    children: React.ReactNode;
+}
+
+const ModuleGuard: React.FC<ModuleGuardProps> = ({ moduleId, children }) => {
+    const { db } = useDatabase();
+    
+    const modules = db?.settings?.modules;
+    const module = modules?.find(m => m.id === moduleId);
+    
+    if (!modules || !module) {
+        return <>{children}</>;
+    }
+    
+    if (!module.enabled) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[80vh] px-6 text-center bg-secondary animate-fadeIn">
+                <div className="w-20 h-20 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-6">
+                    <Shield className="text-rose-500 w-10 h-10" />
+                </div>
+                <h2 className="text-2xl font-black text-white tracking-tight mb-2">Service Temporarily Offline</h2>
+                <p className="text-gray-400 text-sm max-w-sm mb-6 leading-relaxed">
+                    {module.bannerMessage || `We apologize, but the ${module.name} service is currently unavailable. Please check back later.`}
+                </p>
+                <button
+                    onClick={() => window.location.href = '/customer-portal/'}
+                    className="px-6 py-3 bg-primary text-white font-black text-xs tracking-widest uppercase rounded-xl hover:bg-primary/95 transition-all shadow-lg shadow-primary/20"
+                >
+                    Go Back Home
+                </button>
+            </div>
+        );
+    }
+    
+    return <>{children}</>;
+};
+
+const AppServiceSlugGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { slug } = useParams<{ slug: string }>();
+    let moduleId = '';
+    if (slug === 'rent-a-car') moduleId = 'rent-a-car';
+    else if (slug === 'driver-for-hire') moduleId = 'driver-for-hire';
+    else if (slug === 'registration-assistance') moduleId = 'liaison-assistance';
+    else if (slug === 'towing') moduleId = 'towing';
+    
+    if (moduleId) {
+        return <ModuleGuard moduleId={moduleId}>{children}</ModuleGuard>;
+    }
+    return <>{children}</>;
+};
+
+
 const AppContent: React.FC = () => {
     const location = useLocation();
     const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -218,7 +274,7 @@ const AppContent: React.FC = () => {
         prevUserIdRef.current = currentUserId;
     }
 
-    const watchIdRef = useRef<number | null>(null);
+    const watchIdRef = useRef<number | string | null>(null);
     const isCustomerLocationUpdatingRef = useRef<boolean>(false);
     const lastCustomerLocationUpdateRef = useRef<number>(0);
 
@@ -265,11 +321,6 @@ const AppContent: React.FC = () => {
 
     // Location enforcement check function wrapped in useCallback
     const checkLocationPermission = useCallback(() => {
-        if (!('geolocation' in navigator)) {
-            setIsLocationBlocked(true);
-            setLocationError("Geolocation is not supported by your device/browser.");
-            return;
-        }
         setLocationChecking(true);
         setLocationError(null);
 
@@ -350,22 +401,98 @@ const AppContent: React.FC = () => {
             }
         };
 
-        // Attempt fine location, fallback to coarse if timeout or position unavailable
-        navigator.geolocation.getCurrentPosition(
-            handleSuccess,
-            (error) => {
-                if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
-                    navigator.geolocation.getCurrentPosition(
-                        handleSuccess,
-                        handleError,
-                        { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-                    );
+        const isNative = (window as any).Capacitor !== undefined;
+
+        const runWebGeolocation = () => {
+            if (!('geolocation' in navigator)) {
+                setIsLocationBlocked(true);
+                setLocationError("Geolocation is not supported by your device/browser.");
+                setLocationChecking(false);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                handleSuccess,
+                (error) => {
+                    if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
+                        navigator.geolocation.getCurrentPosition(
+                            handleSuccess,
+                            handleError,
+                            { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+                        );
+                    } else {
+                        handleError(error);
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+            );
+        };
+
+        if (isNative) {
+            Geolocation.checkPermissions().then((permissions) => {
+                if (permissions.location === 'granted') {
+                    Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 })
+                        .then((position) => {
+                            handleSuccess({
+                                coords: {
+                                    latitude: position.coords.latitude,
+                                    longitude: position.coords.longitude
+                                }
+                            } as GeolocationPosition);
+                        })
+                        .catch((err) => {
+                            Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 15000 })
+                                .then((position) => {
+                                    handleSuccess({
+                                        coords: {
+                                            latitude: position.coords.latitude,
+                                            longitude: position.coords.longitude
+                                        }
+                                    } as GeolocationPosition);
+                                })
+                                .catch(() => {
+                                    handleError({
+                                        code: 2, // POSITION_UNAVAILABLE
+                                        message: err?.message || "Position unavailable",
+                                        PERMISSION_DENIED: 1,
+                                        POSITION_UNAVAILABLE: 2,
+                                        TIMEOUT: 3
+                                    } as GeolocationPositionError);
+                                });
+                        });
                 } else {
-                    handleError(error);
+                    Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] }).then((reqStatus) => {
+                        if (reqStatus.location === 'granted' || reqStatus.coarseLocation === 'granted') {
+                            // Run the standard check again
+                            setLocationChecking(false);
+                            // Set a micro-timeout or direct call
+                            Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 })
+                                .then((position) => {
+                                    handleSuccess({
+                                        coords: {
+                                            latitude: position.coords.latitude,
+                                            longitude: position.coords.longitude
+                                        }
+                                    } as GeolocationPosition);
+                                })
+                                .catch(() => {
+                                    runWebGeolocation();
+                                });
+                        } else {
+                            // Fallback to web geolocation instead of blocking immediately
+                            runWebGeolocation();
+                        }
+                    }).catch((err) => {
+                        console.warn("[Location] requestPermissions rejected:", err);
+                        // Fallback to web geolocation
+                        runWebGeolocation();
+                    });
                 }
-            },
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
-        );
+            }).catch(() => {
+                runWebGeolocation();
+            });
+        } else {
+            runWebGeolocation();
+        }
     }, [isAuthenticated, user, updateCustomerLocation, isMechanicAuthenticated, mechanic, updateMechanicLocation]);
 
     const checkLocationPermissionRef = useRef(checkLocationPermission);
@@ -729,6 +856,9 @@ const AppContent: React.FC = () => {
         return () => clearInterval(intervalId);
     }, [isAuthenticated, user, updateCustomerLocation]);
 
+    // Serialized active booking status to trigger effects when statuses change
+    const activeBookingStatuses = db?.bookings?.map(b => `${b.id}:${b.status}`).join(',') || '';
+
     // Effect for Live Customer Location Tracking (En Route)
     useEffect(() => {
         if (!isAuthenticated || !user || !db || !updateCustomerLocation) {
@@ -741,24 +871,58 @@ const AppContent: React.FC = () => {
             b.status === 'En Route'
         );
 
+        const isNative = (window as any).Capacitor !== undefined;
+
         if (activeBooking && watchIdRef.current === null) {
-            watchIdRef.current = navigator.geolocation.watchPosition(
-                (position) => {
-                    updateCustomerLocation(user.id, {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude
-                    });
-                },
-                (error) => {},
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-            );
+            if (isNative) {
+                Geolocation.watchPosition(
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                    (position) => {
+                        if (position) {
+                            updateCustomerLocation(user.id, {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude
+                            });
+                        }
+                    }
+                ).then((id) => {
+                    watchIdRef.current = id;
+                }).catch(() => {
+                    // Fallback to web watch if native watch fails
+                    watchIdRef.current = navigator.geolocation.watchPosition(
+                        (position) => {
+                            updateCustomerLocation(user.id, {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude
+                            });
+                        },
+                        (error) => {},
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                    );
+                });
+            } else {
+                watchIdRef.current = navigator.geolocation.watchPosition(
+                    (position) => {
+                        updateCustomerLocation(user.id, {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        });
+                    },
+                    (error) => {},
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                );
+            }
         } else if (!activeBooking && watchIdRef.current !== null) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
+            if (isNative && typeof watchIdRef.current === 'string') {
+                Geolocation.clearWatch({ id: watchIdRef.current });
+            } else if (typeof watchIdRef.current === 'number') {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+            }
             watchIdRef.current = null;
         }
-    }, [db?.bookings.length, user, isAuthenticated, updateCustomerLocation]);
+    }, [activeBookingStatuses, user, isAuthenticated, updateCustomerLocation]);
 
-    const mechanicWatchIdRef = useRef<number | null>(null);
+    const mechanicWatchIdRef = useRef<number | string | null>(null);
     // Effect for Live Mechanic Location Tracking (En Route)
     useEffect(() => {
         if (!isMechanicAuthenticated || !mechanic || !db || !updateMechanicLocation) {
@@ -770,22 +934,56 @@ const AppContent: React.FC = () => {
             b.status === 'En Route'
         );
 
+        const isNative = (window as any).Capacitor !== undefined;
+
         if (activeJob && mechanicWatchIdRef.current === null) {
-            mechanicWatchIdRef.current = navigator.geolocation.watchPosition(
-                (position) => {
-                    updateMechanicLocation(mechanic.id, {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude
-                    }, activeJob.id);
-                },
-                (error) => {},
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-            );
+            if (isNative) {
+                Geolocation.watchPosition(
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                    (position) => {
+                        if (position) {
+                            updateMechanicLocation(mechanic.id, {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude
+                            }, activeJob.id);
+                        }
+                    }
+                ).then((id) => {
+                    mechanicWatchIdRef.current = id;
+                }).catch(() => {
+                    // Fallback to web watch if native watch fails
+                    mechanicWatchIdRef.current = navigator.geolocation.watchPosition(
+                        (position) => {
+                            updateMechanicLocation(mechanic.id, {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude
+                            }, activeJob.id);
+                        },
+                        (error) => {},
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                    );
+                });
+            } else {
+                mechanicWatchIdRef.current = navigator.geolocation.watchPosition(
+                    (position) => {
+                        updateMechanicLocation(mechanic.id, {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        }, activeJob.id);
+                    },
+                    (error) => {},
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                );
+            }
         } else if (!activeJob && mechanicWatchIdRef.current !== null) {
-            navigator.geolocation.clearWatch(mechanicWatchIdRef.current);
+            if (isNative && typeof mechanicWatchIdRef.current === 'string') {
+                Geolocation.clearWatch({ id: mechanicWatchIdRef.current });
+            } else if (typeof mechanicWatchIdRef.current === 'number') {
+                navigator.geolocation.clearWatch(mechanicWatchIdRef.current);
+            }
             mechanicWatchIdRef.current = null;
         }
-    }, [db?.bookings.length, mechanic, isMechanicAuthenticated, updateMechanicLocation]);
+    }, [activeBookingStatuses, mechanic, isMechanicAuthenticated, updateMechanicLocation]);
 
     // Effect for Time-based and Chat Notifications
     useEffect(() => {
@@ -864,7 +1062,6 @@ const AppContent: React.FC = () => {
 
     }, [isAuthenticated, isMechanicAuthenticated, user, mechanic, db, addNotification, openChatIds]);
 
-
     if (isLocationBlocked && (isAuthenticated || isMechanicAuthenticated)) {
         const handleLogout = () => {
             if (isAuthenticated) {
@@ -894,119 +1091,83 @@ const AppContent: React.FC = () => {
             saveLocation();
         };
 
+        const handleTurnOnLocationService = () => {
+            const isNative = (window as any).Capacitor !== undefined;
+            if (isNative) {
+                NativeSettings.open({
+                    optionAndroid: AndroidSettings.ApplicationDetails,
+                    optionIOS: IOSSettings.App
+                }).then(() => {
+                    // Check location automatically when settings are closed / user returns
+                    setTimeout(() => {
+                        checkLocationPermission();
+                    }, 1000);
+                }).catch(() => {
+                    checkLocationPermission();
+                });
+            } else {
+                checkLocationPermission();
+            }
+        };
+
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A0A0A] text-white p-6">
-                <div className="max-w-sm w-full text-center space-y-5 z-10">
-                    <img 
-                        src={db?.settings?.appLogoUrl || "/riders-logo.png"} 
-                        alt="RidersBUD Logo" 
-                        className="w-20 h-20 mx-auto rounded-2xl object-contain" 
-                        style={{ filter: 'drop-shadow(0 0 15px rgba(254, 120, 3, 0.5))' }} 
-                    />
+                <div className="max-w-sm w-full bg-[#1C1C1E] border border-white/5 rounded-3xl p-6 shadow-2xl text-center space-y-6 z-10">
+                    
+                    {/* Visual Onboarding Illustration */}
+                    <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-black/40 border border-white/5">
+                        <img 
+                            src="/location_onboarding_illustration.jpg" 
+                            alt="Enable Location Service" 
+                            className="w-full h-full object-cover" 
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#1C1C1E] via-transparent to-transparent"></div>
+                    </div>
 
-                    <div className="space-y-1.5">
-                        <h1 className="text-xl font-black tracking-tight text-white">Location Access Required</h1>
-                        {permissionState === 'denied' ? (
-                            <p className="text-xs text-amber-400/90 leading-relaxed">
-                                Location access is blocked. Use the steps below to enable it in your device settings, then return to this page.
-                            </p>
-                        ) : (
-                            <p className="text-xs text-gray-400 leading-relaxed">
-                                Allow location access to connect with nearby mechanics and track your service in real-time.
-                            </p>
-                        )}
+                    <div className="space-y-2">
+                        <h1 className="text-lg font-black tracking-tight text-white leading-snug">
+                            We need your location so you can use the app properly.
+                        </h1>
+                        <p className="text-xs text-gray-400 font-medium leading-relaxed">
+                            Can you turn on your location service?
+                        </p>
                     </div>
 
                     {locationError && (
-                        <div className={`p-2.5 border rounded-lg text-center ${
-                            permissionState === 'denied'
-                                ? 'bg-amber-500/10 border-amber-500/20'
-                                : 'bg-red-500/10 border-red-500/20'
-                        }`}>
-                            <span className={`text-[11px] font-medium ${
-                                permissionState === 'denied' ? 'text-amber-300' : 'text-red-300'
-                            }`}>{locationError}</span>
+                        <div className="p-3 border rounded-xl text-center bg-red-500/10 border-red-500/20">
+                            <span className="text-[11px] font-medium text-red-300">{locationError}</span>
                         </div>
                     )}
 
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                         <button
-                            onClick={checkLocationPermission}
+                            onClick={handleTurnOnLocationService}
                             disabled={locationChecking}
-                            className={`w-full text-white text-sm font-bold py-3 rounded-xl transition duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed ${
-                                permissionState === 'denied'
-                                    ? 'bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/30 animate-pulse-glow'
-                                    : 'bg-primary hover:bg-orange-600 shadow-lg shadow-primary/20'
-                            }`}
-                            style={permissionState === 'denied' ? { boxShadow: '0 0 18px 4px rgba(245,158,11,0.35)' } : undefined}
+                            className="w-full bg-primary hover:bg-orange-600 text-white text-sm font-bold py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
                         >
                             {locationChecking ? (
                                 <>
                                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                    <span>Checking location...</span>
+                                    <span>Verifying Access...</span>
                                 </>
-                            ) : permissionState === 'denied' ? (
-                                <span>I&apos;ve Enabled Location — Retry</span>
                             ) : (
-                                <span>Enable Location Access</span>
+                                <span>Turn on location service</span>
                             )}
                         </button>
 
                         <button
                             onClick={handleBypassLocation}
-                            className="w-full py-3 bg-[#1C1C1E] border border-white/5 hover:bg-[#2C2C2E] text-gray-300 hover:text-white text-xs font-bold rounded-xl transition-all duration-200"
+                            className="w-full py-3 bg-white/5 border border-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-bold rounded-xl transition-all duration-200"
                         >
                             Use Default Location (Bypass)
                         </button>
                     </div>
 
-                    {permissionState === 'denied' && !locationChecking && (
-                        <p className="text-[10px] text-gray-500 text-center -mt-2">
-                            The page will automatically detect when location is enabled.
-                        </p>
-                    )}
-
-                    <div className="glass-card-premium rounded-xl border border-white/5 text-left overflow-hidden">
-                        <div className="flex border-b border-white/5 bg-white/5">
-                            {(['chrome', 'safari', 'native'] as const).map(tab => (
-                                <button
-                                    key={tab}
-                                    onClick={() => setActiveInstructionTab(tab)}
-                                    className={`flex-1 py-2 text-center text-[10px] font-bold transition ${
-                                        activeInstructionTab === tab
-                                            ? 'text-primary border-b-2 border-primary bg-black/20'
-                                            : 'text-gray-400 hover:text-white'
-                                    }`}
-                                >
-                                    {tab === 'chrome' ? 'Android' : tab === 'safari' ? 'iOS' : 'App'}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="p-3 text-[11px] text-gray-400 space-y-1.5 leading-relaxed">
-                            {activeInstructionTab === 'chrome' && (
-                                <>
-                                    <p><strong className="text-white">1.</strong> Tap the <strong className="text-white">lock icon</strong> next to the address bar.</p>
-                                    <p><strong className="text-white">2.</strong> Select <strong className="text-white">Site Settings</strong> → <strong className="text-primary">Allow</strong> Location.</p>
-                                 </>
-                            )}
-                            {activeInstructionTab === 'safari' && (
-                                <>
-                                    <p><strong className="text-white">1.</strong> Tap the <strong className="text-white">aA icon</strong> in the address bar.</p>
-                                    <p><strong className="text-white">2.</strong> <strong className="text-white">Website Settings</strong> → <strong className="text-primary">Allow</strong> Location.</p>
-                                </>
-                            )}
-                            {activeInstructionTab === 'native' && (
-                                <>
-                                    <p><strong className="text-white">1.</strong> Open <strong className="text-white">Settings</strong> → <strong className="text-white">Apps</strong> / Privacy.</p>
-                                    <p><strong className="text-white">2.</strong> Find <strong className="text-white">RidersBUD</strong> → enable <strong className="text-primary">Location Services</strong>.</p>
-                                </>
-                            )}
-                        </div>
+                    <div className="pt-2">
+                        <button onClick={handleLogout} className="text-xs text-gray-500 hover:text-white font-semibold transition">
+                            Sign Out
+                        </button>
                     </div>
-
-                    <button onClick={handleLogout} className="text-[11px] text-gray-500 hover:text-white font-semibold transition">
-                        Sign Out
-                    </button>
                 </div>
             </div>
         );
@@ -1147,10 +1308,10 @@ const AppContent: React.FC = () => {
                                                     <Route path="/services" element={<ServicesScreen />} />
                                                     <Route path="/service/:id" element={<ServiceDetailScreen />} />
                                                     <Route path="/app-services" element={<AppServicesListScreen />} />
-                                                    <Route path="/app-services/:slug" element={<AppServiceDetailScreen />} />
-                                                    <Route path="/app-services/book/:slug" element={<ServiceBookingFlow />} />
-                                                    <Route path="/app-services/liaison-book/:slug" element={<LiaisonBookingFlow />} />
-                                                    <Route path="/app-services/driver-book/:slug" element={<DriverBookingFlow />} />
+                                                    <Route path="/app-services/:slug" element={<AppServiceSlugGuard><AppServiceDetailScreen /></AppServiceSlugGuard>} />
+                                                    <Route path="/app-services/book/:slug" element={<AppServiceSlugGuard><ServiceBookingFlow /></AppServiceSlugGuard>} />
+                                                    <Route path="/app-services/liaison-book/:slug" element={<ModuleGuard moduleId="liaison-assistance"><LiaisonBookingFlow /></ModuleGuard>} />
+                                                    <Route path="/app-services/driver-book/:slug" element={<ModuleGuard moduleId="driver-for-hire"><DriverBookingFlow /></ModuleGuard>} />
                                                     <Route path="/parts-store" element={<PartsStoreScreen />} />
                                                     <Route path="/part/:id" element={<PartDetailScreen />} />
                                                     <Route path="/booking/:serviceId" element={<BookingScreen />} />
@@ -1172,8 +1333,8 @@ const AppContent: React.FC = () => {
                                                     <Route path="/warranties" element={<WarrantyScreen />} />
                                                     <Route path="/wishlist" element={<WishlistScreen />} />
                                                     <Route path="/faq" element={<FAQScreen />} />
-                                                    <Route path="/rent-a-car" element={<RentCarScreen />} />
-                                                    <Route path="/hire-a-driver" element={<HireDriverScreen />} />
+                                                    <Route path="/rent-a-car" element={<ModuleGuard moduleId="rent-a-car"><RentCarScreen /></ModuleGuard>} />
+                                                    <Route path="/hire-a-driver" element={<ModuleGuard moduleId="driver-for-hire"><HireDriverScreen /></ModuleGuard>} />
                                                     <Route path="/support-chat" element={<SupportChatScreen />} />
                                                     <Route path="*" element={<Navigate to="/customer-portal/" replace />} />
                                                 </>

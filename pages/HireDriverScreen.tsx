@@ -35,7 +35,7 @@ const HireDriverScreen: React.FC = () => {
     const navigate = useNavigate();
 
     const handleBookNow = () => {
-        navigate('/app-services/driver-book/driver-for-hire');
+        navigate('/customer-portal/app-services/driver-book/driver-for-hire');
     };
 
     return (

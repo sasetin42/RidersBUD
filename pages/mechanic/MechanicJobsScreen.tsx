@@ -22,6 +22,7 @@ const JobCard: React.FC<{ booking: Booking }> = ({ booking }) => {
         'Mechanic Assigned': 'bg-sky-500/10 text-sky-400 border-sky-500/20',
         'Reschedule Requested': 'bg-orange-500/10 text-orange-400 border-orange-500/20',
         'Work Done': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+        'On Hold': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
     };
 
     const services = booking.services || (booking.service ? [booking.service] : []);
@@ -155,10 +156,34 @@ const MechanicJobsScreen: React.FC = () => {
             return { activeJobs: [], completedJobs: [], cancelledJobs: [], stats: { total: 0, completionRate: 0, activeCount: 0 } };
         }
 
-        const allMyBookings = db.bookings.filter(b => 
-            (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
-            (b.isVerified === true || b.gcashPaymentStatus === 'verified')
-        );
+        const modules = db.settings?.modules;
+        const allMyBookings = db.bookings.filter(b => {
+            const isMatch = (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
+                (b.isVerified === true || b.gcashPaymentStatus === 'verified');
+            if (!isMatch) return false;
+
+            if (modules) {
+                const services = b.services || (b.service ? [b.service] : []);
+                for (const s of services) {
+                    const nameLower = (s.name || '').toLowerCase();
+                    const catLower = (s.category || '').toLowerCase();
+                    
+                    if (nameLower.includes('rent a car') || catLower.includes('rentals') || catLower.includes('rent a car')) {
+                        if (modules.find(m => m.id === 'rent-a-car')?.enabled === false) return false;
+                    }
+                    if (nameLower.includes('driver for hire') || catLower.includes('driver')) {
+                        if (modules.find(m => m.id === 'driver-for-hire')?.enabled === false) return false;
+                    }
+                    if (nameLower.includes('registration') || nameLower.includes('liaison') || catLower.includes('liaison') || catLower.includes('registration')) {
+                        if (modules.find(m => m.id === 'liaison-assistance')?.enabled === false) return false;
+                    }
+                    if (nameLower.includes('towing') || catLower.includes('towing')) {
+                        if (modules.find(m => m.id === 'towing')?.enabled === false) return false;
+                    }
+                }
+            }
+            return true;
+        });
 
         // Categorize
         const active = allMyBookings

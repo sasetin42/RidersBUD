@@ -36,6 +36,7 @@ const DayDetailModal: React.FC<DayDetailModalProps> = ({ date, bookings, onClose
         'Mechanic Assigned': 'bg-sky-500/20 text-sky-300 border border-sky-500/30',
         'Reschedule Requested': 'bg-orange-500/20 text-orange-300 border border-orange-500/30',
         'Work Done': 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
+        'On Hold': 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
     };
 
     return (
@@ -208,6 +209,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
             'Mechanic Assigned': 'bg-sky-500',
             'Reschedule Requested': 'bg-orange-500',
             'Work Done': 'bg-emerald-500',
+            'On Hold': 'bg-amber-500',
         };
 
         const days = Array.from({ length: firstDay }, (_, i) => <div key={`empty-${i}`} className="border-r border-t border-white/5 bg-black/20"></div>);
@@ -303,6 +305,7 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
             'Mechanic Assigned': 'bg-sky-500/25 text-sky-300 border border-sky-500/20',
             'Reschedule Requested': 'bg-orange-500/25 text-orange-300 border border-orange-500/20',
             'Work Done': 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/20',
+            'On Hold': 'bg-amber-500/25 text-amber-300 border border-amber-500/20',
         };
 
         return (

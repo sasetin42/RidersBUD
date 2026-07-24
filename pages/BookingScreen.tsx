@@ -83,7 +83,7 @@ const MechanicAvailabilityCard: React.FC<{
     const getStatusInfo = () => {
         if (isBusy) {
             return {
-                label: 'Currently Busy',
+                label: 'ON A JOB',
                 color: 'bg-red-500/10 text-red-400 border-red-500/20',
                 dotColor: 'bg-red-500'
             };
@@ -203,17 +203,20 @@ const MechanicAvailabilityCard: React.FC<{
                     </button>
 
                     {/* Selection Action */}
-                    {!isBusy && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onSelect(mechanic);
-                            }}
-                            className="flex-[2] flex items-center justify-center gap-1.5 bg-gradient-to-r from-primary to-orange-600 hover:from-orange-600 hover:to-primary text-white font-black py-3 px-4 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 shadow-md shadow-primary/10 hover:shadow-primary/20 whitespace-nowrap mechanic-card-btn"
-                        >
-                            Select Mechanic
-                        </button>
-                    )}
+                    <button
+                        disabled={isBusy}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isBusy) onSelect(mechanic);
+                        }}
+                        className={`flex-[2] flex items-center justify-center gap-1.5 bg-gradient-to-r from-primary to-orange-600 text-white font-black py-3 px-4 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 shadow-md whitespace-nowrap mechanic-card-btn ${
+                            isBusy
+                                ? 'opacity-50 cursor-not-allowed pointer-events-none grayscale'
+                                : 'hover:from-orange-600 hover:to-primary active:scale-95 shadow-primary/10 hover:shadow-primary/20'
+                        }`}
+                    >
+                        Select Mechanic
+                    </button>
                 </div>
             </div>
         </div>
@@ -1091,18 +1094,19 @@ const BookingScreen: React.FC = () => {
         const selectedDayOfWeek = selectedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as keyof Required<Mechanic>['availability'];
         const selectedDateWithoutTime = new Date(selectedDate);
         selectedDateWithoutTime.setHours(0, 0, 0, 0);
+        const isToday = selectedDateWithoutTime.getTime() === new Date().setHours(0, 0, 0, 0);
 
         const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
 
         let availableMechanics = mechanics.filter(mechanic => {
             if (mechanic.status !== 'Active') return false;
-            if (!mechanic.isOnline) return false;
+            if (isToday && !mechanic.isOnline) return false;
 
             const hasBusyBooking = bookings.some(b =>
                 b.mechanic?.id === mechanic.id &&
                 (b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Mechanic Assigned')
             );
-            if (hasBusyBooking) return false;
+            // Removed: if (hasBusyBooking) return false; so busy mechanics still show up
 
             if (mechanic.unavailableDates?.some(d => {
                 const start = new Date(d.startDate.replace(/-/g, '/'));
@@ -1114,7 +1118,6 @@ const BookingScreen: React.FC = () => {
                 return false;
             }
 
-            const isToday = selectedDateWithoutTime.getTime() === new Date().setHours(0, 0, 0, 0);
             if (!(isToday && mechanic.isOnline) && !mechanic.availability?.[selectedDayOfWeek]?.isAvailable) return false;
 
             if (selectedServices.length > 0) {

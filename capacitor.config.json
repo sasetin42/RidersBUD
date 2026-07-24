@@ -2,5 +2,9 @@
   "appId": "com.sasetin42.ridersbud",
   "appName": "RidersBUD",
   "webDir": "dist",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://ridersbud-10806.web.app",
+    "cleartext": true
+  }
 }

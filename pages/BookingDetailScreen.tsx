@@ -13,7 +13,7 @@ import { CallButton } from '../components/CallUI';
 import { useCall } from '../context/CallContext';
 import {
     MapPin, Phone, MessageSquare, Navigation, CheckCircle, Clock,
-    Calendar, User, Car, Shield, ChevronRight, AlertCircle,
+    Calendar, User, Car, Shield, ChevronRight, AlertCircle, Info,
     ArrowRight, Map as MapIcon, Mail, Hash, Palette, Gauge,
     FileText, Wrench, DollarSign, Timer, Upload, X, Image as ImageIcon, Bell,
     CreditCard, Eye, ClipboardList, Star, Copy, ExternalLink
@@ -22,6 +22,7 @@ import {
 import { ref, onValue, set } from 'firebase/database';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db as firestore, rtdb } from '../firebase';
+import { Geolocation } from '@capacitor/geolocation';
 
 declare const L: any;
 
@@ -51,6 +52,13 @@ const getStatusColor = (status: string) => {
         case 'Work Done': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
         case 'Completed': return 'bg-green-500/20 text-green-400 border-green-500/30';
         case 'Cancelled': return 'bg-red-500/20 text-red-400 border-red-500/30';
+        
+        // Driver for Hire Custom Statuses
+        case 'Pending Admin Review': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+        case 'For Verification': return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
+        case 'Awaiting Driver Availability': return 'bg-pink-500/20 text-pink-400 border-pink-500/30';
+        case 'Driver Assigned': return 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+        case 'Confirmed': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
         default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
     }
 };
@@ -323,27 +331,56 @@ const BookingDetailScreen: React.FC = () => {
 
     // Customer live location tracking — writes to RTDB for admin map
     useEffect(() => {
-        let watchId: number | null = null;
+        let nativeWatchId: string | null = null;
+        let webWatchId: number | null = null;
 
-        if (booking?.status === 'En Route' && bookingId && 'geolocation' in navigator) {
-            watchId = navigator.geolocation.watchPosition(
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    const trackingRef = ref(rtdb, `tracking/${bookingId}/customerLocation`);
-                    set(trackingRef, {
-                        lat: latitude,
-                        lng: longitude,
-                        timestamp: Date.now()
-                    }).catch(() => {});
-                },
-                () => {},
-                { enableHighAccuracy: false, maximumAge: 10000, timeout: 30000 }
-            );
+        const isNative = (window as any).Capacitor !== undefined;
+
+        if (booking?.status === 'En Route' && bookingId) {
+            const handleSuccess = (lat: number, lng: number) => {
+                const trackingRef = ref(rtdb, `tracking/${bookingId}/customerLocation`);
+                set(trackingRef, {
+                    lat,
+                    lng,
+                    timestamp: Date.now()
+                }).catch(() => {});
+            };
+
+            if (isNative) {
+                Geolocation.watchPosition(
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                    (position) => {
+                        if (position) {
+                            handleSuccess(position.coords.latitude, position.coords.longitude);
+                        }
+                    }
+                ).then((id) => {
+                    nativeWatchId = id;
+                }).catch((err) => {
+                    console.warn('[Customer Location] Native watch failed, falling back to web watch:', err);
+                    if ('geolocation' in navigator) {
+                        webWatchId = navigator.geolocation.watchPosition(
+                            (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                            () => {},
+                            { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                        );
+                    }
+                });
+            } else if ('geolocation' in navigator) {
+                webWatchId = navigator.geolocation.watchPosition(
+                    (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                    () => {},
+                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                );
+            }
         }
 
         return () => {
-            if (watchId !== null) {
-                navigator.geolocation.clearWatch(watchId);
+            if (nativeWatchId !== null) {
+                Geolocation.clearWatch({ id: nativeWatchId }).catch(() => {});
+            }
+            if (webWatchId !== null) {
+                navigator.geolocation.clearWatch(webWatchId);
             }
             // Clean up RTDB location when leaving the page
             if (bookingId) {
@@ -812,6 +849,58 @@ const BookingDetailScreen: React.FC = () => {
                     </div>
                 )}
 
+                {/* Driver Details Card (Driver for Hire Service Only) */}
+                {(booking?.serviceName === 'Driver for Hire' || booking?.serviceId === '7') && (
+                    <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-[30px] rounded-full translate-x-5 -translate-y-5"></div>
+                        
+                        <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2">
+                            <User size={14} className="text-primary" />
+                            Assigned Driver Details
+                        </h2>
+
+                        <div className="flex items-center justify-between relative z-10">
+                            <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 overflow-hidden relative flex-shrink-0 flex items-center justify-center shadow-lg">
+                                    <User size={26} className="text-gray-400" />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <h3 className="text-[14px] font-black text-white leading-none">
+                                        {booking.driverName || 'Pending Assignment'}
+                                    </h3>
+                                    <p className="text-[9px] font-bold text-primary uppercase tracking-wider mt-0.5">Professional Driver</p>
+                                    
+                                    {booking.estimatedArrivalTime && (
+                                        <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-400">
+                                            <Clock size={11} className="text-primary shrink-0" />
+                                            <span>ETA: <span className="text-white font-bold">{booking.estimatedArrivalTime}</span></span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            {booking.driverPhone && (
+                                <a 
+                                    href={`tel:${booking.driverPhone}`}
+                                    className="w-10 h-10 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center hover:bg-primary/40 transition-all duration-300 group shadow-md shadow-primary/10"
+                                    title={`Call ${booking.driverName}`}
+                                >
+                                    <Phone size={18} className="text-primary group-hover:scale-110 transition-transform" />
+                                </a>
+                            )}
+                        </div>
+
+                        {booking.remarks && (
+                            <div className="mt-4 p-3 bg-black/30 border border-white/5 rounded-xl flex items-start gap-2.5">
+                                <Info size={13} className="text-primary shrink-0 mt-0.5" />
+                                <div>
+                                    <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest block">Remarks & Instructions</span>
+                                    <p className="text-[10px] text-gray-300 mt-0.5 leading-relaxed">{booking.remarks}</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Vehicle Information Card */}
                 <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5">
                     <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2">
@@ -819,77 +908,117 @@ const BookingDetailScreen: React.FC = () => {
                         Vehicle Information
                     </h2>
 
-                    <div className="flex items-center gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-full bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0 group shadow-lg">
-                            {vehicle?.imageUrls && vehicle?.imageUrls.length > 0 ? (
-                                <img
-                                    src={vehicle.imageUrls[0]}
-                                    alt={`${vehicle.make} ${vehicle.model}`}
-                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                    onError={(e) => {
-                                        (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
-                                    }}
-                                />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                                    <img src="/assets/car_mockup.png" alt="Car Mockup" className="w-full h-full object-cover opacity-50" />
+                    {(booking?.serviceName === 'Driver for Hire' || booking?.serviceId === '7') ? (
+                        booking.vehicleDetails ? (
+                            <>
+                                <div className="flex items-center gap-4 mb-4">
+                                    <div className="w-14 h-14 rounded-full bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0 flex items-center justify-center shadow-lg">
+                                        <Car size={24} className="text-primary" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-[12px] font-bold text-white leading-tight">
+                                            {booking.vehicleDetails.brand} {booking.vehicleDetails.model}
+                                        </h3>
+                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                            <FileText size={12} className="text-primary" />
+                                            <span className="text-[10px] text-gray-400 tracking-wide font-medium">
+                                                Plate No: {booking.vehicleDetails.plateNumber || 'N/A'}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                        <div>
-                            <h3 className="text-[12px] font-bold text-white leading-tight">
-                                {vehicle?.year} {vehicle?.make} {vehicle?.model}
-                            </h3>
-                            <div className="flex items-center gap-1.5 mt-1.5">
-                                <FileText size={12} className="text-primary" />
-                                <span className="text-[10px] text-gray-400 tracking-wide font-medium">
-                                    Plate No: {vehicle?.plateNumber || 'N/A'}
-                                </span>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                        <span className="text-[9px] text-gray-500 font-semibold mb-1">Vehicle Type</span>
+                                        <p className="text-xs font-bold text-white tracking-wide">{booking.vehicleDetails.type || 'Sedan'}</p>
+                                    </div>
+                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                        <span className="text-[9px] text-gray-500 font-semibold mb-1">Owner Driven</span>
+                                        <p className="text-xs font-bold text-emerald-400">Yes (Customer's Car)</p>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="p-4 bg-black/30 border border-white/5 rounded-xl text-center">
+                                <p className="text-xs text-gray-400">Driver will provide the vehicle.</p>
+                                <p className="text-[10px] text-primary font-bold uppercase tracking-wider mt-1">Vehicle Type: {booking.details?.vehicleType || 'Sedan'}</p>
                             </div>
-                        </div>
-                    </div>
+                        )
+                    ) : (
+                        <>
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="w-14 h-14 rounded-full bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0 group shadow-lg">
+                                    {vehicle?.imageUrls && vehicle?.imageUrls.length > 0 ? (
+                                        <img
+                                            src={vehicle.imageUrls[0]}
+                                            alt={`${vehicle.make} ${vehicle.model}`}
+                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                                            <img src="/assets/car_mockup.png" alt="Car Mockup" className="w-full h-full object-cover opacity-50" />
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <h3 className="text-[12px] font-bold text-white leading-tight">
+                                        {vehicle?.year} {vehicle?.make} {vehicle?.model}
+                                    </h3>
+                                    <div className="flex items-center gap-1.5 mt-1.5">
+                                        <FileText size={12} className="text-primary" />
+                                        <span className="text-[10px] text-gray-400 tracking-wide font-medium">
+                                            Plate No: {vehicle?.plateNumber || 'N/A'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                            <div className="flex items-center gap-1.5 mb-1">
-                                <Hash size={10} className="text-primary" />
-                                <span className="text-[9px] text-gray-500 font-semibold">Plate No.</span>
-                            </div>
-                            <p className="text-xs font-bold text-white tracking-wide">
-                                {vehicle?.plateNumber || 'N/A'}
-                            </p>
-                        </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <Hash size={10} className="text-primary" />
+                                        <span className="text-[9px] text-gray-500 font-semibold">Plate No.</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-white tracking-wide">
+                                        {vehicle?.plateNumber || 'N/A'}
+                                    </p>
+                                </div>
 
-                        <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                            <div className="flex items-center gap-1.5 mb-1">
-                                <Palette size={10} className="text-primary" />
-                                <span className="text-[9px] text-gray-500 font-semibold">Color</span>
-                            </div>
-                            <p className="text-xs font-bold text-white capitalize">
-                                {vehicle?.color || 'N/A'}
-                            </p>
-                        </div>
+                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <Palette size={10} className="text-primary" />
+                                        <span className="text-[9px] text-gray-500 font-semibold">Color</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-white capitalize">
+                                        {vehicle?.color || 'N/A'}
+                                    </p>
+                                </div>
 
-                        <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                            <div className="flex items-center gap-1.5 mb-1">
-                                <Gauge size={10} className="text-primary" />
-                                <span className="text-[9px] text-gray-500 font-semibold">Mileage</span>
-                            </div>
-                            <p className="text-xs font-bold text-white">
-                                {vehicle?.mileage ? `${vehicle.mileage.toLocaleString()} mi` : 'N/A'}
-                            </p>
-                        </div>
+                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <Gauge size={10} className="text-primary" />
+                                        <span className="text-[9px] text-gray-500 font-semibold">Mileage</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-white">
+                                        {vehicle?.mileage ? `${vehicle.mileage.toLocaleString()} mi` : 'N/A'}
+                                    </p>
+                                </div>
 
-                        <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                            <div className="flex items-center gap-1.5 mb-1">
-                                <Car size={10} className="text-primary" />
-                                <span className="text-[9px] text-gray-500 font-semibold">Vehicle Type</span>
+                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <Car size={10} className="text-primary" />
+                                        <span className="text-[9px] text-gray-500 font-semibold">Vehicle Type</span>
+                                    </div>
+                                    <p className="text-xs font-bold text-white capitalize">
+                                        {vehicle?.type || 'Sedan'}
+                                    </p>
+                                </div>
                             </div>
-                            <p className="text-xs font-bold text-white capitalize">
-                                {vehicle?.type || 'Sedan'}
-                            </p>
-                        </div>
-                    </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Split Timeline and Controls Section */}

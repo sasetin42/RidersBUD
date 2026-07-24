@@ -82,13 +82,13 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
             // Strict role and recipient filtering to prevent notifications leakage across accounts
             if (isAdminAuthenticated) {
-                return n.recipientId === 'admin' || n.recipientRole === 'admin';
+                return n.recipientRole === 'admin' || n.recipientId === 'admin';
             }
             if (isMechanicAuthenticated && mechanic) {
-                return n.recipientId === mechanic.id || (n.recipientId === 'all' && n.recipientRole === 'mechanic');
+                return n.recipientId === mechanic.id && n.recipientRole === 'mechanic';
             }
             if (isAuthenticated && user) {
-                return n.recipientId === user.id || (n.recipientId === 'all' && (!n.recipientRole || n.recipientRole === 'customer'));
+                return (n.recipientId === user.id && n.recipientRole === 'customer') || (n.recipientId === 'all' && n.recipientRole === 'customer');
             }
 
             return false;
@@ -99,7 +99,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     const addNotification = (notificationData: Omit<Notification, 'id' | 'createdAt' | 'createdBy' | 'status'> & { date?: string }) => {
         let recipientId = notificationData.recipientId || 'all';
-        let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined;
+        let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined = notificationData.recipientRole as any;
 
         if (recipientId.startsWith('mechanic-')) {
             recipientId = recipientId.replace('mechanic-', '');
@@ -109,6 +109,10 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             recipientRole = 'customer';
         } else if (recipientId === 'admin') {
             recipientRole = 'admin';
+        }
+
+        if (recipientId === 'all' && !recipientRole) {
+            recipientRole = 'customer';
         }
 
         dbAddNotification({

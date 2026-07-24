@@ -1084,7 +1084,6 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                 </AnimatePresence>
  
                                 <form onSubmit={handleSendMessage} className="flex gap-1.5 items-center">
-                                    <label htmlFor="chatFileInput" className="sr-only">Attach file</label>
                                     <input
                                         id="chatFileInput"
                                         name="chatFileInput"
@@ -1150,19 +1149,18 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
                                                             </div>
                                                         ) : (
                                                             <div className="flex flex-col">
-                                                                <button
-                                                                    type="button"
+                                                                <label
+                                                                    htmlFor="chatFileInput"
                                                                     onClick={() => {
-                                                                        fileInputRef.current?.click();
                                                                         setIsMenuOpen(false);
                                                                     }}
-                                                                    className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors border-b border-white/5"
+                                                                    className="w-full text-left px-3 py-2.5 flex items-center gap-2 text-xs font-bold text-white hover:bg-white/5 transition-colors border-b border-white/5 cursor-pointer"
                                                                 >
                                                                     <div className="w-6 h-6 rounded-full bg-[#ff6a00]/10 flex items-center justify-center">
                                                                         <Paperclip className="w-3.5 h-3.5 text-[#ff6a00]" />
                                                                     </div>
                                                                     Attach File
-                                                                </button>
+                                                                </label>
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => {

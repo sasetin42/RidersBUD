@@ -1438,6 +1438,7 @@ const AdminBookingsScreen: React.FC = () => {
         Completed: 'bg-green-900/50 text-green-300 border border-green-500/30',
         Cancelled: 'bg-red-900/50 text-red-300 border border-red-500/30',
         'Reschedule Requested': 'bg-orange-900/50 text-orange-300 border border-orange-500/30',
+        'On Hold': 'bg-amber-900/50 text-amber-300 border border-amber-500/30',
     };
 
     // Enhanced KPI calculations with trends
@@ -2502,7 +2503,26 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                     {/* Trip details overview */}
                                                                                     <div className="p-3 bg-white/5 border border-white/5 rounded-xl space-y-1 text-[10px]">
                                                                                         <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Route:</span> <span className="text-white font-medium">{booking.details?.pickupLocation || 'N/A'} ➔ {booking.details?.destination || 'N/A'}</span></div>
-                                                                                        <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Vehicle:</span> <span className="text-white font-medium">{booking.vehicleDetails ? `${booking.vehicleDetails.brand} ${booking.vehicleDetails.model} (${booking.vehicleDetails.plateNumber})` : 'Driver provides vehicle'}</span></div>
+                                                                                        <div>
+                                                                                            <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Vehicle Option:</span>{' '}
+                                                                                            {booking.vehicleDetails ? (
+                                                                                                <span className="text-emerald-400 font-bold">Drive Customer's Car</span>
+                                                                                            ) : (
+                                                                                                <span className="text-blue-400 font-bold">Driver Provides Vehicle</span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        {booking.vehicleDetails && (
+                                                                                            <div className="mt-1 pl-2 border-l border-primary/40 space-y-0.5 text-gray-300">
+                                                                                                <div><span className="text-gray-500 font-medium">Brand & Model:</span> {booking.vehicleDetails.brand} {booking.vehicleDetails.model}</div>
+                                                                                                <div><span className="text-gray-500 font-medium">Plate Number:</span> <span className="font-mono bg-white/5 px-1 rounded text-white">{booking.vehicleDetails.plateNumber}</span></div>
+                                                                                                <div><span className="text-gray-500 font-medium">Type:</span> {booking.vehicleDetails.type || 'Sedan'}</div>
+                                                                                            </div>
+                                                                                        )}
+                                                                                        {!booking.vehicleDetails && (
+                                                                                            <div className="mt-1 pl-2 border-l border-blue-500/40 text-gray-300">
+                                                                                                <div><span className="text-gray-500 font-medium">Requested Type:</span> {booking.details?.vehicleType || 'Sedan'}</div>
+                                                                                            </div>
+                                                                                        )}
                                                                                         <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Duration:</span> <span className="text-white font-medium">{booking.details?.duration || 'N/A'}</span></div>
                                                                                         <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Customer Notes:</span> <span className="text-gray-400 italic">"{booking.notes || 'No notes'}"</span></div>
                                                                                     </div>
@@ -2569,7 +2589,7 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                 <button
                                                                                     onClick={handleSaveDetails}
                                                                                     className="w-full bg-primary hover:bg-[#e06800] text-white font-bold py-2 rounded-lg transition-all text-[10px] mt-2 shadow-lg shadow-primary/20 uppercase tracking-widest"
-                                                                                    style={{ backgroundColor: accentColor }}
+                                                                                    style={{ backgroundColor: settings?.accentColor }}
                                                                                 >
                                                                                     Save Driver Assignment
                                                                                 </button>

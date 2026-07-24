@@ -43,7 +43,7 @@ const AppServiceDetailScreen: React.FC = () => {
         if (isRentACar) {
             navigate('/customer-portal/rent-a-car');
         } else if (isDriverForHire) {
-            navigate('/hire-a-driver');
+            navigate('/customer-portal/hire-a-driver');
         } else if (service.name.toLowerCase().includes('registration')) {
             navigate(`/customer-portal/app-services/liaison-book/${service.id}`);
         } else {

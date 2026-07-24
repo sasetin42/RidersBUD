@@ -10,8 +10,8 @@ import { Mechanic } from '../types';
 const MechanicCard: React.FC<{ mechanic: Mechanic }> = ({ mechanic }) => {
     const navigate = useNavigate();
     return (
-        <div onClick={() => navigate(`/mechanic-profile/${mechanic.id}`)} className="bg-dark-gray p-4 rounded-lg flex items-center gap-4 cursor-pointer hover:bg-field transition-colors">
-            <img src={mechanic.imageUrl} alt={mechanic.name} className="w-16 h-16 rounded-full object-cover" />
+        <div onClick={() => navigate(`/customer-portal/mechanic-profile/${mechanic.id}`)} className="bg-dark-gray p-4 rounded-lg flex items-center gap-4 cursor-pointer hover:bg-field transition-colors">
+            <img src={mechanic.imageUrl || '/riders-logo.png'} alt={mechanic.name} className="w-16 h-16 rounded-full object-cover" />
             <div>
                 <h3 className="font-bold text-white">{mechanic.name}</h3>
                 <p className="text-sm text-yellow-400">⭐ {(mechanic.rating || 0).toFixed(1)} ({mechanic.reviews} jobs)</p>

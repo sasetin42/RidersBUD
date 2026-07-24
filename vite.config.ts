@@ -8,9 +8,12 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3001,
       host: '0.0.0.0',
-      strictPort: true,
+      strictPort: false,
       hmr: true,
       allowedHosts: true,
+      watch: {
+        ignored: ['**/android/**', '**/dist/**', '**/*.zip', '**/*.apk', '**/.*/**', '**/*.log'],
+      },
       headers: {
         'Cross-Origin-Opener-Policy': 'unsafe-none',
         'Cross-Origin-Embedder-Policy': 'unsafe-none',

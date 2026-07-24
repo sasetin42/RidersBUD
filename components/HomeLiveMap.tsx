@@ -107,7 +107,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
                 L.DomEvent.on(viewProfileBtn, 'click', (ev: any) => {
                     L.DomEvent.stop(ev);
                     const mechanicId = ev.target.dataset.mechanicId;
-                    if (mechanicId) navigate(`/mechanic-profile/${mechanicId}`);
+                    if (mechanicId) navigate(`/customer-portal/mechanic-profile/${mechanicId}`);
                 });
             }
             // Add handler for new "Book Diagnostic" button
@@ -170,7 +170,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
             const iconHtml = `
                 <div class="rb-map-pin-wrapper ${pulseClass}">
                     <div class="rb-pin-circle ${selectedClass} ${unavailableClass}">
-                        <img src="${mechanic.imageUrl}" alt="${mechanic.name}" />
+                        <img src="${mechanic.imageUrl || '/riders-logo.png'}" alt="${mechanic.name}" />
                     </div>
                     <div class="rb-pin-stem"></div>
                     <div class="rb-pin-dot"></div>
@@ -191,7 +191,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
             const popupContent = `
                 <div class="ridersbud-popup-inner" style="padding:16px;min-width:210px;">
                     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-                        <img src="${mechanic.imageUrl}" alt="${mechanic.name}"
+                        <img src="${mechanic.imageUrl || '/riders-logo.png'}" alt="${mechanic.name}"
                             style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid #FE7803;flex-shrink:0;" />
                         <div style="flex:1;min-width:0;">
                             <div style="font-weight:900;font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;">${mechanic.name}</div>
