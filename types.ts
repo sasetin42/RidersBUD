@@ -189,6 +189,14 @@ export interface Settings {
 
     // System Modules Configurations
     modules?: ModuleConfig[];
+
+    // Google Maps & Navigation Integration
+    googleMapsApiKey?: string;
+    googleMapsEnabled?: boolean;
+    defaultMapCenterLat?: number;
+    defaultMapCenterLng?: number;
+    defaultMapZoom?: number;
+    enableTrafficLayer?: boolean;
 }
 
 export interface ModuleConfig {

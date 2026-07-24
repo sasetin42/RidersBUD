@@ -9,11 +9,13 @@ const GMAPS_API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
 const fetchGoogleMapsETA = async (
     originLat: number, originLng: number,
-    destLat: number, destLng: number
+    destLat: number, destLng: number,
+    apiKey?: string
 ): Promise<string> => {
     try {
-        if (!GMAPS_API_KEY) throw new Error('No API key');
-        const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originLat},${originLng}&destinations=${destLat},${destLng}&mode=driving&key=${GMAPS_API_KEY}`;
+        const keyToUse = apiKey || (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
+        if (!keyToUse) throw new Error('No API key');
+        const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originLat},${originLng}&destinations=${destLat},${destLng}&mode=driving&key=${keyToUse}`;
         const res = await fetch(url);
         const data = await res.json();
         const element = data?.rows?.[0]?.elements?.[0];
@@ -291,7 +293,7 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
                     }
 
                     const bId = booking.id;
-                    fetchGoogleMapsETA(mechanic.lat, mechanic.lng, booking.location!.lat, booking.location!.lng).then(etaText => {
+                    fetchGoogleMapsETA(mechanic.lat, mechanic.lng, booking.location!.lat, booking.location!.lng, settings?.googleMapsApiKey).then(etaText => {
                         let updatedPopup = popupContent.replace('class="hidden"', 'class="block"');
                         updatedPopup = updatedPopup.replace('Calculating...', etaText);
                         if (bookingMarkersRef.current[bId]) {

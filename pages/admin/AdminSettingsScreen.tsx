@@ -8,10 +8,11 @@ import { sendEmail } from '../../services/emailService';
 import {
     Save, Globe, Clock, DollarSign, Bell, Shield, Upload, Image as ImageIcon,
     Layout, Smartphone, Wrench, CreditCard, Mail, FileCheck, Plus, Trash2, User,
-    AlertTriangle, Check, RefreshCw, Facebook, Twitter, Instagram, ChevronRight, MessageSquare, HelpCircle
+    AlertTriangle, Check, RefreshCw, Facebook, Twitter, Instagram, ChevronRight, MessageSquare, HelpCircle,
+    MapPin, Map, Navigation, Eye, EyeOff
 } from 'lucide-react';
 
-type SettingsTab = 'general' | 'appearance' | 'bookings' | 'financials' | 'notifications' | 'system' | 'verification' | 'support';
+type SettingsTab = 'general' | 'appearance' | 'bookings' | 'financials' | 'notifications' | 'verification' | 'support' | 'maps' | 'system';
 
 interface TabConfig {
     id: SettingsTab;
@@ -26,6 +27,7 @@ const tabs: TabConfig[] = [
     { id: 'bookings', label: 'Operations', icon: <Clock size={18} />, description: 'Booking logic & mechanics' },
     { id: 'financials', label: 'Financials', icon: <DollarSign size={18} />, description: 'Currency, fees & HitPay' },
     { id: 'notifications', label: 'Notifications', icon: <Bell size={18} />, description: 'Email alerts & preferences' },
+    { id: 'maps', label: 'Map & Location', icon: <MapPin size={18} />, description: 'Google Maps API & routing' },
     { id: 'verification', label: 'Verification', icon: <FileCheck size={18} />, description: 'Mechanic onboard docs' },
     { id: 'support', label: 'Support', icon: <MessageSquare size={18} />, description: 'Live Chat & FAQ' },
     { id: 'system', label: 'System', icon: <Shield size={18} />, description: 'Maintenance & configuration' },
@@ -47,6 +49,40 @@ const AdminSettingsScreen: React.FC = () => {
     const [showSmtpPassword, setShowSmtpPassword] = useState(false);
     const [isTestingSmtp, setIsTestingSmtp] = useState(false);
     const [smtpTestResult, setSmtpTestResult] = useState<{success: boolean, message: string} | null>(null);
+
+    const [showGoogleMapsApiKey, setShowGoogleMapsApiKey] = useState(false);
+    const [isTestingGoogleMaps, setIsTestingGoogleMaps] = useState(false);
+    const [googleMapsTestResult, setGoogleMapsTestResult] = useState<{success: boolean, message: string} | null>(null);
+
+    const handleTestGoogleMapsKey = async () => {
+        if (!localSettings?.googleMapsApiKey) {
+            setGoogleMapsTestResult({ success: false, message: 'Please enter a Google Maps API Key first.' });
+            return;
+        }
+        setIsTestingGoogleMaps(true);
+        setGoogleMapsTestResult(null);
+
+        try {
+            const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=Manila&key=${localSettings.googleMapsApiKey}`);
+            const data = await res.json();
+            if (data.status === 'OK' || data.status === 'ZERO_RESULTS') {
+                setGoogleMapsTestResult({ success: true, message: 'Google Maps API Key is VALID and connected!' });
+                addNotification({
+                    userId: 'admin',
+                    title: 'Google Maps API Verified',
+                    message: 'API Key connection test succeeded.',
+                    type: 'system',
+                    priority: 'low'
+                });
+            } else {
+                setGoogleMapsTestResult({ success: false, message: `Google Maps API Error: ${data.error_message || data.status}` });
+            }
+        } catch (err: any) {
+            setGoogleMapsTestResult({ success: false, message: err.message || 'Failed to connect to Google Maps API server.' });
+        } finally {
+            setIsTestingGoogleMaps(false);
+        }
+    };
 
     useEffect(() => {
         if (db?.settings) {
@@ -1112,6 +1148,150 @@ const AdminSettingsScreen: React.FC = () => {
                                                 <p className="text-sm font-black  tracking-widest opacity-50">No FAQs Added Yet</p>
                                             </div>
                                         )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* MAP & LOCATION SETTINGS */}
+                        {activeTab === 'maps' && (
+                            <div className="space-y-10 animate-fadeIn">
+                                <div>
+                                    <h2 className="text-2xl font-black text-white flex items-center gap-3 tracking-tighter mb-2">
+                                        <MapPin className="text-primary" size={24} /> Google Maps API & Real-Road Navigation
+                                    </h2>
+                                    <p className="text-gray-400 text-xs font-medium">
+                                        Configure Google Maps API credentials to enable live tracking, turn-by-turn highway navigation, and precise customer/mechanic location snapping.
+                                    </p>
+                                </div>
+
+                                {/* API KEY CARD */}
+                                <div className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+                                                <Map size={24} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-black text-white tracking-tight">Google Maps API Key</h3>
+                                                <p className="text-xs text-gray-400">Required for live map tiles, route polyline snapping, and ETA calculation.</p>
+                                            </div>
+                                        </div>
+                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${localSettings.googleMapsApiKey ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                                            {localSettings.googleMapsApiKey ? 'Key Configured' : 'Key Missing'}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Google API Key</label>
+                                        <div className="relative">
+                                            <input
+                                                type={showGoogleMapsApiKey ? 'text' : 'password'}
+                                                value={localSettings.googleMapsApiKey || ''}
+                                                onChange={(e) => handleInputChange('googleMapsApiKey', e.target.value)}
+                                                placeholder="AIzaSy..."
+                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-2xl outline-none px-4 py-3.5 pr-12 transition-all"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowGoogleMapsApiKey(!showGoogleMapsApiKey)}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                                            >
+                                                {showGoogleMapsApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleTestGoogleMapsKey}
+                                            disabled={isTestingGoogleMaps || !localSettings.googleMapsApiKey}
+                                            className="flex items-center gap-2 px-5 py-2.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 rounded-xl font-bold text-xs transition-all disabled:opacity-50"
+                                        >
+                                            {isTestingGoogleMaps ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                                            {isTestingGoogleMaps ? 'Testing Connection...' : 'Test API Connection'}
+                                        </button>
+                                    </div>
+
+                                    {googleMapsTestResult && (
+                                        <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-3 ${googleMapsTestResult.success ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                                            {googleMapsTestResult.success ? <Check size={18} /> : <AlertTriangle size={18} />}
+                                            <span>{googleMapsTestResult.message}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* MAP CONTROLS & DEFAULTS */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="p-6 bg-white/5 border border-white/10 rounded-[2rem] space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="text-base font-black text-white">Enable Google Maps</h4>
+                                                <p className="text-xs text-gray-400">Use Google Maps for all live map components across app.</p>
+                                            </div>
+                                            <button
+                                                onClick={() => handleInputChange('googleMapsEnabled', localSettings.googleMapsEnabled !== false)}
+                                                className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.googleMapsEnabled !== false ? 'bg-emerald-500' : 'bg-gray-800'}`}
+                                            >
+                                                <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.googleMapsEnabled !== false ? 'translate-x-6' : 'translate-x-0'}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-6 bg-white/5 border border-white/10 rounded-[2rem] space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="text-base font-black text-white">Realtime Traffic Layer</h4>
+                                                <p className="text-xs text-gray-400">Display live road traffic congestion overlay.</p>
+                                            </div>
+                                            <button
+                                                onClick={() => handleInputChange('enableTrafficLayer', !localSettings.enableTrafficLayer)}
+                                                className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.enableTrafficLayer ? 'bg-primary' : 'bg-gray-800'}`}
+                                            >
+                                                <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.enableTrafficLayer ? 'translate-x-6' : 'translate-x-0'}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* DEFAULT COORDINATES */}
+                                <div className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
+                                    <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                                        <Navigation size={20} className="text-primary" /> Default Map Region
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Center Lat</label>
+                                            <input
+                                                type="number"
+                                                step="0.0001"
+                                                value={localSettings.defaultMapCenterLat ?? 14.5995}
+                                                onChange={(e) => handleInputChange('defaultMapCenterLat', parseFloat(e.target.value))}
+                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Center Lng</label>
+                                            <input
+                                                type="number"
+                                                step="0.0001"
+                                                value={localSettings.defaultMapCenterLng ?? 120.9842}
+                                                onChange={(e) => handleInputChange('defaultMapCenterLng', parseFloat(e.target.value))}
+                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Zoom Level (1-20)</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="20"
+                                                value={localSettings.defaultMapZoom ?? 13}
+                                                onChange={(e) => handleInputChange('defaultMapZoom', parseInt(e.target.value, 10))}
+                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
