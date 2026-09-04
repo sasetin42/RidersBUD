@@ -339,15 +339,16 @@ const NotificationBell: React.FC<{ className?: string }> = ({ className = "" }) 
     }, [recipientId, markAllAsRead]);
 
     const handleClearAll = useCallback(async () => {
-        if (!recipientId || isClearing) return;
+        if (isClearing) return;
         setIsClearing(true);
         try {
-            await clearAllNotifications(recipientId);
+            const targetRecipient = recipientId || (isAdmin ? 'admin' : mechanic?.id ? `mechanic-${mechanic.id}` : customer?.id ? `customer-${customer.id}` : 'customer');
+            await clearAllNotifications(targetRecipient);
         } finally {
             // Brief delay so the spinner is visible — UI has already cleared optimistically
-            setTimeout(() => setIsClearing(false), 600);
+            setTimeout(() => setIsClearing(false), 500);
         }
-    }, [recipientId, clearAllNotifications, isClearing]);
+    }, [recipientId, clearAllNotifications, isClearing, isAdmin, mechanic, customer]);
 
     const handleNotificationNavigate = useCallback((notif: Notification) => {
         markAsRead(notif.id);

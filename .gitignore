@@ -36,3 +36,10 @@ playstore-release/keystore/*.keystore
 playstore-release/keystore/keystore-passwords.txt
 android/local.properties
 android/variables.gradle
+
+# Gradle JDKs & Cache
+.gradle_jdk/
+.gradle_jdk21/
+.firebase/
+.freebuff/
+

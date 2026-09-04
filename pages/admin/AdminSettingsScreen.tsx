@@ -1,18 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useNotification } from '../../context/NotificationContext';
-import { Settings } from '../../types';
+import { Settings, EmailTemplate } from '../../types';
 import Spinner from '../../components/Spinner';
 import { storageService } from '../../services/StorageService';
 import { sendEmail } from '../../services/emailService';
+import { DEFAULT_EMAIL_TEMPLATES, renderEmailTemplate } from '../../data/defaultEmailTemplates';
+import { LEAFLET_TILE_PROVIDERS, getLeafletTileConfig } from '../../utils/mapTileProviders';
 import {
     Save, Globe, Clock, DollarSign, Bell, Shield, Upload, Image as ImageIcon,
     Layout, Smartphone, Wrench, CreditCard, Mail, FileCheck, Plus, Trash2, User,
     AlertTriangle, Check, RefreshCw, Facebook, Twitter, Instagram, ChevronRight, MessageSquare, HelpCircle,
-    MapPin, Map, Navigation, Eye, EyeOff
+    MapPin, Map, Navigation, Eye, EyeOff, Code, Send, FileText, Sparkles, Copy, RotateCcw, ExternalLink,
+    Server, Layers, Compass, Crosshair, Activity, Sliders, Maximize2, LocateFixed
 } from 'lucide-react';
 
-type SettingsTab = 'general' | 'appearance' | 'bookings' | 'financials' | 'notifications' | 'verification' | 'support' | 'maps' | 'system';
+declare const L: any;
+
+type SettingsTab = 'general' | 'appearance' | 'bookings' | 'financials' | 'notifications' | 'smtp' | 'emailTemplates' | 'maps' | 'verification' | 'support' | 'system';
 
 interface TabConfig {
     id: SettingsTab;
@@ -26,7 +31,9 @@ const tabs: TabConfig[] = [
     { id: 'appearance', label: 'Appearance', icon: <Layout size={18} />, description: 'Logos & Branding' },
     { id: 'bookings', label: 'Operations', icon: <Clock size={18} />, description: 'Booking logic & mechanics' },
     { id: 'financials', label: 'Financials', icon: <DollarSign size={18} />, description: 'Currency, fees & HitPay' },
-    { id: 'notifications', label: 'Notifications', icon: <Bell size={18} />, description: 'Email alerts & preferences' },
+    { id: 'notifications', label: 'Notifications', icon: <Bell size={18} />, description: 'Alert preferences & triggers' },
+    { id: 'smtp', label: 'SMTP Server', icon: <Server size={18} />, description: 'Email host & credentials' },
+    { id: 'emailTemplates', label: 'Email Templates', icon: <Sparkles size={18} />, description: 'Notification layouts & preview' },
     { id: 'maps', label: 'Map & Location', icon: <MapPin size={18} />, description: 'Google Maps API & routing' },
     { id: 'verification', label: 'Verification', icon: <FileCheck size={18} />, description: 'Mechanic onboard docs' },
     { id: 'support', label: 'Support', icon: <MessageSquare size={18} />, description: 'Live Chat & FAQ' },
@@ -54,6 +61,401 @@ const AdminSettingsScreen: React.FC = () => {
     const [isTestingGoogleMaps, setIsTestingGoogleMaps] = useState(false);
     const [googleMapsTestResult, setGoogleMapsTestResult] = useState<{success: boolean, message: string} | null>(null);
 
+    // Email Templates State
+    const [selectedEmailTemplateId, setSelectedEmailTemplateId] = useState<string>('booking_confirmed');
+    const [emailTemplateFilter, setEmailTemplateFilter] = useState<string>('All');
+    const [templateTabMode, setTemplateTabMode] = useState<'edit' | 'preview'>('edit');
+    const [templateTestEmail, setTemplateTestEmail] = useState<string>('');
+    const [isTestingTemplate, setIsTestingTemplate] = useState<boolean>(false);
+    const [templateTestFeedback, setTemplateTestFeedback] = useState<{ success: boolean; message: string } | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    const getEffectiveTemplate = (templateId: string): EmailTemplate => {
+        if (localSettings?.emailTemplates?.[templateId]) {
+            return localSettings.emailTemplates[templateId];
+        }
+        return DEFAULT_EMAIL_TEMPLATES[templateId] || {
+            id: templateId,
+            name: 'Custom Template',
+            category: 'Operations',
+            subject: '',
+            body: '',
+            enabled: true,
+            variables: [],
+            description: ''
+        };
+    };
+
+    const handleTemplateSubjectChange = (templateId: string, subject: string) => {
+        if (!localSettings) return;
+        const currentTemplate = getEffectiveTemplate(templateId);
+        const updatedTemplate: EmailTemplate = {
+            ...currentTemplate,
+            subject,
+            updatedAt: new Date().toISOString()
+        };
+        const updatedTemplates = {
+            ...(localSettings.emailTemplates || {}),
+            [templateId]: updatedTemplate
+        };
+        setLocalSettings(prev => prev ? { ...prev, emailTemplates: updatedTemplates } : null);
+        setHasChanges(true);
+    };
+
+    const handleTemplateBodyChange = (templateId: string, body: string) => {
+        if (!localSettings) return;
+        const currentTemplate = getEffectiveTemplate(templateId);
+        const updatedTemplate: EmailTemplate = {
+            ...currentTemplate,
+            body,
+            updatedAt: new Date().toISOString()
+        };
+        const updatedTemplates = {
+            ...(localSettings.emailTemplates || {}),
+            [templateId]: updatedTemplate
+        };
+        setLocalSettings(prev => prev ? { ...prev, emailTemplates: updatedTemplates } : null);
+        setHasChanges(true);
+    };
+
+    const handleTemplateToggle = (templateId: string) => {
+        if (!localSettings) return;
+        const currentTemplate = getEffectiveTemplate(templateId);
+        const updatedTemplate: EmailTemplate = {
+            ...currentTemplate,
+            enabled: !currentTemplate.enabled,
+            updatedAt: new Date().toISOString()
+        };
+        const updatedTemplates = {
+            ...(localSettings.emailTemplates || {}),
+            [templateId]: updatedTemplate
+        };
+        setLocalSettings(prev => prev ? { ...prev, emailTemplates: updatedTemplates } : null);
+        setHasChanges(true);
+    };
+
+    const handleInsertVariable = (variableTag: string) => {
+        if (!textareaRef.current || !localSettings) return;
+        const textarea = textareaRef.current;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const currentTemplate = getEffectiveTemplate(selectedEmailTemplateId);
+        const currentBody = currentTemplate.body;
+        const placeholder = `{{${variableTag}}}`;
+        const newBody = currentBody.substring(0, start) + placeholder + currentBody.substring(end);
+        
+        handleTemplateBodyChange(selectedEmailTemplateId, newBody);
+
+        setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
+        }, 50);
+    };
+
+    const handleResetTemplateToDefault = (templateId: string) => {
+        if (!localSettings) return;
+        const defaultTpl = DEFAULT_EMAIL_TEMPLATES[templateId];
+        if (!defaultTpl) return;
+        const updatedTemplates = {
+            ...(localSettings.emailTemplates || {}),
+            [templateId]: { ...defaultTpl }
+        };
+        setLocalSettings(prev => prev ? { ...prev, emailTemplates: updatedTemplates } : null);
+        setHasChanges(true);
+        addNotification({
+            type: 'info',
+            title: 'Template Reset',
+            message: `"${defaultTpl.name}" has been restored to factory default settings.`,
+            recipientId: 'admin'
+        });
+    };
+
+    const handleSendTemplateTest = async (templateId: string) => {
+        if (!localSettings) return;
+        const targetEmail = templateTestEmail.trim() || localSettings.contactEmail || localSettings.smtpUsername;
+        if (!targetEmail) {
+            setTemplateTestFeedback({ success: false, message: 'Please provide a valid recipient email address.' });
+            return;
+        }
+
+        setIsTestingTemplate(true);
+        setTemplateTestFeedback(null);
+
+        const activeTemplate = getEffectiveTemplate(templateId);
+
+        const sampleData: Record<string, any> = {
+            customerName: 'Juan Dela Cruz',
+            customerPhone: '0917-888-9999',
+            customerEmail: targetEmail,
+            bookingId: 'BK-8942',
+            serviceName: 'Comprehensive PMS & Engine Checkup',
+            date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            time: '10:00 AM',
+            totalAmount: '4,500.00',
+            totalPaid: '4,500.00',
+            paymentMethod: 'Online Payment (HitPay)',
+            pickupLocation: 'BGC Taguig, Metro Manila',
+            destination: 'Makati Central Business District',
+            driverName: 'Ricardo Dalisay',
+            driverPhone: '0918-555-1234',
+            mechanicName: 'Master Tech Roberto',
+            mechanicPhone: '0919-444-5678',
+            vehicleInfo: 'Toyota Vios 2022 (Plate: ABC 1234)',
+            eta: '25 mins',
+            status: 'Mechanic En Route',
+            reason: 'Customer requested schedule adjustment',
+            refundStatus: 'Full Refund Initiated (₱4,500.00)',
+            orderId: 'ORD-7721',
+            itemsList: 'Synthetic Motor Oil 4L (x1), Oil Filter (x1), Brake Pads Set (x1)',
+            deliveryAddress: 'Unit 402, Tower 1, Fort Victoria, BGC Taguig',
+            loginUrl: `${window.location.origin}/mechanic-portal`,
+            onboardingNotes: 'Your submitted LTO license and mechanic certifications have passed our compliance verification.',
+            userEmail: targetEmail,
+            feedbackUrl: `${window.location.origin}/customer-portal/booking-history`,
+            completionDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        };
+
+        try {
+            const { subject, html } = renderEmailTemplate(activeTemplate, sampleData, localSettings);
+            const success = await sendEmail(targetEmail, subject, html, localSettings);
+            if (success) {
+                setTemplateTestFeedback({ success: true, message: `Test email for "${activeTemplate.name}" sent to ${targetEmail}!` });
+                addNotification({
+                    type: 'success',
+                    title: 'Test Email Sent',
+                    message: `Test email for "${activeTemplate.name}" successfully sent to ${targetEmail}.`,
+                    recipientId: 'admin'
+                });
+            } else {
+                setTemplateTestFeedback({ success: false, message: 'Failed to send test email. Please check your SMTP settings.' });
+            }
+        } catch (err: any) {
+            setTemplateTestFeedback({ success: false, message: err?.message || 'Error occurred while sending test email.' });
+        } finally {
+            setIsTestingTemplate(false);
+        }
+    };
+
+    const adminMapRef = useRef<HTMLDivElement>(null);
+    const adminMapInstanceRef = useRef<any>(null);
+    const adminTileLayerRef = useRef<any>(null);
+    const adminMarkerRef = useRef<any>(null);
+    const adminLiveMarkersLayerRef = useRef<any>(null);
+
+    // Initialize or update Admin Leaflet Dispatch Map
+    useEffect(() => {
+        if (activeTab !== 'maps' || !adminMapRef.current || typeof L === 'undefined') return;
+
+        const centerLat = localSettings?.defaultMapCenterLat ?? 14.5995;
+        const centerLng = localSettings?.defaultMapCenterLng ?? 120.9842;
+        const zoom = localSettings?.defaultMapZoom ?? 13;
+        const provider = localSettings?.leafletTileProvider || 'osm-dark';
+
+        if (!adminMapInstanceRef.current) {
+            const map = L.map(adminMapRef.current, {
+                center: [centerLat, centerLng],
+                zoom: zoom,
+                zoomControl: true,
+                scrollWheelZoom: true,
+            });
+
+            if (provider === 'osm-dark') {
+                adminMapRef.current.classList.add('leaflet-dark-tiles');
+            } else {
+                adminMapRef.current.classList.remove('leaflet-dark-tiles');
+            }
+
+            const tileConfig = getLeafletTileConfig(localSettings);
+            adminTileLayerRef.current = L.tileLayer(tileConfig.url, tileConfig.options).addTo(map);
+
+            adminLiveMarkersLayerRef.current = L.layerGroup().addTo(map);
+
+            const pinIcon = L.divIcon({
+                html: `
+                    <div style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+                        <div style="position: absolute; inset: 0; border-radius: 9999px; background: rgba(255, 107, 0, 0.35); animation: rb-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+                        <div style="position: relative; width: 34px; height: 34px; border-radius: 9999px; background: #FF6B00; border: 3px solid #ffffff; box-shadow: 0 4px 16px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: #ffffff;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                        </div>
+                    </div>
+                `,
+                className: 'rb-leaflet-icon',
+                iconSize: [44, 44],
+                iconAnchor: [22, 22],
+            });
+
+            const marker = L.marker([centerLat, centerLng], {
+                draggable: true,
+                icon: pinIcon
+            }).addTo(map);
+
+            marker.bindPopup(`
+                <div style="padding: 10px; font-family: sans-serif; color: #fff; min-width: 180px;">
+                    <div style="font-weight: 800; font-size: 13px; color: #FE7803; margin-bottom: 4px;">📍 Central Dispatch Hub</div>
+                    <div style="font-size: 11px; color: #9ca3af; margin-bottom: 6px;">Default Regional Anchor</div>
+                    <div style="font-size: 10px; font-mono: monospace; color: #e5e7eb;">Lat: ${centerLat.toFixed(4)}, Lng: ${centerLng.toFixed(4)}</div>
+                </div>
+            `);
+
+            marker.on('dragend', (e: any) => {
+                const pos = e.target.getLatLng();
+                const lat = parseFloat(pos.lat.toFixed(6));
+                const lng = parseFloat(pos.lng.toFixed(6));
+                setLocalSettings(prev => prev ? {
+                    ...prev,
+                    defaultMapCenterLat: lat,
+                    defaultMapCenterLng: lng
+                } : null);
+                setHasChanges(true);
+            });
+
+            map.on('click', (e: any) => {
+                const pos = e.latlng;
+                const lat = parseFloat(pos.lat.toFixed(6));
+                const lng = parseFloat(pos.lng.toFixed(6));
+                marker.setLatLng([lat, lng]);
+                setLocalSettings(prev => prev ? {
+                    ...prev,
+                    defaultMapCenterLat: lat,
+                    defaultMapCenterLng: lng
+                } : null);
+                setHasChanges(true);
+            });
+
+            map.on('zoomend', () => {
+                const newZoom = map.getZoom();
+                setLocalSettings(prev => prev ? { ...prev, defaultMapZoom: newZoom } : null);
+                setHasChanges(true);
+            });
+
+            adminMapInstanceRef.current = map;
+            adminMarkerRef.current = marker;
+
+            setTimeout(() => {
+                if (adminMapInstanceRef.current) {
+                    adminMapInstanceRef.current.invalidateSize();
+                }
+            }, 250);
+        } else {
+            if (provider === 'osm-dark') {
+                adminMapRef.current.classList.add('leaflet-dark-tiles');
+            } else {
+                adminMapRef.current.classList.remove('leaflet-dark-tiles');
+            }
+
+            if (adminTileLayerRef.current) {
+                adminMapInstanceRef.current.removeLayer(adminTileLayerRef.current);
+            }
+            const tileConfig = getLeafletTileConfig(localSettings);
+            adminTileLayerRef.current = L.tileLayer(tileConfig.url, tileConfig.options).addTo(adminMapInstanceRef.current);
+            
+            setTimeout(() => {
+                if (adminMapInstanceRef.current) {
+                    adminMapInstanceRef.current.invalidateSize();
+                }
+            }, 200);
+        }
+
+        // Render Real-Time Mechanics & Active Bookings on the Dispatch Map
+        if (adminLiveMarkersLayerRef.current && db?.mechanics) {
+            adminLiveMarkersLayerRef.current.clearLayers();
+
+            db.mechanics.forEach(mechanic => {
+                const isOnline = mechanic.status === 'Active';
+                const mechIcon = L.divIcon({
+                    html: `
+                        <div class="rb-map-pin-wrapper ${isOnline ? 'pulse-available' : ''}">
+                            <div class="rb-pin-circle ${isOnline ? '' : 'unavailable'}">
+                                <img src="${mechanic.imageUrl || '/riders-logo.png'}" alt="${mechanic.name}" />
+                            </div>
+                            <div class="rb-pin-stem"></div>
+                            <div class="rb-pin-dot"></div>
+                        </div>
+                    `,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [44, 60],
+                    iconAnchor: [22, 60],
+                    popupAnchor: [0, -62],
+                });
+
+                const mechPopup = `
+                    <div style="padding: 12px; font-family: sans-serif; color: #fff; min-width: 200px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <img src="${mechanic.imageUrl || '/riders-logo.png'}" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1.5px solid #FE7803;" />
+                            <div>
+                                <div style="font-weight: 800; font-size: 12px; color: #fff;">${mechanic.name}</div>
+                                <span style="font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 99px; background: ${isOnline ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.1)'}; color: ${isOnline ? '#4ade80' : '#9ca3af'};">
+                                    ${isOnline ? '● ONLINE' : 'OFFLINE'}
+                                </span>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #9ca3af; margin-bottom: 4px;">★ ${mechanic.rating.toFixed(1)} &bull; ${mechanic.specializations?.slice(0, 2).join(', ') || 'General'}</div>
+                        <div style="font-size: 10px; font-mono: monospace; color: #6b7280;">GPS: ${mechanic.lat.toFixed(4)}, ${mechanic.lng.toFixed(4)}</div>
+                    </div>
+                `;
+
+                const mMarker = L.marker([mechanic.lat, mechanic.lng], { icon: mechIcon });
+                mMarker.bindPopup(mechPopup);
+                adminLiveMarkersLayerRef.current.addLayer(mMarker);
+            });
+
+            // Render Active Bookings
+            if (db.bookings) {
+                db.bookings.filter(b => b.status === 'In Progress' || b.status === 'Upcoming').forEach(booking => {
+                    const bLat = booking.location?.lat || booking.customerCoordinates?.lat;
+                    const bLng = booking.location?.lng || booking.customerCoordinates?.lng;
+                    if (bLat && bLng) {
+                        const bookIcon = L.divIcon({
+                            html: `
+                                <div class="rb-location-pin-wrapper">
+                                    <div class="rb-location-circle">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                    </div>
+                                    <div class="rb-location-stem"></div>
+                                    <div class="rb-location-dot"></div>
+                                </div>
+                            `,
+                            className: 'rb-leaflet-icon',
+                            iconSize: [36, 54],
+                            iconAnchor: [18, 54],
+                            popupAnchor: [0, -56],
+                        });
+
+                        const bMarker = L.marker([bLat, bLng], { icon: bookIcon });
+                        bMarker.bindPopup(`
+                            <div style="padding: 10px; color: #fff; min-width: 180px;">
+                                <div style="font-weight: 800; font-size: 12px; color: #60a5fa;">📋 Booking: ${booking.serviceType || 'Emergency Repair'}</div>
+                                <div style="font-size: 11px; color: #d1d5db; margin-top: 4px;">Customer: ${booking.customerName || 'Direct Booking'}</div>
+                                <div style="font-size: 10px; color: #9ca3af; margin-top: 2px;">Status: <span style="color:#fbbf24;font-weight:bold;">${booking.status}</span></div>
+                            </div>
+                        `);
+                        adminLiveMarkersLayerRef.current.addLayer(bMarker);
+                    }
+                });
+            }
+        }
+    }, [activeTab, localSettings?.leafletTileProvider, localSettings?.leafletCustomTileUrl, localSettings?.leafletCustomAttribution, db?.mechanics, db?.bookings]);
+
+    const handleLocateCurrentPosition = () => {
+        if (!navigator.geolocation) {
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const lat = parseFloat(pos.coords.latitude.toFixed(6));
+                const lng = parseFloat(pos.coords.longitude.toFixed(6));
+                setLocalSettings(prev => prev ? { ...prev, defaultMapCenterLat: lat, defaultMapCenterLng: lng } : null);
+                setHasChanges(true);
+                if (adminMarkerRef.current) adminMarkerRef.current.setLatLng([lat, lng]);
+                if (adminMapInstanceRef.current) adminMapInstanceRef.current.setView([lat, lng], 15);
+            },
+            (err) => {
+                console.warn('Geolocation error:', err.message);
+            },
+            { enableHighAccuracy: true }
+        );
+    };
+
     const handleTestGoogleMapsKey = async () => {
         if (!localSettings?.googleMapsApiKey) {
             setGoogleMapsTestResult({ success: false, message: 'Please enter a Google Maps API Key first.' });
@@ -67,13 +469,6 @@ const AdminSettingsScreen: React.FC = () => {
             const data = await res.json();
             if (data.status === 'OK' || data.status === 'ZERO_RESULTS') {
                 setGoogleMapsTestResult({ success: true, message: 'Google Maps API Key is VALID and connected!' });
-                addNotification({
-                    userId: 'admin',
-                    title: 'Google Maps API Verified',
-                    message: 'API Key connection test succeeded.',
-                    type: 'system',
-                    priority: 'low'
-                });
             } else {
                 setGoogleMapsTestResult({ success: false, message: `Google Maps API Error: ${data.error_message || data.status}` });
             }
@@ -186,14 +581,29 @@ const AdminSettingsScreen: React.FC = () => {
             );
             if (success) {
                 setSmtpTestResult({ success: true, message: 'Test email sent successfully!' });
-                addNotification('Success', 'Test email sent successfully.', 'success');
+                addNotification({
+                    type: 'success',
+                    title: 'SMTP Test Successful',
+                    message: 'Test email sent successfully to ' + (localSettings.contactEmail || 'your email') + '.',
+                    recipientId: 'admin',
+                });
             } else {
                 setSmtpTestResult({ success: false, message: 'Failed to send test email. Please check your settings.' });
-                addNotification('Error', 'Failed to send test email.', 'error');
+                addNotification({
+                    type: 'error',
+                    title: 'SMTP Test Failed',
+                    message: 'Failed to send test email. Please check your host and credentials.',
+                    recipientId: 'admin',
+                });
             }
         } catch (error: any) {
             setSmtpTestResult({ success: false, message: error.message || 'An error occurred while sending the email.' });
-            addNotification('Error', 'An error occurred while sending test email.', 'error');
+            addNotification({
+                type: 'error',
+                title: 'SMTP Connection Error',
+                message: error.message || 'An error occurred while sending test email.',
+                recipientId: 'admin',
+            });
         } finally {
             setIsTestingSmtp(false);
         }
@@ -569,15 +979,25 @@ const AdminSettingsScreen: React.FC = () => {
                                         'Logo displayed specifically on the Admin authentication/login page.'
                                     )}
                                     {renderImageUpload(
-                                        'Admin Panel Header Logo',
-                                        'adminPanelLogoUrl',
-                                        'Logo displayed at the top of the Admin sidebars.'
-                                    )}
-                                    {renderImageUpload(
-                                        'Sidebar Logo (Compact)',
-                                        'sidebarLogoUrl',
-                                        'Compact icon used in collapsed sidebars. White version recommended.'
-                                    )}
+                                         'Admin Panel Header Logo',
+                                         'adminPanelLogoUrl',
+                                         'Logo displayed at the top of the Admin sidebars.'
+                                     )}
+                                     {renderImageUpload(
+                                         'Customer Header Logo',
+                                         'customerHeaderLogoUrl',
+                                         'Logo displayed in the top header bar for all Client/Customer screens.'
+                                     )}
+                                     {renderImageUpload(
+                                         'Mechanic Header Logo',
+                                         'mechanicHeaderLogoUrl',
+                                         'Logo displayed in the top header bar for all Mechanic portal screens.'
+                                     )}
+                                     {renderImageUpload(
+                                         'Sidebar Logo (Compact)',
+                                         'sidebarLogoUrl',
+                                         'Compact icon used in collapsed sidebars. White version recommended.'
+                                     )}
                                     {renderImageUpload(
                                         'Map Marker/Logo',
                                         'mapLogoUrl',
@@ -587,6 +1007,11 @@ const AdminSettingsScreen: React.FC = () => {
                                         'Invoice Logo',
                                         'invoiceLogoUrl',
                                         'High-resolution logo included in PDF invoices and receipts sent to customers.'
+                                    )}
+                                    {renderImageUpload(
+                                        'Email Template Logo',
+                                        'emailLogoUrl',
+                                        'Branded logo displayed prominently in all automated customer and admin email templates.'
                                     )}
                                 </div>
                             </div>
@@ -685,6 +1110,13 @@ const AdminSettingsScreen: React.FC = () => {
                                     <p className="text-gray-500 text-sm font-medium">
                                         Configure your HitPay payment gateway credentials for online payments. Toggle <strong>Sandbox Mode</strong> for testing before going live.
                                     </p>
+
+                                    {/* Master HitPay Enable Switch */}
+                                    {renderSwitch(
+                                        'Enable HitPay Gateway',
+                                        'hitpayEnabled',
+                                        'Activate HitPay online payment gateway globally for bookings, orders, rentals, and services.'
+                                    )}
 
                                     {/* Sandbox Mode Toggle */}
                                     <div className="flex items-center justify-between p-6 bg-[#121212] rounded-3xl border border-white/5 group hover:border-white/10 transition-all">
@@ -855,22 +1287,79 @@ const AdminSettingsScreen: React.FC = () => {
                         {/* NOTIFICATIONS SETTINGS */}
                         {activeTab === 'notifications' && (
                             <div className="space-y-8 animate-fadeIn">
-                                <h2 className="text-2xl font-black text-white flex items-center gap-3  tracking-tighter">
-                                    <Mail className="text-primary" size={24} /> Email Alerts
-                                </h2>
-                                <div className="grid grid-cols-1 gap-6">
-                                    {renderSwitch('New Booking Alerts', 'emailOnNewBooking', 'Receive an email whenever a customer places a new booking.')}
-                                    {renderSwitch('Cancellation Alerts', 'emailOnCancellation', 'Receive an email when a booking is cancelled by a customer or mechanic.')}
+                                <div>
+                                    <h2 className="text-2xl font-black text-white flex items-center gap-3 tracking-tighter">
+                                        <Bell className="text-primary" size={24} /> Notifications & Alerts
+                                    </h2>
+                                    <p className="text-gray-400 text-sm mt-1">
+                                        Manage automated triggers and notification preferences across the platform.
+                                    </p>
                                 </div>
 
-                                <div className="mt-8 pt-8 border-t border-white/10">
-                                    <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
-                                        <Globe className="text-primary" size={20} /> SMTP Server Configuration
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-black uppercase tracking-wider text-gray-400">
+                                        Operational Email Triggers
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-4">
+                                        {renderSwitch('New Booking Alerts', 'emailOnNewBooking', 'Receive an email notification whenever a customer places a new service booking.')}
+                                        {renderSwitch('Cancellation Alerts', 'emailOnCancellation', 'Receive an email notification when a booking is cancelled by a customer or mechanic.')}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                                    <div 
+                                        onClick={() => setActiveTab('smtp')}
+                                        className="p-5 rounded-2xl bg-[#16161A] border border-white/10 hover:border-primary/40 hover:bg-[#1A1A22] transition-all cursor-pointer group"
+                                    >
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                                                    <Server size={20} />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-white font-bold text-base group-hover:text-primary transition-colors">SMTP Server Setup</h4>
+                                                    <p className="text-xs text-gray-400">Host, ports, credentials & testing</p>
+                                                </div>
+                                            </div>
+                                            <ChevronRight size={18} className="text-gray-500 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                                        </div>
+                                    </div>
+
+                                    <div 
+                                        onClick={() => setActiveTab('emailTemplates')}
+                                        className="p-5 rounded-2xl bg-[#16161A] border border-white/10 hover:border-primary/40 hover:bg-[#1A1A22] transition-all cursor-pointer group"
+                                    >
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                                                    <Sparkles size={20} />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-white font-bold text-base group-hover:text-primary transition-colors">Email Templates</h4>
+                                                    <p className="text-xs text-gray-400">Customize layouts, variables & preview</p>
+                                                </div>
+                                            </div>
+                                            <ChevronRight size={18} className="text-gray-500 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SMTP SERVER SETTINGS */}
+                        {activeTab === 'smtp' && (
+                            <div className="space-y-8 animate-fadeIn">
+                                <div>
+                                    <h2 className="text-2xl font-black text-white flex items-center gap-3 tracking-tighter">
+                                        <Server className="text-primary" size={24} /> SMTP Server Configuration
                                     </h2>
-                                    <p className="text-gray-400 text-sm mb-6">Configure your SMTP settings to enable the system to send emails. These credentials are used to securely route emails through an HTTPS bridge.</p>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-2">
+                                    <p className="text-gray-400 text-sm mt-1">
+                                        Configure your SMTP settings to enable the system to send emails. These credentials are used to securely route emails through an HTTPS bridge.
+                                    </p>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#16161A] border border-white/10 p-6 rounded-2xl">
+                                    <div className="space-y-2">
                                         <label htmlFor="smtp-host" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Host</label>
                                         <input
                                             id="smtp-host"
@@ -881,8 +1370,8 @@ const AdminSettingsScreen: React.FC = () => {
                                             className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
                                             placeholder="e.g., smtp.gmail.com"
                                         />
-                                        </div>
-                                        <div className="space-y-2">
+                                    </div>
+                                    <div className="space-y-2">
                                         <label htmlFor="smtp-port" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Port</label>
                                         <input
                                             id="smtp-port"
@@ -893,8 +1382,8 @@ const AdminSettingsScreen: React.FC = () => {
                                             className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
                                             placeholder="e.g., 587 or 465"
                                         />
-                                        </div>
-                                        <div className="space-y-2">
+                                    </div>
+                                    <div className="space-y-2">
                                         <label htmlFor="smtp-username" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Username</label>
                                         <input
                                             id="smtp-username"
@@ -905,8 +1394,8 @@ const AdminSettingsScreen: React.FC = () => {
                                             className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
                                             placeholder="Your email address"
                                         />
-                                        </div>
-                                        <div className="space-y-2">
+                                    </div>
+                                    <div className="space-y-2">
                                         <label htmlFor="smtp-password" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">SMTP Password</label>
                                         <div className="relative">
                                             <input
@@ -918,12 +1407,12 @@ const AdminSettingsScreen: React.FC = () => {
                                                 className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl pl-4 pr-12 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
                                                 placeholder="App password or SMTP password"
                                             />
-                                                <button type="button" onClick={() => setShowSmtpPassword(!showSmtpPassword)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-primary transition-colors">
-                                                    {showSmtpPassword ? <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>}
-                                                </button>
-                                            </div>
+                                            <button type="button" onClick={() => setShowSmtpPassword(!showSmtpPassword)} className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-primary transition-colors">
+                                                {showSmtpPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
                                         </div>
-                                        <div className="space-y-2">
+                                    </div>
+                                    <div className="space-y-2">
                                         <label htmlFor="smtp-sender-name" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">Sender Name</label>
                                         <input
                                             id="smtp-sender-name"
@@ -934,8 +1423,8 @@ const AdminSettingsScreen: React.FC = () => {
                                             className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
                                             placeholder="e.g., RidersBUD Notifications"
                                         />
-                                        </div>
-                                        <div className="space-y-2">
+                                    </div>
+                                    <div className="space-y-2">
                                         <label htmlFor="smtp-sender-email" className="text-[10px] uppercase tracking-widest font-black text-gray-500 block">Sender Email</label>
                                         <input
                                             id="smtp-sender-email"
@@ -946,24 +1435,339 @@ const AdminSettingsScreen: React.FC = () => {
                                             className="w-full bg-[#1A1A1A] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors"
                                             placeholder="e.g., noreply@ridersbud.com"
                                         />
+                                    </div>
+                                </div>
+                                
+                                <div className="flex flex-col sm:flex-row items-center gap-4 bg-[#16161A] border border-white/10 p-6 rounded-2xl">
+                                    <button 
+                                        onClick={handleTestSmtp}
+                                        disabled={isTestingSmtp || !localSettings?.smtpHost || !localSettings?.smtpUsername || !localSettings?.smtpPassword}
+                                        className="px-6 py-3 bg-primary hover:bg-orange-600 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-primary/20"
+                                    >
+                                        {isTestingSmtp ? <Spinner size="sm" /> : <Mail size={18} />}
+                                        Test SMTP Connection
+                                    </button>
+                                    {smtpTestResult && (
+                                        <div className={`text-sm px-4 py-2.5 rounded-xl ${smtpTestResult.success ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                            {smtpTestResult.message}
                                         </div>
-                                    </div>
-                                    
-                                    <div className="mt-6 flex flex-col sm:flex-row items-center gap-4">
-                                        <button 
-                                            onClick={handleTestSmtp}
-                                            disabled={isTestingSmtp || !localSettings?.smtpHost || !localSettings?.smtpUsername || !localSettings?.smtpPassword}
-                                            className="px-6 py-3 bg-[#1A1A1A] border border-white/10 hover:border-primary/50 text-white rounded-xl font-bold transition-all disabled:opacity-50 flex items-center gap-2"
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* EMAIL NOTIFICATION TEMPLATES SETTINGS */}
+                        {activeTab === 'emailTemplates' && (
+                            <div className="space-y-8 animate-fadeIn">
+                                <div>
+                                    <h2 className="text-2xl font-black text-white flex items-center gap-3 tracking-tighter">
+                                        <Sparkles className="text-primary" size={24} /> Email Notification Templates
+                                    </h2>
+                                    <p className="text-gray-400 text-sm mt-1">
+                                        Customize, preview, and test-send dynamic system email notifications for all user lifecycle and operational events.
+                                    </p>
+                                </div>
+
+                                {/* Category Filter Tabs */}
+                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                                    {['All', 'Bookings', 'Drivers & Fleet', 'E-Commerce', 'Accounts', 'Operations'].map((category) => (
+                                        <button
+                                            key={category}
+                                            type="button"
+                                            onClick={() => setEmailTemplateFilter(category)}
+                                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all ${
+                                                emailTemplateFilter === category
+                                                    ? 'bg-primary text-white shadow-md shadow-primary/20'
+                                                    : 'bg-[#16161A] text-gray-400 hover:text-white border border-white/5 hover:border-white/15'
+                                            }`}
                                         >
-                                            {isTestingSmtp ? <Spinner size="sm" /> : <Mail size={18} />}
-                                            Test Connection
+                                            {category}
                                         </button>
-                                        {smtpTestResult && (
-                                            <div className={`text-sm px-4 py-2 rounded-lg ${smtpTestResult.success ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                                                {smtpTestResult.message}
-                                            </div>
-                                        )}
+                                    ))}
+                                </div>
+
+                                {/* Template Master-Detail Layout */}
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+                                    {/* Left: Template List */}
+                                    <div className="lg:col-span-4 space-y-2 max-h-[580px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {Object.keys(DEFAULT_EMAIL_TEMPLATES)
+                                            .filter((key) => {
+                                                const tpl = getEffectiveTemplate(key);
+                                                if (emailTemplateFilter === 'All') return true;
+                                                return tpl.category === emailTemplateFilter;
+                                            })
+                                            .map((key) => {
+                                                const tpl = getEffectiveTemplate(key);
+                                                const isSelected = selectedEmailTemplateId === key;
+                                                return (
+                                                    <div
+                                                        key={key}
+                                                        onClick={() => {
+                                                            setSelectedEmailTemplateId(key);
+                                                            setTemplateTestFeedback(null);
+                                                        }}
+                                                        className={`p-3 rounded-xl cursor-pointer transition-all border ${
+                                                            isSelected
+                                                                ? 'bg-[#1E1E24] border-primary/60 shadow-md shadow-primary/10 ring-1 ring-primary/40'
+                                                                : 'bg-[#131317] border-white/5 hover:border-white/15 hover:bg-[#18181E]'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                                                            <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-white/5 text-gray-400 border border-white/5">
+                                                                {tpl.category}
+                                                            </span>
+                                                            <span
+                                                                className={`text-[9px] font-black px-1.5 py-0.5 rounded-md flex items-center gap-1 ${
+                                                                    tpl.enabled
+                                                                        ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                                                                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                                                }`}
+                                                            >
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${tpl.enabled ? 'bg-green-400' : 'bg-red-400'}`} />
+                                                                {tpl.enabled ? 'Active' : 'Disabled'}
+                                                            </span>
+                                                        </div>
+                                                        <h4 className="text-white font-bold text-xs tracking-tight mb-0.5">{tpl.name}</h4>
+                                                        <p className="text-gray-400 text-[11px] line-clamp-2 leading-relaxed">{tpl.description}</p>
+                                                    </div>
+                                                );
+                                            })}
                                     </div>
+
+                                    {/* Right: Selected Template Editor & Preview */}
+                                    {(() => {
+                                        const activeTpl = getEffectiveTemplate(selectedEmailTemplateId);
+                                        const sampleData = {
+                                            customerName: 'Juan Dela Cruz',
+                                            customerPhone: '0917-888-9999',
+                                            customerEmail: templateTestEmail.trim() || localSettings?.contactEmail || 'customer@example.com',
+                                            bookingId: 'BK-8942',
+                                            serviceName: 'Comprehensive PMS & Engine Checkup',
+                                            date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                                            time: '10:00 AM',
+                                            totalAmount: '4,500.00',
+                                            totalPaid: '4,500.00',
+                                            paymentMethod: 'Online Payment (HitPay)',
+                                            pickupLocation: 'BGC Taguig, Metro Manila',
+                                            destination: 'Makati Central Business District',
+                                            driverName: 'Ricardo Dalisay',
+                                            driverPhone: '0918-555-1234',
+                                            mechanicName: 'Master Tech Roberto',
+                                            mechanicPhone: '0919-444-5678',
+                                            vehicleInfo: 'Toyota Vios 2022 (Plate: ABC 1234)',
+                                            eta: '25 mins',
+                                            status: 'Mechanic En Route',
+                                            reason: 'Customer requested schedule adjustment',
+                                            refundStatus: 'Full Refund Initiated (₱4,500.00)',
+                                            orderId: 'ORD-7721',
+                                            itemsList: 'Synthetic Motor Oil 4L (x1), Oil Filter (x1), Brake Pads Set (x1)',
+                                            deliveryAddress: 'Unit 402, Tower 1, Fort Victoria, BGC Taguig',
+                                            loginUrl: `${typeof window !== 'undefined' ? window.location.origin : 'https://ridersbud.com'}/mechanic-portal`,
+                                            onboardingNotes: 'Your submitted LTO license and mechanic certifications have passed our compliance verification.',
+                                            userEmail: 'customer@example.com',
+                                            feedbackUrl: `${typeof window !== 'undefined' ? window.location.origin : 'https://ridersbud.com'}/customer-portal/booking-history`,
+                                            completionDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                        };
+
+                                        const previewRender = renderEmailTemplate(activeTpl, sampleData, localSettings || undefined);
+
+                                        return (
+                                            <div className="lg:col-span-8 bg-[#131317] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl">
+                                                {/* Template Header & Mode Toggle */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <h3 className="text-base font-black text-white">{activeTpl.name}</h3>
+                                                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                                                                {activeTpl.category}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[11px] text-gray-400 mt-0.5">{activeTpl.description}</p>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        {/* Enable / Disable Switch */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleTemplateToggle(selectedEmailTemplateId)}
+                                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border ${
+                                                                activeTpl.enabled
+                                                                    ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                            }`}
+                                                        >
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${activeTpl.enabled ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
+                                                            {activeTpl.enabled ? 'Enabled' : 'Disabled'}
+                                                        </button>
+
+                                                        {/* Edit / Preview Tabs */}
+                                                        <div className="flex bg-[#0D0D10] p-0.5 rounded-lg border border-white/10">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setTemplateTabMode('edit')}
+                                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                                                                    templateTabMode === 'edit'
+                                                                        ? 'bg-primary text-white shadow-sm'
+                                                                        : 'text-gray-400 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                <Code size={13} /> Editor
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setTemplateTabMode('preview')}
+                                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                                                                    templateTabMode === 'preview'
+                                                                        ? 'bg-primary text-white shadow-sm'
+                                                                        : 'text-gray-400 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                <Eye size={13} /> Live Preview
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Mode 1: Editor */}
+                                                {templateTabMode === 'edit' && (
+                                                    <div className="space-y-3.5 animate-fadeIn">
+                                                        {/* Subject Line */}
+                                                        <div className="space-y-1">
+                                                            <label htmlFor="template-subject" className="text-[9px] uppercase tracking-wider font-black text-gray-400 block">
+                                                                Email Subject Line
+                                                            </label>
+                                                            <input
+                                                                id="template-subject"
+                                                                type="text"
+                                                                value={activeTpl.subject}
+                                                                onChange={(e) => handleTemplateSubjectChange(selectedEmailTemplateId, e.target.value)}
+                                                                className="w-full bg-[#0D0D10] border border-white/10 rounded-xl px-3.5 py-2 text-white placeholder-gray-600 focus:border-primary outline-none transition-colors text-xs font-medium"
+                                                                placeholder="Enter email subject line..."
+                                                            />
+                                                        </div>
+
+                                                        {/* Available Variables Helper */}
+                                                        <div className="bg-[#0D0D10] p-3 rounded-xl border border-white/5 space-y-1.5">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-[9px] uppercase tracking-wider font-black text-gray-400 flex items-center gap-1">
+                                                                    <Sparkles size={11} className="text-primary" /> Dynamic Variable Tags (Click to insert):
+                                                                </span>
+                                                                <span className="text-[9px] text-gray-500 font-medium">Inserts at cursor</span>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {activeTpl.variables.map((tag) => (
+                                                                    <button
+                                                                        key={tag}
+                                                                        type="button"
+                                                                        onClick={() => handleInsertVariable(tag)}
+                                                                        className="px-2 py-0.5 bg-white/5 hover:bg-primary/20 text-gray-300 hover:text-primary rounded text-[11px] font-mono border border-white/5 hover:border-primary/20 transition-all flex items-center gap-0.5 active:scale-95"
+                                                                        title={`Insert {{${tag}}}`}
+                                                                    >
+                                                                        <code>&#123;&#123;{tag}&#125;&#125;</code>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Template Body */}
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center justify-between">
+                                                                <label htmlFor="template-body" className="text-[9px] uppercase tracking-wider font-black text-gray-400 block">
+                                                                    Email Body (HTML / Formatted Content)
+                                                                </label>
+                                                                <span className="text-[9px] text-gray-500">Auto-wrapped in responsive RidersBUD layout</span>
+                                                            </div>
+                                                            <textarea
+                                                                id="template-body"
+                                                                ref={textareaRef}
+                                                                rows={8}
+                                                                value={activeTpl.body}
+                                                                onChange={(e) => handleTemplateBodyChange(selectedEmailTemplateId, e.target.value)}
+                                                                className="w-full bg-[#0D0D10] border border-white/10 rounded-xl p-3 text-gray-200 font-mono text-[11px] leading-relaxed focus:border-primary outline-none transition-colors resize-y custom-scrollbar"
+                                                                placeholder="Enter HTML template content..."
+                                                            />
+                                                        </div>
+
+                                                        {/* Action Footer & Test Dispatch */}
+                                                        <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleResetTemplateToDefault(selectedEmailTemplateId)}
+                                                                className="px-3 py-2 bg-[#1A1A20] hover:bg-red-500/10 text-gray-400 hover:text-red-400 border border-white/5 hover:border-red-500/20 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5"
+                                                            >
+                                                                <RotateCcw size={12} /> Reset to Default
+                                                            </button>
+
+                                                            <div className="flex items-center gap-2 flex-1 max-w-sm">
+                                                                <input
+                                                                    type="email"
+                                                                    value={templateTestEmail}
+                                                                    onChange={(e) => setTemplateTestEmail(e.target.value)}
+                                                                    placeholder={localSettings?.contactEmail || 'Enter email for test...'}
+                                                                    className="flex-1 bg-[#0D0D10] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-gray-600 focus:border-primary outline-none"
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSendTemplateTest(selectedEmailTemplateId)}
+                                                                    disabled={isTestingTemplate || !localSettings?.smtpHost || !localSettings?.smtpUsername}
+                                                                    className="px-3.5 py-1.5 bg-primary hover:bg-orange-600 active:scale-95 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1 shadow-md shadow-primary/20 whitespace-nowrap"
+                                                                >
+                                                                    {isTestingTemplate ? <Spinner size="sm" /> : <Send size={13} />}
+                                                                    Test Send
+                                                                </button>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Test Feedback */}
+                                                        {templateTestFeedback && (
+                                                            <div
+                                                                className={`text-xs px-3 py-2 rounded-xl border flex items-center gap-2 ${
+                                                                    templateTestFeedback.success
+                                                                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                                                        : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                                }`}
+                                                            >
+                                                                {templateTestFeedback.success ? <Check size={14} /> : <AlertTriangle size={14} />}
+                                                                {templateTestFeedback.message}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Mode 2: Live Preview */}
+                                                {templateTabMode === 'preview' && (
+                                                    <div className="space-y-3 animate-fadeIn">
+                                                        {/* Simulated Email Client Header */}
+                                                        <div className="bg-[#0D0D10] border border-white/10 rounded-xl p-3 space-y-1.5 text-[11px]">
+                                                            <div className="text-gray-400 flex items-center gap-2">
+                                                                <span className="font-bold text-gray-300 w-14">Subject:</span>
+                                                                <span className="text-white font-semibold">{previewRender.subject}</span>
+                                                            </div>
+                                                            <div className="text-gray-400 flex items-center gap-2">
+                                                                <span className="font-bold text-gray-300 w-14">From:</span>
+                                                                <span className="text-gray-300">
+                                                                    {localSettings?.smtpFromName || 'RidersBUD'} &lt;{localSettings?.smtpFromEmail || 'noreply@ridersbud.com'}&gt;
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-gray-400 flex items-center gap-2">
+                                                                <span className="font-bold text-gray-300 w-14">To:</span>
+                                                                <span className="text-gray-300">Juan Dela Cruz &lt;customer@example.com&gt;</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Embedded Responsive HTML Email Preview */}
+                                                        <div className="rounded-xl overflow-hidden border border-white/10 bg-black">
+                                                            <iframe
+                                                                title="Email Live Preview"
+                                                                srcDoc={previewRender.html}
+                                                                className="w-full h-[460px] border-0"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         )}
@@ -1158,14 +1962,282 @@ const AdminSettingsScreen: React.FC = () => {
                             <div className="space-y-10 animate-fadeIn">
                                 <div>
                                     <h2 className="text-2xl font-black text-white flex items-center gap-3 tracking-tighter mb-2">
-                                        <MapPin className="text-primary" size={24} /> Google Maps API & Real-Road Navigation
+                                        <MapPin className="text-primary" size={24} /> Real-Time Central Dispatch Map & Operations Hub
                                     </h2>
                                     <p className="text-gray-400 text-xs font-medium">
-                                        Configure Google Maps API credentials to enable live tracking, turn-by-turn highway navigation, and precise customer/mechanic location snapping.
+                                        Real-time operational dispatch map with live mechanics, active bookings, GPS telemetry controls, and central regional dispatch calibration across RidersBUD.
                                     </p>
                                 </div>
 
-                                {/* API KEY CARD */}
+                                {/* REALTIME DISPATCH METRICS STRIP */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-black">
+                                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                        </div>
+                                        <div>
+                                            <div className="text-lg font-black text-white">{db?.mechanics?.filter(m => m.status === 'Active').length ?? 0}</div>
+                                            <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Online Mechanics</div>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-black">
+                                            <Activity size={18} />
+                                        </div>
+                                        <div>
+                                            <div className="text-lg font-black text-white">{db?.mechanics?.filter(m => m.status !== 'Active').length ?? 0}</div>
+                                            <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">On Mission / Busy</div>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center font-black">
+                                            <MapPin size={18} />
+                                        </div>
+                                        <div>
+                                            <div className="text-lg font-black text-white">{db?.bookings?.filter(b => b.status === 'In Progress' || b.status === 'Upcoming').length ?? 0}</div>
+                                            <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Active Bookings</div>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-black">
+                                            <Compass size={18} />
+                                        </div>
+                                        <div>
+                                            <div className="text-xs font-mono font-bold text-white">{(localSettings?.defaultMapCenterLat ?? 14.5995).toFixed(2)}, {(localSettings?.defaultMapCenterLng ?? 120.9842).toFixed(2)}</div>
+                                            <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Central Anchor</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* LEAFLET TILE THEMES & PROVIDER SELECTOR */}
+                                <div className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+                                                <Layers size={24} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-black text-white tracking-tight">Leaflet Map Tile Provider & Theme</h3>
+                                                <p className="text-xs text-gray-400">Select map graphics layer theme with 100% watermark-free live tile providers.</p>
+                                            </div>
+                                        </div>
+                                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                                            {LEAFLET_TILE_PROVIDERS[localSettings?.leafletTileProvider || 'osm-dark']?.badge || 'Custom Tile'}
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {Object.values(LEAFLET_TILE_PROVIDERS).map((provider) => {
+                                            const isSelected = (localSettings?.leafletTileProvider || 'osm-dark') === provider.id;
+                                            return (
+                                                <div
+                                                    key={provider.id}
+                                                    onClick={() => handleInputChange('leafletTileProvider', provider.id)}
+                                                    className={`p-5 rounded-2xl cursor-pointer border transition-all ${
+                                                        isSelected
+                                                            ? 'bg-primary/10 border-primary shadow-lg shadow-primary/10'
+                                                            : 'bg-[#121216] border-white/5 hover:border-white/20 hover:bg-[#181820]'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-[10px] font-black uppercase tracking-wider text-primary">
+                                                            {provider.badge}
+                                                        </span>
+                                                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-primary bg-primary' : 'border-gray-600'}`}>
+                                                            {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                                        </div>
+                                                    </div>
+                                                    <h4 className="text-white font-bold text-sm mb-1">{provider.name}</h4>
+                                                    <p className="text-gray-400 text-xs leading-relaxed">{provider.description}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Custom Tile URL Configuration if custom selected */}
+                                    {localSettings?.leafletTileProvider === 'custom' && (
+                                        <div className="p-5 rounded-2xl bg-black/40 border border-white/10 space-y-4 animate-fadeIn">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Custom Tile URL Template</label>
+                                                <input
+                                                    type="text"
+                                                    value={localSettings.leafletCustomTileUrl || ''}
+                                                    onChange={(e) => handleInputChange('leafletCustomTileUrl', e.target.value)}
+                                                    placeholder="https://{s}.tile.example.com/{z}/{x}/{y}.png"
+                                                    className="w-full bg-black/60 text-white font-mono text-xs border border-white/10 focus:border-primary rounded-xl px-4 py-3 outline-none"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Custom Tile Attribution</label>
+                                                <input
+                                                    type="text"
+                                                    value={localSettings.leafletCustomAttribution || ''}
+                                                    onChange={(e) => handleInputChange('leafletCustomAttribution', e.target.value)}
+                                                    placeholder="&copy; Custom Tile Contributors"
+                                                    className="w-full bg-black/60 text-white font-mono text-xs border border-white/10 focus:border-primary rounded-xl px-4 py-3 outline-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* REALTIME CENTRAL DISPATCH MAP CANVAS & PIN CALIBRATOR */}
+                                <div className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+                                                <LocateFixed size={24} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-black text-white tracking-tight">Real-Time Central Dispatch Map & Operations Hub</h3>
+                                                <p className="text-xs text-gray-400">Live mechanic positions and active bookings. Drag orange hub marker to calibrate default regional launch center.</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleLocateCurrentPosition}
+                                            className="px-4 py-2.5 bg-[#1A1A1A] hover:bg-primary/20 text-gray-300 hover:text-primary border border-white/10 hover:border-primary/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <Crosshair size={14} className="text-primary" />
+                                            Locate My GPS Coordinates
+                                        </button>
+                                    </div>
+
+                                    {/* Map Preview Canvas */}
+                                    <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-black">
+                                        <div 
+                                            ref={adminMapRef} 
+                                            className="w-full h-[360px] z-0" 
+                                            style={{ background: '#0a0a0d' }}
+                                        />
+                                        <div className="absolute top-3 left-3 z-[1000] bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-[11px] font-mono text-gray-300 pointer-events-none flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                            <span>Lat: {(localSettings?.defaultMapCenterLat ?? 14.5995).toFixed(4)}, Lng: {(localSettings?.defaultMapCenterLng ?? 120.9842).toFixed(4)}</span>
+                                            <span className="text-gray-500">|</span>
+                                            <span className="text-primary font-bold">Zoom {localSettings?.defaultMapZoom ?? 13}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Coordinate Inputs */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Center Lat</label>
+                                            <input
+                                                type="number"
+                                                step="0.0001"
+                                                value={localSettings.defaultMapCenterLat ?? 14.5995}
+                                                onChange={(e) => handleInputChange('defaultMapCenterLat', parseFloat(e.target.value) || 0)}
+                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Center Lng</label>
+                                            <input
+                                                type="number"
+                                                step="0.0001"
+                                                value={localSettings.defaultMapCenterLng ?? 120.9842}
+                                                onChange={(e) => handleInputChange('defaultMapCenterLng', parseFloat(e.target.value) || 0)}
+                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Zoom Level (1-20)</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="20"
+                                                value={localSettings.defaultMapZoom ?? 13}
+                                                onChange={(e) => handleInputChange('defaultMapZoom', parseInt(e.target.value, 10) || 13)}
+                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* REALTIME TELEMETRY & LIVE TRACKING OPTIMIZATIONS */}
+                                <div className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-3 bg-primary/10 text-primary rounded-2xl">
+                                            <Activity size={24} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-lg font-black text-white tracking-tight">Realtime Live GPS Telemetry & Enhancements</h3>
+                                            <p className="text-xs text-gray-400">Configure visual telemetry elements, directional heading, and tracking fidelity.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="p-6 bg-black/40 border border-white/10 rounded-2xl space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="text-sm font-black text-white flex items-center gap-2">
+                                                        <Compass size={16} className="text-primary" /> Heading Direction Compass
+                                                    </h4>
+                                                    <p className="text-xs text-gray-400 mt-1">Rotate moving mechanic and driver markers according to live travel heading bearing.</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleInputChange('leafletShowHeadingCompass', localSettings.leafletShowHeadingCompass !== false)}
+                                                    className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.leafletShowHeadingCompass !== false ? 'bg-primary' : 'bg-gray-800'}`}
+                                                >
+                                                    <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.leafletShowHeadingCompass !== false ? 'translate-x-6' : 'translate-x-0'}`} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-6 bg-black/40 border border-white/10 rounded-2xl space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="text-sm font-black text-white flex items-center gap-2">
+                                                        <Crosshair size={16} className="text-primary" /> GPS Accuracy Halo Circle
+                                                    </h4>
+                                                    <p className="text-xs text-gray-400 mt-1">Render subtle accuracy radius halo around live GPS locations.</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleInputChange('leafletShowAccuracyCircle', localSettings.leafletShowAccuracyCircle !== false)}
+                                                    className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.leafletShowAccuracyCircle !== false ? 'bg-primary' : 'bg-gray-800'}`}
+                                                >
+                                                    <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.leafletShowAccuracyCircle !== false ? 'translate-x-6' : 'translate-x-0'}`} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-6 bg-black/40 border border-white/10 rounded-2xl space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="text-sm font-black text-white flex items-center gap-2">
+                                                        <Activity size={16} className="text-primary" /> Live Movement Trail Polylines
+                                                    </h4>
+                                                    <p className="text-xs text-gray-400 mt-1">Display dynamic breadcrumbs for active mechanic and customer dispatches.</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleInputChange('leafletShowLiveTrail', localSettings.leafletShowLiveTrail !== false)}
+                                                    className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.leafletShowLiveTrail !== false ? 'bg-primary' : 'bg-gray-800'}`}
+                                                >
+                                                    <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.leafletShowLiveTrail !== false ? 'translate-x-6' : 'translate-x-0'}`} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-6 bg-black/40 border border-white/10 rounded-2xl space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <h4 className="text-sm font-black text-white flex items-center gap-2">
+                                                        <Layers size={16} className="text-primary" /> Marker Clustering
+                                                    </h4>
+                                                    <p className="text-xs text-gray-400 mt-1">Cluster nearby mechanics/drivers when zoomed out to improve rendering speed.</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleInputChange('leafletEnableClustering', localSettings.leafletEnableClustering !== false)}
+                                                    className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.leafletEnableClustering !== false ? 'bg-primary' : 'bg-gray-800'}`}
+                                                >
+                                                    <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.leafletEnableClustering !== false ? 'translate-x-6' : 'translate-x-0'}`} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* GOOGLE MAPS API & NAVIGATION INTEGRATION */}
                                 <div className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-4">
@@ -1173,8 +2245,8 @@ const AdminSettingsScreen: React.FC = () => {
                                                 <Map size={24} />
                                             </div>
                                             <div>
-                                                <h3 className="text-lg font-black text-white tracking-tight">Google Maps API Key</h3>
-                                                <p className="text-xs text-gray-400">Required for live map tiles, route polyline snapping, and ETA calculation.</p>
+                                                <h3 className="text-lg font-black text-white tracking-tight">Google Maps API & Distance Matrix (Optional Fallback)</h3>
+                                                <p className="text-xs text-gray-400">Used for live distance matrix highway ETA calculations and optional Google Maps tile fallback.</p>
                                             </div>
                                         </div>
                                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${localSettings.googleMapsApiKey ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
@@ -1220,79 +2292,6 @@ const AdminSettingsScreen: React.FC = () => {
                                             <span>{googleMapsTestResult.message}</span>
                                         </div>
                                     )}
-                                </div>
-
-                                {/* MAP CONTROLS & DEFAULTS */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="p-6 bg-white/5 border border-white/10 rounded-[2rem] space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h4 className="text-base font-black text-white">Enable Google Maps</h4>
-                                                <p className="text-xs text-gray-400">Use Google Maps for all live map components across app.</p>
-                                            </div>
-                                            <button
-                                                onClick={() => handleInputChange('googleMapsEnabled', localSettings.googleMapsEnabled !== false)}
-                                                className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.googleMapsEnabled !== false ? 'bg-emerald-500' : 'bg-gray-800'}`}
-                                            >
-                                                <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.googleMapsEnabled !== false ? 'translate-x-6' : 'translate-x-0'}`} />
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className="p-6 bg-white/5 border border-white/10 rounded-[2rem] space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <h4 className="text-base font-black text-white">Realtime Traffic Layer</h4>
-                                                <p className="text-xs text-gray-400">Display live road traffic congestion overlay.</p>
-                                            </div>
-                                            <button
-                                                onClick={() => handleInputChange('enableTrafficLayer', !localSettings.enableTrafficLayer)}
-                                                className={`relative w-14 h-8 rounded-full transition-all duration-300 shadow-inner ${localSettings.enableTrafficLayer ? 'bg-primary' : 'bg-gray-800'}`}
-                                            >
-                                                <span className={`absolute top-0.5 left-0.5 w-7 h-7 bg-white rounded-full transition-all duration-300 shadow-md ${localSettings.enableTrafficLayer ? 'translate-x-6' : 'translate-x-0'}`} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* DEFAULT COORDINATES */}
-                                <div className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
-                                    <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                                        <Navigation size={20} className="text-primary" /> Default Map Region
-                                    </h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Center Lat</label>
-                                            <input
-                                                type="number"
-                                                step="0.0001"
-                                                value={localSettings.defaultMapCenterLat ?? 14.5995}
-                                                onChange={(e) => handleInputChange('defaultMapCenterLat', parseFloat(e.target.value))}
-                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Center Lng</label>
-                                            <input
-                                                type="number"
-                                                step="0.0001"
-                                                value={localSettings.defaultMapCenterLng ?? 120.9842}
-                                                onChange={(e) => handleInputChange('defaultMapCenterLng', parseFloat(e.target.value))}
-                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] tracking-widest font-black text-gray-400 uppercase block">Default Zoom Level (1-20)</label>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                max="20"
-                                                value={localSettings.defaultMapZoom ?? 13}
-                                                onChange={(e) => handleInputChange('defaultMapZoom', parseInt(e.target.value, 10))}
-                                                className="w-full bg-black/40 text-white font-mono text-sm border border-white/10 focus:border-primary rounded-xl outline-none px-4 py-3"
-                                            />
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         )}

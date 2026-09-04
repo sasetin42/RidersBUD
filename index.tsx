@@ -20,11 +20,38 @@ const EXTENSION_WARN_PATTERNS = [
   'Could not establish connection',
   '@firebase/firestore',
   'WebChannelConnection',
+  'webchannel',
   'transport errored',
+  'ERR_QUIC_PROTOCOL_ERROR',
+  'Write/channel',
+  'Listen/channel',
   'GeolocationPositionError',
   'User denied Geolocation',
   'FIRESTORE INTERNAL ASSERTION FAILED',
   'QuotaExceededError',
+  'ERR_NAME_NOT_RESOLVED',
+  'r.stripe.com',
+  'stripe.com',
+  'm.stripe.com',
+  'm.stripe.network',
+  'CLOSING or CLOSED',
+  'WebSocket is already in',
+  'WebSocket is closed before the connection is established',
+  'usePusher',
+  'pusher.com',
+  'Evervault',
+  'evervault.com',
+  'Failed to load Evervault',
+  'Permissions policy violation',
+  'unload is not allowed',
+  'Blocked aria-hidden on a <body>',
+  'hcaptcha',
+  // Firestore SDK permission errors (e.g. 'Payouts listener: FirebaseError: Missing or insufficient permissions.')
+  'Missing or insufficient permissions',
+  'FirebaseError',
+  // Recharts negative dimension warnings
+  'width(-1)',
+  'height(-1)',
 ];
 
 const EXTENSION_ERROR_PATTERNS = [
@@ -39,13 +66,34 @@ const EXTENSION_ERROR_PATTERNS = [
   'runtime.lastError',
   '@firebase/firestore',
   'WebChannelConnection',
+  'webchannel',
   'transport errored',
+  'ERR_QUIC_PROTOCOL_ERROR',
+  'Write/channel',
+  'Listen/channel',
   'GeolocationPositionError',
   'User denied Geolocation',
   'FIRESTORE INTERNAL ASSERTION FAILED',
   'QuotaExceededError',
   'The above error occurred',
   'Consider adding an error boundary',
+  'ERR_NAME_NOT_RESOLVED',
+  'r.stripe.com',
+  'stripe.com',
+  'm.stripe.com',
+  'm.stripe.network',
+  'CLOSING or CLOSED',
+  'WebSocket is already in',
+  'WebSocket is closed before the connection is established',
+  'usePusher',
+  'pusher.com',
+  'Evervault',
+  'evervault.com',
+  'Failed to load Evervault',
+  'Permissions policy violation',
+  'unload is not allowed',
+  'Blocked aria-hidden on a <body>',
+  'hcaptcha'
 ];
 
 const _matchesPattern = (args: any[], patterns: string[]): boolean => {
@@ -97,14 +145,38 @@ try {
 }
 
 
-// Suppress unhandled promise rejections and window errors originating from extension message channels
+// Suppress unhandled promise rejections and window errors originating from extension message channels or network asset failures
 window.addEventListener('error', (event) => {
-  const errorMsg = event.message || '';
+  const target = event.target as HTMLElement | null;
+  // Automatically fallback broken images to default brand logo
+  if (target && target.tagName === 'IMG') {
+    const img = target as HTMLImageElement;
+    if (!img.dataset.fallbackApplied) {
+      img.dataset.fallbackApplied = 'true';
+      img.src = '/riders-logo.png';
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+
+  const errorMsg = event.message || (event.error && (event.error.message || String(event.error))) || '';
+  const errorStack = (event.error && event.error.stack) || '';
   if (
     errorMsg.includes('message channel closed') || 
     errorMsg.includes('asynchronous response') ||
-    errorMsg.includes('runtime.lastError')
+    errorMsg.includes('runtime.lastError') ||
+    errorMsg.includes('ERR_NAME_NOT_RESOLVED') ||
+    errorMsg.includes('usePusher') ||
+    errorMsg.includes('CLOSING or CLOSED') ||
+    errorMsg.includes('Evervault') ||
+    errorMsg.includes('hcaptcha') ||
+    errorMsg.includes('startTime') ||
+    errorMsg.includes('reportAllChanges') ||
+    errorStack.includes('startTime') ||
+    errorStack.includes('reportAllChanges')
   ) {
+    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
     event.preventDefault();
     event.stopPropagation();
   }
@@ -112,11 +184,18 @@ window.addEventListener('error', (event) => {
 
 window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
-  const reasonStr = reason ? String(reason.message || reason) : '';
+  const reasonStr = reason ? String(reason.message || reason.stack || reason) : '';
   if (
     reasonStr.includes('message channel closed') || 
     reasonStr.includes('asynchronous response') ||
-    reasonStr.includes('runtime.lastError')
+    reasonStr.includes('runtime.lastError') ||
+    reasonStr.includes('ERR_NAME_NOT_RESOLVED') ||
+    reasonStr.includes('usePusher') ||
+    reasonStr.includes('CLOSING or CLOSED') ||
+    reasonStr.includes('startTime') ||
+    reasonStr.includes('reportAllChanges') ||
+    reasonStr.includes('Evervault') ||
+    reasonStr.includes('hcaptcha')
   ) {
     event.preventDefault();
     event.stopPropagation();

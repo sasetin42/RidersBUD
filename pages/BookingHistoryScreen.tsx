@@ -303,61 +303,70 @@ const BookingHistoryScreen: React.FC = () => {
                                     const mechanicImage = booking.mechanic?.imageUrl || booking.mechanicImageUrl;
                                     const serviceNames = booking.services?.map(s => s.name).join(', ') || booking.service?.name || 'Unknown Service';
                                     const vehicleInfo = booking.vehicle ? `${booking.vehicle.year} ${booking.vehicle.make} ${booking.vehicle.model}` : booking.vehicleType || 'Vehicle';
+                                    const totalAmount = booking.totalAmount || booking.service?.price || 0;
                                     
                                     return (
                                         <div key={booking.id} className="relative group">
-                                            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-orange-600 rounded-2xl opacity-5 group-hover:opacity-10 transition duration-300 blur"></div>
-                                            <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#15151A]/85 backdrop-blur-xl border border-white/5 hover:border-primary/25 rounded-2xl p-4.5 transition-all duration-300 shadow-xl">
-                                                <div className="flex items-center gap-4 flex-1 min-w-0">
+                                            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/30 to-orange-500/20 rounded-2xl opacity-10 group-hover:opacity-25 transition duration-300 blur-sm"></div>
+                                            <div className="relative bg-[#16161C] border border-white/10 hover:border-primary/40 rounded-2xl p-5 sm:p-6 transition-all duration-300 shadow-2xl space-y-4">
+                                                
+                                                {/* Top Row: Job ID & Status Badge */}
+                                                <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[11px] font-black text-primary font-mono tracking-wider">
+                                                            JOB ID #{seqId}
+                                                        </span>
+                                                    </div>
+                                                    <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black tracking-wider uppercase border shadow-sm ${getStatusBadgeClass(booking.status)}`}>
+                                                        {booking.status}
+                                                    </span>
+                                                </div>
+
+                                                {/* Middle Section: Avatar + Service Details */}
+                                                <div className="flex items-center gap-4">
                                                     {/* Mechanic Profile Image */}
-                                                    <div className="w-12 h-12 rounded-xl border border-white/10 overflow-hidden flex-shrink-0 bg-neutral-950 flex items-center justify-center relative shadow-inner">
+                                                    <div className="w-14 h-14 rounded-xl border border-white/10 overflow-hidden flex-shrink-0 bg-neutral-900 flex items-center justify-center relative shadow-md">
                                                         {mechanicImage ? (
                                                             <img src={mechanicImage} alt={mechanicName} className="w-full h-full object-cover" />
                                                         ) : (
-                                                            <div className="w-full h-full bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center font-black text-sm text-white font-sans">
+                                                            <div className="w-full h-full bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center font-black text-base text-white">
                                                                 {mechanicName.charAt(0).toUpperCase()}
                                                             </div>
                                                         )}
                                                     </div>
                                                     
                                                     {/* Details */}
-                                                    <div className="flex-1 min-w-0 space-y-1">
-                                                        <div className="flex flex-wrap items-center gap-2">
-                                                            <span className="text-[10px] font-black text-primary font-mono tracking-wider">
-                                                                JOB ID #{seqId}
-                                                            </span>
-                                                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black tracking-wider uppercase ${getStatusBadgeClass(booking.status)}`}>
-                                                                {booking.status}
-                                                            </span>
-                                                        </div>
-                                                        <h3 className="text-sm font-bold text-white truncate tracking-tight">
+                                                    <div className="flex-1 min-w-0 space-y-1.5">
+                                                        <h3 className="text-base font-black text-white truncate tracking-tight">
                                                             {serviceNames}
                                                         </h3>
-                                                        <p className="text-[10px] text-gray-400 font-bold truncate flex items-center gap-1.5">
-                                                            <Wrench size={10} className="text-primary flex-shrink-0" />
+                                                        <p className="text-[11px] text-gray-300 font-bold truncate flex items-center gap-1.5">
+                                                            <Wrench size={12} className="text-primary flex-shrink-0" />
                                                             {vehicleInfo}
                                                         </p>
-                                                        <p className="text-[10px] text-gray-500 font-bold truncate flex items-center gap-3">
+                                                        <p className="text-[10px] text-gray-400 font-bold truncate flex items-center gap-3">
                                                             <span className="flex items-center gap-1">
-                                                                <Calendar size={10} className="text-gray-600 flex-shrink-0" />
+                                                                <Calendar size={11} className="text-gray-500 flex-shrink-0" />
                                                                 {new Date(booking.date.replace(/-/g, '/')).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                                             </span>
                                                             <span className="flex items-center gap-1">
-                                                                <Clock size={10} className="text-gray-600 flex-shrink-0" />
+                                                                <Clock size={11} className="text-gray-500 flex-shrink-0" />
                                                                 {booking.time}
                                                             </span>
                                                         </p>
                                                     </div>
                                                 </div>
                                                 
-                                                {/* Booking Summary Button */}
-                                                <button
-                                                    onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
-                                                    className="w-full sm:w-auto bg-primary hover:bg-orange-600 text-white font-black py-3 px-5 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 flex items-center justify-center gap-2 flex-shrink-0 shadow-lg shadow-primary/20"
-                                                >
-                                                    <ClipboardList size={13} />
-                                                    View Details
-                                                </button>
+                                                {/* Bottom Action: View Details Button */}
+                                                <div className="pt-2">
+                                                    <button
+                                                        onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
+                                                        className="w-full bg-gradient-to-r from-[#FF7903] to-[#FF5500] hover:from-[#e06800] hover:to-[#e04500] text-white font-black py-3.5 px-6 rounded-xl text-xs tracking-widest uppercase transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-2.5 shadow-lg shadow-primary/25"
+                                                    >
+                                                        <ClipboardList size={16} />
+                                                        VIEW DETAILS
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -452,11 +461,11 @@ const BookingHistoryScreen: React.FC = () => {
                                     
                                     return (
                                         <div key={booking.id} className="relative group">
-                                            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-orange-600 rounded-2xl opacity-5 group-hover:opacity-10 transition duration-300 blur"></div>
-                                            <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#15151A]/85 backdrop-blur-xl border border-white/5 hover:border-primary/25 rounded-2xl p-5 transition-all duration-300 shadow-xl">
+                                            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/30 to-orange-500/20 rounded-2xl opacity-5 group-hover:opacity-20 transition duration-300 blur-sm"></div>
+                                            <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5 bg-[#16161C] border border-white/10 hover:border-primary/30 rounded-2xl p-5 sm:p-6 transition-all duration-300 shadow-xl">
                                                 <div className="flex items-start gap-4 flex-1 min-w-0">
                                                     {/* Mechanic Profile Image */}
-                                                    <div className="w-12 h-12 rounded-xl border border-white/10 overflow-hidden flex-shrink-0 bg-neutral-950 flex items-center justify-center relative shadow-inner">
+                                                    <div className="w-14 h-14 rounded-xl border border-white/10 overflow-hidden flex-shrink-0 bg-neutral-900 flex items-center justify-center relative shadow-inner">
                                                         {mechanicImage ? (
                                                             <img src={mechanicImage} alt={mechanicName} className="w-full h-full object-cover" />
                                                         ) : (

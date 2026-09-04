@@ -82,7 +82,7 @@ const AppServiceDetailScreen: React.FC = () => {
         ];
 
     const serviceDuration = isRentACar ? 'Per Day' : isDriverForHire ? 'Hourly / Shift' : '1-2 Working Days';
-    const serviceTypeDisplay = isRentACar ? 'Self-Drive / Chauffeur' : isDriverForHire ? 'Personal Chauffeur' : 'Full Assistance';
+    const serviceTypeDisplay = isRentACar ? 'Self-Drive / With Driver' : isDriverForHire ? 'Personal Driver' : 'Full Assistance';
     const serviceGuarantee = isRentACar ? 'Fully Insured Fleet' : isDriverForHire ? '100% Certified Drivers' : '100% Safe Handling';
     const serviceDescription = isRentACar 
         ? 'Choose from our wide selection of clean, reliable, and fully-insured vehicles. Whether it is for a quick city errand, a weekend getaway, or long-term business use, we have the perfect ride for you. Complete with 24/7 roadside assistance.'
@@ -140,19 +140,36 @@ const AppServiceDetailScreen: React.FC = () => {
             {/* Content Section */}
             <div className="max-w-4xl mx-auto px-6 mt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="md:col-span-2 space-y-8">
-                    {/* Quick Specs Cards */}
-                    <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-[#111113] border border-white/5 p-3 rounded-xl flex flex-col gap-1">
-                            <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1"><Clock size={10} /> Duration</span>
-                            <span className="text-xs font-bold text-white">{serviceDuration}</span>
+                    {/* Quick Specs Cards - Responsive Row Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3.5">
+                        <div className="bg-[#121215] border border-white/10 p-3 sm:p-3.5 rounded-2xl flex sm:flex-col items-center sm:items-start justify-between gap-2 hover:border-white/20 transition-all shadow-md">
+                            <div className="flex items-center gap-2 text-[10px] text-light-gray/60 font-black uppercase tracking-wider shrink-0">
+                                <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-primary shrink-0" style={{ color: accentColor }}>
+                                    <Clock size={13} />
+                                </div>
+                                <span className="whitespace-nowrap">Duration</span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap text-right sm:text-left">{serviceDuration}</span>
                         </div>
-                        <div className="bg-[#111113] border border-white/5 p-3 rounded-xl flex flex-col gap-1">
-                            <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1"><Tag size={10} /> Service Type</span>
-                            <span className="text-xs font-bold text-white">{serviceTypeDisplay}</span>
+
+                        <div className="bg-[#121215] border border-white/10 p-3 sm:p-3.5 rounded-2xl flex sm:flex-col items-center sm:items-start justify-between gap-2 hover:border-white/20 transition-all shadow-md">
+                            <div className="flex items-center gap-2 text-[10px] text-light-gray/60 font-black uppercase tracking-wider shrink-0">
+                                <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-primary shrink-0" style={{ color: accentColor }}>
+                                    <Tag size={13} />
+                                </div>
+                                <span className="whitespace-nowrap">Service Type</span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap text-right sm:text-left">{serviceTypeDisplay}</span>
                         </div>
-                        <div className="bg-[#111113] border border-white/5 p-3 rounded-xl flex flex-col gap-1">
-                            <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1"><ShieldCheck size={10} /> Guarantee</span>
-                            <span className="text-xs font-bold text-white">{serviceGuarantee}</span>
+
+                        <div className="bg-[#121215] border border-white/10 p-3 sm:p-3.5 rounded-2xl flex sm:flex-col items-center sm:items-start justify-between gap-2 hover:border-white/20 transition-all shadow-md">
+                            <div className="flex items-center gap-2 text-[10px] text-light-gray/60 font-black uppercase tracking-wider shrink-0">
+                                <div className="w-6 h-6 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0">
+                                    <ShieldCheck size={13} />
+                                </div>
+                                <span className="whitespace-nowrap">Guarantee</span>
+                            </div>
+                            <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap text-right sm:text-left">{serviceGuarantee}</span>
                         </div>
                     </div>
 

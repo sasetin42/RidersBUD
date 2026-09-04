@@ -50,19 +50,7 @@ const EnhancedServiceCardComponent: React.FC<{
                     aspectRatio="sixteenNine"
                     className="group relative"
                     fallbackImageUrl={fallbackImage}
-                >
-                    {/* Badges Overlays */}
-                    <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1 pointer-events-auto">
-                        <span className="bg-black/70 backdrop-blur-md text-white text-[9px] font-bold tracking-wider px-2 py-0.5 rounded border border-white/10 uppercase">
-                            {service.category}
-                        </span>
-                        {isAvailable && (
-                            <span className="bg-green-500/20 text-green-400 border border-green-500/30 text-[9px] font-bold px-2 py-0.5 rounded backdrop-blur-sm">
-                                Available
-                            </span>
-                        )}
-                    </div>
-                </UnifiedProductCard>
+                />
             ) : (
                 <div className="w-full sm:w-[110px] h-[110px] overflow-hidden rounded-[16px] flex-shrink-0 relative">
                     <img
@@ -84,14 +72,15 @@ const EnhancedServiceCardComponent: React.FC<{
                 {isGrid ? (
                     <div className="flex flex-col flex-grow justify-between gap-3">
                         <div>
-                            {/* Category & Duration Row */}
-                            <div className="flex items-center justify-between text-[10px] font-medium text-gray-500 mb-1">
-                                <span className="capitalize text-primary font-bold">{service.category}</span>
-                                <div className="flex items-center gap-1">
-                                    <Clock size={11} className="text-gray-500" />
-                                    <span>{service.estimatedTime}</span>
+                            {/* Duration Row */}
+                            {service.estimatedTime && (
+                                <div className="flex items-center justify-end text-[10px] font-medium text-gray-500 mb-1">
+                                    <div className="flex items-center gap-1">
+                                        <Clock size={11} className="text-gray-500" />
+                                        <span>{service.estimatedTime}</span>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Service Title */}
                             <h3 className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-2 group-hover:text-primary transition-colors duration-200">
@@ -133,27 +122,48 @@ const EnhancedServiceCardComponent: React.FC<{
                         </div>
                     </div>
                 ) : (
-                    // List Mode Price and Details
-                    <div className="space-y-2">
-                        <p className="text-[#FF7A00] text-lg font-bold">
-                            {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'For Quotation'}
-                        </p>
-                        <p className="text-white text-sm font-semibold capitalize">{service.category}</p>
-                        <div className="flex items-center gap-2 text-gray-400 text-xs">
-                            <Clock size={14} />
-                            <span>{service.estimatedTime}</span>
-                        </div>
-                        <p className="text-gray-400 text-[13px] line-clamp-3">{service.description}</p>
-                    </div>
-                )}
+                    // Modern List Mode with Full Breakdown
+                    <div className="flex flex-col justify-between h-full space-y-3">
+                        <div>
+                            <div className="flex items-start justify-between gap-2">
+                                <div>
+                                    <h3 className="text-base font-black text-white leading-snug group-hover:text-primary transition-colors">
+                                        {service.name}
+                                    </h3>
+                                </div>
+                                <span className="text-base sm:text-lg font-black text-[#FF7A00] whitespace-nowrap">
+                                    {service.price > 0 ? `₱${service.price.toLocaleString()}` : 'Quotation'}
+                                </span>
+                            </div>
 
-                {!isGrid && (
-                    <button
-                        onClick={handleBookNow}
-                        className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-black transition hover:bg-orange-500"
-                    >
-                        View Details
-                    </button>
+                            <p className="text-gray-400 text-xs mt-1.5 leading-relaxed line-clamp-2">
+                                {service.description}
+                            </p>
+
+                            <div className="flex flex-wrap items-center gap-3 text-gray-400 text-xs mt-2.5">
+                                <div className="flex items-center gap-1 text-[11px] bg-white/5 px-2 py-0.5 rounded text-light-gray">
+                                    <Clock size={11} className="text-primary" />
+                                    <span>{service.estimatedTime}</span>
+                                </div>
+                                {rating > 0 && (
+                                    <div className="flex items-center gap-1 text-[11px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded font-bold">
+                                        <span>★</span>
+                                        <span>{rating.toFixed(1)}</span>
+                                        <span className="text-gray-500 font-normal">({reviewCount})</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                            <button
+                                onClick={handleBookNow}
+                                className="flex-1 py-2 px-3 rounded-xl bg-primary hover:bg-orange-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-primary/20"
+                            >
+                                Book Now
+                            </button>
+                        </div>
+                    </div>
                 )}
             </div>
         </Card>

@@ -6,13 +6,16 @@ import { useDatabase } from '../context/DatabaseContext';
 import { Service, Mechanic, Booking, Vehicle, Settings } from '../types';
 import { getNotificationSettings, showNotification } from '../utils/notificationManager';
 import GCashPaymentModal from '../components/GCashPaymentModal';
-import { Clock, Star, CalendarRange } from 'lucide-react';
+import { Clock, Star, CalendarRange, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, Info, CreditCard, Navigation } from 'lucide-react';
 import CustomerHeader from '../components/CustomerHeader';
 import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
+import { HitPayService } from '../services/HitPayService';
 import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers } from '../data/mockData';
+import LiveRouteMapModal from '../components/LiveRouteMapModal';
+import BookingPaymentBreakdownModal from '../components/BookingPaymentBreakdownModal';
 
 
 declare const L: any;
@@ -260,7 +263,7 @@ const getInitialState = (serviceIdFromUrl?: string, locationState?: any) => {
 
 const BookingScreen: React.FC = () => {
     const { serviceId: initialServiceId } = useParams<{ serviceId: string }>();
-    const { db, addBooking } = useDatabase();
+    const { db, addBooking, cancelBooking, updateBookingPayment } = useDatabase();
     const navigate = useNavigate();
     const { user, loading: authLoading } = useAuth();
     const location = useLocation();
@@ -279,6 +282,118 @@ const BookingScreen: React.FC = () => {
     const [error, setError] = useState('');
     const [verifyingPayment, setVerifyingPayment] = useState(false);
     const [waitingBookingId, setWaitingBookingId] = useState<string | null>(null);
+
+    // Handle return from HitPay redirect (Booking flow)
+    useEffect(() => {
+        const query = new URLSearchParams(location.search);
+        const statusParam = query.get('status');
+        const hitpayParam = query.get('hitpay');
+
+        if (statusParam === 'completed' || hitpayParam === 'completed' || statusParam === 'success') {
+            const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx');
+            const targetBookingId = pendingTx ? (JSON.parse(pendingTx).bookingId) : query.get('bookingId');
+            
+            if (targetBookingId) {
+                try {
+                    let dpAmount = 0;
+                    let totAmount = 0;
+                    if (pendingTx) {
+                        const parsed = JSON.parse(pendingTx);
+                        dpAmount = parsed.amount || 0;
+                        totAmount = parsed.totalAmount || (dpAmount * 2);
+                    } else {
+                        const existingB = db?.bookings.find(b => b.id === targetBookingId);
+                        totAmount = existingB?.totalAmount || existingB?.price || 0;
+                        dpAmount = totAmount > 0 ? Math.round(totAmount * 0.5) : Number(query.get('amount')) || 0;
+                    }
+
+                    sessionStorage.removeItem('pendingHitPayBookingTx');
+                    sessionStorage.removeItem(BOOKING_STATE_KEY);
+
+                    const dpRef = query.get('reference') || query.get('payment_request_id') || `HITPAY-${Date.now()}`;
+                    const requestId = query.get('payment_request_id') || '';
+                    const remBalance = Math.max(0, totAmount - dpAmount);
+
+                    if (updateBookingPayment) {
+                        updateBookingPayment(targetBookingId, dpAmount, 'downpayment_paid', {
+                            paidAmount: dpAmount,
+                            downpaymentAmount: dpAmount,
+                            remainingBalance: remBalance,
+                            isVerified: true,
+                            isPaid: false,
+                            paymentMethod: 'HitPay (Online)',
+                            downpaymentRef: dpRef,
+                            downpaymentPaidAt: new Date().toISOString(),
+                            hitpayPaymentRequestId: requestId,
+                            hitpayReference: dpRef,
+                            hitpayStatus: 'completed',
+                            status: 'Upcoming'
+                        }).catch(console.warn);
+                    }
+
+                    const booking = db?.bookings.find(b => b.id === targetBookingId);
+                    const updatedBooking = booking ? {
+                        ...booking,
+                        paidAmount: dpAmount,
+                        downpaymentAmount: dpAmount,
+                        remainingBalance: remBalance,
+                        paymentStatus: 'downpayment_paid' as const,
+                        isVerified: true,
+                        isPaid: false,
+                        paymentMethod: 'HitPay (Online)',
+                        downpaymentRef: dpRef,
+                        downpaymentPaidAt: new Date().toISOString(),
+                        hitpayPaymentRequestId: requestId,
+                        hitpayReference: dpRef,
+                        hitpayStatus: 'completed',
+                        status: 'Upcoming' as const
+                    } : null;
+
+                    navigate('/customer-portal/booking-confirmation', {
+                        state: { bookings: updatedBooking ? [updatedBooking] : (booking ? [booking] : []), bookingId: targetBookingId },
+                        replace: true
+                    });
+                } catch (e) {
+                    console.error("Error processing return from HitPay", e);
+                }
+            }
+        } else if (statusParam === 'canceled' || statusParam === 'failed' || hitpayParam === 'canceled') {
+            const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx');
+            let parsedBookingId = '';
+            let cancelAmount = 0;
+            if (pendingTx) {
+                try {
+                    const parsed = JSON.parse(pendingTx);
+                    parsedBookingId = parsed.bookingId;
+                    cancelAmount = parsed.amount || parsed.totalAmount || 0;
+                } catch (e) {}
+            }
+            sessionStorage.removeItem('pendingHitPayBookingTx');
+            sessionStorage.removeItem(BOOKING_STATE_KEY);
+
+            const targetBookingId = parsedBookingId || query.get('bookingId') || '';
+
+            if (targetBookingId && cancelBooking) {
+                cancelBooking(targetBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
+            }
+
+            const cancellationInfo = {
+                type: 'Service Booking' as const,
+                referenceId: targetBookingId ? `BOK-${targetBookingId}` : 'BOK-CANCELLED',
+                amount: cancelAmount,
+                date: new Date().toLocaleString(),
+                reason: 'Payment process was cancelled by the user at the payment gateway.',
+                retryPath: '/customer-portal/services'
+            };
+
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            navigate('/customer-portal/', {
+                state: { cancelledTransaction: cancellationInfo },
+                replace: true
+            });
+        }
+    }, [location.search, db?.bookings, navigate, cancelBooking]);
 
     const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
         new Set(
@@ -348,6 +463,8 @@ const BookingScreen: React.FC = () => {
     const [isBooking, setIsBooking] = useState(false);
     const [userHasGoneBack, setUserHasGoneBack] = useState(false);
     const [showGCashModal, setShowGCashModal] = useState(false);
+    const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
+    const [showPaymentBreakdownModal, setShowPaymentBreakdownModal] = useState(false);
     const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
     const [temporaryBookingData, setTemporaryBookingData] = useState<any>(null);
     const [gcashReferenceNumber, setGcashReferenceNumber] = useState('');
@@ -409,37 +526,63 @@ const BookingScreen: React.FC = () => {
         }
     }, [user, selectedVehiclePlate]);
 
-    // Geocoding and Map effect for Step 4
+     // Live Geocoding and Location Helper with fallback
     const handleUseLiveLocation = () => {
         if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser');
+            alert('Geolocation is not supported by your browser.');
             return;
         }
         setIsLocating(true);
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                const { latitude, longitude } = position.coords;
-                setStartCoords([latitude, longitude]);
-                try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-                    const data = await res.json();
-                    if (data && data.display_name) {
-                        setStartLocation(data.display_name);
-                    } else {
-                        setStartLocation(`My Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
-                    }
-                } catch (e) {
-                    setStartLocation(`My Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
-                } finally {
-                    setIsLocating(false);
+
+        const onGeoSuccess = async (position: GeolocationPosition) => {
+            const { latitude, longitude } = position.coords;
+            setStartCoords([latitude, longitude]);
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
+                    { signal: controller.signal }
+                );
+                clearTimeout(timeoutId);
+                const data = await res.json();
+                if (data && data.display_name) {
+                    setStartLocation(data.display_name);
+                } else {
+                    setStartLocation(`Live Location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
                 }
-            },
-            (error) => {
-                console.error(error);
-                alert('Unable to retrieve your location');
+            } catch (e) {
+                setStartLocation(`Live Location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
+            } finally {
                 setIsLocating(false);
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
+            }
+        };
+
+        const onGeoError = (error: GeolocationPositionError) => {
+            console.warn('High accuracy location timeout, trying low accuracy fallback...', error);
+            navigator.geolocation.getCurrentPosition(
+                onGeoSuccess,
+                (fallbackErr) => {
+                    console.error('Geolocation failed completely:', fallbackErr);
+                    setIsLocating(false);
+                    let errMsg = 'Unable to retrieve your location.';
+                    if (fallbackErr.code === 1) {
+                        errMsg = 'Location access denied. Please enable location permissions in your browser or device settings.';
+                    } else if (fallbackErr.code === 2) {
+                        errMsg = 'Location position unavailable. Please ensure your device GPS is turned on.';
+                    } else if (fallbackErr.code === 3) {
+                        errMsg = 'Location request timed out. Please try again.';
+                    }
+                    alert(errMsg);
+                },
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+            );
+        };
+
+        navigator.geolocation.getCurrentPosition(
+            onGeoSuccess,
+            onGeoError,
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
         );
     };
 
@@ -526,24 +669,12 @@ const BookingScreen: React.FC = () => {
                 attributionControl: false
             }).setView([14.5995, 120.9842], 12);
 
-            const cartoTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                maxZoom: 20,
-                subdomains: 'abcd'
-            });
-            const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19
+            const osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
             });
 
-            cartoTile.addTo(routeMapInstanceRef.current);
-
-            let tilesLoaded = false;
-            cartoTile.on('tileload', () => { tilesLoaded = true; });
-            setTimeout(() => {
-                if (!tilesLoaded && routeMapInstanceRef.current) {
-                    routeMapInstanceRef.current.removeLayer(cartoTile);
-                    osmTile.addTo(routeMapInstanceRef.current);
-                }
-            }, 5000);
+            osmTile.addTo(routeMapInstanceRef.current);
         }
 
         const map = routeMapInstanceRef.current;
@@ -781,13 +912,13 @@ const BookingScreen: React.FC = () => {
             // Get initial highly accurate position
             navigator.geolocation.getCurrentPosition(handleSuccess, handleError, options);
 
-            // Subscribe to real-time location updates (high accuracy, fast responsiveness)
+            // Subscribe to real-time location updates (high accuracy, fast responsiveness, zero caching)
             const watchId = navigator.geolocation.watchPosition(
                 handleSuccess, 
                 () => {}, 
                 {
                     enableHighAccuracy: true, 
-                    timeout: 15000, 
+                    timeout: 10000, 
                     maximumAge: 0
                 }
             );
@@ -815,15 +946,7 @@ const BookingScreen: React.FC = () => {
             doubleClickZoom: true,
             touchZoom: true,
             dragging: true
-        }).setView([lat, lng], 17);
-
-        // Primary: CartoDB dark tiles — Fallback: OSM
-        const cartoTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            crossOrigin: true,
-        });
+        }).setView([lat, lng], 18);
 
         const osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -831,22 +954,25 @@ const BookingScreen: React.FC = () => {
             crossOrigin: true,
         });
 
-        // Try CARTO first, fall back to OSM if tiles fail to load
-        cartoTile.addTo(mapInstanceRef.current);
-        let tilesLoaded = false;
-        cartoTile.on('tileload', () => { tilesLoaded = true; });
-        setTimeout(() => {
-            if (!tilesLoaded && mapInstanceRef.current) {
-                mapInstanceRef.current.removeLayer(cartoTile);
-                osmTile.addTo(mapInstanceRef.current);
-            }
-        }, 5000);
+        osmTile.addTo(mapInstanceRef.current);
+
+        // Accuracy Halo Circle for Live GPS accuracy feedback
+        if (locationAccuracy && locationAccuracy > 0) {
+            accuracyCircleRef.current = L.circle([lat, lng], {
+                radius: Math.max(8, locationAccuracy),
+                color: '#FE7803',
+                fillColor: '#FE7803',
+                fillOpacity: 0.15,
+                weight: 1.5,
+                dashArray: '4, 4'
+            }).addTo(mapInstanceRef.current);
+        }
 
         // Branded draggable location pin
         const locationIcon = L.divIcon({
             html: `<div class="rb-location-pin-wrapper">
                 <div class="rb-location-circle">
-                    <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:36px;height:36px;object-fit:contain;border-radius:50%;" />
+                    <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:contain;border-radius:50%;" />
                 </div>
                 <div class="rb-location-stem"></div>
                 <div class="rb-location-dot"></div>
@@ -868,11 +994,17 @@ const BookingScreen: React.FC = () => {
             const { lat: newLat, lng: newLng } = e.target.getLatLng();
             setServiceLocation({ lat: newLat, lng: newLng });
             setIsTrackingLive(false);
+            if (accuracyCircleRef.current) {
+                accuracyCircleRef.current.setLatLng([newLat, newLng]);
+            }
         });
         markerRef.current.on('dragend', (e: any) => {
             const { lat: newLat, lng: newLng } = e.target.getLatLng();
             setServiceLocation({ lat: newLat, lng: newLng });
             setIsTrackingLive(false);
+            if (accuracyCircleRef.current) {
+                accuracyCircleRef.current.setLatLng([newLat, newLng]);
+            }
         });
 
         // Map click also repositions pin
@@ -882,6 +1014,9 @@ const BookingScreen: React.FC = () => {
             setIsTrackingLive(false);
             if (markerRef.current) {
                 markerRef.current.setLatLng([newLat, newLng]);
+            }
+            if (accuracyCircleRef.current) {
+                accuracyCircleRef.current.setLatLng([newLat, newLng]);
             }
         });
 
@@ -906,21 +1041,37 @@ const BookingScreen: React.FC = () => {
         };
     }, [step, serviceLocation === null, leafletLoaded]); // eslint-disable-line
 
-    // Live updater: smoothly follow GPS when tracking is active
+    // Live updater: smoothly follow GPS and update accuracy halo when tracking is active
     useEffect(() => {
         if (step === 3 && mapInstanceRef.current && serviceLocation) {
             if (markerRef.current) {
                 markerRef.current.setLatLng([serviceLocation.lat, serviceLocation.lng]);
             }
+            if (accuracyCircleRef.current) {
+                accuracyCircleRef.current.setLatLng([serviceLocation.lat, serviceLocation.lng]);
+                if (locationAccuracy && locationAccuracy > 0) {
+                    accuracyCircleRef.current.setRadius(Math.max(8, locationAccuracy));
+                }
+            } else if (locationAccuracy && locationAccuracy > 0 && typeof L !== 'undefined') {
+                accuracyCircleRef.current = L.circle([serviceLocation.lat, serviceLocation.lng], {
+                    radius: Math.max(8, locationAccuracy),
+                    color: '#FE7803',
+                    fillColor: '#FE7803',
+                    fillOpacity: 0.15,
+                    weight: 1.5,
+                    dashArray: '4, 4'
+                }).addTo(mapInstanceRef.current);
+            }
+
             if (isTrackingLive) {
                 mapInstanceRef.current.setView(
                     [serviceLocation.lat, serviceLocation.lng],
-                    mapInstanceRef.current.getZoom() || 17,
+                    mapInstanceRef.current.getZoom() || 18,
                     { animate: true, duration: 0.5 }
                 );
             }
         }
-    }, [serviceLocation, isTrackingLive, step]);
+    }, [serviceLocation, isTrackingLive, locationAccuracy, step]);
 
 
 
@@ -953,11 +1104,10 @@ const BookingScreen: React.FC = () => {
                 touchZoom: false
             });
 
-            // Add tile layer (CartoDB Dark Matter)
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
-                subdomains: 'abcd',
-                maxZoom: 20,
+            // Add free OpenStreetMap tile layer
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19,
                 crossOrigin: true
             }).addTo(confirmationMapInstanceRef.current);
 
@@ -1302,15 +1452,55 @@ const BookingScreen: React.FC = () => {
                 });
                 return;
             }
-            const newDocRef = doc(collection(firestore, 'bookings'));
-            const preGeneratedId = newDocRef.id;
-            setTemporaryBookingData(newBookingData);
-            setPendingBookingId(preGeneratedId);
-            setWaitingBookingId(preGeneratedId);
+            const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+            const downpaymentAmount = Math.round(computedTotalPrice * 0.5);
+
+            if (!isHitPayActive) {
+                throw new Error("Online Payment Gateway (HitPay) is required for checkout but currently inactive in system settings. Please contact the administrator.");
+            }
+
+            const createdBooking = await addBooking({
+                ...newBookingData,
+                status: 'Pending',
+                paymentStatus: 'pending',
+                isPaid: false,
+                paymentMethod: 'Online (HitPay)'
+            });
+
+            if (!createdBooking) {
+                throw new Error("Failed to create booking for payment.");
+            }
+
             sessionStorage.removeItem(BOOKING_STATE_KEY);
-            setShowGCashModal(true);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'An error occurred.');
+            sessionStorage.setItem('pendingHitPayBookingTx', JSON.stringify({
+                bookingId: createdBooking.id,
+                amount: downpaymentAmount,
+                totalAmount: computedTotalPrice
+            }));
+
+            const hitPay = HitPayService.fromSettings(db?.settings);
+            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${createdBooking.id}`;
+            const appTitle = db?.settings?.appName || 'RidersBUD';
+
+            const { url } = await hitPay.createPaymentRequest({
+                amount: downpaymentAmount,
+                currency: db?.settings?.currency || 'PHP',
+                reference_number: `BOK-${createdBooking.id}-${Date.now()}`,
+                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                redirect_url: returnUrl,
+                email: user.email || 'customer@example.com',
+                name: user.name || 'Customer',
+                phone: user.phone || undefined,
+                purpose: `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`
+            });
+
+            window.location.href = url;
+            return;
+        } catch (err: any) {
+            setShowPaymentBreakdownModal(false);
+            const msg = err?.message || 'An error occurred while connecting to HitPay Gateway.';
+            setError(msg);
+            console.error('HitPay checkout error:', err);
         } finally {
             setIsBooking(false);
         }
@@ -2680,20 +2870,20 @@ const BookingScreen: React.FC = () => {
 
         return (
             <div className="flex flex-col h-full bg-secondary overflow-hidden">
-                <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar pb-32">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3.5 custom-scrollbar pb-28">
                     {/* Header Info */}
-                    <div className="space-y-1">
-                        <h3 className="text-2xl font-bold text-white tracking-tight">Booking Summary</h3>
-                        <p className="text-sm text-gray-400 mt-1">Please review your appointment details before confirming.</p>
+                    <div className="space-y-0.5">
+                        <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">Booking Summary</h3>
+                        <p className="text-xs text-gray-400">Please review your appointment details before confirming.</p>
                     </div>
 
                     {/* Main Summary Card */}
-                    <div className="bg-[#1E1E1E] rounded-2xl border border-white/5 overflow-hidden shadow-2xl relative">
+                    <div className="bg-[#1E1E1E] rounded-xl border border-white/5 overflow-hidden shadow-xl relative">
                         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-orange-400 to-primary"></div>
-                        <div className="p-6 space-y-6">
+                        <div className="p-4 sm:p-5 space-y-4">
                             <div>
-                                <h4 className="text-[10px] font-black text-gray-500 tracking-widest mb-4 uppercase">Selected Services</h4>
-                                <div className="space-y-3">
+                                <h4 className="text-[10px] font-black text-gray-500 tracking-widest mb-2.5 uppercase">Selected Services</h4>
+                                <div className="space-y-2">
                                     {selectedServices.map(service => (
                                         <div key={service.id} className="flex justify-between items-start group">
                                             <div className="flex-1">
@@ -2746,105 +2936,148 @@ const BookingScreen: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                                <div className="mt-5 pt-5 border-t border-white/10 space-y-3.5">
+                                <div className="mt-3.5 pt-3.5 border-t border-white/10 space-y-2.5">
                                     <div className="flex justify-between items-center text-gray-400">
                                         <p className="font-bold text-[10px] tracking-widest uppercase">Total Estimated Price</p>
                                         <p className="font-black text-base text-white">₱{totalPrice.toLocaleString()}</p>
                                     </div>
                                     {totalPrice > 0 && (
-                                        <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3 relative overflow-hidden group">
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full -translate-y-16 translate-x-16 blur-3xl group-hover:bg-primary/20 transition-all duration-700"></div>
-                                            <div className="flex justify-between items-center relative z-10">
-                                                <div>
-                                                    <p className="text-[9px] font-black text-primary tracking-widest leading-none mb-1 uppercase">Initial Downpayment</p>
-                                                    <p className="text-white font-black text-lg tracking-tight leading-none inline-flex items-baseline gap-1">
-                                                        ₱{Math.ceil(totalPrice * 0.5).toLocaleString()}
-                                                        <span className="text-[9px] text-gray-400 normal-case font-medium tracking-normal">(50%)</span>
+                                        <div className="bg-gradient-to-b from-[#24170E] via-[#1A140F] to-[#12100E] border-2 border-[#FE7803]/40 rounded-xl p-3 sm:p-3.5 space-y-2.5 relative overflow-hidden shadow-xl shadow-black/60 group">
+                                            {/* Glowing Ambient Backdrop */}
+                                            <div className="absolute -top-10 -right-10 w-32 h-32 bg-[#FE7803]/15 rounded-full blur-2xl pointer-events-none group-hover:bg-[#FE7803]/20 transition-all duration-700"></div>
+
+                                            {/* Card Header & Badge */}
+                                            <div className="flex items-center justify-between gap-2 relative z-10">
+                                                <div className="flex items-center gap-1.5">
+                                                    <CreditCard size={13} className="text-[#FE7803]" />
+                                                    <p className="text-[10px] font-black text-[#FE7803] tracking-wider leading-none uppercase">
+                                                        Payment Breakdown
                                                     </p>
                                                 </div>
-                                                <div className="text-right">
-                                                    <p className="text-[9px] font-black text-gray-500 tracking-widest mb-1 leading-none uppercase">Final Balance</p>
-                                                    <p className="text-gray-400 font-black text-sm leading-none">₱{Math.floor(totalPrice * 0.5).toLocaleString()}</p>
+                                                <span className="bg-[#FE7803]/20 border border-[#FE7803]/40 text-[#FE7803] text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                                    <Sparkles size={9} /> 50% Split
+                                                </span>
+                                            </div>
+
+                                            {/* Amount Summary Row */}
+                                            <div className="grid grid-cols-2 gap-2 items-center relative z-10">
+                                                {/* Initial DP (Highlighted) */}
+                                                <div className="bg-[#2A1A0F]/80 border border-[#FE7803]/40 rounded-lg p-2.5 shadow-inner">
+                                                    <div className="flex items-center gap-1 mb-0.5">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-[#FE7803] animate-ping"></span>
+                                                        <p className="text-[8px] font-black text-[#FE7803] tracking-wider uppercase leading-none">
+                                                            Initial DP
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-baseline gap-1">
+                                                        <span className="text-white font-black text-lg tracking-tight leading-none">
+                                                            ₱{Math.ceil(totalPrice * 0.5).toLocaleString()}
+                                                        </span>
+                                                        <span className="text-[9px] font-black text-[#FE7803] bg-[#FE7803]/15 px-1 py-0.2 rounded">
+                                                            50%
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[8px] font-bold text-gray-400 mt-1 flex items-center gap-1 leading-none">
+                                                        <ShieldCheck size={10} className="text-emerald-400" /> Pay Upfront
+                                                    </p>
+                                                </div>
+
+                                                {/* Final Balance */}
+                                                <div className="bg-black/30 border border-white/5 rounded-lg p-2.5">
+                                                    <p className="text-[8px] font-black text-gray-400 tracking-wider uppercase mb-0.5 leading-none">
+                                                        Final Balance
+                                                    </p>
+                                                    <div className="flex items-baseline gap-1">
+                                                        <span className="text-gray-300 font-black text-base tracking-tight leading-none">
+                                                            ₱{Math.floor(totalPrice * 0.5).toLocaleString()}
+                                                        </span>
+                                                        <span className="text-[9px] font-bold text-gray-500">
+                                                            50%
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[8px] font-bold text-gray-400 mt-1 flex items-center gap-1 leading-none">
+                                                        <CheckCircle2 size={10} className="text-primary" /> Upon Completion
+                                                    </p>
                                                 </div>
                                             </div>
-                                            <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] font-black tracking-widest relative z-10">
-                                                <span className="text-gray-500 uppercase">Secured via GCash</span>
-                                                <span className="text-primary tracking-tighter uppercase">Payable on Completion</span>
+
+                                            {/* Concise English Explanation Box */}
+                                            <div className="bg-black/40 border border-white/5 rounded-lg p-2 relative z-10 flex items-center gap-2">
+                                                <Info size={13} className="text-[#FE7803] flex-shrink-0" />
+                                                <p className="text-[9px] font-medium text-gray-300 leading-snug">
+                                                    Pay <strong className="text-white font-bold">50% Initial DP</strong> now to confirm. The remaining <strong className="text-white font-bold">50% balance</strong> is settled <span className="text-[#FE7803] font-bold">after service completion</span>.
+                                                </p>
+                                            </div>
+
+                                            {/* Footer Trust Bar */}
+                                            <div className="pt-1.5 border-t border-white/5 flex items-center justify-between text-[8px] font-black tracking-wider relative z-10">
+                                                <span className="text-gray-400 uppercase flex items-center gap-1">
+                                                    <ShieldCheck size={11} className="text-emerald-400" /> 100% Secure Payment
+                                                </span>
+                                                <span className="text-[#FE7803] uppercase flex items-center gap-1">
+                                                    <CheckCircle2 size={11} className="text-[#FE7803]" /> Protected Completion
+                                                </span>
                                             </div>
                                         </div>
                                     )}
-                                    <div className="flex justify-between items-center pt-1">
+                                    <div className="flex justify-between items-center pt-0.5">
                                         <p className="font-bold text-gray-500 text-[10px] tracking-widest uppercase">Estimated Duration</p>
                                         <p className="font-bold text-white text-xs">{estimatedDuration} minutes</p>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Appointment Info */}
-                            <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                            {/* Appointment Info Card - Modern Branded */}
+                            <div className="relative overflow-hidden bg-gradient-to-br from-[#1A1A22] to-[#121217] rounded-2xl p-4 border border-white/10 shadow-lg group hover:border-primary/40 transition-all">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-xl pointer-events-none" />
+                                <div className="flex items-center gap-3.5 relative z-10">
+                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-orange-600/10 border border-primary/30 flex items-center justify-center text-primary shadow-inner">
+                                        <CalendarRange size={22} className="text-[#FE7803]" />
                                     </div>
-                                    <div className="flex-1">
-                                        <p className="text-[9px] font-bold text-gray-500 tracking-widest uppercase">Appointment</p>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="text-[10px] font-black text-gray-400 tracking-widest uppercase">Scheduled Appointment</p>
+                                            <span className="text-[#FE7803] font-mono text-xs font-black bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-xl">
+                                                {selectedTime}
+                                            </span>
+                                        </div>
                                         {isSpecialRentalOrDriver ? (
-                                            <>
-                                                {/* Start row */}
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                    <span className="text-[9px] font-black text-green-400 tracking-widest uppercase">Pickup</span>
-                                                    <p className="text-white font-bold text-sm">
-                                                        {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                        <span className="text-primary ml-1.5">{selectedTime}</span>
-                                                    </p>
+                                            <div className="mt-1.5 space-y-1">
+                                                <div className="flex items-center justify-between text-xs">
+                                                    <span className="text-gray-400 text-[11px]">Pickup:</span>
+                                                    <span className="text-white font-black">{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} at {selectedTime}</span>
                                                 </div>
-                                                {/* End row */}
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <span className="text-[9px] font-black text-red-400 tracking-widest uppercase">Return</span>
-                                                    <p className="text-white font-bold text-sm">
-                                                        {selectedEndDate
-                                                            ? selectedEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                                            : '—'}
-                                                        <span className="text-primary ml-1.5">{selectedEndTime}</span>
-                                                    </p>
+                                                <div className="flex items-center justify-between text-xs">
+                                                    <span className="text-gray-400 text-[11px]">Return:</span>
+                                                    <span className="text-white font-black">{selectedEndDate ? selectedEndDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : '—'} at {selectedEndTime}</span>
                                                 </div>
-                                                <p className="text-primary text-[10px] font-black mt-1">{rentalDays} day{rentalDays !== 1 ? 's' : ''} total</p>
-                                            </>
+                                                <p className="text-primary text-[10px] font-black text-right pt-0.5">{rentalDays} day{rentalDays !== 1 ? 's' : ''} rental</p>
+                                            </div>
                                         ) : (
-                                            <>
-                                                <p className="text-white font-bold text-sm">{selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-                                                <p className="text-gray-400 text-xs">{selectedTime}</p>
-                                            </>
+                                            <div className="mt-1">
+                                                <p className="text-white font-black text-sm sm:text-base tracking-tight">
+                                                    {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                                                </p>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Map & Location */}
+                            {/* Dedicated Realtime & Live Route MAP Preview Card */}
                             {!isSpecialRentalOrDriver && serviceLocation && (
-                                <div className="bg-[#151515] rounded-xl overflow-hidden border border-white/5">
-                                    <div className="relative h-40 bg-gray-900">
-                                        <div ref={confirmationMapRef} className="absolute inset-0"></div>
-                                        <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent p-3 z-10">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center text-green-400">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                </div>
-                                                <span className="text-white font-bold text-xs">Service Location</span>
+                                <div className="relative overflow-hidden bg-gray-950 rounded-2xl border border-white/10 shadow-xl group hover:border-[#FE7803]/50 transition-all">
+                                    <div className="relative h-64 sm:h-72 bg-gray-950 overflow-hidden cursor-pointer" onClick={() => setShowLiveRouteModal(true)}>
+                                        <div ref={confirmationMapRef} className="absolute inset-0 z-0"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-[#121217]/40 via-transparent to-black/20 z-10 pointer-events-none"></div>
+
+                                        {/* Interactive Bottom Click Prompt Overlay */}
+                                        <div className="absolute bottom-3 inset-x-0 flex items-center justify-center z-20 pointer-events-none group-hover:scale-105 transition-transform duration-300">
+                                            <div className="flex items-center gap-1.5 bg-gradient-to-r from-[#FE7803] to-orange-600 text-white font-black text-[11px] px-3 py-1.5 rounded-xl shadow-lg shadow-primary/30 border border-white/20">
+                                                <Navigation size={13} className="animate-pulse" />
+                                                <span>View Live Route</span>
                                             </div>
                                         </div>
-                                    </div>
-                                    <div className="p-3 space-y-2.5">
-                                        <div>
-                                            <p className="text-[9px] text-gray-500 font-bold tracking-widest uppercase">Coordinates</p>
-                                            <p className="text-white font-mono text-xs font-bold">{serviceLocation.lat.toFixed(6)}, {serviceLocation.lng.toFixed(6)}</p>
-                                        </div>
-                                        <Tooltip content="View location in Google Maps">
-                                            <a href={googleMapsLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/30 hover:border-blue-500 font-bold py-2.5 px-4 rounded-xl transition-all group">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                <span className="text-xs">Open in Google Maps</span>
-                                            </a>
-                                        </Tooltip>
                                     </div>
                                 </div>
                             )}
@@ -2868,49 +3101,83 @@ const BookingScreen: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Vehicle & Mechanic Details */}
+                            {/* Vehicle & Mechanic Details - Modern Branded */}
                             {!isSpecialRentalOrDriver ? (
-                                <div className="space-y-3.5">
-                                    <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
-                                        <p className="text-[9px] font-bold text-gray-500 tracking-widest mb-2.5 uppercase">Your Vehicle</p>
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-gray-700/30 flex items-center justify-center overflow-hidden">
-                                                {selectedVehicle.imageUrls && selectedVehicle.imageUrls.length > 0 ? (
+                                <div className="space-y-3">
+                                    {/* Your Vehicle Card */}
+                                    <div className="relative overflow-hidden bg-gradient-to-br from-[#1A1A22] to-[#121217] rounded-2xl p-4 border border-white/10 shadow-lg group hover:border-white/20 transition-all">
+                                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/5">
+                                            <p className="text-[10px] font-black text-gray-400 tracking-widest uppercase">Your Selected Vehicle</p>
+                                            <span className="text-[9px] font-black text-primary uppercase bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+                                                Registered
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-3.5">
+                                            <div className="w-14 h-14 rounded-2xl bg-[#22222A] border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
+                                                {selectedVehicle?.imageUrls && selectedVehicle.imageUrls.length > 0 ? (
                                                     <img
                                                         src={selectedVehicle.imageUrls[0]}
                                                         alt={`${selectedVehicle.make} ${selectedVehicle.model}`}
-                                                        className="w-full h-full object-cover"
+                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                                                         onError={(e) => {
                                                             (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
                                                         }}
                                                     />
                                                 ) : (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" /></svg>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" /></svg>
                                                 )}
                                             </div>
-                                            <div>
-                                                <p className="text-sm font-bold text-white">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</p>
-                                                <p className="text-[10px] text-gray-400 mt-0.5">Plate: {selectedVehicle.plateNumber}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="bg-[#151515] rounded-xl p-3.5 border border-white/5">
-                                        <p className="text-[9px] font-bold text-gray-500 tracking-widest mb-2.5 uppercase">Your Mechanic</p>
-                                        <div className="flex items-center gap-3">
-                                            {selectedMechanic.imageUrl ? (
-                                                <img src={selectedMechanic.imageUrl} alt={selectedMechanic.name} className="w-10 h-10 rounded-xl object-cover border-2 border-primary/20" />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary font-bold text-base">{selectedMechanic.name.charAt(0)}</div>
-                                            )}
-                                            <div className="flex-1">
-                                                <p className="text-sm font-bold text-white">{selectedMechanic.name}</p>
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                    <div className="flex items-center gap-1 text-yellow-400"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784-.57-1.838.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg><span className="text-[10px] font-bold">{(selectedMechanic.rating || 0).toFixed(1)}</span></div>
-                                                    <span className="text-[10px] text-gray-500">• {selectedMechanic.reviews} jobs</span>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="text-sm sm:text-base font-black text-white truncate tracking-tight">
+                                                    {selectedVehicle ? `${selectedVehicle.year} ${selectedVehicle.make} ${selectedVehicle.model}` : 'Selected Vehicle'}
+                                                </h4>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="bg-[#121215] text-gray-300 font-mono text-[10px] font-black px-2 py-0.5 rounded-md border border-white/10 tracking-wider">
+                                                        PLATE: {selectedVehicle?.plateNumber || 'N/A'}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Your Mechanic Card */}
+                                    {selectedMechanic && (
+                                        <div className="relative overflow-hidden bg-gradient-to-br from-[#1A1A22] to-[#121217] rounded-2xl p-4 border border-white/10 shadow-lg group hover:border-[#FE7803]/40 transition-all">
+                                            <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/5">
+                                                <p className="text-[10px] font-black text-gray-400 tracking-widest uppercase">Assigned Mechanic Specialist</p>
+                                                <span className="text-[9px] font-black text-emerald-400 uppercase bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                                    Ready on Schedule
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-3.5">
+                                                <div className="relative w-14 h-14 rounded-2xl bg-[#22222A] border-2 border-primary/30 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
+                                                    {selectedMechanic.imageUrl ? (
+                                                        <img src={selectedMechanic.imageUrl} alt={selectedMechanic.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                    ) : (
+                                                        <div className="w-full h-full bg-primary/20 flex items-center justify-center text-primary font-black text-lg">{selectedMechanic.name.charAt(0)}</div>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <h4 className="text-sm sm:text-base font-black text-white truncate tracking-tight">
+                                                            {selectedMechanic.name}
+                                                        </h4>
+                                                        <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
+                                                            Pro
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <div className="flex items-center gap-1 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded-md text-yellow-400 font-black text-[10px]">
+                                                            <Star size={11} className="fill-yellow-400 text-yellow-400" />
+                                                            <span>{(selectedMechanic.rating || 5.0).toFixed(1)}</span>
+                                                        </div>
+                                                        <span className="text-[10px] text-gray-400 font-bold">({selectedMechanic.reviews || 0} completed jobs)</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="space-y-3.5">
@@ -2945,9 +3212,9 @@ const BookingScreen: React.FC = () => {
                     </div>
 
                     {/* Notes Section */}
-                    <div className="space-y-2">
-                        <label htmlFor="booking-notes" className="text-xs font-bold text-gray-500 tracking-widest ml-1 flex items-center gap-2 uppercase">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    <div className="space-y-1.5">
+                        <label htmlFor="booking-notes" className="text-[11px] font-bold text-gray-500 tracking-wider ml-1 flex items-center gap-1.5 uppercase">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                             Notes for Mechanic (Optional)
                         </label>
                         <textarea
@@ -2955,18 +3222,18 @@ const BookingScreen: React.FC = () => {
                             name="bookingNotes"
                             value={notes}
                             onChange={(e) => setNotes(e.target.value)}
-                            placeholder="Add special instructions, access codes, or specific details about the issue..."
-                            rows={3}
-                            className="w-full p-4 bg-[#1E1E1E] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 outline-none focus:border-white/20 transition-all resize-none"
+                            placeholder="Add special instructions, access codes, or specific details..."
+                            rows={2}
+                            className="w-full p-3 bg-[#1E1E1E] border border-white/10 rounded-xl text-xs text-white placeholder-gray-600 outline-none focus:border-white/20 transition-all resize-none"
                         />
                     </div>
 
                     {/* Important Notice */}
-                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex gap-3">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 flex gap-2.5 items-start">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-yellow-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         <div>
-                            <p className="text-yellow-400 font-bold text-xs uppercase">Important Information</p>
-                            <p className="text-gray-300 text-xs mt-1 leading-relaxed">
+                            <p className="text-yellow-400 font-bold text-[10px] uppercase">Important Information</p>
+                            <p className="text-gray-300 text-[11px] mt-0.5 leading-snug">
                                 Please ensure you're available at the scheduled time and location. The mechanic will arrive within the estimated time frame.
                             </p>
                         </div>
@@ -2977,21 +3244,30 @@ const BookingScreen: React.FC = () => {
                 <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                     <div className="max-w-md mx-auto w-full">
                         {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
-                        <Tooltip content={isQuoteRequest ? 'Submit a quote request' : 'Create booking and proceed to payment'} className="w-full">
+                        <Tooltip content={isQuoteRequest ? 'Submit a quote request' : 'Review payment breakdown & proceed to payment'} className="w-full">
                             <button
-                                onClick={handleBooking}
+                                onClick={() => {
+                                    const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
+                                    const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
+                                    if (selectedServices.length === 0 || !user || (!isSpecialRentalOrDriver && !selectedMechanic) || !selectedVehicle || (!isSpecialRentalOrDriver && !serviceLocation)) {
+                                        setError('Missing booking information. Please complete all required steps.');
+                                        return;
+                                    }
+                                    setError('');
+                                    setShowPaymentBreakdownModal(true);
+                                }}
                                 disabled={isBooking}
-                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-black h-12 flex items-center justify-center hover:shadow-xl hover:shadow-primary/30 transition-all disabled:opacity-50 disabled:grayscale gap-3 rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20"
+                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-black h-14 flex items-center justify-center hover:shadow-xl hover:shadow-primary/30 transition-all disabled:opacity-50 disabled:grayscale gap-3 rounded-2xl uppercase tracking-wider text-[18px] shadow-lg shadow-primary/20"
                             >
                                 {isBooking ? (
                                     <>
-                                        <Spinner size="sm" color="text-white" />
+                                        <Spinner size="md" color="text-white" />
                                         <span>Processing...</span>
                                     </>
                                 ) : (
                                     <>
                                         <span>{isQuoteRequest ? 'Proceed for Payment' : 'Confirm & Book Now'}</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 sm:h-8 sm:w-8 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                                     </>
                                 )}
                             </button>
@@ -3050,29 +3326,60 @@ const BookingScreen: React.FC = () => {
                 );
             })()}
 
-            {/* Real-time Payment Verification Overlay */}
-            {verifyingPayment && (
-                <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
-                    <div className="relative w-24 h-24 mb-8">
-                        <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
-                        <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <img src="/gcash-logo.png" alt="GCash" className="w-12 h-12 object-contain animate-pulse" />
-                        </div>
-                    </div>
-                    <h2 className="text-2xl font-bold text-white mb-2 italic">Verifying GCash Payment...</h2>
-                    <p className="text-gray-400 max-w-xs mx-auto mb-8">
-                        We're waiting for GCash to confirm your transaction. This usually takes a few seconds.
-                    </p>
-                    <div className="w-full max-w-xs bg-white/5 h-1.5 rounded-full overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: '100%', animation: 'loading 5s ease-in-out infinite' }}></div>
-                    </div>
-                    <div className="mt-8 flex items-center gap-2 text-primary font-bold text-sm animate-pulse">
-                        <div className="w-2 h-2 bg-primary rounded-full"></div>
-                        REAL-TIME SYNC ACTIVE
-                    </div>
-                </div>
-            )}
+            {/* Real-time Live Route Map Modal */}
+            <LiveRouteMapModal
+                isOpen={showLiveRouteModal}
+                onClose={() => setShowLiveRouteModal(false)}
+                customerLocation={serviceLocation}
+                mechanicLocation={selectedMechanic?.lat && selectedMechanic?.lng ? { lat: selectedMechanic.lat, lng: selectedMechanic.lng } : null}
+                mechanic={selectedMechanic}
+                customerImageUrl={user?.picture || null}
+                customerName={user?.name || 'Customer'}
+                title="Service Route"
+                appLogoUrl={db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}
+            />
+
+            {/* Complete Payment Breakdown Awareness Modal */}
+            {(() => {
+                const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
+                const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
+                const computedTotalPrice = totalPrice;
+                const downpayment = Math.round(computedTotalPrice * 0.5);
+                const remaining = Math.max(0, computedTotalPrice - downpayment);
+
+                return (
+                    <BookingPaymentBreakdownModal
+                        isOpen={showPaymentBreakdownModal}
+                        onClose={() => setShowPaymentBreakdownModal(false)}
+                        onProceed={async () => {
+                            setShowPaymentBreakdownModal(false);
+                            await handleBooking();
+                        }}
+                        isProcessing={isBooking}
+                        services={selectedServices.map(s => ({
+                            id: s.id,
+                            name: s.name,
+                            price: s.price,
+                            category: s.category
+                        }))}
+                        totalAmount={computedTotalPrice}
+                        downpaymentAmount={downpayment}
+                        remainingBalance={remaining}
+                        customerName={user?.name || 'Customer'}
+                        scheduledDate={selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                        scheduledTime={selectedTime}
+                        vehicleDetails={selectedVehicle ? `${selectedVehicle.year || ''} ${selectedVehicle.make} ${selectedVehicle.model} (${selectedVehicle.plateNumber})`.trim() : undefined}
+                        mechanicName={selectedMechanic?.name}
+                        isSpecialRentalOrDriver={isSpecialRentalOrDriver}
+                        rentalDetails={isSpecialRentalOrDriver ? {
+                            type: isCarRental && isDriverHire ? 'both' : isCarRental ? 'car' : 'driver',
+                            days: rentalDays,
+                            carName: selectedCar?.name,
+                            driverName: selectedDriver?.name
+                        } : undefined}
+                    />
+                );
+            })()}
         </div>
     );
 };

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { doc, updateDoc, onSnapshot, collection } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection } from 'firebase/firestore';
 import { db as firestoreDB } from '../firebase';
 
 export function usePresence(userId: string | null, collectionName: string) {
@@ -10,29 +10,34 @@ export function usePresence(userId: string | null, collectionName: string) {
     }, [userId]);
 
     useEffect(() => {
-        if (!userId || !collectionName) return;
+        if (!userId || !collectionName || typeof userId !== 'string' || !userId.trim()) return;
 
         const userRef = doc(firestoreDB, collectionName, userId);
         
-        // Initial online set
-        updateDoc(userRef, { 
+        // Initial online set using setDoc merge to safely create or update without crashing if doc is created late
+        setDoc(userRef, { 
             isOnline: true,
             lastActive: new Date().toISOString() 
-        }).catch(() => {});
+        }, { merge: true }).catch(() => {});
 
         // Heartbeat interval every 20 seconds
         const interval = setInterval(() => {
-            updateDoc(userRef, {
-                isOnline: true,
-                lastActive: new Date().toISOString()
-            }).catch(() => {});
+            if (userIdRef.current) {
+                setDoc(userRef, {
+                    isOnline: true,
+                    lastActive: new Date().toISOString()
+                }, { merge: true }).catch(() => {});
+            }
         }, 20000);
 
-        // beforeunload is optional for online tracking; removing it avoids repeatedly
-        // attaching listeners when auth/presence hooks mount/unmount.
         return () => {
             clearInterval(interval);
-            try { updateDoc(userRef, { isOnline: false }).catch(() => {}); } catch (_) {}
+            try { 
+                setDoc(userRef, { 
+                    isOnline: false,
+                    lastActive: new Date().toISOString()
+                }, { merge: true }).catch(() => {}); 
+            } catch (_) {}
         };
     }, [userId, collectionName]);
 }

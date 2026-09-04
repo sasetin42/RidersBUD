@@ -110,7 +110,10 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
             attributionControl: false
         }).setView([liveMechanic.lat, liveMechanic.lng], 15);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png').addTo(mapInstanceRef.current);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(mapInstanceRef.current);
 
         // Home / Customer destination marker
         const homeIcon = L.divIcon({

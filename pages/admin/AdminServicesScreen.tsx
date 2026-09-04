@@ -333,6 +333,11 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
         imageUrl: car?.imageUrl || '/placeholder.svg',
         description: car?.description || '',
         features: (car?.features || []).join(', '),
+        baggageCapacity: car?.baggageCapacity || 2,
+        mileageLimit: car?.mileageLimit || 'Unlimited Mileage',
+        insuranceIncluded: car?.insuranceIncluded || 'Comprehensive Insurance',
+        depositAmount: car?.depositAmount || 3000,
+        engineType: car?.engineType || 'Gasoline',
     });
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [saving, setSaving] = useState(false);
@@ -364,6 +369,8 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
             year: Number(formData.year),
             seats: Number(formData.seats),
             pricePerDay: Number(formData.pricePerDay),
+            baggageCapacity: Number(formData.baggageCapacity),
+            depositAmount: Number(formData.depositAmount),
             features: formData.features ? formData.features.split(',').map(f => f.trim()).filter(Boolean) : [],
             ...(car?.id ? { id: car.id } : {}),
         });
@@ -413,8 +420,8 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
                 </div>
             </div>
 
-            {/* Price, Transmission, Fuel */}
-            <div className="grid grid-cols-3 gap-4">
+            {/* Price, Transmission, Fuel Policy, Engine */}
+            <div className="grid grid-cols-4 gap-4">
                 <div>
                     <label htmlFor="car-pricePerDay" className={labelCls}>Price / Day (₱) *</label>
                     <input type="number" id="car-pricePerDay" name="pricePerDay" value={formData.pricePerDay} onChange={handleChange} placeholder="0.00" min="0" className={inputCls('pricePerDay')} />
@@ -428,6 +435,15 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
                     </select>
                 </div>
                 <div>
+                    <label htmlFor="car-engineType" className={labelCls}>Fuel / Engine</label>
+                    <select id="car-engineType" name="engineType" value={formData.engineType} onChange={handleChange} className={inputCls('engineType')}>
+                        <option value="Gasoline">Gasoline</option>
+                        <option value="Diesel">Diesel</option>
+                        <option value="Hybrid">Hybrid</option>
+                        <option value="Electric">Electric</option>
+                    </select>
+                </div>
+                <div>
                     <label htmlFor="car-fuelPolicy" className={labelCls}>Fuel Policy</label>
                     <select id="car-fuelPolicy" name="fuelPolicy" value={formData.fuelPolicy} onChange={handleChange} className={inputCls('fuelPolicy')}>
                         <option value="Full to Full">Full to Full</option>
@@ -437,8 +453,8 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
                 </div>
             </div>
 
-            {/* Color, Plate, Availability */}
-            <div className="grid grid-cols-3 gap-4">
+            {/* Color, Plate, Baggage, Deposit */}
+            <div className="grid grid-cols-4 gap-4">
                 <div>
                     <label htmlFor="car-color" className={labelCls}>Color</label>
                     <input type="text" id="car-color" name="color" value={formData.color} onChange={handleChange} placeholder="e.g. White" className={inputCls('color')} />
@@ -447,8 +463,39 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
                     <label htmlFor="car-plateNumber" className={labelCls}>Plate Number</label>
                     <input type="text" id="car-plateNumber" name="plateNumber" value={formData.plateNumber} onChange={handleChange} placeholder="e.g. ABC-1234" className={inputCls('plateNumber')} />
                 </div>
-                <div className="flex flex-col justify-end pb-1">
-                    <label className={labelCls}>Availability</label>
+                <div>
+                    <label htmlFor="car-baggageCapacity" className={labelCls}>Baggage Bags</label>
+                    <input type="number" id="car-baggageCapacity" name="baggageCapacity" value={formData.baggageCapacity} onChange={handleChange} min="1" max="10" className={inputCls('baggageCapacity')} />
+                </div>
+                <div>
+                    <label htmlFor="car-depositAmount" className={labelCls}>Deposit (₱)</label>
+                    <input type="number" id="car-depositAmount" name="depositAmount" value={formData.depositAmount} onChange={handleChange} min="0" className={inputCls('depositAmount')} />
+                </div>
+            </div>
+
+            {/* Mileage & Insurance Limits */}
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label htmlFor="car-mileageLimit" className={labelCls}>Mileage Allowance</label>
+                    <input type="text" id="car-mileageLimit" name="mileageLimit" value={formData.mileageLimit} onChange={handleChange} placeholder="e.g. Unlimited Mileage, 200km/day" className={inputCls('mileageLimit')} />
+                </div>
+                <div>
+                    <label htmlFor="car-insuranceIncluded" className={labelCls}>Insurance Package</label>
+                    <input type="text" id="car-insuranceIncluded" name="insuranceIncluded" value={formData.insuranceIncluded} onChange={handleChange} placeholder="e.g. Comprehensive Insurance" className={inputCls('insuranceIncluded')} />
+                </div>
+            </div>
+
+            {/* Image URL & Availability */}
+            <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                    <label htmlFor="car-imageUrl" className={labelCls}>Image URL</label>
+                    <input type="text" id="car-imageUrl" name="imageUrl" value={formData.imageUrl} onChange={handleChange} placeholder="https://..." className={inputCls('imageUrl')} />
+                    {formData.imageUrl && (
+                        <img src={formData.imageUrl} alt="Preview" className="mt-2 h-20 w-full object-cover rounded-lg border border-white/10" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    )}
+                </div>
+                <div className="flex flex-col justify-center">
+                    <label className={labelCls}>Availability Status</label>
                     <label className="flex items-center gap-2 cursor-pointer mt-1">
                         <div
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${formData.isAvailable ? 'bg-green-500' : 'bg-gray-600'}`}
@@ -461,24 +508,15 @@ const RentalCarForm: React.FC<{ car?: RentalCar; onSave: (car: any) => void; onC
                 </div>
             </div>
 
-            {/* Image URL */}
-            <div>
-                <label htmlFor="car-imageUrl" className={labelCls}>Image URL</label>
-                <input type="text" id="car-imageUrl" name="imageUrl" value={formData.imageUrl} onChange={handleChange} placeholder="https://..." className={inputCls('imageUrl')} />
-                {formData.imageUrl && (
-                    <img src={formData.imageUrl} alt="Preview" className="mt-2 h-24 w-full object-cover rounded-lg border border-white/10" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                )}
-            </div>
-
             {/* Features */}
             <div>
                 <label htmlFor="car-features" className={labelCls}>Features (comma-separated)</label>
-                <input type="text" id="car-features" name="features" value={formData.features} onChange={handleChange} placeholder="e.g. GPS, Bluetooth, Air Conditioning" className={inputCls('features')} />
+                <input type="text" id="car-features" name="features" value={formData.features} onChange={handleChange} placeholder="e.g. GPS, Bluetooth, Air Conditioning, Reverse Camera" className={inputCls('features')} />
             </div>
 
             {/* Description */}
             <div>
-                <label htmlFor="car-description" className={labelCls}>Description</label>
+                <label htmlFor="car-description" className={labelCls}>Description & Overview</label>
                 <textarea id="car-description" name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="Brief description of the vehicle..." className={inputCls('description')} />
             </div>
 
@@ -850,7 +888,22 @@ const AdminServicesScreen: React.FC = () => {
                                     <div className="p-4">
                                         <h3 className="font-bold text-white text-base">{car.year} {car.make} {car.model}</h3>
                                         <p className="text-xs text-gray-400 mt-0.5">{car.type} · {car.seats} seats · {car.transmission}</p>
-                                        {car.plateNumber && <p className="text-xs text-gray-500 mt-0.5">Plate: {car.plateNumber}</p>}
+                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                            <span className="text-[9px] font-semibold bg-white/5 text-gray-300 px-1.5 py-0.5 rounded">
+                                                ⛽ {car.fuelPolicy || 'Full to Full'}
+                                            </span>
+                                            {car.baggageCapacity && (
+                                                <span className="text-[9px] font-semibold bg-white/5 text-gray-300 px-1.5 py-0.5 rounded">
+                                                    🧳 {car.baggageCapacity} Bags
+                                                </span>
+                                            )}
+                                            {car.depositAmount && (
+                                                <span className="text-[9px] font-semibold bg-white/5 text-gray-300 px-1.5 py-0.5 rounded">
+                                                    ₱{car.depositAmount.toLocaleString()} Dep
+                                                </span>
+                                            )}
+                                        </div>
+                                        {car.plateNumber && <p className="text-xs text-gray-500 mt-1">Plate: {car.plateNumber}</p>}
                                         <p className="text-primary font-bold text-lg mt-2">₱{(car.pricePerDay || 0).toLocaleString()}<span className="text-xs font-normal text-gray-400">/day</span></p>
 
                                         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/5">
@@ -861,10 +914,10 @@ const AdminServicesScreen: React.FC = () => {
                                                 {car.isAvailable ? <ToggleRight size={14} className="inline mr-1" /> : <ToggleLeft size={14} className="inline mr-1" />}
                                                 {car.isAvailable ? 'Available' : 'Unavailable'}
                                             </button>
-                                            <button onClick={() => handleOpenCarModal(car)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all">
+                                            <button onClick={() => handleOpenCarModal(car)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit Car">
                                                 <Edit2 size={14} />
                                             </button>
-                                            <button onClick={() => handleDeleteCar(car.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all">
+                                            <button onClick={() => handleDeleteCar(car.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete Car">
                                                 <Trash2 size={14} />
                                             </button>
                                         </div>

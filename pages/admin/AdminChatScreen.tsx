@@ -284,7 +284,7 @@ const AdminChatScreen: React.FC = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="font-bold text-xs tracking-wide">Shared Location</p>
-                            <p className="text-[10px] opacity-70 truncate underline">Open in Google Maps</p>
+                            <p className="text-[10px] text-primary font-bold truncate">View Live Map Location</p>
                         </div>
                     </a>
                 </div>

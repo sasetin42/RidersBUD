@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { rtdb, auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ref, set, push, onValue, off, update, remove, get, serverTimestamp } from 'firebase/database';
+import { suspendManager, SuspendEvent } from '../utils/suspendManager';
 
 type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'missed' | 'declined';
 type CallRole = 'customer' | 'mechanic' | 'admin';
@@ -617,8 +618,73 @@ const cleanupPeerConnection = useCallback(() => {
     return () => { unsub?.(); };
   }, [listenForIncomingCalls]);
 
+  // Suspend & Interruption Event Handling (Sleep Mode, Power Button Lock, Incoming Phone Calls)
+  useEffect(() => {
+    const handleSuspendEvent = async (event: SuspendEvent) => {
+      console.log('[CallContext] Received suspend event:', event);
+
+      if (event === 'app_sleep' || event === 'power_button_locked') {
+        // Device is sleeping or power button pressed (screen off)
+        if (callStatusRef.current === 'connected') {
+          // Keep audio session alive with wake-lock, but disable video tracks temporarily to conserve battery and avoid WebRTC freeze
+          if (localStreamRef.current) {
+            localStreamRef.current.getVideoTracks().forEach(track => {
+              track.enabled = false;
+            });
+          }
+        }
+      } else if (event === 'app_resume' || event === 'power_button_unlocked') {
+        // Device woken up or power button unlocked
+        if (callStatusRef.current === 'connected') {
+          if (localStreamRef.current) {
+            localStreamRef.current.getVideoTracks().forEach(track => {
+              track.enabled = true;
+            });
+          }
+          // Re-trigger audio context in case it got suspended by OS
+          callSounds.unlock();
+        }
+      } else if (event === 'incoming_call_interrupt') {
+        // User is interrupted by a native cellular phone call or external audio interrupt
+        if (callStatusRef.current === 'connected') {
+          console.log('[CallContext] In-app call interrupted by external phone call - auto holding');
+          if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(track => {
+              track.enabled = false;
+            });
+          }
+        }
+      } else if (event === 'call_interrupt_ended') {
+        // Cellular phone call finished or user returned to app
+        if (callStatusRef.current === 'connected') {
+          console.log('[CallContext] Cellular phone call ended - resuming in-app call audio');
+          if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(track => {
+              track.enabled = true;
+            });
+          }
+          callSounds.unlock();
+        }
+      }
+    };
+
+    const unsubscribe = suspendManager.subscribe(handleSuspendEvent);
+
+    // Request wake lock when in active call to prevent unwanted OS sleep drops
+    if (callStatus === 'connected' || callStatus === 'calling' || callStatus === 'ringing') {
+      suspendManager.requestWakeLock();
+    } else {
+      suspendManager.releaseWakeLock();
+    }
+
+    return () => {
+      unsubscribe();
+    };
+  }, [callStatus]);
+
   useEffect(() => {
     return () => {
+      suspendManager.releaseWakeLock();
       cleanupPeerConnection();
       if (resetTimeoutRef.current) {
         clearTimeout(resetTimeoutRef.current);

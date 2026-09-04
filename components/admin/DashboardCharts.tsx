@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, BarChart, Bar, Legend, RadialBarChart, RadialBar
@@ -40,6 +40,42 @@ const CustomTooltip = ({ active, payload, label, formatter }: any) => {
         );
     }
     return null;
+};
+
+const ChartBody: React.FC<{ height: number; renderChart: () => React.ReactNode }> = ({ height, renderChart }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [ready, setReady] = useState(false);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+
+        const checkSize = () => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                setReady(true);
+            }
+        };
+
+        // Check immediately in case it's already sized
+        checkSize();
+
+        const ro = new ResizeObserver(() => checkSize());
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    return (
+        <div ref={containerRef} className="flex-1 w-full flex items-center justify-center" style={{ minHeight: height }}>
+            {ready ? (
+                <ResponsiveContainer width="100%" height={height} minWidth={1}>
+                    {renderChart()}
+                </ResponsiveContainer>
+            ) : (
+                <div style={{ width: '100%', height }} />
+            )}
+        </div>
+    );
 };
 
 const DashboardChart: React.FC<ChartProps> = ({
@@ -240,11 +276,7 @@ const DashboardChart: React.FC<ChartProps> = ({
                 </div>
             </div>
 
-            <div className="flex-1 w-full flex items-center justify-center" style={{ minHeight: height }}>
-                <ResponsiveContainer width="100%" height={height} minWidth={0}>
-                    {renderChart()}
-                </ResponsiveContainer>
-            </div>
+            <ChartBody height={height} renderChart={renderChart} />
         </div>
     );
 };

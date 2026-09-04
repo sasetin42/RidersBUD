@@ -83,8 +83,9 @@ const DirectionsModal: React.FC<DirectionsModalProps> = ({ booking, customer, on
         
         mapInstanceRef.current = L.map(mapRef.current).setView(mechanicStartPos, 14);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19
         }).addTo(mapInstanceRef.current);
 
         const customerIcon = L.divIcon({

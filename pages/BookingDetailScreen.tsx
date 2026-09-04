@@ -9,6 +9,7 @@ import Spinner from '../components/Spinner';
 import ReviewModal from '../components/ReviewModal';
 import ReviewDeclinedModal from '../components/ReviewDeclinedModal';
 import GCashPaymentModal from '../components/GCashPaymentModal';
+import { HitPayService } from '../services/HitPayService';
 import { CallButton } from '../components/CallUI';
 import { useCall } from '../context/CallContext';
 import {
@@ -23,6 +24,7 @@ import { ref, onValue, set } from 'firebase/database';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db as firestore, rtdb } from '../firebase';
 import { Geolocation } from '@capacitor/geolocation';
+import LiveRouteMapModal from '../components/LiveRouteMapModal';
 
 declare const L: any;
 
@@ -81,10 +83,10 @@ const MiniMap: React.FC<{ lat: number, lng: number }> = React.memo(({ lat, lng }
                 keyboard: false
             }).setView([lat, lng], 15);
 
-            // Dark Mode Tile Layer
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-                subdomains: 'abcd',
-                maxZoom: 20
+            // Free OpenStreetMap Tile Layer
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
             }).addTo(mapInstance.current);
 
         } else {
@@ -166,7 +168,7 @@ const parseDateTime = (dateStr: string, timeStr: string): number => {
 const BookingDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
     const navigate = useNavigate();
-    const { db, updateBookingStatus, cancelBooking, addReview, loading: dbLoading } = useDatabase();
+    const { db, updateBookingStatus, cancelBooking, addReview, updateBookingPayment, loading: dbLoading } = useDatabase();
     const { user } = useAuth();
     const { startCall, callStatus } = useCall();
     
@@ -186,7 +188,9 @@ const BookingDetailScreen: React.FC = () => {
     const [activeReceiptTab, setActiveReceiptTab] = useState<'downpayment' | 'balance'>('downpayment');
     const [confettiPieces, setConfettiPieces] = useState<any[]>([]);
     const [showMechanicDetailsModal, setShowMechanicDetailsModal] = useState(false);
+    const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
     const [activeModalTab, setActiveModalTab] = useState<'info' | 'reviews'>('info');
+    const [isInitiatingHitPay, setIsInitiatingHitPay] = useState(false);
     
     // Live Location & ETA Tracking States
     const [mechanicLiveLocation, setMechanicLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -195,6 +199,91 @@ const BookingDetailScreen: React.FC = () => {
 
     const [fetchedBooking, setFetchedBooking] = useState<Booking | null>(null);
     const [isFetching, setIsFetching] = useState(true);
+
+    // Monitor for HitPay return redirect directly on BookingDetailScreen
+    const finalizeRun = React.useRef(false);
+    useEffect(() => {
+        const query = new URLSearchParams(window.location.search);
+        const status = query.get('status') || query.get('hitpay');
+
+        if ((status === 'completed' || status === 'success') && !finalizeRun.current) {
+            const hitpayRef = query.get('reference') || query.get('payment_request_id') || `HITPAY-${Date.now()}`;
+            const reqId = query.get('payment_request_id') || '';
+            const targetBookingId = query.get('bookingId') || bookingId;
+
+            if (targetBookingId && updateBookingPayment && fetchedBooking && !fetchedBooking.isPaid) {
+                finalizeRun.current = true;
+                const totalAmt = fetchedBooking.totalAmount || fetchedBooking.service?.price || 0;
+                const paidAmt = Number(fetchedBooking.paidAmount) || (totalAmt * 0.5);
+                const addCosts = (fetchedBooking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
+                const fullTotal = totalAmt + addCosts;
+                const balanceAmt = Math.max(0, fullTotal - paidAmt);
+
+                updateBookingPayment(targetBookingId, balanceAmt, 'paid', {
+                    isPaid: true,
+                    isVerified: true,
+                    paidAmount: fullTotal,
+                    remainingBalance: 0,
+                    paymentStatus: 'paid',
+                    balancePaid: true,
+                    balancePaymentRef: hitpayRef,
+                    balancePaidAt: new Date().toISOString(),
+                    hitpayPaymentRequestId: reqId,
+                    hitpayReference: hitpayRef,
+                    hitpayStatus: 'completed',
+                    status: 'Completed'
+                }).then(() => {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    setShowCompleteTransactionModal(true);
+                }).catch(console.error);
+            }
+        }
+    }, [bookingId, fetchedBooking, updateBookingPayment]);
+
+    const handleInitiateHitPayBalance = async (targetBooking: Booking) => {
+        if (!targetBooking || !user) return;
+        try {
+            setIsInitiatingHitPay(true);
+            const originalServicesFee = targetBooking.services && targetBooking.services.length > 0
+                ? targetBooking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                : (Number(targetBooking.service?.price) || Number(targetBooking.totalAmount) || 0);
+            const paidDownpayment = Number(targetBooking.paidAmount) || (originalServicesFee * 0.5);
+            const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+            const additionalCostsTotal = ((targetBooking as any).additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+            const finalBalanceAmount = Math.max(0, serviceBalance + additionalCostsTotal);
+
+            const hitPay = HitPayService.fromSettings(db?.settings);
+            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${targetBooking.id}`;
+            const appTitle = db?.settings?.appName || 'RidersBUD';
+
+            sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
+                bookingId: targetBooking.id,
+                amount: finalBalanceAmount,
+                totalAmount: originalServicesFee + additionalCostsTotal,
+                currentPaid: paidDownpayment,
+                fullBooking: targetBooking,
+                isRental: false
+            }));
+
+            const { url } = await hitPay.createPaymentRequest({
+                amount: finalBalanceAmount,
+                currency: db?.settings?.currency || 'PHP',
+                reference_number: `BOK-${targetBooking.id}-BAL-${Date.now()}`,
+                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                redirect_url: returnUrl,
+                email: user.email || 'customer@example.com',
+                name: user.name || 'Customer',
+                purpose: `${appTitle} — Final Balance Settlement (#${targetBooking.id.slice(-6).toUpperCase()})`
+            });
+
+            window.location.href = url;
+        } catch (err: any) {
+            console.error("HitPay direct checkout error:", err);
+            navigate(`/customer-portal/service-payment/${targetBooking.id}`);
+        } finally {
+            setIsInitiatingHitPay(false);
+        }
+    };
 
     useEffect(() => {
         if (!bookingId) {
@@ -616,57 +705,62 @@ const BookingDetailScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-[#0a0a0a] text-white overflow-hidden font-sans">
             <CustomerHeader title={`JOB ID #${bookingSequenceId || booking.id.slice(-6)}`} icon={<ClipboardList size={22} />} />
 
-            <main className="flex-grow overflow-y-auto p-4 space-y-4 pb-32">
+            <main className="flex-grow overflow-y-auto p-3.5 sm:p-5 space-y-3.5 pb-32 max-w-lg mx-auto w-full">
 
-                {/* Service Card */}
-                <div className="relative overflow-hidden rounded-[2rem] p-6 glass-card border border-primary/20 shadow-[0_8px_32px_rgba(0,0,0,0.3)] animate-slideInUp">
-                    {/* Background overlay image based on the Services primary image */}
+                {/* Service Card (Hero) */}
+                <div className="relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-gradient-to-br from-[#1c1c1e] to-[#121214] border border-white/10 shadow-xl animate-slideInUp">
+                    {/* Background subtle art */}
                     <img
                         src={booking.services?.[0]?.imageUrl || booking.service?.imageUrl || booking.services?.[0]?.image || booking.service?.image || '/images/mockups/parts_placeholder.png'}
                         alt=""
-                        className="absolute inset-0 w-full h-full object-cover opacity-35 pointer-events-none z-0"
+                        className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none z-0 filter blur-[1px]"
                     />
-                    {/* Dark contrast tint */}
-                    <div className="absolute inset-0 bg-black/65 pointer-events-none z-0" />
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-16 translate-x-16 blur-2xl opacity-50 pointer-events-none z-0" />
-                    <div className="relative z-10">
-                        {/* Top Row: Service Name and Price */}
-                        <div className="flex items-start justify-between mb-4">
-                            {/* Left: Service Name and Status */}
-                            <div className="flex-1 flex flex-col items-start gap-2">
-                                <h1 className="text-2xl font-black tracking-tight text-gradient-primary leading-tight">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent pointer-events-none z-0" />
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-2xl pointer-events-none z-0" />
+                    
+                    <div className="relative z-10 space-y-3">
+                        {/* Top Row: Service Name & Total Price */}
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                                <h1 className="text-lg sm:text-xl font-black tracking-tight text-white leading-tight truncate">
                                     {serviceNames}
                                 </h1>
-                                <div className={`inline-block px-2.5 py-1 rounded-xl text-[9px] font-black tracking-widest border shadow-lg shadow-black/20 ${getStatusColor(status)}`}>
-                                    {status}
+                                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getStatusColor(status)}`}>
+                                        {status}
+                                    </span>
+                                    {booking.vehicle && (
+                                        <span className="text-[10px] bg-white/5 border border-white/5 px-2 py-0.5 rounded-md text-gray-300 font-mono">
+                                            {booking.vehicle.plateNumber || `${booking.vehicle.make} ${booking.vehicle.model}`}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Right: Price */}
-                            <div className="text-right ml-4">
-                                <span className="text-2xl font-black text-white drop-shadow-sm">
+                            <div className="text-right flex-shrink-0">
+                                <p className="text-xl sm:text-2xl font-black text-primary leading-none">
                                     {formatCurrency(booking.totalAmount || basePrice || 0)}
-                                </span>
-                                <p className="text-[8px] font-bold text-gray-500 tracking-widest mt-0.5 font-mono">Total service fee</p>
+                                </p>
+                                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mt-0.5 font-mono">Total Fee</p>
                             </div>
                         </div>
 
-                        {/* Bottom Row: Date, Time, and Duration - forced one-line layout */}
-                        <div className="flex flex-row items-center gap-1.5 flex-nowrap whitespace-nowrap w-full overflow-hidden">
-                            <div className="flex items-center gap-1 glass px-2 py-1 rounded-xl border border-white/5 flex-shrink-0">
-                                <Calendar size={11} className="text-primary" />
-                                <span className="text-[10px] font-bold text-gray-200">
+                        {/* Bottom Row: Date, Time & Duration Pills */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-white/10">
+                            <div className="flex items-center gap-1 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 text-[11px] text-gray-300">
+                                <Calendar size={12} className="text-primary" />
+                                <span className="font-semibold">
                                     {new Date(date.replace(/-/g, '/')).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                 </span>
                             </div>
-                            <div className="flex items-center gap-1 glass px-2 py-1 rounded-xl border border-white/5 flex-shrink-0">
-                                <Clock size={11} className="text-primary" />
-                                <span className="text-[10px] font-bold text-gray-200">{time}</span>
+                            <div className="flex items-center gap-1 bg-white/5 px-2.5 py-1 rounded-lg border border-white/5 text-[11px] text-gray-300">
+                                <Clock size={12} className="text-primary" />
+                                <span className="font-semibold">{time}</span>
                             </div>
                             {totalDuration > 0 && (
-                                <div className="flex items-center gap-1 bg-blue-500/10 px-2 py-1 rounded-xl border border-blue-500/20 flex-shrink-0">
-                                    <Timer size={10} className="text-blue-400" />
-                                    <span className="text-[9px] font-black text-blue-400 tracking-tighter">~{totalDuration} mins</span>
+                                <div className="flex items-center gap-1 bg-blue-500/10 px-2 py-1 rounded-lg border border-blue-500/20 text-[10px] text-blue-400 font-bold ml-auto">
+                                    <Timer size={11} />
+                                    <span>~{totalDuration} mins</span>
                                 </div>
                             )}
                         </div>
@@ -674,135 +768,186 @@ const BookingDetailScreen: React.FC = () => {
                 </div>
 
                 {/* Status Explanation Alert banner */}
-                <div className={`rounded-[1.5rem] p-4 border flex items-start gap-3 bg-[#151515] border-white/5`}>
-                    <div className="mt-0.5 text-primary">
-                        <AlertCircle size={18} />
+                <div className="rounded-xl p-3 bg-[#161618] border border-white/5 flex items-center gap-2.5">
+                    <div className="p-1.5 bg-primary/10 rounded-lg text-primary flex-shrink-0">
+                        <AlertCircle size={15} />
                     </div>
-                    <div className="flex-grow">
-                        <p className="font-bold text-xs text-white">Status Status Update</p>
-                        <p className="text-[11px] text-gray-400 mt-1">
+                    <div className="flex-1 min-w-0">
+                        <p className="font-bold text-[11px] text-white">Status Update</p>
+                        <p className="text-[10px] text-gray-400 truncate">
                             {status === 'Upcoming' && 'Your booking is confirmed and scheduled.'}
                             {status === 'Mechanic Assigned' && 'A professional mechanic has been assigned to your service.'}
-                            {status === 'En Route' && 'Your mechanic is on the way to your location. Watch live below!'}
-                            {status === 'In Progress' && 'Service is currently being performed on your vehicle.'}
-                            {status === 'Work Done' && 'Mechanic has finished work. Please confirm & release funds below.'}
-                            {status === 'Completed' && 'Service has been completed successfully. Thank you!'}
+                            {status === 'En Route' && 'Your mechanic is on the way to your location.'}
+                            {status === 'In Progress' && 'Service is currently being performed.'}
+                            {status === 'Work Done' && 'Mechanic has finished work. Please confirm & release balance.'}
+                            {status === 'Completed' && 'Service has been completed successfully.'}
                             {status === 'Cancelled' && 'This booking has been cancelled.'}
                         </p>
                     </div>
                 </div>
 
-                {/* Payment Information Card (GCash 50% downpayment) */}
-                {(booking.paymentMethod === 'GCash' || booking.gcashReference || booking.isVerified || booking.gcashDeclineReason) && (
-                    <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-primary/20 shadow-[0_0_20px_rgba(249,115,22,0.1)] overflow-hidden relative group">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full -translate-y-12 translate-x-12 blur-3xl opacity-50" />
-                        <h2 className="text-[10px] font-bold tracking-widest text-primary mb-4 flex items-center justify-between relative z-10">
-                            <span className="flex items-center gap-2">
-                                <CreditCard size={14} />
-                                Payment Details
-                            </span>
-                            {booking.isVerified ? (
-                                <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-[8px] font-black border border-green-500/20">Verified</span>
+                {/* Payment Information Card (Online Gateway / HitPay / GCash) */}
+                {(booking.paymentMethod?.includes('HitPay') || booking.paymentMethod === 'GCash' || booking.gcashReference || booking.downpaymentRef || booking.isVerified || booking.gcashDeclineReason || (booking.paidAmount && booking.paidAmount > 0)) && (
+                    <div className="bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-white/5 space-y-3 shadow-lg">
+                        {/* Header with Title & Badge */}
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                                <CreditCard size={14} className="text-primary" />
+                                <h3 className="text-xs font-black text-white uppercase tracking-wider">Payment Breakdown</h3>
+                            </div>
+                            {booking.isPaid ? (
+                                <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-black uppercase flex items-center gap-1">
+                                    <CheckCircle size={10} /> Fully Paid
+                                </span>
+                            ) : booking.isVerified || booking.paymentStatus === 'downpayment_paid' || (booking.paidAmount && booking.paidAmount > 0) ? (
+                                <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-black uppercase flex items-center gap-1">
+                                    <CheckCircle size={10} /> 50% DP Verified
+                                </span>
                             ) : booking.gcashDeclineReason ? (
-                                <span className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded text-[8px] font-black border border-red-500/20">Declined</span>
+                                <span className="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Declined</span>
                             ) : (
-                                <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-[8px] font-black border border-yellow-500/20">Pending Verification</span>
+                                <span className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Awaiting Verification</span>
                             )}
-                        </h2>
+                        </div>
 
                         {booking.gcashDeclineReason && (
-                            <div className="mb-4 p-3 bg-red-500/5 border border-red-500/20 rounded-xl relative z-10">
-                                <p className="text-[10px] font-black text-red-400 tracking-widest mb-1 flex items-center gap-1">
-                                    <AlertCircle size={12} />
-                                    Reason for Decline
+                            <div className="p-2.5 bg-red-500/10 border border-red-500/20 rounded-xl space-y-2">
+                                <p className="text-[10px] font-bold text-red-400 flex items-center gap-1">
+                                    <AlertCircle size={12} /> Reason: "{booking.gcashDeclineReason}"
                                 </p>
-                                <p className="text-xs text-gray-300 italic">"{booking.gcashDeclineReason}"</p>
                                 <button 
                                     onClick={() => navigate('/customer-portal/service-payment', { state: { booking } })}
-                                    className="mt-3 w-full py-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 text-[10px] font-black tracking-widest rounded-lg transition-all"
+                                    className="w-full py-1.5 bg-red-500 text-white text-[10px] font-bold rounded-lg transition-all"
                                 >
-                                    Submit New Proof of Payment
+                                    Resubmit Payment
                                 </button>
                             </div>
                         )}
 
-                        <div className="space-y-4 relative z-10">
-                            {(() => {
-                                const originalServicesFee = booking.services && booking.services.length > 0
-                                    ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
-                                    : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
-                                const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
-                                const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
-                                const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-                                const totalBalanceToPay = serviceBalance + additionalCostsTotal;
+                        {/* Transaction Reference Box */}
+                        {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference || booking.balancePaymentRef) && (
+                            <div className="p-2.5 bg-black/40 border border-white/5 rounded-xl space-y-1.5 text-[11px]">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider">Method</span>
+                                    <span className="text-white font-bold text-xs">{booking.paymentMethod || 'HitPay (Online Gateway)'}</span>
+                                </div>
+                                {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference) && (
+                                    <div className="flex justify-between items-start gap-2 pt-1 border-t border-white/5">
+                                        <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider shrink-0 mt-0.5">DP Ref</span>
+                                        <span className="text-primary font-mono font-bold text-[11px] text-right break-all leading-tight">
+                                            {booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference}
+                                        </span>
+                                    </div>
+                                )}
+                                {booking.downpaymentPaidAt && (
+                                    <div className="flex justify-between items-center text-[10px] text-gray-500 font-mono">
+                                        <span>Paid At</span>
+                                        <span>{new Date(booking.downpaymentPaidAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                                    </div>
+                                )}
+                                {booking.balancePaymentRef && (
+                                    <div className="flex justify-between items-start gap-2 pt-1 border-t border-white/5">
+                                        <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider shrink-0">Balance Ref</span>
+                                        <span className="text-emerald-400 font-mono font-bold text-[11px] text-right break-all">
+                                            {booking.balancePaymentRef}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
-                                return (
-                                    <>
-                                        <div className="flex items-center justify-between">
+                        {/* Financial Amounts (Paid vs Balance) */}
+                        {(() => {
+                            const originalServicesFee = booking.services && booking.services.length > 0
+                                ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                                : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+                            const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
+                            const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                            const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                            const totalBalanceToPay = serviceBalance + additionalCostsTotal;
+
+                            return (
+                                <div className="space-y-2">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {/* 50% Deposit Paid */}
+                                        <div className="bg-emerald-500/[0.05] border border-emerald-500/20 rounded-xl p-2.5 flex flex-col justify-between">
                                             <div>
-                                                <p className="text-[10px] text-gray-500 font-bold mb-1 tracking-tight font-mono">Amount Paid (50% Deposit)</p>
-                                                <p className="text-xl font-black text-white">{paidDownpayment > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}</p>
+                                                <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">50% Deposit Paid</p>
+                                                <p className="text-base sm:text-lg font-black text-emerald-400 mt-0.5">
+                                                    {paidDownpayment > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}
+                                                </p>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-[10px] text-gray-500 font-bold mb-1 tracking-tight font-mono">Remaining Balance</p>
-                                                <p className="text-lg font-bold text-gray-400">{serviceBalance > 0 ? `₱${serviceBalance.toLocaleString()}` : 'For Quotation'}</p>
-                                            </div>
+                                            <span className="text-[8px] text-emerald-500/80 font-bold uppercase mt-1">Secured</span>
                                         </div>
 
-                                        {booking.additionalCosts && booking.additionalCosts.length > 0 && (
-                                            <div className="p-3.5 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
-                                                <h4 className="text-[9px] font-bold text-primary tracking-widest uppercase flex items-center gap-1.5 mb-2 font-mono">
-                                                    <Wrench size={10} />
-                                                    Additional Costs Added by Mechanic
-                                                </h4>
-                                                <div className="space-y-1.5">
-                                                    {booking.additionalCosts.map((cost: any, index: number) => (
-                                                        <div key={index} className="flex justify-between items-center text-xs">
-                                                            <span className="text-gray-400 font-medium">{cost.description}</span>
-                                                            <span className="text-white font-bold">₱{Number(cost.price).toLocaleString()}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div className="h-px bg-white/5 my-2"></div>
-                                                <div className="flex justify-between items-center text-xs">
-                                                    <span className="text-gray-400 font-medium font-mono">Additional Total</span>
-                                                    <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
-                                                </div>
-                                                <div className="flex justify-between items-center pt-1">
-                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider font-mono">Total Balance to Pay</span>
-                                                    <span className="text-sm font-black text-emerald-400">{totalBalanceToPay > 0 ? `₱${totalBalanceToPay.toLocaleString()}` : 'For Quotation'}</span>
-                                                </div>
+                                        {/* Remaining Balance */}
+                                        <div className="bg-white/[0.02] border border-white/5 rounded-xl p-2.5 flex flex-col justify-between">
+                                            <div>
+                                                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Remaining Balance</p>
+                                                <p className="text-base sm:text-lg font-black text-white mt-0.5">
+                                                    {serviceBalance > 0 ? `₱${serviceBalance.toLocaleString()}` : '₱0.00'}
+                                                </p>
                                             </div>
-                                        )}
+                                            <span className="text-[8px] text-gray-500 font-medium mt-1">Due on completion</span>
+                                        </div>
+                                    </div>
 
-                                        {booking.gcashReceiptUrl && (
-                                            <button 
-                                                onClick={() => setShowReceiptModal(true)}
-                                                className="flex items-center justify-center gap-3 w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 rounded-xl py-4 text-xs font-black tracking-widest leading-none transition-all group"
-                                            >
-                                                <Eye size={16} className="group-hover:scale-110 transition-transform" />
-                                                View GCash Receipt
-                                            </button>
-                                        )}
-                                    </>
-                                );
-                            })()}
-                        </div>
+                                    {/* Additional costs if any */}
+                                    {booking.additionalCosts && booking.additionalCosts.length > 0 && (
+                                        <div className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-1.5">
+                                            <h4 className="text-[9px] font-bold text-primary tracking-widest uppercase flex items-center gap-1.5 font-mono">
+                                                <Wrench size={10} />
+                                                Additional Costs Added by Mechanic
+                                            </h4>
+                                            <div className="space-y-1">
+                                                {booking.additionalCosts.map((cost: any, index: number) => (
+                                                    <div key={index} className="flex justify-between items-center text-xs">
+                                                        <span className="text-gray-400 font-medium">{cost.description}</span>
+                                                        <span className="text-white font-bold">₱{Number(cost.price).toLocaleString()}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="h-px bg-white/5 my-1.5"></div>
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-gray-400 font-medium font-mono text-[10px]">Additional Total</span>
+                                                <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                                                <span className="text-[10px] font-black text-white uppercase tracking-wider font-mono">Total Balance to Pay</span>
+                                                <span className="text-sm font-black text-emerald-400">{totalBalanceToPay > 0 ? `₱${totalBalanceToPay.toLocaleString()}` : 'For Quotation'}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                            {booking.gcashReceiptUrl && (
+                                <button 
+                                    onClick={() => setShowReceiptModal(true)}
+                                    className="flex items-center justify-center gap-2 w-full bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl py-2.5 text-xs font-bold transition-all"
+                                >
+                                    <Eye size={14} className="text-primary" />
+                                    <span>View Receipt</span>
+                                </button>
+                            )}
                     </div>
                 )}
 
                 {/* Mechanic Information Card */}
                 {mechanic && (
-                    <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5">
-                        <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2">
-                            <Wrench size={14} />
-                            Your Assigned Mechanic
-                        </h2>
-
+                    <div className="bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-white/5 space-y-3">
                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
+                            <h2 className="text-[10px] font-bold tracking-widest text-gray-400 uppercase flex items-center gap-1.5 font-mono">
+                                <Wrench size={12} className="text-primary" />
+                                Assigned Mechanic
+                            </h2>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
                                 {/* Mechanic Image */}
-                                <div className="w-14 h-14 rounded-full bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0">
+                                <div className="w-11 h-11 rounded-xl bg-black/40 border border-white/10 overflow-hidden relative flex-shrink-0">
                                     <img
                                         src={mechanic.imageUrl || '/riders-logo.png'}
                                         alt={mechanic.name}
@@ -812,35 +957,35 @@ const BookingDetailScreen: React.FC = () => {
                                 </div>
 
                                 {/* Mechanic Info Details */}
-                                <div className="flex flex-col gap-1">
-                                    <h3 className="text-[12px] font-bold text-white leading-none">
+                                <div className="min-w-0">
+                                    <h3 className="text-xs font-bold text-white leading-tight truncate">
                                         {mechanic.name}
                                     </h3>
-                                    <div className="flex flex-col gap-1 items-start">
-                                        <div className="flex items-center gap-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold w-fit">
-                                            <Star size={10} className="fill-yellow-400 text-yellow-400" />
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                        <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.2 rounded text-[9px] font-bold">
+                                            <Star size={9} className="fill-yellow-400 text-yellow-400" />
                                             <span>{mechanic.rating ? mechanic.rating.toFixed(1) : '5.0'}</span>
                                         </div>
-                                        <span className="text-gray-500 text-[10px] font-normal pl-1">({mechanic.reviews || 0} reviews)</span>
+                                        <span className="text-gray-500 text-[9px]">({mechanic.reviews || 0} reviews)</span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Contact Action */}
-                            <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
                                 <button
                                     onClick={() => { setShowMechanicDetailsModal(true); setActiveModalTab('info'); }}
-                                    className="bg-primary hover:bg-orange-600 active:scale-95 transition-all text-white px-4 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-primary/10 whitespace-nowrap mechanic-card-btn"
+                                    className="bg-primary hover:bg-orange-600 active:scale-95 transition-all text-white px-3 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm"
                                 >
-                                    <User size={13} />
+                                    <User size={11} />
                                     Details
                                 </button>
                                 {booking.status === 'Completed' && !booking.isReviewed && !booking.review && (
                                     <button
                                         onClick={() => setShowReviewModal(true)}
-                                        className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all text-white px-4 py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/10 whitespace-nowrap mechanic-card-btn"
+                                        className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all text-white px-3 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm"
                                     >
-                                        <Star size={13} className="fill-white" />
+                                        <Star size={11} className="fill-white" />
                                         Review
                                     </button>
                                 )}
@@ -851,28 +996,26 @@ const BookingDetailScreen: React.FC = () => {
 
                 {/* Driver Details Card (Driver for Hire Service Only) */}
                 {(booking?.serviceName === 'Driver for Hire' || booking?.serviceId === '7') && (
-                    <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-[30px] rounded-full translate-x-5 -translate-y-5"></div>
-                        
-                        <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2">
-                            <User size={14} className="text-primary" />
-                            Assigned Driver Details
+                    <div className="bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-white/5 relative overflow-hidden">
+                        <h2 className="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-3 flex items-center gap-1.5 font-mono">
+                            <User size={12} className="text-primary" />
+                            Assigned Driver
                         </h2>
 
                         <div className="flex items-center justify-between relative z-10">
-                            <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 overflow-hidden relative flex-shrink-0 flex items-center justify-center shadow-lg">
-                                    <User size={26} className="text-gray-400" />
+                            <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl bg-white/5 border border-white/10 overflow-hidden relative flex-shrink-0 flex items-center justify-center">
+                                    <User size={20} className="text-gray-400" />
                                 </div>
-                                <div className="flex flex-col gap-1">
-                                    <h3 className="text-[14px] font-black text-white leading-none">
+                                <div>
+                                    <h3 className="text-xs font-bold text-white leading-tight">
                                         {booking.driverName || 'Pending Assignment'}
                                     </h3>
                                     <p className="text-[9px] font-bold text-primary uppercase tracking-wider mt-0.5">Professional Driver</p>
                                     
                                     {booking.estimatedArrivalTime && (
-                                        <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-400">
-                                            <Clock size={11} className="text-primary shrink-0" />
+                                        <div className="flex items-center gap-1 mt-0.5 text-[9px] text-gray-400">
+                                            <Clock size={10} className="text-primary shrink-0" />
                                             <span>ETA: <span className="text-white font-bold">{booking.estimatedArrivalTime}</span></span>
                                         </div>
                                     )}
@@ -881,17 +1024,17 @@ const BookingDetailScreen: React.FC = () => {
                             {booking.driverPhone && (
                                 <a 
                                     href={`tel:${booking.driverPhone}`}
-                                    className="w-10 h-10 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center hover:bg-primary/40 transition-all duration-300 group shadow-md shadow-primary/10"
+                                    className="w-8 h-8 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center hover:bg-primary/40 transition-all duration-300"
                                     title={`Call ${booking.driverName}`}
                                 >
-                                    <Phone size={18} className="text-primary group-hover:scale-110 transition-transform" />
+                                    <Phone size={14} className="text-primary" />
                                 </a>
                             )}
                         </div>
 
                         {booking.remarks && (
-                            <div className="mt-4 p-3 bg-black/30 border border-white/5 rounded-xl flex items-start gap-2.5">
-                                <Info size={13} className="text-primary shrink-0 mt-0.5" />
+                            <div className="mt-3 p-2.5 bg-black/40 border border-white/5 rounded-xl flex items-start gap-2">
+                                <Info size={12} className="text-primary shrink-0 mt-0.5" />
                                 <div>
                                     <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest block">Remarks & Instructions</span>
                                     <p className="text-[10px] text-gray-300 mt-0.5 leading-relaxed">{booking.remarks}</p>
@@ -902,9 +1045,9 @@ const BookingDetailScreen: React.FC = () => {
                 )}
 
                 {/* Vehicle Information Card */}
-                <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5">
-                    <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2">
-                        <Car size={14} />
+                <div className="bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-white/5 space-y-3">
+                    <h2 className="text-[10px] font-bold tracking-widest text-gray-400 uppercase flex items-center gap-1.5 font-mono">
+                        <Car size={12} className="text-primary" />
                         Vehicle Information
                     </h2>
 
@@ -1054,10 +1197,10 @@ const BookingDetailScreen: React.FC = () => {
                         <div className="flex-1 flex flex-col gap-3 justify-center">
                             {/* PIN LOCATION - Interactive Mini Map */}
                             <button
-                                onClick={handleDirectNavigation}
+                                onClick={() => setShowLiveRouteModal(true)}
                                 disabled={!location?.lat && !location?.lng}
                                 className="w-full h-24 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] rounded-xl border-2 border-primary/30 relative overflow-hidden flex-shrink-0 group cursor-pointer hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={location?.lat ? "Open in Google Maps" : "Location not available"}
+                                title={location?.lat ? "View Live Route & Navigation" : "Location not available"}
                             >
                                 {location?.lat && location?.lng ? (
                                     <>
@@ -1065,11 +1208,11 @@ const BookingDetailScreen: React.FC = () => {
                                         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
                                         <div className="relative h-full flex flex-col items-center justify-center p-3">
                                             <div className="relative mb-1">
-                                                <MapPin size={24} className="text-primary drop-shadow-[0_2px_8px_rgba(249,115,22,0.6)] animate-bounce" />
+                                                <Navigation size={22} className="text-primary drop-shadow-[0_2px_8px_rgba(249,115,22,0.6)] animate-pulse" />
                                                 <div className="absolute inset-0 bg-primary/30 blur-xl animate-pulse"></div>
                                             </div>
                                             <span className="text-[10px] font-black text-center leading-tight text-white tracking-wider drop-shadow-lg font-mono">
-                                                {status === 'En Route' && eta ? `EN ROUTE: ${eta.toUpperCase()}` : 'PIN LOCATION'}
+                                                {status === 'En Route' && eta ? `EN ROUTE: ${eta.toUpperCase()}` : 'LIVE ROUTE MAP'}
                                             </span>
                                         </div>
                                     </>
@@ -1127,35 +1270,36 @@ const BookingDetailScreen: React.FC = () => {
                                 </button>
                             )}
 
-                            {/* Pay Balance Action (PAY THE BALANCE / PAY NOW) */}
-                            {status !== 'Completed' && !booking.isPaid && (
-                                !booking.isVerified && !booking.gcashReceiptUrl ? (
-                                    <button
-                                        onClick={() => {
-                                            setShowGCashPaymentModal(true);
-                                        }}
-                                        className="w-full bg-primary text-white hover:bg-orange-600 transition font-black py-2.5 rounded-xl text-[12px] tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-primary/20 cursor-pointer active:scale-95"
-                                    >
-                                        PAY NOW
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => {
-                                            if (booking.gcashPaymentStatus === 'awaiting_payment') {
-                                                setShowGCashPaymentModal(true);
-                                            }
-                                        }}
-                                        disabled={booking.gcashPaymentStatus !== 'awaiting_payment'}
-                                        className={`w-full font-black py-2.5 rounded-xl transition text-[12px] tracking-widest uppercase flex items-center justify-center gap-2 ${
-                                            booking.gcashPaymentStatus === 'awaiting_payment'
-                                                ? 'bg-primary text-white hover:bg-orange-600 shadow-lg shadow-primary/20 cursor-pointer active:scale-95'
-                                                : 'bg-white/5 border border-white/5 text-gray-500 cursor-not-allowed'
-                                        }`}
-                                    >
-                                        PAY THE BALANCE
-                                    </button>
-                                )
-                            )}
+                            {/* Initial Downpayment Action (Only if initial 50% deposit was not yet paid at all) */}
+                            {!booking.isPaid && (() => {
+                                const isInitialDepositUnpaid = !booking.isVerified && !booking.gcashReceiptUrl && (!booking.paidAmount || booking.paidAmount === 0);
+                                const isServiceFinished = (status === 'Work Done' || status === 'Completed') && !booking.isPaid;
+                                const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+
+                                if (isInitialDepositUnpaid) {
+                                    return (
+                                        <button
+                                            onClick={() => navigate(`/customer-portal/service-payment/${booking.id}`)}
+                                            className="w-full bg-primary text-white hover:bg-orange-600 transition font-black py-2.5 rounded-xl text-[12px] tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-primary/20 cursor-pointer active:scale-95 animate-pulse"
+                                        >
+                                            PAY 50% DOWNPAYMENT {isHitPayActive ? '(HITPAY)' : ''}
+                                        </button>
+                                    );
+                                }
+
+                                if (isServiceFinished) {
+                                    return (
+                                        <button
+                                            onClick={() => handleInitiateHitPayBalance(booking)}
+                                            className="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white hover:from-emerald-600 hover:to-green-700 font-black py-2.5 rounded-xl text-[12px] tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 cursor-pointer active:scale-95 animate-pulse"
+                                        >
+                                            SETTLE REMAINING BALANCE (HITPAY)
+                                        </button>
+                                    );
+                                }
+
+                                return null;
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -1573,6 +1717,134 @@ const BookingDetailScreen: React.FC = () => {
                 />
             )}
 
+            {/* Mandatory Balance Settlement Modal (Auto Pop-up when Mechanic Completes Work) */}
+            {((booking.status === 'Work Done' || booking.status === 'Completed') && !booking.isPaid && !showCompleteTransactionModal && !showGCashPaymentModal) && (() => {
+                const originalServicesFee = booking.services && booking.services.length > 0
+                    ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+                    : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+                const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
+                const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                const finalBalanceAmount = Math.max(0, serviceBalance + additionalCostsTotal);
+                const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+                const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+
+                return (
+                    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fadeIn">
+                        <div className="relative w-full max-w-md bg-[#161618] rounded-3xl p-5 sm:p-6 border border-primary/30 shadow-[0_0_50px_rgba(249,115,22,0.15)] animate-modal-scale-up space-y-4 text-left">
+                            
+                            {/* Top Header Badge & Icon */}
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                                    <CheckCircle size={26} className="text-emerald-400" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full mb-1">
+                                        <Wrench size={10} /> Service Completed
+                                    </span>
+                                    <h3 className="text-lg font-black text-white leading-tight">
+                                        Settle Remaining Balance
+                                    </h3>
+                                </div>
+                            </div>
+
+                            <p className="text-xs text-gray-400 leading-relaxed">
+                                Your mechanic <strong className="text-white">{mechanic?.name || 'Mechanic'}</strong> has finished work on your vehicle. Payment of the remaining balance is required to finalize and release your booking.
+                            </p>
+
+                            {/* Financial Breakdown Card */}
+                            <div className="bg-black/50 border border-white/5 rounded-2xl p-4 space-y-2.5">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-gray-400">Service Fee:</span>
+                                    <span className="text-white font-bold">{serviceNames}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-gray-400">Total Service Amount:</span>
+                                    <span className="text-white font-bold">₱{originalServicesFee.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs text-emerald-400">
+                                    <span className="flex items-center gap-1">
+                                        <CheckCircle size={11} /> 50% Downpayment Paid:
+                                    </span>
+                                    <span className="font-bold">-₱{paidDownpayment.toLocaleString()}</span>
+                                </div>
+
+                                {booking.additionalCosts && booking.additionalCosts.length > 0 && (
+                                    <div className="pt-2 border-t border-white/5 space-y-1.5">
+                                        <div className="flex justify-between items-center text-[11px] text-primary font-bold">
+                                            <span>Mechanic Additional Costs:</span>
+                                            <span>+₱{additionalCostsTotal.toLocaleString()}</span>
+                                        </div>
+                                        {booking.additionalCosts.map((cost: any, idx: number) => (
+                                            <div key={idx} className="flex justify-between text-[10px] text-gray-400 pl-2">
+                                                <span>• {cost.description}</span>
+                                                <span>₱{Number(cost.price).toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="pt-2.5 border-t border-white/10 flex justify-between items-end">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Balance Due</p>
+                                        <p className="text-2xl font-black text-emerald-400 mt-0.5 leading-none">
+                                            ₱{finalBalanceAmount.toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                                        Payment Required
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Payment Actions */}
+                            <div className="space-y-2 pt-1">
+                                <button
+                                    onClick={() => handleInitiateHitPayBalance(booking)}
+                                    disabled={isInitiatingHitPay}
+                                    className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-black py-3.5 rounded-xl text-xs tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 active:scale-95 transition-all disabled:opacity-50"
+                                >
+                                    {isInitiatingHitPay ? (
+                                        <>
+                                            <Spinner size="sm" color="text-white" />
+                                            <span>Redirecting to Payment Gateway...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CreditCard size={15} />
+                                            <span>Pay Balance with HitPay Online</span>
+                                        </>
+                                    )}
+                                </button>
+
+                                {isManualGcashEnabled && (
+                                    <button
+                                        onClick={() => setShowGCashPaymentModal(true)}
+                                        className="w-full bg-white/5 hover:bg-white/10 text-gray-300 font-bold py-2.5 rounded-xl text-xs tracking-wider transition-all border border-white/5"
+                                    >
+                                        Pay via Manual GCash QR & Upload
+                                    </button>
+                                )}
+
+                                <button
+                                    onClick={() => navigate(`/customer-portal/service-payment/${booking.id}`)}
+                                    className="w-full text-center text-[11px] text-gray-500 hover:text-gray-400 py-1 font-medium transition-colors"
+                                >
+                                    Choose another payment method →
+                                </button>
+                            </div>
+
+                            {/* Mandatory Lock Notice Footer */}
+                            <div className="p-2 bg-amber-500/5 border border-amber-500/10 rounded-xl text-center">
+                                <p className="text-[10px] text-amber-400/90 font-medium">
+                                    🔒 <strong>Mandatory Payment:</strong> This modal cannot be closed until balance payment is confirmed.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Complete Transaction Success Modal with Confetti Overlay */}
             {showCompleteTransactionModal && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn text-center">
@@ -1879,6 +2151,25 @@ const BookingDetailScreen: React.FC = () => {
                     </div>
                 );
             })()}
+
+            {/* Realtime Live Route Map Modal */}
+            <LiveRouteMapModal
+                isOpen={showLiveRouteModal}
+                onClose={() => setShowLiveRouteModal(false)}
+                customerLocation={booking.location || null}
+                customerImageUrl={booking.customerPhoto || (booking as any).customerImage || user?.picture || null}
+                customerName={booking.customerName || user?.name || 'Customer'}
+                mechanicLocation={mechanicLiveLocation || (mechanic?.lat && mechanic?.lng ? { lat: mechanic.lat, lng: mechanic.lng } : null)}
+                mechanic={mechanic}
+                title={`Live Navigation — Job #${bookingSequenceId || booking.id.slice(-6)}`}
+                status={booking.status}
+                onCallMechanic={handleCallMechanic}
+                onChatMechanic={() => {
+                    setShowLiveRouteModal(false);
+                    setIsChatOpen(true);
+                }}
+                appLogoUrl={db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}
+            />
         </div>
     );
 };

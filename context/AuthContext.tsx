@@ -9,8 +9,9 @@ import {
     updateProfile,
     User as FirebaseAuthUser,
     GoogleAuthProvider,
-    signInWithPopup,
     FacebookAuthProvider,
+    signInWithRedirect,
+    getRedirectResult,
     setPersistence,
     browserLocalPersistence
 } from 'firebase/auth';
@@ -88,11 +89,14 @@ const loadCustomerSessionFromStorage = (): { isBypassed: boolean; user: Customer
 };
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-    const [user, setUser] = useState<Customer | null>(null);
-    const [loading, setLoading] = useState(true);
+    const initialSession = loadCustomerSessionFromStorage();
+    const hasInitialCustomerSession = localStorage.getItem('ridersbud_customer_session') === 'true';
+
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!(initialSession.user || hasInitialCustomerSession));
+    const [user, setUser] = useState<Customer | null>(() => initialSession.user);
+    const [loading, setLoading] = useState<boolean>(() => !initialSession.isBypassed);
     const [firebaseUser, setFirebaseUser] = useState<FirebaseAuthUser | null>(null);
-    const [isBypassed, setIsBypassed] = useState(false);
+    const [isBypassed, setIsBypassed] = useState<boolean>(() => initialSession.isBypassed);
 
     useEffect(() => {
         const savedSession = loadCustomerSessionFromStorage();
@@ -284,35 +288,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
             throw error;
         }
-    };
- 
-    const loginWithGoogle = async () => {
+    };    const loginWithGoogle = async () => {
         const provider = new GoogleAuthProvider();
         try {
             await setPersistence(auth, browserLocalPersistence);
+            await signInWithRedirect(auth, provider);
+        } catch (error: any) {
+            console.error("Google Login Error:", error);
+            throw error;
+        }
+    };
+
+    // Handle redirect result on mount (completes the redirect sign-in flow)
+    useEffect(() => {
+        const handleRedirectResult = async () => {
             try {
-                const result = await signInWithPopup(auth, provider);
-                const { user: fbUser } = result;
-                
+                const result = await getRedirectResult(auth);
+                if (!result) return;
+
+                const fbUser = result.user;
                 const hint = sessionStorage.getItem('auth_type_hint');
                 if (hint === 'mechanic') {
-                    // Check if they are actually a customer trying to log in under mechanic tab
                     const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
                     if (customerDoc.exists()) {
                         await signOut(auth);
-                        throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
+                        return;
                     }
                     return;
                 }
- 
-                // Also check if they are already a mechanic trying to log in under customer tab
+
                 const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
                 if (mechanicDoc.exists()) {
                     await signOut(auth);
-                    throw new Error("This account is not registered as a Customer. Please select the correct tab.");
+                    return;
                 }
- 
-                // Check if customer doc exists, if not create it
+
                 const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
                 if (!customerDoc.exists()) {
                     const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
@@ -329,92 +339,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     };
                     await setDoc(doc(firestore, 'customers', fbUser.uid), newCustomer);
                 }
-            } catch (popupError: any) {
-                const isBlockError = popupError.code === 'auth/popup-blocked' || 
-                    popupError.code === 'auth/popup-closed-by-user' || 
-                    popupError.code === 'auth/cancelled-popup-request' ||
-                    popupError.code === 'auth/network-request-failed' ||
-                    (popupError.message && (
-                        popupError.message.includes('COOP') || 
-                        popupError.message.includes('Cross-Origin-Opener-Policy') ||
-                        popupError.message.includes('block') ||
-                        popupError.message.includes('blocked') ||
-                        popupError.message.includes('failed') ||
-                        popupError.message.includes('fetch')
-                    )) ||
-                    (popupError.name === 'DOMException' || popupError.message?.includes('closed'));
- 
-                if (isBlockError) {
-                    console.info("Popup blocked, network failed, or COOP isolation triggered. Trying redirect sign-in...", popupError);
-                    const { signInWithRedirect } = await import('firebase/auth');
-                    await signInWithRedirect(auth, provider);
-                } else {
-                    throw popupError;
+            } catch (error: any) {
+                // If user came from mechanic tab via redirect, redirect to mechanic login instead
+                if (error.message?.includes('not registered as a Mechanic') || error.message?.includes('not registered as a Customer')) {
+                    console.info("Redirect result was for wrong role tab:", error.message);
+                    return;
                 }
+                console.error("Redirect result error:", error);
             }
-        } catch (error: any) {
-            console.error("Google Login Error:", error);
-            throw error;
-        }
-    };
+        };
+        handleRedirectResult();
+    }, []);
  
     const loginWithFacebook = async () => {
         const provider = new FacebookAuthProvider();
         try {
             await setPersistence(auth, browserLocalPersistence);
-            try {
-                const result = await signInWithPopup(auth, provider);
-                const { user: fbUser } = result;
-                
-                const hint = sessionStorage.getItem('auth_type_hint');
-                if (hint === 'mechanic') {
-                    // Check if they are actually a customer trying to log in under mechanic tab
-                    const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
-                    if (customerDoc.exists()) {
-                        await signOut(auth);
-                        throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
-                    }
-                    return;
-                }
- 
-                // Also check if they are already a mechanic trying to log in under customer tab
-                const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
-                if (mechanicDoc.exists()) {
-                    await signOut(auth);
-                    throw new Error("This account is not registered as a Customer. Please select the correct tab.");
-                }
- 
-                const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
-                if (!customerDoc.exists()) {
-                    const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
-                    const defaultPic = (settingsSnap.exists() ? settingsSnap.data()?.defaultCustomerImageUrl : null) || '/assets/logo.png';
-                    const newCustomer: Customer = {
-                        id: fbUser.uid,
-                        name: fbUser.displayName || 'Facebook User',
-                        email: fbUser.email || '',
-                        phone: '',
-                        vehicles: [],
-                        picture: fbUser.photoURL || defaultPic,
-                        registrationDate: new Date().toISOString(),
-                        status: 'Active'
-                    };
-                    await setDoc(doc(firestore, 'customers', fbUser.uid), newCustomer);
-                }
-            } catch (popupError: any) {
-                if (
-                    popupError.code === 'auth/popup-blocked' || 
-                    popupError.code === 'auth/popup-closed-by-user' || 
-                    popupError.code === 'auth/cancelled-popup-request' ||
-                    (popupError.message && (popupError.message.includes('COOP') || popupError.message.includes('Cross-Origin-Opener-Policy'))) ||
-                    (popupError.name === 'DOMException' || popupError.message?.includes('closed'))
-                ) {
-                    console.info("Popup blocked or COOP isolation triggered, trying redirect sign-in...");
-                    const { signInWithRedirect } = await import('firebase/auth');
-                    await signInWithRedirect(auth, provider);
-                } else {
-                    throw popupError;
-                }
-            }
+            await signInWithRedirect(auth, provider);
         } catch (error: any) {
             console.error("Facebook Login Error:", error);
             throw error;

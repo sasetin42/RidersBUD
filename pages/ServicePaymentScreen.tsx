@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import CustomerHeader from '../components/CustomerHeader';
 import { CreditCard } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -13,11 +13,12 @@ import GCashPaymentModal from '../components/GCashPaymentModal';
 const ServicePaymentScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
+    const { bookingId: routeBookingId } = useParams<{ bookingId?: string }>();
     const queryParams = new URLSearchParams(location.search);
-    const bookingIdParam = queryParams.get('bookingId');
+    const bookingIdParam = routeBookingId || queryParams.get('bookingId');
     const isRentalParam = queryParams.get('isRental') === 'true';
     const bookingState = (location.state as { booking?: Booking })?.booking;
-    const { db, updateBookingPayment, updateRentalBooking } = useDatabase();
+    const { db, updateBookingPayment, updateRentalBooking, cancelBooking } = useDatabase();
     const { user } = useAuth();
 
     const bookingFromQuery = useMemo(() => {
@@ -91,31 +92,71 @@ const ServicePaymentScreen: React.FC = () => {
 
     React.useEffect(() => {
         const queryParams = new URLSearchParams(window.location.search);
-        const status = queryParams.get('status');
+        const status = queryParams.get('status') || queryParams.get('hitpay');
 
-        if (status === 'completed' && !isProcessing && !finalizeRun.current) {
+        if ((status === 'completed' || status === 'success') && !isProcessing && !finalizeRun.current) {
             const pendingTx = sessionStorage.getItem('pendingHitPayServiceTx');
-            if (pendingTx) {
+            const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
+            const targetBookingId = sessionData?.bookingId || bookingIdParam || booking?.id;
+
+            if (targetBookingId) {
                 finalizeRun.current = true;
-                const { bookingId, amount, totalAmount, currentPaid, fullBooking, isRental } = JSON.parse(pendingTx);
+                const amount = sessionData?.amount || amountToPay || total;
+                const totalAmount = sessionData?.totalAmount || total;
+                const currentPaid = sessionData?.currentPaid !== undefined ? sessionData.currentPaid : paid;
+                const fullBooking = sessionData?.fullBooking || booking;
+                const isRental = sessionData?.isRental || isRentalParam || fullBooking?.isRental;
 
                 const finalizePayment = async () => {
                     try {
                         setIsProcessing(true);
                         const newPaidAmount = currentPaid + amount;
-                        const newPaymentStatus = newPaidAmount >= totalAmount ? 'paid' : 'partial';
-                        const isFullyPaid = newPaymentStatus === 'paid';
+                        const isFullyPaid = newPaidAmount >= (totalAmount - 1);
+                        const newPaymentStatus = isFullyPaid ? 'paid' : 'partial';
                         const isRentalBooking = fullBooking?.isRental || isRental;
+                        const hitpayRef = queryParams.get('reference') || queryParams.get('payment_request_id') || `HITPAY-${Date.now()}`;
+                        const requestId = queryParams.get('payment_request_id') || '';
 
                         if (isRentalBooking && updateRentalBooking) {
-                            await updateRentalBooking(bookingId, {
+                            await updateRentalBooking(targetBookingId, {
                                 paidAmount: newPaidAmount,
                                 paymentStatus: newPaymentStatus,
                                 isPaid: isFullyPaid,
-                                status: 'Confirmed'
+                                isVerified: true,
+                                paymentMethod: 'HitPay (Online)',
+                                status: 'Confirmed',
+                                ...(isFullyPaid ? {
+                                    balancePaymentRef: hitpayRef,
+                                    balancePaidAt: new Date().toISOString(),
+                                    balancePaid: true
+                                } : {
+                                    downpaymentRef: hitpayRef,
+                                    downpaymentPaidAt: new Date().toISOString(),
+                                    downpaymentAmount: amount
+                                })
                             });
-                        } else {
-                            await updateBookingPayment(bookingId, amount, newPaymentStatus);
+                        } else if (updateBookingPayment) {
+                            await updateBookingPayment(targetBookingId, amount, newPaymentStatus, {
+                                paidAmount: newPaidAmount,
+                                remainingBalance: Math.max(0, totalAmount - newPaidAmount),
+                                isPaid: isFullyPaid,
+                                isVerified: true,
+                                paymentMethod: 'HitPay (Online)',
+                                hitpayPaymentRequestId: requestId,
+                                hitpayReference: hitpayRef,
+                                hitpayStatus: 'completed',
+                                ...(isFullyPaid ? {
+                                    balancePaymentRef: hitpayRef,
+                                    balancePaidAt: new Date().toISOString(),
+                                    balancePaid: true,
+                                    status: fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')
+                                } : {
+                                    downpaymentRef: hitpayRef,
+                                    downpaymentPaidAt: new Date().toISOString(),
+                                    downpaymentAmount: amount,
+                                    status: fullBooking?.status === 'Pending' ? 'Upcoming' : (fullBooking?.status || 'Upcoming')
+                                })
+                            });
                         }
                         sessionStorage.removeItem('pendingHitPayServiceTx');
 
@@ -124,8 +165,21 @@ const ServicePaymentScreen: React.FC = () => {
                             paidAmount: newPaidAmount, 
                             paymentStatus: newPaymentStatus, 
                             isPaid: isFullyPaid,
+                            isVerified: true,
+                            paymentMethod: 'HitPay (Online)',
                             isRental: isRentalBooking,
-                            status: isRentalBooking ? 'Confirmed' : (fullBooking?.status || 'pending')
+                            status: isRentalBooking ? 'Confirmed' : (isFullyPaid && fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')),
+                            ...(isFullyPaid ? {
+                                balancePaymentRef: hitpayRef,
+                                balancePaidAt: new Date().toISOString(),
+                                balancePaid: true,
+                                remainingBalance: 0
+                            } : {
+                                downpaymentRef: hitpayRef,
+                                downpaymentPaidAt: new Date().toISOString(),
+                                downpaymentAmount: amount,
+                                remainingBalance: Math.max(0, totalAmount - newPaidAmount)
+                            })
                         };
                         navigate('/customer-portal/service-payment-confirmation', { state: { booking: updatedBooking }, replace: true });
                     } catch (err) {
@@ -137,15 +191,46 @@ const ServicePaymentScreen: React.FC = () => {
                 return;
             }
         } else if ((status === 'canceled' || status === 'failed') && !isProcessing) {
-            setError(`Payment was ${status}. Please try again.`);
-            window.history.replaceState({}, document.title, window.location.pathname);
+            const pendingTx = sessionStorage.getItem('pendingHitPayServiceTx');
+            const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
             sessionStorage.removeItem('pendingHitPayServiceTx');
+
+            const targetBookingId = sessionData?.bookingId || bookingIdParam || booking?.id;
+            const isRental = sessionData?.isRental || isRentalParam || booking?.isRental;
+            const cancelAmount = sessionData?.amount || amountToPay || total;
+            const itemNames = (services && services.length > 0) ? services.map((s: any) => ({ name: s.name, price: s.price })) : [{ name: serviceNames || 'Vehicle Service', price: cancelAmount }];
+
+            // Cancel the booking in the database
+            if (targetBookingId) {
+                if (isRental && updateRentalBooking) {
+                    updateRentalBooking(targetBookingId, { status: 'Cancelled' }).catch(console.warn);
+                } else if (cancelBooking) {
+                    cancelBooking(targetBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
+                }
+            }
+
+            const cancellationInfo = {
+                type: isRental ? ('Car Rental' as const) : ('Service Booking' as const),
+                referenceId: targetBookingId ? `BOK-${targetBookingId}` : 'BOK-CANCELLED',
+                amount: cancelAmount,
+                date: new Date().toLocaleString(),
+                reason: 'Payment process was cancelled by the user at the payment gateway.',
+                items: itemNames,
+                retryPath: `/customer-portal/service-payment?bookingId=${targetBookingId || ''}`
+            };
+
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            navigate('/customer-portal/', {
+                state: { cancelledTransaction: cancellationInfo },
+                replace: true
+            });
         }
 
         if (!booking && !isProcessing && !status) {
             navigate('/customer-portal/booking-history');
         }
-    }, [booking, isProcessing, navigate, updateBookingPayment, updateRentalBooking]);
+    }, [booking, isProcessing, navigate, updateBookingPayment, updateRentalBooking, cancelBooking, bookingIdParam, isRentalParam, services, serviceNames, amountToPay, total]);
 
     if (isProcessing) {
         return (
@@ -199,7 +284,7 @@ const ServicePaymentScreen: React.FC = () => {
         if (!user) { setError("User not found. Please log in again."); return; }
         if (!selectedMethod) { setError("Please select a payment method."); return; }
 
-        if (selectedMethod === 'GCash') {
+        if (selectedMethod === 'Manual GCash' || selectedMethod === 'GCash') {
             setShowGCashModal(true);
             return;
         }
@@ -220,16 +305,21 @@ const ServicePaymentScreen: React.FC = () => {
                 isRental: booking.isRental // Explicitly serialize isRental flag
             }));
 
-            const returnUrl = `${window.location.origin}${window.location.pathname}`;
+            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${booking.id}`;
+            const appTitle = db?.settings?.appName || 'RidersBUD';
+            const purpose = isDeposit
+                ? `${appTitle} — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
+                : `${appTitle} — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
 
             const { url } = await hitPay.createPaymentRequest({
                 amount: amountToPay,
                 currency: db?.settings?.currency || 'PHP',
-                reference_number: `BOK-${booking.id}-${Date.now()}`,
+                reference_number: `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`,
                 webhook: 'https://ridersbud-10806.web.app/payment/webhook',
                 redirect_url: returnUrl,
                 email: user.email || 'customer@example.com',
-                name: user.name || 'Customer'
+                name: user.name || 'Customer',
+                purpose: purpose
             });
 
             // Genuine redirect
@@ -242,11 +332,22 @@ const ServicePaymentScreen: React.FC = () => {
         }
     };
 
-    const paymentOptions = [
-        { name: 'Credit Card', icon: '💳' },
-        { name: 'GCash', icon: '🇬' },
-        { name: 'Paymaya', icon: '🇵' }
-    ];
+    const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+    const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+
+    const paymentOptions = useMemo(() => {
+        const options: { name: string; icon: string; subtitle?: string }[] = [];
+        if (isHitPayActive) {
+            options.push({ name: 'HitPay Online (Cards, GCash, Maya, QRPH)', icon: '💳', subtitle: 'Instant Automated Processing' });
+        }
+        if (isManualGcashEnabled) {
+            options.push({ name: 'Manual GCash', icon: '🇬', subtitle: 'Scan QR & Upload Receipt' });
+        }
+        if (options.length === 0) {
+            options.push({ name: 'HitPay Online', icon: '💳', subtitle: 'Online Gateway' });
+        }
+        return options;
+    }, [isHitPayActive, isManualGcashEnabled]);
 
     return (
         <div className="flex flex-col h-full bg-secondary">

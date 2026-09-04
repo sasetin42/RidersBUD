@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Button, Card, Badge } from '../components/ui';
 import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
+import { seedServices } from '../data/mockData';
 
 const getServiceIncludes = (serviceName: string): string[] => {
     const lower = serviceName.toLowerCase();
@@ -33,7 +34,7 @@ const getServiceIncludes = (serviceName: string): string[] => {
     }
     if (lower.includes('driver') || lower.includes('hire') || lower.includes('chauffeur')) {
         return [
-            "Licensed & Vetted Professional Chauffeur",
+            "Licensed & Vetted Professional Driver",
             "Flexible Hourly/Daily Service Options",
             "Route Planning & Real-time Navigation",
             "Safe, Comfortable & Insured Ride",
@@ -136,7 +137,7 @@ const ServiceDetailScreen: React.FC = () => {
     const { db } = useDatabase();
 
     const service = useMemo(() => {
-        return db?.services.find(s => s.id === id);
+        return db?.services.find(s => s.id === id) || seedServices.find(s => s.id === id);
     }, [db, id]);
 
     const includes = useMemo(() => {
@@ -164,10 +165,10 @@ const ServiceDetailScreen: React.FC = () => {
             {/* Hero Image Section */}
             <div className="relative h-72 w-full">
                 <img
-                    src={normalizeServiceImage(service.imageUrl, service.category)}
+                    src={normalizeServiceImage(service.imageUrl, service.category, service.name)}
                     alt={service.name}
                     className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category); }}
+                    onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(service.category, service.name); }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-[#121212]" />
 

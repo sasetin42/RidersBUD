@@ -1,14 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CustomerHeader from '../components/CustomerHeader';
-import { CheckCircle2, Clock, ShieldCheck, Star } from 'lucide-react';
+import { CheckCircle2, Clock, ShieldCheck, Star, Calendar, Car, Wrench, CreditCard, Sparkles, ChevronRight, AlertCircle } from 'lucide-react';
 import { Booking } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useDatabase } from '../context/DatabaseContext';
 import CustomerMechanicChatModal from '../components/customer/CustomerMechanicChatModal';
 import MapComponent from '../components/MapComponent';
 import { db as firestore } from '../firebase';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
-import liveData from '../data/liveData.json';
+import { normalizeServiceImage } from '../utils/fallbackImages';
+import { seedServices } from '../data/mockData';
 
 declare const L: any;
 
@@ -16,24 +18,64 @@ const BookingConfirmationScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { user: customer } = useAuth();
+    const { db: database, cancelBooking } = useDatabase();
     const locationState = (location.state as { bookings?: Booking[]; bookingId?: string }) || {};
     const [bookings, setBookings] = useState<Booking[]>(locationState.bookings || []);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [showRedirectNotification, setShowRedirectNotification] = useState(false);
     const [isLoading, setIsLoading] = useState(!locationState.bookings?.length && !!locationState.bookingId);
 
-    // If no bookings passed but bookingId given, fetch from Firestore directly
+    // If return from payment with status=canceled or status=failed, cancel and redirect with modal
     useEffect(() => {
+        const queryParams = new URLSearchParams(location.search);
+        const status = queryParams.get('status') || queryParams.get('hitpay');
+        const bookingId = queryParams.get('bookingId') || locationState.bookingId;
+
+        if (status === 'canceled' || status === 'failed') {
+            const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx');
+            let parsedBookingId = bookingId;
+            let cancelAmount = 0;
+            if (pendingTx) {
+                try {
+                    const parsed = JSON.parse(pendingTx);
+                    parsedBookingId = parsed.bookingId || parsedBookingId;
+                    cancelAmount = parsed.amount || parsed.totalAmount || 0;
+                } catch (e) {}
+            }
+            sessionStorage.removeItem('pendingHitPayBookingTx');
+
+            if (parsedBookingId && cancelBooking) {
+                cancelBooking(parsedBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
+            }
+
+            const cancellationInfo = {
+                type: 'Service Booking' as const,
+                referenceId: parsedBookingId ? `BOK-${parsedBookingId}` : 'BOK-CANCELLED',
+                amount: cancelAmount,
+                date: new Date().toLocaleString(),
+                reason: 'Payment process was cancelled at the gateway before confirmation.',
+                retryPath: '/customer-portal/services'
+            };
+
+            window.history.replaceState({}, document.title, window.location.pathname);
+            navigate('/customer-portal/', {
+                state: { cancelledTransaction: cancellationInfo },
+                replace: true
+            });
+            return;
+        }
+
         if (locationState.bookings?.length) {
             setBookings(locationState.bookings);
             setIsLoading(false);
             return;
         }
-        if (!locationState.bookingId) {
-            // No bookings and no bookingId — redirect home
+        const targetBookingId = bookingId || locationState.bookingId;
+        if (!targetBookingId) {
             navigate('/customer-portal/');
             return;
         }
+
         const isLocalhost = typeof window !== 'undefined' && (
             window.location.hostname === 'localhost' ||
             window.location.hostname === '127.0.0.1'
@@ -41,8 +83,8 @@ const BookingConfirmationScreen: React.FC = () => {
 
         // Fetch the booking from Firestore using the bookingId
         setIsLoading(true);
-        const bookingRef = doc(firestore, 'bookings', locationState.bookingId);
-        getDoc(bookingRef).then(snapshot => {
+        const bookingRef = doc(firestore, 'bookings', targetBookingId);
+        getDoc(bookingRef).then(async (snapshot) => {
             if (snapshot.exists()) {
                 const fetchedBooking = { id: snapshot.id, ...snapshot.data() } as Booking;
                 if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(fetchedBooking.status)) {
@@ -52,7 +94,8 @@ const BookingConfirmationScreen: React.FC = () => {
                 }
             } else {
                 if (isLocalhost) {
-                    const localBooking = liveData.bookings.find(b => b.id === locationState.bookingId);
+                    const liveDataMod = await import('../data/liveData.json');
+                    const localBooking = liveDataMod.default.bookings.find((b: any) => b.id === targetBookingId);
                     if (localBooking) {
                         if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(localBooking.status)) {
                             navigate(`/customer-portal/booking-detail/${localBooking.id}`, { replace: true });
@@ -65,21 +108,6 @@ const BookingConfirmationScreen: React.FC = () => {
                 } else {
                     navigate('/customer-portal/');
                 }
-            }
-        }).catch((err) => {
-            if (isLocalhost) {
-                const localBooking = liveData.bookings.find(b => b.id === locationState.bookingId);
-                if (localBooking) {
-                    if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(localBooking.status)) {
-                        navigate(`/customer-portal/booking-detail/${localBooking.id}`, { replace: true });
-                    } else {
-                        setBookings([localBooking as unknown as Booking]);
-                    }
-                } else {
-                    navigate('/customer-portal/');
-                }
-            } else {
-                navigate('/customer-portal/');
             }
         }).finally(() => setIsLoading(false));
     }, []);
@@ -147,9 +175,10 @@ const BookingConfirmationScreen: React.FC = () => {
                         }, 2000);
                     }
                 }
-            }, (error) => {
+            }, async (error) => {
                 if (error?.code === 'permission-denied' && isLocalhost) {
-                    const localBooking = liveData.bookings.find(b => b.id === booking.id);
+                    const liveDataMod = await import('../data/liveData.json');
+                    const localBooking = liveDataMod.default.bookings.find((b: any) => b.id === booking.id);
                     if (localBooking) {
                         setBookings(prev => prev.map(b => b.id === booking.id ? localBooking as unknown as Booking : b));
                     }
@@ -180,6 +209,20 @@ const BookingConfirmationScreen: React.FC = () => {
     const totalDuration = bookings.reduce(
         (sum, b) => sum + getServiceList(b).reduce((s, svc) => s + (svc.duration || 60), 0), 0
     );
+
+    // Compute 50% Initial Downpayment and remaining Balance
+    const downpaymentAmount = primaryBooking.paidAmount != null && Number(primaryBooking.paidAmount) > 0
+        ? Number(primaryBooking.paidAmount)
+        : (totalCost * 0.5);
+    const balanceAmount = Math.max(0, totalCost - downpaymentAmount);
+
+    const getServiceImage = (svc: any) => {
+        const matchedService = database?.services?.find(s => s.id === svc.id || s.name?.toLowerCase() === svc.name?.toLowerCase()) ||
+                               seedServices.find(s => s.id === svc.id || s.name?.toLowerCase() === svc.name?.toLowerCase());
+        const rawImage = svc.imageUrl || svc.image || matchedService?.imageUrl;
+        return normalizeServiceImage(rawImage, svc.name, svc.category || matchedService?.category);
+    };
+
     const serviceLocation = primaryBooking.location;
     const notes = primaryBooking.notes;
 
@@ -225,8 +268,8 @@ const BookingConfirmationScreen: React.FC = () => {
     if (isLoading || !customer) {
         return (
             <div className="flex flex-col items-center justify-center h-full bg-secondary">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-                <p className="text-gray-400">Loading booking details...</p>
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mb-3"></div>
+                <p className="text-gray-400 text-sm font-medium">Loading booking details...</p>
             </div>
         );
     }
@@ -234,222 +277,312 @@ const BookingConfirmationScreen: React.FC = () => {
     if (!bookings || bookings.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center h-full bg-secondary">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-                <p className="text-gray-400">Loading booking details...</p>
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mb-3"></div>
+                <p className="text-gray-400 text-sm font-medium">Loading booking details...</p>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col h-full bg-secondary">
-            <CustomerHeader title={`Booking #${primaryBooking.id.slice(-6)}`} icon={<CheckCircle2 size={22} />} />
-            <div className="flex-grow flex flex-col p-4 space-y-6 overflow-y-auto pb-6">
+        <div className="flex flex-col h-full bg-[#121212] text-white">
+            <CustomerHeader title={`Booking #${primaryBooking.id ? primaryBooking.id.slice(-6).toUpperCase() : 'DETAILS'}`} icon={<CheckCircle2 size={20} className="text-green-400" />} />
+            
+            <div className="flex-grow flex flex-col p-3.5 sm:p-5 space-y-4 overflow-y-auto pb-8 max-w-lg mx-auto w-full">
 
                 {/* Mechanic Accepted - Auto Redirect Notification */}
                 {showRedirectNotification && (
-                    <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl p-5 border-2 border-green-400/50 shadow-2xl shadow-green-500/30 animate-pulse">
-                        <div className="flex items-center gap-4">
-                            <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
+                    <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl p-3.5 border border-green-400/50 shadow-xl shadow-green-500/20 animate-pulse">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
+                                <CheckCircle2 size={22} className="text-white" />
                             </div>
-                            <div className="flex-1">
-                                <h3 className="text-white font-black text-lg mb-1">🎉 Mechanic Accepted!</h3>
-                                <p className="text-white/90 text-sm">Redirecting you to track status...</p>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-white font-bold text-sm">🎉 Mechanic Accepted!</h3>
+                                <p className="text-white/90 text-xs truncate">Redirecting to status tracker...</p>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Success Banner — adapts to GCash payment verification state */}
-                <div className="text-center py-4">
+                {/* Compact Success / Verification Hero Banner */}
+                <div className="text-center pt-1 pb-2">
                     {primaryBooking.paymentMethod === 'GCash' && !primaryBooking.isVerified ? (
-                        // GCash not yet verified state
                         <>
-                            <div className="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-yellow-500/20">
-                                <Clock size={40} className="text-yellow-400 animate-pulse" />
+                            <div className="w-14 h-14 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto mb-2.5 border border-yellow-500/30">
+                                <Clock size={28} className="text-yellow-400 animate-pulse" />
                             </div>
-                            <h2 className="text-2xl font-bold text-white">Awaiting Payment Verification</h2>
-                            <p className="text-gray-400 mt-2 max-w-xs mx-auto text-sm">
-                                Your receipt has been submitted. Our admin will verify your GCash payment shortly.
+                            <h2 className="text-xl font-black text-white tracking-tight">Awaiting Payment Verification</h2>
+                            <p className="text-gray-400 mt-1 max-w-xs mx-auto text-xs leading-relaxed">
+                                Your GCash receipt was submitted. Admin will verify your downpayment shortly.
                             </p>
-                            <div className="mt-3 flex items-center justify-center gap-2">
-                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                                <p className="text-green-400 text-xs font-bold">
-                                    REAL-TIME SYNC ACTIVE
-                                </p>
+                            <div className="mt-2 inline-flex items-center gap-1.5 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-0.5 rounded-full">
+                                <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-ping" />
+                                <span className="text-yellow-400 text-[10px] font-bold uppercase tracking-wider">Verification in Progress</span>
                             </div>
                         </>
                     ) : primaryBooking.paymentMethod === 'GCash' && primaryBooking.isVerified ? (
-                        // GCash verified — confirmed
                         <>
-                            <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20">
-                                <ShieldCheck size={40} className="text-green-400" />
+                            <div className="w-14 h-14 bg-green-500/10 rounded-2xl flex items-center justify-center mx-auto mb-2.5 border border-green-500/30 shadow-lg shadow-green-500/10">
+                                <ShieldCheck size={30} className="text-green-400" />
                             </div>
-                            <h2 className="text-2xl font-bold text-white">🎉 Payment Verified!</h2>
-                            <p className="text-gray-400 mt-2 max-w-xs mx-auto text-sm">
-                                Your GCash down payment has been confirmed. Booking is active!
+                            <h2 className="text-xl font-black text-white tracking-tight">🎉 Payment Verified!</h2>
+                            <p className="text-gray-400 mt-1 max-w-xs mx-auto text-xs leading-relaxed">
+                                Your GCash downpayment has been confirmed. Your booking is active!
                             </p>
-                            <p className="text-primary mt-3 text-xs font-bold animate-pulse">
-                                ⏳ Waiting for mechanic to accept...
+                            <p className="text-primary mt-2 text-xs font-bold animate-pulse flex items-center justify-center gap-1">
+                                <span>⏳</span> Waiting for mechanic to accept...
                             </p>
                         </>
                     ) : (
-                        // Default non-GCash booking state
                         <>
-                            <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
+                            <div className="w-14 h-14 bg-green-500/10 rounded-2xl flex items-center justify-center mx-auto mb-2.5 border border-green-500/30 shadow-lg shadow-green-500/10">
+                                <CheckCircle2 size={30} className="text-green-400" />
                             </div>
-                            <h2 className="text-2xl font-bold text-white">Appointment Set!</h2>
-                            <p className="text-gray-400 mt-2 max-w-xs mx-auto text-sm">
-                                Your booking has been confirmed. You can track the status in your history.
+                            <h2 className="text-xl font-black text-white tracking-tight">Appointment Set!</h2>
+                            <p className="text-gray-400 mt-1 max-w-xs mx-auto text-xs leading-relaxed">
+                                Your booking has been confirmed. You can track status in real-time.
                             </p>
-                            <p className="text-primary mt-3 text-xs font-bold animate-pulse">
-                                ⏳ Waiting for mechanic to accept...
+                            <p className="text-primary mt-2 text-xs font-bold animate-pulse flex items-center justify-center gap-1">
+                                <span>⏳</span> Waiting for mechanic to accept...
                             </p>
                         </>
                     )}
                 </div>
 
-                {/* Main Content Card */}
-                <div className="bg-[#1D1D1D] rounded-xl overflow-hidden shadow-lg border border-white/5">
-                    <div className="h-1 bg-gradient-to-r from-green-500 via-primary to-green-500"></div>
+                {/* Main Compact Content Container */}
+                <div className="bg-[#181818] rounded-2xl overflow-hidden shadow-xl border border-white/5 space-y-3.5 p-3.5 sm:p-4">
+                    <div className="-mt-3.5 -mx-3.5 sm:-mt-4 sm:-mx-4 h-1 bg-gradient-to-r from-green-500 via-primary to-green-500"></div>
 
-                    <div className="p-5 space-y-6">
-                        {/* Services Summary */}
-                        <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
-                            <div className="flex justify-between items-center mb-3">
-                                <p className="text-[10px] font-bold text-gray-500  tracking-widest">Services</p>
-                                <span className="text-xs bg-white/5 px-2 py-1 rounded text-gray-300 flex items-center gap-1">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    ~{totalDuration} mins
+                    {/* 1. Services Summary with Uploaded Image Preview */}
+                    <div className="bg-[#141414] rounded-xl p-3 sm:p-3.5 border border-white/5 space-y-2.5">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1.5">
+                                <Wrench size={13} className="text-primary" />
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Booked Services</span>
+                            </div>
+                            <span className="text-[11px] bg-white/5 px-2 py-0.5 rounded-md text-gray-300 flex items-center gap-1 font-medium">
+                                <Clock size={11} className="text-gray-400" />
+                                ~{totalDuration} mins
+                            </span>
+                        </div>
+
+                        <div className="divide-y divide-white/5">
+                            {bookings.flatMap(book => getServiceList(book)).map((svc, idx) => {
+                                const svcImage = getServiceImage(svc);
+                                return (
+                                    <div key={`${svc.id}-${idx}`} className="py-2.5 first:pt-1 last:pb-0 flex items-center gap-3">
+                                        <img
+                                            src={svcImage}
+                                            alt={svc.name}
+                                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover border border-white/10 flex-shrink-0 bg-neutral-900 shadow-sm"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = '/riders-logo.png';
+                                            }}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-white font-bold text-sm truncate leading-tight">{svc.name}</p>
+                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                {svc.category && (
+                                                    <span className="text-[10px] font-semibold text-orange-400/90 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20">
+                                                        {svc.category}
+                                                    </span>
+                                                )}
+                                                <span className="text-[11px] text-gray-400">
+                                                    {svc.duration || svc.estimatedTime || 'Standard'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                            <p className="text-primary font-black text-sm">
+                                                {svc.price > 0 ? `₱${svc.price.toLocaleString()}` : <span className="bg-blue-500/20 text-blue-400 text-[10px] px-1.5 py-0.5 rounded font-bold">QUOTE</span>}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* 2. Financial Breakdown: Total, 50% Initial Downpayment & Balance */}
+                    <div className="bg-[#141414] rounded-xl p-3 sm:p-3.5 border border-white/5 space-y-2.5">
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-1.5">
+                                <CreditCard size={13} className="text-green-400" />
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Payment Breakdown</span>
+                            </div>
+                            <span className="text-[10px] font-semibold text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                                {primaryBooking.paymentMethod || 'GCash'}
+                            </span>
+                        </div>
+
+                        <div className="space-y-2 pt-0.5">
+                            {/* Total Estimated Cost */}
+                            <div className="flex justify-between items-center text-xs text-gray-300 px-1">
+                                <span className="text-gray-400 font-medium">Estimated Total</span>
+                                <span className="font-black text-white text-base">₱{totalCost.toLocaleString()}</span>
+                            </div>
+
+                            {/* 50% Initial Downpayment Card */}
+                            <div className="flex justify-between items-center text-xs bg-orange-500/[0.04] p-2.5 rounded-xl border border-orange-500/20">
+                                <div className="space-y-0.5">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="font-bold text-orange-400 text-xs">50% Initial DP</span>
+                                        {primaryBooking.isVerified || primaryBooking.paymentStatus === 'downpayment_paid' || (primaryBooking.paidAmount && primaryBooking.paidAmount > 0) ? (
+                                            <span className="text-[9px] font-bold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded border border-green-500/20 flex items-center gap-0.5">
+                                                <CheckCircle2 size={10} /> Paid {primaryBooking.paymentMethod?.includes('HitPay') ? '(HitPay Verified)' : ''}
+                                            </span>
+                                        ) : primaryBooking.paymentMethod === 'GCash' ? (
+                                            <span className="text-[9px] font-bold text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded border border-yellow-500/20 flex items-center gap-0.5">
+                                                <Clock size={10} /> Submitted
+                                            </span>
+                                        ) : (
+                                            <span className="text-[9px] font-bold text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+                                                Required
+                                            </span>
+                                        )}
+                                    </div>
+                                    {primaryBooking.downpaymentRef || primaryBooking.hitpayReference || primaryBooking.gcashDownpaymentReference ? (
+                                        <p className="text-[10px] text-gray-400 font-mono">
+                                            Ref: {primaryBooking.downpaymentRef || primaryBooking.hitpayReference || primaryBooking.gcashDownpaymentReference}
+                                        </p>
+                                    ) : (
+                                        <p className="text-[10px] text-gray-400">Reservation deposit</p>
+                                    )}
+                                </div>
+                                <span className="font-black text-orange-400 text-sm">₱{downpaymentAmount.toLocaleString()}</span>
+                            </div>
+
+                            {/* Remaining Balance Card */}
+                            <div className="flex justify-between items-center text-xs bg-black/30 p-2.5 rounded-xl border border-white/5">
+                                <div className="space-y-0.5">
+                                    <span className="font-bold text-gray-200 text-xs">Balance Payment</span>
+                                    <p className="text-[10px] text-gray-400">Payable upon job completion</p>
+                                </div>
+                                <span className="font-bold text-gray-200 text-sm">₱{balanceAmount.toLocaleString()}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 3. Schedule & Vehicle Details (Compact 2-Item Responsive Grid) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {/* Schedule Card */}
+                        <div className="bg-[#141414] rounded-xl p-3 border border-white/5 flex items-center gap-2.5">
+                            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 flex-shrink-0 border border-blue-500/20">
+                                <Calendar size={18} />
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Schedule</p>
+                                <p className="text-white font-bold text-xs truncate">
+                                    {primaryBooking.date ? new Date(primaryBooking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date Pending'}
+                                </p>
+                                <p className="text-blue-400 text-xs font-semibold">{primaryBooking.time || 'Time Pending'}</p>
+                            </div>
+                        </div>
+
+                        {/* Vehicle Card */}
+                        <div className="bg-[#141414] rounded-xl p-3 border border-white/5 flex items-center gap-2.5">
+                            <div className="w-10 h-10 rounded-xl bg-gray-800/60 flex items-center justify-center text-gray-400 flex-shrink-0 overflow-hidden border border-white/10">
+                                {vehicle?.imageUrls && vehicle.imageUrls.length > 0 ? (
+                                    <img
+                                        src={vehicle.imageUrls[0]}
+                                        alt={`${vehicle.make} ${vehicle.model}`}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                        }}
+                                    />
+                                ) : (
+                                    <Car size={18} className="text-gray-400" />
+                                )}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Vehicle</p>
+                                <p className="text-white font-bold text-xs truncate">
+                                    {vehicle ? `${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''}`.trim() : 'Vehicle Assigned'}
+                                </p>
+                                <span className="text-[10px] text-gray-400 font-mono bg-black/40 px-1.5 py-0.5 rounded inline-block mt-0.5 border border-white/5">
+                                    {vehicle?.plateNumber || 'No Plate'}
                                 </span>
                             </div>
-                            <div className="space-y-3">
-                                {bookings.flatMap(book => getServiceList(book)).map((svc, idx) => (
-                                    <div key={`${svc.id}-${idx}`} className="flex justify-between items-start">
-                                        <div>
-                                            <p className="text-white font-medium text-sm">{svc.name}</p>
-                                            <p className="text-xs text-gray-500">{svc.category}</p>
-                                        </div>
-                                        <p className="text-primary font-bold text-sm">
-                                            {svc.price > 0 ? `₱${svc.price.toLocaleString()}` : <span className="bg-blue-500/20 text-blue-400 text-[10px] px-1.5 py-0.5 rounded">QUOTE</span>}
-                                        </p>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-end">
-                                <span className="text-sm text-gray-400">Estimated Total</span>
-                                <span className="text-xl font-bold text-white">₱{totalCost.toLocaleString()}</span>
-                            </div>
                         </div>
+                    </div>
 
-                        {/* Date & Time */}
-                        <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
-                            <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-bold text-gray-500  tracking-widest">Schedule</p>
-                                    <p className="text-white font-bold text-sm">{new Date(primaryBooking.date.replace(/-/g, '/')).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                                    <p className="text-blue-400 text-sm font-bold">{primaryBooking.time}</p>
+                    {/* 4. Mechanic Card (Compact) */}
+                    {mechanic && (
+                        <div className="bg-[#141414] rounded-xl p-3 sm:p-3.5 border border-white/5 space-y-2.5">
+                            <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Assigned Mechanic</p>
+                                <div className="flex items-center gap-1 text-yellow-400 text-xs">
+                                    <Star size={11} className="fill-yellow-400 text-yellow-400" />
+                                    <span className="font-bold text-[11px]">{(mechanic.rating || 0).toFixed(1)}</span>
+                                    <span className="text-gray-500 text-[10px]">({mechanic.reviews || mechanic.totalJobs || 0} jobs)</span>
                                 </div>
                             </div>
-                        </div>
-
-
-
-                        {/* Mechanic */}
-                        {mechanic && (
-                            <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
-                                <p className="text-[10px] font-bold text-gray-500  tracking-widest mb-3">Your Mechanic</p>
-                                <div className="flex items-center gap-3 mb-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2.5 min-w-0">
                                     <img 
                                         src={mechanic.imageUrl || '/riders-logo.png'} 
                                         alt={mechanic.name} 
-                                        className="w-12 h-12 rounded-xl object-cover border border-primary/30" 
+                                        className="w-10 h-10 rounded-xl object-cover border border-primary/30 flex-shrink-0 bg-neutral-900" 
                                         onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
                                     />
-                                    <div>
-                                        <p className="font-bold text-white leading-tight">{mechanic.name}</p>
-                                        <div className="flex items-center gap-1 text-yellow-400 text-xs mt-1">
-                                            <Star size={12} className="fill-yellow-400 text-yellow-400" />
-                                            <span className="font-bold">{(mechanic.rating || 0).toFixed(1)}</span>
-                                            <span className="text-gray-500">({mechanic.reviews} jobs)</span>
-                                        </div>
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-white text-xs truncate">{mechanic.name}</p>
+                                        <p className="text-[10px] text-gray-400 truncate">{mechanic.phone || 'Verified Mechanic'}</p>
                                     </div>
                                 </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => navigate(`/customer-portal/mechanic-profile/${mechanic.id}`)} className="flex-1 bg-white/5 hover:bg-white/10 text-white text-xs font-bold py-2 rounded-lg transition border border-white/10">View Profile</button>
-                                    <button onClick={() => setIsChatOpen(true)} className="flex-1 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold py-2 rounded-lg transition border border-primary/20">Chat Now</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Vehicle */}
-                        <div className="bg-[#151515] rounded-xl p-4 border border-white/5">
-                            <p className="text-[10px] font-bold text-gray-500  tracking-widest mb-3">Vehicle Details</p>
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-lg bg-gray-700/30 flex items-center justify-center text-gray-400 overflow-hidden relative">
-                                    {vehicle.imageUrls && vehicle.imageUrls.length > 0 ? (
-                                        <img
-                                            src={vehicle.imageUrls[0]}
-                                            alt={`${vehicle.make} ${vehicle.model}`}
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
-                                            }}
-                                        />
-                                    ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" /></svg>
-                                    )}
-                                </div>
-                                <div>
-                                    <p className="text-sm font-bold text-white">{vehicle.year} {vehicle.make} {vehicle.model}</p>
-                                    <p className="text-xs text-gray-500 font-mono bg-black/30 inline-block px-1.5 py-0.5 rounded mt-1">{vehicle.plateNumber}</p>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    <button 
+                                        onClick={() => navigate(`/customer-portal/mechanic-profile/${mechanic.id}`)} 
+                                        className="bg-white/5 hover:bg-white/10 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition border border-white/10"
+                                    >
+                                        Profile
+                                    </button>
+                                    <button 
+                                        onClick={() => setIsChatOpen(true)} 
+                                        className="bg-primary/15 hover:bg-primary/25 text-primary text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition border border-primary/30"
+                                    >
+                                        Chat
+                                    </button>
                                 </div>
                             </div>
                         </div>
+                    )}
 
-                        {/* Notes (Read Only) */}
-                        {notes && (
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-gray-500  tracking-widest flex items-center gap-1">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                    Notes
-                                </label>
-                                <div className="p-3 bg-[#151515] rounded-xl border border-white/5 text-sm text-gray-300 ">
-                                    "{notes}"
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Important Notice */}
-                        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 flex gap-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <p className="text-xs text-gray-300 leading-relaxed">
-                                <span className="text-yellow-400 font-bold block mb-1">Important</span>
-                                Please ensure you're available at the scheduled time. You'll receive real-time updates when the mechanic is on the way.
+                    {/* 5. Notes (Read Only - if provided) */}
+                    {notes && (
+                        <div className="bg-[#141414] rounded-xl p-3 border border-white/5 space-y-1">
+                            <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Customer Notes</span>
+                            <p className="text-xs text-gray-300 italic bg-black/20 p-2 rounded-lg border border-white/5">
+                                "{notes}"
                             </p>
                         </div>
+                    )}
+
+                    {/* 6. Important Notice (Compact) */}
+                    <div className="bg-yellow-500/[0.06] border border-yellow-500/20 rounded-xl p-2.5 flex items-start gap-2.5">
+                        <AlertCircle size={15} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                        <p className="text-[11px] text-gray-300 leading-snug">
+                            <strong className="text-yellow-400 font-semibold mr-1">Reminder:</strong>
+                            Please be available at the scheduled time. You will receive live notifications once the mechanic is on the way.
+                        </p>
                     </div>
                 </div>
 
-                {/* Bottom Actions */}
-                <div className="pb-8">
+                {/* Bottom Sticky-ready Action Buttons */}
+                <div className="pt-2 space-y-2">
                     <button
                         onClick={() => navigate(`/customer-portal/booking-detail/${primaryBooking.id}`)}
-                        className="w-full bg-primary text-white font-bold py-3 rounded-xl hover:bg-orange-600 transition text-sm shadow-lg shadow-primary/20"
+                        className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition text-sm shadow-lg shadow-primary/25 flex items-center justify-center gap-2"
                     >
-                        Track Status
+                        <span>Track Status</span>
+                        <ChevronRight size={16} />
+                    </button>
+                    <button
+                        onClick={() => navigate('/customer-portal/')}
+                        className="w-full bg-white/5 hover:bg-white/10 text-gray-300 font-semibold py-2.5 rounded-xl transition text-xs border border-white/5"
+                    >
+                        Back to Home
                     </button>
                 </div>
             </div>
@@ -467,3 +600,4 @@ const BookingConfirmationScreen: React.FC = () => {
 };
 
 export default BookingConfirmationScreen;
+

@@ -164,14 +164,64 @@ export const seedAdminUsers: AdminUser[] = [
 
 export const seedServices: Service[] = [
     {
+        id: '14',
+        name: 'Engine Diagnostics',
+        description: 'Comprehensive OBD-II diagnostic scan to pinpoint engine warning lights, sensor faults, and electronic system errors.',
+        price: 1200,
+        estimatedTime: '1 hour',
+        imageUrl: 'https://images.unsplash.com/photo-1530046339160-ce3e530c7d2f?q=80&w=800&auto=format&fit=crop',
+        category: 'Diagnostics',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>'
+    },
+    {
+        id: 'pms',
+        name: 'PMS',
+        description: 'Periodic Maintenance Service covering multi-point vehicle inspection, fluid checks, filter cleaning, and preventive tuning.',
+        price: 3500,
+        estimatedTime: '2-3 hours',
+        imageUrl: 'https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?q=80&w=800&auto=format&fit=crop',
+        category: 'Maintenance',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>'
+    },
+    {
+        id: '13',
+        name: 'Engine Tune-up',
+        description: 'Comprehensive engine tune-up, spark plug inspection/replacement, throttle cleaning, and performance calibration.',
+        price: 2800,
+        estimatedTime: '2 hours',
+        imageUrl: 'https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?q=80&w=800&auto=format&fit=crop',
+        category: 'Maintenance',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>'
+    },
+    {
+        id: '4',
+        name: 'Body Repair',
+        description: 'Expert auto body repairs, dent restoration, panel alignment, scratch fixing, and paint touch-ups.',
+        price: 2500,
+        estimatedTime: 'Quote Required',
+        imageUrl: 'https://images.unsplash.com/photo-1601362840469-51e4d8d58785?q=80&w=800&auto=format&fit=crop',
+        category: 'Repair',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v2a2 2 0 01-2 2H5zM14 21V5a2 2 0 00-2-2h-1m3 9v7m0-7h7v4a2 2 0 01-2 2h-5" /></svg>'
+    },
+    {
         id: '1',
         name: 'Change Oil',
-        description: 'Full synthetic oil change with filter replacement. Recommended every 5,000 miles.',
+        description: 'Full synthetic oil change with oil filter replacement, fluid top-ups, and inspection. Recommended every 5,000 km.',
         price: 2500,
         estimatedTime: '45 mins',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: 'https://images.unsplash.com/photo-1599540679758-00d86bd4fa9a?q=80&w=800&auto=format&fit=crop',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l-6-2m6 2l-3 1m-3-1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>'
+    },
+    {
+        id: '5',
+        name: 'Aircon',
+        description: 'Air conditioning system inspection, freon recharge, cabin filter replacement, and leak detection.',
+        price: 1800,
+        estimatedTime: '1.5 hours',
+        imageUrl: 'https://images.unsplash.com/photo-1517524008697-84bbe3c3fd98?q=80&w=800&auto=format&fit=crop',
+        category: 'Maintenance',
+        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m8.364-8.364h-1M2.636 12h1m14.092-5.636l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707m0 11.314l.707-.707m12.021-.707l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" /></svg>'
     },
     {
         id: '2',
@@ -179,7 +229,7 @@ export const seedServices: Service[] = [
         description: 'Complete battery health check, terminal cleaning, and replacement if necessary. Ensures reliable starts.',
         price: 4000,
         estimatedTime: '30 mins',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: 'https://images.unsplash.com/photo-1635393166946-b25b6a71e06d?q=80&w=800&auto=format&fit=crop',
         category: 'Repair',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12V8a2 2 0 00-2-2H6a2 2 0 00-2 2v4m16 0h-2.586a1 1 0 01-.707-.293l-3.414-3.414a1 1 0 00-.707-.293H10.5a1 1 0 00-.707.293L6.379 11.707A1 1 0 015.672 12H4m16 0h-2m-2 0h-2m-2 0h-2m2 0v4m-4-4v4m8-4v4" /></svg>'
     },
@@ -189,79 +239,9 @@ export const seedServices: Service[] = [
         description: 'Reliable and fast towing service to get your vehicle to a safe location or one of our partner shops.',
         price: 3500,
         estimatedTime: 'N/A',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: 'https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?q=80&w=800&auto=format&fit=crop',
         category: 'Emergency',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2 2h8a1 1 0 001-1z" /><path stroke-linecap="round" stroke-linejoin="round" d="M18 11h3M15 11h1" /></svg>'
-    },
-    {
-        id: '3',
-        name: 'Diagnostics',
-        description: 'Comprehensive diagnostic scan using OBD-II tools to identify and troubleshoot engine and electronic issues.',
-        price: 1200,
-        estimatedTime: '1 hour',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Diagnostics',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>'
-    },
-    {
-        id: '4',
-        name: 'Body Repair',
-        description: 'Professional body repair for dents, scratches, and collision damage. Request a quote for pricing.',
-        price: 0,
-        estimatedTime: 'Quote Required',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Repair',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v2a2 2 0 01-2 2H5zM14 21V5a2 2 0 00-2-2h-1m3 9v7m0-7h7v4a2 2 0 01-2 2h-5" /></svg>'
-    },
-    {
-        id: '5',
-        name: 'Aircon',
-        description: 'Air conditioning system check, freon recharge, and leak detection to keep you cool.',
-        price: 1800,
-        estimatedTime: '1.5 hours',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Maintenance',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m8.364-8.364h-1M2.636 12h1m14.092-5.636l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707m0 11.314l.707-.707m12.021-.707l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" /></svg>'
-    },
-    {
-        id: '7',
-        name: 'Driver for Hire',
-        description: 'Professional and reliable drivers for your special trips, errands, or emergencies. Choose from hourly, daily, or specific trip rates.',
-        price: 800,
-        estimatedTime: 'Per Hour',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Specialty Services',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21V9a4 4 0 00-4-4H9" /></svg>'
-    },
-    {
-        id: '8',
-        name: 'Auto Detailing',
-        description: 'Comprehensive interior and exterior cleaning, polishing, and waxing to make your car look brand new.',
-        price: 3000,
-        estimatedTime: '4 hours',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Cleaning & Detailing',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>'
-    },
-    {
-        id: '9',
-        name: 'Registration Assistance',
-        description: 'Hassle-free LTO car registration, license renewal, and transfer of ownership services. Let our liason handle the paperwork and long lines for you.',
-        price: 2500,
-        estimatedTime: 'Varies',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Liason Services',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>'
-    },
-    {
-        id: '10',
-        name: 'Rent a Car',
-        description: 'Browse and rent from our collection of well-maintained vehicles for your personal or business needs.',
-        price: 0,
-        estimatedTime: 'N/A',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Rentals',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" /></svg>'
     },
     {
         id: '11',
@@ -269,7 +249,7 @@ export const seedServices: Service[] = [
         description: 'Includes inspection of pads, rotors, and brake fluid. Replacement of pads if necessary.',
         price: 3200,
         estimatedTime: '1.5 hours',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: 'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?q=80&w=800&auto=format&fit=crop',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>'
     },
@@ -279,29 +259,9 @@ export const seedServices: Service[] = [
         description: 'Rotate tires to ensure even wear and balance them to prevent vibrations. Improves tire life and ride quality.',
         price: 1500,
         estimatedTime: '1 hour',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
+        imageUrl: 'https://images.unsplash.com/photo-1601002361667-0c1fc998d363?q=80&w=800&auto=format&fit=crop',
         category: 'Maintenance',
         icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5" /><path stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 018-8v0a8 8 0 018 8v0a8 8 0 01-8 8v0a8 8 0 01-8-8v0z" /></svg>'
-    },
-    {
-        id: '13',
-        name: 'Engine Tune-up',
-        description: 'Comprehensive engine check, spark plug replacement, and performance optimization for better fuel efficiency and power.',
-        price: 2800,
-        estimatedTime: '2 hours',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Maintenance',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>'
-    },
-    {
-        id: '14',
-        name: 'Engine Diagnostics',
-        description: 'Comprehensive diagnostic scan using OBD-II tools to identify and troubleshoot engine and electronic issues.',
-        price: 1200,
-        estimatedTime: '1 hour',
-        imageUrl: 'https://placehold.co/400x300/1A1A1D/FE7803?text=',
-        category: 'Diagnostics',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>'
     }
 ];
 

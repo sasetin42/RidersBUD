@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Car, Calendar, Map
 import Spinner from '../../components/Spinner';
 import { VehicleFormModal } from '../MyGarageScreen';
 import { Vehicle } from '../../types';
+import { HitPayService } from '../../services/HitPayService';
 
 interface DocumentFile {
     name: string;
@@ -185,10 +186,9 @@ const LiaisonBookingFlow: React.FC = () => {
                 dragging: true
             }).setView([defaultLat, defaultLng], 12);
 
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
-                subdomains: 'abcd',
-                maxZoom: 20,
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19,
                 crossOrigin: true
             }).addTo(mapInstanceRef.current);
         }
@@ -566,10 +566,10 @@ const LiaisonBookingFlow: React.FC = () => {
                 pickupAddress: isRegAssist ? undefined : (pickupOption === 'Customer brings documents' ? undefined : pickupAddress),
                 documents: docArray,
                 status: isRegAssist ? 'Pending Admin Review' as const : 'Booking Received' as const,
-                paymentStatus: isRegAssist ? 'Pending' as const : (paymentMethod === 'Cash' ? 'Pending' as const : 'partial' as const),
-                paymentMethod: isRegAssist ? 'Cash' as const : paymentMethod,
+                paymentStatus: isRegAssist ? 'Pending' as const : 'partial' as const,
+                paymentMethod: isRegAssist ? 'Cash / Verification' as const : 'Online (HitPay)',
                 totalAmount: fees.total,
-                paidAmount: isRegAssist ? 0 : (paymentMethod === 'Cash' ? 0 : fees.total * 0.5),
+                paidAmount: isRegAssist ? 0 : fees.total * 0.5,
                 fees,
                 notes: isRegAssist ? regNotes : '',
                 statusHistory: [{
@@ -581,15 +581,44 @@ const LiaisonBookingFlow: React.FC = () => {
                 createdAt: new Date().toISOString()
             };
 
-            await addLiaisonBooking(bookingPayload);
+            const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+            if (!isRegAssist && !isHitPayActive) {
+                throw new Error("Online Payment Gateway (HitPay) is required for Liaison bookings but currently inactive in system settings. Please contact the administrator.");
+            }
+
+            const createdLiaison = await addLiaisonBooking(bookingPayload);
             sessionStorage.removeItem('LIAISON_WIZARD_STATE');
+
             if (isRegAssist) {
                 navigate('/');
-            } else {
-                navigate('/customer-portal/reminders');
+                return;
             }
+
+            if (createdLiaison && isHitPayActive) {
+                const downpayment = fees.total * 0.5;
+                const hitPay = HitPayService.fromSettings(db?.settings);
+                const returnUrl = `${window.location.origin}/customer-portal/reminders?liaisonId=${createdLiaison.id || ''}`;
+
+                const { url } = await hitPay.createPaymentRequest({
+                    amount: downpayment,
+                    currency: db?.settings?.currency || 'PHP',
+                    reference_number: `LIA-${createdLiaison.id || Date.now()}`,
+                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    redirect_url: returnUrl,
+                    email: user.email || customerEmail || 'customer@example.com',
+                    name: user.name || 'Customer',
+                    phone: customerPhone || user.phone || undefined,
+                    purpose: `RidersBUD — Liaison Service 50% Downpayment (${serviceType})`
+                });
+
+                window.location.href = url;
+                return;
+            }
+
+            navigate('/customer-portal/reminders');
         } catch (e) {
             console.error(e);
+            alert(e instanceof Error ? e.message : 'Failed to submit booking.');
         } finally {
             setSubmitting(false);
         }
@@ -1715,52 +1744,60 @@ const LiaisonBookingFlow: React.FC = () => {
                             </div>
 
                             {/* Payment options (Standard Liaison only) */}
-                            {!isRegAssist && (
-                                <div className="border-t border-white/5 pt-4">
-                                    <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-3">Select Payment Method</label>
-                                    <div className="grid grid-cols-2 gap-2.5">
-                                        {[
-                                            { name: 'GCash', icon: Wallet },
-                                            { name: 'Maya', icon: Wallet },
-                                            { name: 'Credit Card', icon: CreditCard },
-                                            { name: 'Cash', icon: Banknote }
-                                        ].map((method) => {
-                                            const isSelected = paymentMethod === method.name;
-                                            const IconComp = method.icon;
-                                            return (
-                                                <button
-                                                    key={method.name}
-                                                    type="button"
-                                                    onClick={() => setPaymentMethod(method.name as any)}
-                                                    className="p-3 border transition-all duration-300 ease-out rounded-xl flex items-center gap-3 bg-black/40 hover:bg-[#151518]/90 text-left select-none"
-                                                    style={{ 
-                                                        borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.05)',
-                                                        boxShadow: isSelected ? `0 0 12px -2px ${accentColor}20` : 'none',
-                                                        willChange: 'border-color, background-color, box-shadow'
-                                                    }}
-                                                >
-                                                    <div 
-                                                        className="w-7 h-7 rounded-md bg-white/5 border border-white/10 flex items-center justify-center shrink-0"
-                                                    >
-                                                        <IconComp size={13} style={{ color: isSelected ? accentColor : 'rgba(255, 255, 255, 0.6)' }} />
-                                                    </div>
-                                                    <span className="flex-1 text-[10px] font-black uppercase tracking-wider text-white truncate">{method.name}</span>
-                                                    <div 
-                                                        className="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                            {!isRegAssist && (() => {
+                                const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+                                const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+
+                                const methods: { name: string; icon: any }[] = [];
+                                if (isHitPayActive) {
+                                    methods.push({ name: 'HitPay (Cards / GCash / Maya)', icon: CreditCard });
+                                }
+                                if (isManualGcashEnabled) {
+                                    methods.push({ name: 'Manual GCash', icon: Wallet });
+                                }
+                                methods.push({ name: 'Cash on Delivery / Meetup', icon: Banknote });
+
+                                return (
+                                    <div className="border-t border-white/5 pt-4">
+                                        <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-3">Select Payment Method</label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                            {methods.map((method) => {
+                                                const isSelected = paymentMethod === method.name || (methods.length === 1);
+                                                const IconComp = method.icon;
+                                                return (
+                                                    <button
+                                                        key={method.name}
+                                                        type="button"
+                                                        onClick={() => setPaymentMethod(method.name as any)}
+                                                        className="p-3 border transition-all duration-300 ease-out rounded-xl flex items-center gap-3 bg-black/40 hover:bg-[#151518]/90 text-left select-none"
                                                         style={{ 
-                                                            backgroundColor: isSelected ? accentColor : 'transparent',
-                                                            borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.2)'
+                                                            borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.05)',
+                                                            boxShadow: isSelected ? `0 0 12px -2px ${accentColor}20` : 'none',
+                                                            willChange: 'border-color, background-color, box-shadow'
                                                         }}
                                                     >
-                                                        {isSelected && <Check size={8} className="text-white font-black" />}
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
+                                                        <div 
+                                                            className="w-7 h-7 rounded-md bg-white/5 border border-white/10 flex items-center justify-center shrink-0"
+                                                        >
+                                                            <IconComp size={13} style={{ color: isSelected ? accentColor : 'rgba(255, 255, 255, 0.6)' }} />
+                                                        </div>
+                                                        <span className="flex-1 text-[10px] font-black uppercase tracking-wider text-white truncate">{method.name}</span>
+                                                        <div 
+                                                            className="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0"
+                                                            style={{ 
+                                                                backgroundColor: isSelected ? accentColor : 'transparent',
+                                                                borderColor: isSelected ? accentColor : 'rgba(255, 255, 255, 0.2)'
+                                                            }}
+                                                        >
+                                                            {isSelected && <Check size={8} className="text-white font-black" />}
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
-
+                                );
+                            })()}
                             {/* Total fee list */}
                             <div className="border-t border-white/5 pt-4 space-y-2.5">
                                 <div className="flex justify-between text-xs text-gray-400">

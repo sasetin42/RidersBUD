@@ -1,6 +1,8 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useMechanicAuth } from '../context/MechanicAuthContext';
+import { useDatabase } from '../context/DatabaseContext';
 import NotificationBell from './NotificationBell';
 import { useScrollDirection } from '../hooks/useScrollDirection';
 import { getProfileImage } from '../utils/imageConstants';
@@ -12,13 +14,21 @@ interface HeaderProps {
     showBack?: boolean;
     rightAction?: React.ReactNode;
     icon?: React.ReactNode;
+    showLogo?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false, showBack = false, rightAction, icon }) => {
+const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false, showBack = false, rightAction, icon, showLogo = true }) => {
     const navigate = useNavigate();
     const { user, hasUnreadSupportMessage } = useAuth();
+    const { mechanic, isMechanicAuthenticated } = useMechanicAuth();
+    const { db } = useDatabase();
     const scrollDirection = useScrollDirection();
     const isHidden = scrollDirection === 'up';
+
+    // Pick appropriate logo based on context (Mechanic portal vs Customer portal vs General)
+    const headerLogoUrl = isMechanicAuthenticated || mechanic
+        ? (db?.settings?.mechanicHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png")
+        : (db?.settings?.customerHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png");
 
     return (
         <div className={`sticky top-0 z-50 bg-[#121212]/80 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 py-3 flex items-center justify-between shadow-2xl transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}>
@@ -33,8 +43,18 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false
                         </svg>
                     </button>
                 )}
-                <div className="flex items-center gap-2.5">
-                    {icon && (
+                <div className="flex items-center gap-3">
+                    {showLogo && (
+                        <img 
+                            src={headerLogoUrl}
+                            alt="Logo"
+                            width={36}
+                            height={36}
+                            className="w-9 h-9 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
+                            onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
+                        />
+                    )}
+                    {icon && !showLogo && (
                         <span className="text-primary opacity-90">{icon}</span>
                     )}
                     <div>

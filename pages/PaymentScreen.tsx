@@ -16,10 +16,24 @@ const PaymentScreen: React.FC = () => {
     const navigate = useNavigate();
     const { total } = (location.state as { total: number }) || { total: 0 };
     const { cartItems, clearCart } = useCart();
-    const { db, addOrder } = useDatabase();
+    const { db, addOrder, updateOrderStatus } = useDatabase();
     const { user } = useAuth();
 
-    const [selectedMethod, setSelectedMethod] = useState('GCash');
+    const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+    const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+
+    const [selectedMethod, setSelectedMethod] = useState(() => {
+        if (!isManualGcashEnabled && isHitPayActive) return 'Credit Card';
+        if (isManualGcashEnabled) return 'GCash';
+        return 'Credit Card';
+    });
+
+    React.useEffect(() => {
+        if (!isManualGcashEnabled && selectedMethod === 'GCash') {
+            setSelectedMethod('Credit Card');
+        }
+    }, [isManualGcashEnabled, selectedMethod]);
+
     const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '' });
     const [cardErrors, setCardErrors] = useState<{ [key: string]: string }>({});
     const [isProcessing, setIsProcessing] = useState(false);
@@ -128,8 +142,8 @@ const PaymentScreen: React.FC = () => {
             const pendingTx = sessionStorage.getItem('pendingHitPayTx');
             const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
 
-            // Ensure this effect only finalizes Credit Card orders created before redirect
-            if (sessionData?.paymentMethod !== 'Credit Card' || !sessionData?.orderId) {
+            // Ensure this effect only finalizes HitPay orders created before redirect
+            if (!sessionData?.orderId) {
                 window.history.replaceState({}, document.title, window.location.pathname);
                 return;
             }
@@ -149,11 +163,32 @@ const PaymentScreen: React.FC = () => {
             };
             finalizeOrder();
         } else if (status === 'canceled' || status === 'failed') {
-            setError(`Payment was ${status}. Please try again.`);
-            window.history.replaceState({}, document.title, window.location.pathname);
+            const pendingTx = sessionStorage.getItem('pendingHitPayTx');
+            const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
             sessionStorage.removeItem('pendingHitPayTx');
+
+            const cancellationInfo = {
+                type: 'Order',
+                referenceId: sessionData?.orderId || reference || 'ORD-CANCELLED',
+                amount: total,
+                date: new Date().toLocaleString(),
+                reason: 'Payment process was cancelled by the user at the payment gateway.',
+                items: cartItems.map(item => ({ name: item.name, quantity: item.quantity, price: item.price * item.quantity })),
+                retryPath: '/customer-portal/checkout'
+            };
+
+            // If order was created in DB, update status to Cancelled
+            if (sessionData?.orderId && updateOrderStatus) {
+                updateOrderStatus(sessionData.orderId, 'Cancelled').catch(console.warn);
+            }
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            navigate('/customer-portal/', {
+                state: { cancelledTransaction: cancellationInfo },
+                replace: true
+            });
         }
-    }, [isSuccess]);
+    }, [isSuccess, cartItems, total, navigate, db, updateOrderStatus]);
 
     const buildSafeOrderData = (paymentMethod: string, status: 'Pending' | 'Processing') => {
         const resolvedCustomerId = (user as any)?.uid || (user as any)?.id || '';
@@ -185,7 +220,9 @@ const PaymentScreen: React.FC = () => {
         return safeOrderData;
     };
 
-    const handleProcessPayment = async () => {
+    const handlePayment = async (e: React.FormEvent) => {
+        e.preventDefault();
+
         if (!user) {
             setError("User not found. Please log in again.");
             return;
@@ -205,13 +242,11 @@ const PaymentScreen: React.FC = () => {
             return;
         }
 
-        const isOnlinePayment = selectedMethod !== 'Cash on Delivery';
-
         setIsProcessing(true);
         setError('');
 
         try {
-            if (selectedMethod === 'GCash') {
+            if (selectedMethod === 'GCash' && isManualGcashEnabled) {
                 setProcessingStep('Initializing GCash checkout...');
 
                 const newOrderData = buildSafeOrderData('GCash', 'Pending');
@@ -228,7 +263,7 @@ const PaymentScreen: React.FC = () => {
                 return;
             }
 
-            if (selectedMethod === 'Credit Card') {
+            if (selectedMethod === 'Credit Card' || isHitPayActive) {
                 const hitPay = HitPayService.fromSettings(db?.settings);
                 const isSandbox = db?.settings?.hitpaySandboxMode ?? true;
                 setProcessingStep(isSandbox ? 'Connecting to HitPay Sandbox...' : 'Connecting to HitPay...');
@@ -436,24 +471,57 @@ const PaymentScreen: React.FC = () => {
 
                 {/* Payment Method */}
                 <section className="mb-8 animate-slideUp" style={{ animationDelay: '0.1s' }}>
-                    <h2 className="text-[11px] font-bold text-gray-400  tracking-widest mb-3 flex items-center gap-2">
+                    <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                         <svg viewBox="0 0 24 24" fill="none" className="w-[14px] h-[14px] text-gray-400" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                             <circle cx="12" cy="7" r="4"></circle>
                         </svg>
                         PAYMENT METHOD
                     </h2>
-                    <div className="bg-[#1A1A1A] border border-primary/20 rounded-[1.25rem] p-5 flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                            <Wallet size={20} />
-                        </div>
-                        <div>
-                            <h3 className="font-bold text-[13px] text-white">GCash</h3>
-                            <p className="text-[10px] text-gray-400 mt-0.5">Pay via HitPay (GCash)</p>
-                        </div>
-                        <div className="ml-auto bg-primary/10 text-primary border border-primary/20 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase">
-                            Mandated
-                        </div>
+                    <div className="space-y-3">
+                        {isHitPayActive && (
+                            <div 
+                                onClick={() => setSelectedMethod('Credit Card')}
+                                className={`border rounded-[1.25rem] p-5 flex items-center gap-4 cursor-pointer transition-all ${
+                                    selectedMethod === 'Credit Card' 
+                                        ? 'bg-[#1A1A1A] border-primary/40 shadow-lg shadow-primary/10' 
+                                        : 'bg-[#141414] border-white/5 hover:border-white/10'
+                                }`}
+                            >
+                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                    <CreditCard size={20} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="font-bold text-[13px] text-white">HitPay Online Gateway</h3>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">GCash • Maya • QRPH • Credit & Debit Cards</p>
+                                </div>
+                                <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase shrink-0">
+                                    Instant
+                                </div>
+                            </div>
+                        )}
+
+                        {isManualGcashEnabled && (
+                            <div 
+                                onClick={() => setSelectedMethod('GCash')}
+                                className={`border rounded-[1.25rem] p-5 flex items-center gap-4 cursor-pointer transition-all ${
+                                    selectedMethod === 'GCash' 
+                                        ? 'bg-[#1A1A1A] border-primary/40 shadow-lg shadow-primary/10' 
+                                        : 'bg-[#141414] border-white/5 hover:border-white/10'
+                                }`}
+                            >
+                                <div className="w-10 h-10 rounded-xl bg-[#007DFE]/10 flex items-center justify-center text-[#007DFE] shrink-0">
+                                    <Wallet size={20} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="font-bold text-[13px] text-white">Manual GCash</h3>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">Scan QR code & upload receipt image</p>
+                                </div>
+                                <div className="bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase shrink-0">
+                                    Manual
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </section>
 
@@ -492,7 +560,7 @@ const PaymentScreen: React.FC = () => {
                         </div>
                     ) : (
                         <button
-                            onClick={handleProcessPayment}
+                            onClick={handlePayment}
                             disabled={isProcessing || !selectedMethod}
                             className={`w-full py-4 rounded-[1.25rem] font-bold text-sm transition-all flex items-center justify-center gap-2
                                 ${!selectedMethod

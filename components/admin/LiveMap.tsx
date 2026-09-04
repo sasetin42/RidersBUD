@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Mechanic, Settings, Booking } from '../../types';
 import { rtdb } from '../../firebase';
 import { ref, onValue, off } from 'firebase/database';
+import { getLeafletTileConfig } from '../../utils/mapTileProviders';
 
 declare const L: any;
 
@@ -44,6 +45,7 @@ interface LiveMapProps {
 const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onViewProfile, onAssignBooking }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
+    const tileLayerRef = useRef<any>(null);
     const markersLayerRef = useRef<any>(null);
     const bookingMarkersRef = useRef<{ [key: string]: any }>({});
     const mechanicMarkersRef = useRef<{ [key: string]: any }>({});
@@ -60,17 +62,26 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
     useEffect(() => {
         if (!mapRef.current || mapInstanceRef.current || !L) return;
 
+        const centerLat = settings?.defaultMapCenterLat ?? 14.58;
+        const centerLng = settings?.defaultMapCenterLng ?? 121.05;
+        const zoom = settings?.defaultMapZoom ?? 12;
+
         const map = L.map(mapRef.current, {
-            center: [14.58, 121.05],
-            zoom: 12,
+            center: [centerLat, centerLng],
+            zoom: zoom,
             zoomControl: false,
             dragging: true,
             scrollWheelZoom: true,
         });
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        }).addTo(map);
+        const tileConfig = getLeafletTileConfig(settings);
+        if (tileConfig.providerId === 'osm-dark' && mapRef.current) {
+            mapRef.current.classList.add('leaflet-dark-tiles');
+        } else if (mapRef.current) {
+            mapRef.current.classList.remove('leaflet-dark-tiles');
+        }
+
+        tileLayerRef.current = L.tileLayer(tileConfig.url, tileConfig.options).addTo(map);
 
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 

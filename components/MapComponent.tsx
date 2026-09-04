@@ -1,6 +1,8 @@
 
 
 import React, { useEffect, useRef, ReactNode } from 'react';
+import { useDatabase } from '../context/DatabaseContext';
+import { getLeafletTileConfig } from '../utils/mapTileProviders';
 
 // Declare L to satisfy TypeScript since it's loaded from the CDN in index.html
 declare const L: any;
@@ -33,8 +35,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
     onMapClick,
     disableScrollZoom = false,
 }) => {
+    const { db } = useDatabase();
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
+    const tileLayerRef = useRef<any>(null);
     const markersLayerRef = useRef<any>(null);
     const markersRef = useRef<Record<string, any>>({}); // Store marker instances by id
 
@@ -64,9 +68,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
             scrollWheelZoom: !disableScrollZoom,
         });
 
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(mapInstanceRef.current);
+        const tileConfig = getLeafletTileConfig(db?.settings);
+        tileLayerRef.current = L.tileLayer(tileConfig.url, tileConfig.options).addTo(mapInstanceRef.current);
 
         markersLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
 

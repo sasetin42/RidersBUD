@@ -36,7 +36,19 @@ const AppLoadingScreen: React.FC<AppLoadingScreenProps> = ({
                     {/* Inner App Logo */}
                     {logoUrl && (
                         <div className="absolute inset-0 flex items-center justify-center z-10">
-                            <img src={logoUrl} alt="Loading..." className="w-24 h-24 object-contain animate-pulse" />
+                            <div className="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center bg-black/40 border border-white/10 shadow-inner">
+                                <img 
+                                    src={logoUrl} 
+                                    alt="Loading..." 
+                                    className="w-full h-full object-cover rounded-full animate-pulse" 
+                                    onError={(e) => {
+                                        const target = e.currentTarget;
+                                        if (!target.src.endsWith('/riders-logo.png')) {
+                                            target.src = '/riders-logo.png';
+                                        }
+                                    }}
+                                />
+                            </div>
                         </div>
                     )}
                 </div>

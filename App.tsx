@@ -24,6 +24,7 @@ import TourOverlay from './components/TourOverlay';
 import AppLoadingScreen from './components/AppLoadingScreen';
 import ScrollToTop from './components/ScrollToTop';
 import { Shield } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
 
@@ -85,6 +86,7 @@ const AppServiceDetailScreen = React.lazy(() => import('./pages/services/AppServ
 const ServiceBookingFlow = React.lazy(() => import('./pages/services/ServiceBookingFlow'));
 const LiaisonBookingFlow = React.lazy(() => import('./pages/services/LiaisonBookingFlow'));
 const DriverBookingFlow = React.lazy(() => import('./pages/services/DriverBookingFlow'));
+const HitPayCheckoutScreen = React.lazy(() => import('./pages/HitPayCheckoutScreen'));
 
 import { customerTourSteps, mechanicTourSteps } from './data/tourSteps';
 import { requestNotificationPermission } from './utils/notificationManager';
@@ -252,6 +254,7 @@ const AppContent: React.FC = () => {
         location.pathname.includes('/booking/') || 
         location.pathname.includes('/payment') || 
         location.pathname.includes('/service-payment') ||
+        location.pathname.includes('/hitpay-checkout') ||
         location.pathname.includes('/app-services/book/') ||
         location.pathname.includes('/app-services/liaison-book/') ||
         location.pathname.includes('/cart')
@@ -353,7 +356,7 @@ const AppContent: React.FC = () => {
 
             // Attempt fallback to last known cached location
             const lastKnown = localStorage.getItem('ridersbud_last_known_location');
-            const isNative = (window as any).Capacitor !== undefined;
+            const isNative = Capacitor.isNativePlatform();
 
             if (lastKnown) {
                 try {
@@ -401,30 +404,60 @@ const AppContent: React.FC = () => {
             }
         };
 
-        const isNative = (window as any).Capacitor !== undefined;
+        const isNative = Capacitor.isNativePlatform();
 
-        const runWebGeolocation = () => {
+        const runWebGeolocation = async () => {
             if (!('geolocation' in navigator)) {
                 setIsLocationBlocked(true);
                 setLocationError("Geolocation is not supported by your device/browser.");
                 setLocationChecking(false);
                 return;
             }
-            navigator.geolocation.getCurrentPosition(
-                handleSuccess,
-                (error) => {
-                    if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
-                        navigator.geolocation.getCurrentPosition(
-                            handleSuccess,
-                            handleError,
-                            { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-                        );
-                    } else {
-                        handleError(error);
+
+            // Check if permission is already explicitly denied to avoid triggering repeated browser warnings
+            if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+                try {
+                    const status = await navigator.permissions.query({ name: 'geolocation' });
+                    if (status.state === 'denied') {
+                        setIsLocationBlocked(true);
+                        setLocationChecking(false);
+                        handleError({
+                            code: 1, // PERMISSION_DENIED
+                            message: "Geolocation permission has been blocked in browser settings.",
+                            PERMISSION_DENIED: 1,
+                            POSITION_UNAVAILABLE: 2,
+                            TIMEOUT: 3
+                        } as GeolocationPositionError);
+                        return;
                     }
-                },
-                { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
-            );
+                } catch (_) {}
+            }
+
+            try {
+                navigator.geolocation.getCurrentPosition(
+                    handleSuccess,
+                    (error) => {
+                        if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
+                            navigator.geolocation.getCurrentPosition(
+                                handleSuccess,
+                                handleError,
+                                { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+                            );
+                        } else {
+                            handleError(error);
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+                );
+            } catch (err) {
+                handleError({
+                    code: 1,
+                    message: "Geolocation access error",
+                    PERMISSION_DENIED: 1,
+                    POSITION_UNAVAILABLE: 2,
+                    TIMEOUT: 3
+                } as GeolocationPositionError);
+            }
         };
 
         if (isNative) {
@@ -811,10 +844,20 @@ const AppContent: React.FC = () => {
     useEffect(() => {
         if (!isAuthenticated || !user || !updateCustomerLocation) return;
 
-        const updateLocation = () => {
+        const updateLocation = async () => {
             const now = Date.now();
             if (isCustomerLocationUpdatingRef.current || (now - lastCustomerLocationUpdateRef.current) < 25000) {
                 return;
+            }
+
+            // Check if permission is denied before executing to prevent repeated browser console errors
+            if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+                try {
+                    const status = await navigator.permissions.query({ name: 'geolocation' });
+                    if (status.state === 'denied') {
+                        return;
+                    }
+                } catch (_) {}
             }
 
             if ('geolocation' in navigator) {
@@ -833,21 +876,25 @@ const AppContent: React.FC = () => {
                     onComplete();
                 };
 
-                navigator.geolocation.getCurrentPosition(
-                    handleSuccess,
-                    (error) => {
-                        if (error.code === error.TIMEOUT) {
-                            navigator.geolocation.getCurrentPosition(
-                                handleSuccess,
-                                onComplete,
-                                { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
-                            );
-                        } else {
-                            onComplete();
-                        }
-                    },
-                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-                );
+                try {
+                    navigator.geolocation.getCurrentPosition(
+                        handleSuccess,
+                        (error) => {
+                            if (error.code === error.TIMEOUT) {
+                                navigator.geolocation.getCurrentPosition(
+                                    handleSuccess,
+                                    onComplete,
+                                    { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+                                );
+                            } else {
+                                onComplete();
+                            }
+                        },
+                        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+                    );
+                } catch (_) {
+                    onComplete();
+                }
             }
         };
 
@@ -871,7 +918,7 @@ const AppContent: React.FC = () => {
             b.status === 'En Route'
         );
 
-        const isNative = (window as any).Capacitor !== undefined;
+        const isNative = Capacitor.isNativePlatform();
 
         if (activeBooking && watchIdRef.current === null) {
             if (isNative) {
@@ -934,7 +981,7 @@ const AppContent: React.FC = () => {
             b.status === 'En Route'
         );
 
-        const isNative = (window as any).Capacitor !== undefined;
+        const isNative = Capacitor.isNativePlatform();
 
         if (activeJob && mechanicWatchIdRef.current === null) {
             if (isNative) {
@@ -1092,7 +1139,7 @@ const AppContent: React.FC = () => {
         };
 
         const handleTurnOnLocationService = () => {
-            const isNative = (window as any).Capacitor !== undefined;
+            const isNative = Capacitor.isNativePlatform();
             if (isNative) {
                 NativeSettings.open({
                     optionAndroid: AndroidSettings.ApplicationDetails,
@@ -1247,8 +1294,8 @@ const AppContent: React.FC = () => {
                     <Route
                         path="/mechanic-portal/*"
                         element={
-                            (mechLoading || authLoading) ? (
-                                <AppLoadingScreen message="Verifying session..." />
+                            (mechLoading || authLoading) && (localStorage.getItem('ridersbud_mechanic_session') === 'true' || localStorage.getItem('ridersbud_customer_session') === 'true') ? (
+                                <AppLoadingScreen />
                             ) : isMechanicAuthenticated ? (
                                 <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
                                     <ErrorBoundary fallback={
@@ -1289,69 +1336,81 @@ const AppContent: React.FC = () => {
                     <Route
                         path="/customer-portal/*"
                         element={
-                            <div className={`max-w-md mx-auto bg-secondary text-white font-sans ${
-                                isMapScreen 
-                                    ? 'h-[100dvh] overflow-hidden' 
-                                    : isAuthenticated && !hideCustomerBottomPadding 
-                                        ? 'min-h-screen pb-20' 
-                                        : 'min-h-screen'
-                            }`}>
-                                <div className={`${isMapScreen ? 'h-full' : 'min-h-screen'} flex flex-col`}>
-                                    <React.Suspense fallback={<AppLoadingScreen />}>
-                                    <Routes>
-                                        {isAuthenticated ? (
-                                            isProfileIncomplete() ? (
-                                                <Route path="*" element={<Navigate to="/complete-profile" replace />} />
+                            (authLoading || mechLoading) && (localStorage.getItem('ridersbud_customer_session') === 'true' || localStorage.getItem('ridersbud_mechanic_session') === 'true') ? (
+                                <AppLoadingScreen />
+                            ) : (
+                                <div className={`max-w-md mx-auto bg-secondary text-white font-sans ${
+                                    isMapScreen 
+                                        ? 'h-[100dvh] overflow-hidden' 
+                                        : isAuthenticated && !hideCustomerBottomPadding 
+                                            ? 'min-h-screen pb-20' 
+                                            : 'min-h-screen'
+                                }`}>
+                                    <div className={`${isMapScreen ? 'h-full' : 'min-h-screen'} flex flex-col`}>
+                                        <React.Suspense fallback={<AppLoadingScreen />}>
+                                        <Routes>
+                                            {isAuthenticated ? (
+                                                isProfileIncomplete() ? (
+                                                    <Route path="*" element={<Navigate to="/complete-profile" replace />} />
+                                                ) : (
+                                                    <>
+                                                        <Route path="/" element={<HomeScreen />} />
+                                                        <Route path="/services" element={<ServicesScreen />} />
+                                                        <Route path="/service/:id" element={<ServiceDetailScreen />} />
+                                                        <Route path="/app-services" element={<AppServicesListScreen />} />
+                                                        <Route path="/app-services/:slug" element={<AppServiceSlugGuard><AppServiceDetailScreen /></AppServiceSlugGuard>} />
+                                                        <Route path="/app-services/book/:slug" element={<AppServiceSlugGuard><ServiceBookingFlow /></AppServiceSlugGuard>} />
+                                                        <Route path="/app-services/liaison-book/:slug" element={<ModuleGuard moduleId="liaison-assistance"><LiaisonBookingFlow /></ModuleGuard>} />
+                                                        <Route path="/app-services/driver-book/:slug" element={<ModuleGuard moduleId="driver-for-hire"><DriverBookingFlow /></ModuleGuard>} />
+                                                        <Route path="/parts-store" element={<PartsStoreScreen />} />
+                                                        <Route path="/part/:id" element={<PartDetailScreen />} />
+                                                        <Route path="/booking" element={<BookingScreen />} />
+                                                        <Route path="/booking/:serviceId" element={<BookingScreen />} />
+                                                        <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
+                                                        <Route path="/booking-detail/:bookingId" element={<BookingDetailScreen />} />
+                                                        <Route path="/cart" element={<CartScreen />} />
+                                                        <Route path="/payment" element={<PaymentScreen />} />
+                                                        <Route path="/hitpay-checkout" element={<HitPayCheckoutScreen />} />
+                                                        <Route path="/service-payment" element={<ServicePaymentScreen />} />
+                                                        <Route path="/service-payment/:bookingId" element={<ServicePaymentScreen />} />
+                                                        <Route path="/order-confirmation" element={<OrderConfirmationScreen />} />
+                                                        <Route path="/service-payment-confirmation" element={<ServicePaymentConfirmationScreen />} />
+                                                        <Route path="/profile" element={<ProfileScreen />} />
+                                                        <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
+                                                        <Route path="/my-garage" element={<MyGarageScreen />} />
+                                                        <Route path="/mechanic-profile/:mechanicId" element={<MechanicProfileScreen />} />
+                                                        <Route path="/favorite-mechanics" element={<FavoriteMechanicsScreen />} />
+                                                        <Route path="/reminders" element={<RemindersScreen />} />
+                                                        <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
+                                                        <Route path="/bookings" element={<Navigate to="/customer-portal/" replace />} />
+                                                        <Route path="/my-service-requests" element={<Navigate to="/customer-portal/" replace />} />
+                                                        <Route path="/order-history" element={<OrderHistoryScreen />} />
+                                                        <Route path="/warranties" element={<WarrantyScreen />} />
+                                                        <Route path="/wishlist" element={<WishlistScreen />} />
+                                                        <Route path="/faq" element={<FAQScreen />} />
+                                                        <Route path="/rent-a-car" element={<ModuleGuard moduleId="rent-a-car"><RentCarScreen /></ModuleGuard>} />
+                                                        <Route path="/rent-car" element={<Navigate to="/customer-portal/rent-a-car" replace />} />
+                                                        <Route path="/hire-a-driver" element={<ModuleGuard moduleId="driver-for-hire"><HireDriverScreen /></ModuleGuard>} />
+                                                        <Route path="/hire-driver" element={<Navigate to="/customer-portal/hire-a-driver" replace />} />
+                                                        <Route path="/driver-for-hire" element={<Navigate to="/customer-portal/hire-a-driver" replace />} />
+                                                        <Route path="/support-chat" element={<SupportChatScreen />} />
+                                                        <Route path="*" element={<Navigate to="/customer-portal/" replace />} />
+                                                    </>
+                                                )
                                             ) : (
                                                 <>
-                                                    <Route path="/" element={<HomeScreen />} />
-                                                    <Route path="/services" element={<ServicesScreen />} />
-                                                    <Route path="/service/:id" element={<ServiceDetailScreen />} />
-                                                    <Route path="/app-services" element={<AppServicesListScreen />} />
-                                                    <Route path="/app-services/:slug" element={<AppServiceSlugGuard><AppServiceDetailScreen /></AppServiceSlugGuard>} />
-                                                    <Route path="/app-services/book/:slug" element={<AppServiceSlugGuard><ServiceBookingFlow /></AppServiceSlugGuard>} />
-                                                    <Route path="/app-services/liaison-book/:slug" element={<ModuleGuard moduleId="liaison-assistance"><LiaisonBookingFlow /></ModuleGuard>} />
-                                                    <Route path="/app-services/driver-book/:slug" element={<ModuleGuard moduleId="driver-for-hire"><DriverBookingFlow /></ModuleGuard>} />
-                                                    <Route path="/parts-store" element={<PartsStoreScreen />} />
-                                                    <Route path="/part/:id" element={<PartDetailScreen />} />
-                                                    <Route path="/booking/:serviceId" element={<BookingScreen />} />
-                                                    <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
-                                                    <Route path="/booking-detail/:bookingId" element={<BookingDetailScreen />} />
-                                                    <Route path="/cart" element={<CartScreen />} />
-                                                    <Route path="/payment" element={<PaymentScreen />} />
-                                                    <Route path="/service-payment" element={<ServicePaymentScreen />} />
-                                                    <Route path="/order-confirmation" element={<OrderConfirmationScreen />} />
-                                                    <Route path="/service-payment-confirmation" element={<ServicePaymentConfirmationScreen />} />
-                                                    <Route path="/profile" element={<ProfileScreen />} />
-                                                    <Route path="/notification-settings" element={<NotificationSettingsScreen />} />
-                                                    <Route path="/my-garage" element={<MyGarageScreen />} />
-                                                    <Route path="/mechanic-profile/:mechanicId" element={<MechanicProfileScreen />} />
-                                                    <Route path="/favorite-mechanics" element={<FavoriteMechanicsScreen />} />
-                                                    <Route path="/reminders" element={<RemindersScreen />} />
-                                                    <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
-                                                    <Route path="/order-history" element={<OrderHistoryScreen />} />
-                                                    <Route path="/warranties" element={<WarrantyScreen />} />
-                                                    <Route path="/wishlist" element={<WishlistScreen />} />
-                                                    <Route path="/faq" element={<FAQScreen />} />
-                                                    <Route path="/rent-a-car" element={<ModuleGuard moduleId="rent-a-car"><RentCarScreen /></ModuleGuard>} />
-                                                    <Route path="/hire-a-driver" element={<ModuleGuard moduleId="driver-for-hire"><HireDriverScreen /></ModuleGuard>} />
-                                                    <Route path="/support-chat" element={<SupportChatScreen />} />
-                                                    <Route path="*" element={<Navigate to="/customer-portal/" replace />} />
+                                                    <Route path="/signup" element={<SignUpScreen />} />
+                                                    <Route path="*" element={<LoginScreen />} />
                                                 </>
-                                            )
-                                        ) : (
-                                            <>
-                                                <Route path="/signup" element={<SignUpScreen />} />
-                                                <Route path="*" element={<LoginScreen />} />
-                                            </>
-                                        )}
-                                    </Routes>
-                                    </React.Suspense>
+                                            )}
+                                        </Routes>
+                                        </React.Suspense>
+                                    </div>
+                                    {isAuthenticated && !isProfileIncomplete() && (
+                                        <BottomNav />
+                                    )}
                                 </div>
-                                {isAuthenticated && !isProfileIncomplete() && (
-                                    <BottomNav />
-                                )}
-                            </div>
+                            )
                         }
                     />
 
@@ -1362,7 +1421,9 @@ const AppContent: React.FC = () => {
                     <Route
                         path="/login"
                         element={
-                            isMechanicAuthenticated ? (
+                            (authLoading || mechLoading) && (localStorage.getItem('ridersbud_customer_session') === 'true' || localStorage.getItem('ridersbud_mechanic_session') === 'true') ? (
+                                <AppLoadingScreen />
+                            ) : isMechanicAuthenticated ? (
                                 <Navigate to="/mechanic-portal/dashboard" replace />
                             ) : isAuthenticated ? (
                                 <Navigate to="/customer-portal/" replace />

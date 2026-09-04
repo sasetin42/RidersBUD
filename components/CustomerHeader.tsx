@@ -45,11 +45,11 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                 <div className="flex items-center gap-3">
                     {/* Live Logo of RidersBUD */}
                     <img 
-                        src={db?.settings?.appLogoUrl || "/ridersbud_logo.png"}
+                        src={db?.settings?.customerHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png"}
                         alt="RidersBUD Logo"
                         width={36}
                         height={36}
-                        className="w-9 h-9 rounded-xl object-contain border border-white/10 p-0.5 bg-black/30"
+                        className="w-9 h-9 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
                         onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
                     />
                     <div>

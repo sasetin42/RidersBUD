@@ -3,7 +3,7 @@
 
 <head>
     <script>
-        // Suppress Tailwind Play CDN and Firebase snapshot console warnings/errors globally
+        // Suppress Tailwind Play CDN, Firebase snapshot, third-party payment gateway sandbox (HitPay iframe / Pusher / Evervault / Stripe / hCaptcha) console warnings/errors globally
         (function() {
             // Immediately unregister any stale Service Worker and clear cache from previous sessions on localhost
             if ('serviceWorker' in navigator) {
@@ -21,7 +21,7 @@
                     keys.forEach(function(key) { window.caches.delete(key); });
                 });
             }
-            const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup'];
+            const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup','pusher','usePusher'];
             const originalLog = console.log;
             console.log = function(...args) {
                 if (args[0] && typeof args[0] === 'string' && logSuppressions.some(function(s) { return args[0].indexOf(s) !== -1; })) return;
@@ -63,7 +63,29 @@
                     joined.includes('BloomFilter') ||
                     joined.includes('ERR_BLOCKED_BY_CLIENT') ||
                     joined.includes('BLOCKED_BY_CLIENT') ||
-                    joined.includes('network-request-failed')
+                    joined.includes('network-request-failed') ||
+                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
+                    joined.includes('r.stripe.com') ||
+                    joined.includes('stripe.com') ||
+                    joined.includes('m.stripe.network') ||
+                    joined.includes('pusher.com') ||
+                    joined.includes('usePusher') ||
+                    joined.includes('Evervault') ||
+                    joined.includes('evervault.com') ||
+                    joined.includes('Permissions policy violation') ||
+                    joined.includes('unload is not allowed') ||
+                    joined.includes('Blocked aria-hidden on a <body>') ||
+                    joined.includes('Listen/channel') ||
+                    joined.includes('Write/channel') ||
+                    joined.includes('webchannel') ||
+                    joined.includes('QUIC') ||
+                    joined.includes('QUIC_TOO_MANY_RTOS') ||
+                    joined.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+                    joined.includes('firestore.googleapis.com') ||
+                    joined.includes('Geolocation permission has been blocked') ||
+                    joined.includes('chromestatus.com') ||
+                    joined.includes('6443143280984064') ||
+                    joined.includes('hcaptcha')
                 ) return;
                 originalWarn.apply(console, args);
             };
@@ -100,26 +122,295 @@
                     joined.includes('Failed to load resource') ||
                     joined.includes('ERR_BLOCKED_BY_CLIENT') ||
                     joined.includes('BLOCKED_BY_CLIENT') ||
-                    joined.includes('network-request-failed')
+                    joined.includes('reportAllChanges') ||
+                    joined.includes('startTime') ||
+                    joined.includes('network-request-failed') ||
+                    joined.includes('Listen/channel') ||
+                    joined.includes('Write/channel') ||
+                    joined.includes('webchannel') ||
+                    joined.includes('QUIC_TOO_MANY_RTOS') ||
+                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
+                    joined.includes('r.stripe.com') ||
+                    joined.includes('stripe.com') ||
+                    joined.includes('m.stripe.network') ||
+                    joined.includes('CLOSING or CLOSED') ||
+                    joined.includes('usePusher') ||
+                    joined.includes('pusher.com') ||
+                    joined.includes('Evervault') ||
+                    joined.includes('evervault.com') ||
+                    joined.includes('Failed to load Evervault') ||
+                    joined.includes('Permissions policy violation') ||
+                    joined.includes('Geolocation permission has been blocked') ||
+                    joined.includes('chromestatus.com') ||
+                    joined.includes('6443143280984064') ||
+                    joined.includes('Blocked aria-hidden on a <body>') ||
+                    joined.includes('hcaptcha')
                 ) return;
                 originalError.apply(console, args);
             };
+
+            // Robust WebSocket monkeypatch: intercept invalid state send/close to prevent unhandled exceptions from Pusher in payment iframes
+            try {
+                if (typeof window.WebSocket !== 'undefined' && window.WebSocket.prototype) {
+                    const originalWSSend = window.WebSocket.prototype.send;
+                    window.WebSocket.prototype.send = function(...args) {
+                        if (this.readyState !== window.WebSocket.OPEN) {
+                            return;
+                        }
+                        try {
+                            return originalWSSend.apply(this, args);
+                        } catch (e) {
+                            return;
+                        }
+                    };
+                    const originalWSClose = window.WebSocket.prototype.close;
+                    window.WebSocket.prototype.close = function(...args) {
+                        if (this.readyState === window.WebSocket.CLOSING || this.readyState === window.WebSocket.CLOSED) {
+                            return;
+                        }
+                        try {
+                            return originalWSClose.apply(this, args);
+                        } catch (e) {
+                            return;
+                        }
+                    };
+                }
+            } catch (_) {}
+
+            // Prevent hCaptcha / 3rd party scripts from setting aria-hidden="true" directly on <body>
+            try {
+                const origSetAttribute = Element.prototype.setAttribute;
+                Element.prototype.setAttribute = function(name, value) {
+                    if (this.tagName === 'BODY' && (name === 'aria-hidden' || name.toLowerCase() === 'aria-hidden')) {
+                        return;
+                    }
+                    return origSetAttribute.apply(this, arguments);
+                };
+            } catch (_) {}
 
             // Suppress console.debug (Firebase logger may use it for internal errors)
             var originalDebug = console.debug;
             console.debug = function() {};
  
-             var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT'];
+             var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage'];
+            // Protect global PerformanceObserver, PerformanceObserverEntryList, PerformanceEntry prototype & performance entries against buggy extension / DevTools callbacks
+            try {
+                if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
+                    try {
+                        Object.defineProperty(window.PerformanceEntry.prototype, 'startTime', {
+                            get: function() { return 0; },
+                            configurable: true
+                        });
+                    } catch (_) {}
+                }
+            } catch (_) {}
+
+            var createFallbackEntry = function(type, name) {
+                return {
+                    name: name || 'performance-entry',
+                    entryType: type || 'measure',
+                    startTime: (typeof performance !== 'undefined' && performance && performance.now) ? performance.now() : 0,
+                    duration: 0,
+                    toJSON: function() { return this; }
+                };
+            };
+
+            var sanitizeEntries = function(entries, defaultType) {
+                try {
+                    if (!entries || !Array.isArray(entries)) {
+                        return [createFallbackEntry(defaultType)];
+                    }
+                    var cleaned = [];
+                    for (var i = 0; i < entries.length; i++) {
+                        var item = entries[i];
+                        if (item && typeof item === 'object') {
+                            if (typeof item.startTime === 'undefined' || item.startTime === null || isNaN(item.startTime)) {
+                                try { item.startTime = 0; } catch(_) {}
+                            }
+                            cleaned.push(item);
+                        } else {
+                            cleaned.push(createFallbackEntry(defaultType));
+                        }
+                    }
+                    if (cleaned.length === 0) {
+                        cleaned.push(createFallbackEntry(defaultType));
+                    }
+                    return cleaned;
+                } catch (_) {
+                    return [createFallbackEntry(defaultType)];
+                }
+            };
+
+            try {
+                if (typeof window.PerformanceObserverEntryList !== 'undefined' && window.PerformanceObserverEntryList.prototype) {
+                    ['getEntries', 'getEntriesByType', 'getEntriesByName'].forEach(function(fn) {
+                        var orig = window.PerformanceObserverEntryList.prototype[fn];
+                        if (typeof orig === 'function') {
+                            window.PerformanceObserverEntryList.prototype[fn] = function(param) {
+                                try {
+                                    var raw = orig.apply(this, arguments);
+                                    return sanitizeEntries(raw, typeof param === 'string' ? param : 'measure');
+                                } catch (_) {
+                                    return [createFallbackEntry(typeof param === 'string' ? param : 'measure')];
+                                }
+                            };
+                        }
+                    });
+                }
+            } catch (_) {}
+
+            try {
+                if (typeof window.PerformanceObserver !== 'undefined') {
+                    const OriginalPO = window.PerformanceObserver;
+                    function PatchedPerformanceObserver(callback) {
+                        const safeCallback = function(list, observer) {
+                            try {
+                                if (list) {
+                                    if (typeof list.getEntries === 'function') {
+                                        const origGetEntries = list.getEntries;
+                                        list.getEntries = function() {
+                                            try {
+                                                var raw = origGetEntries.call(list);
+                                                return sanitizeEntries(raw, 'measure');
+                                            } catch (_) {
+                                                return [createFallbackEntry('measure')];
+                                            }
+                                        };
+                                    }
+                                    if (typeof list.getEntriesByType === 'function') {
+                                        const origGetEntriesByType = list.getEntriesByType;
+                                        list.getEntriesByType = function(type) {
+                                            try {
+                                                var raw = origGetEntriesByType.call(list, type);
+                                                return sanitizeEntries(raw, type);
+                                            } catch (_) {
+                                                return [createFallbackEntry(type)];
+                                            }
+                                        };
+                                    }
+                                    if (typeof list.getEntriesByName === 'function') {
+                                        const origGetEntriesByName = list.getEntriesByName;
+                                        list.getEntriesByName = function(name, type) {
+                                            try {
+                                                var raw = origGetEntriesByName.call(list, name, type);
+                                                return sanitizeEntries(raw, type);
+                                            } catch (_) {
+                                                return [createFallbackEntry(type, name)];
+                                            }
+                                        };
+                                    }
+                                }
+                                return callback(list, observer);
+                            } catch (err) {
+                                return;
+                            }
+                        };
+                        const po = new OriginalPO(safeCallback);
+                        return po;
+                    }
+                    PatchedPerformanceObserver.prototype = OriginalPO.prototype;
+                    try {
+                        Object.defineProperty(PatchedPerformanceObserver, 'supportedEntryTypes', {
+                            get: function() {
+                                return OriginalPO.supportedEntryTypes || [];
+                            }
+                        });
+                    } catch (_) {}
+                    window.PerformanceObserver = PatchedPerformanceObserver;
+                }
+            } catch (_) {}
+
+            try {
+                if (typeof window.performance !== 'undefined') {
+                    ['getEntries', 'getEntriesByType', 'getEntriesByName'].forEach(function(fn) {
+                        if (typeof window.performance[fn] === 'function') {
+                            const orig = window.performance[fn];
+                            window.performance[fn] = function(param) {
+                                try {
+                                    const raw = orig.apply(window.performance, arguments);
+                                    return sanitizeEntries(raw, typeof param === 'string' ? param : 'measure');
+                                } catch (_) {
+                                    return [createFallbackEntry(typeof param === 'string' ? param : 'measure')];
+                                }
+                            };
+                        }
+                    });
+                }
+            } catch (_) {}
+
+            // Safe requestIdleCallback shim / wrapper
+            try {
+                if (typeof window.requestIdleCallback !== 'undefined') {
+                    const origRIC = window.requestIdleCallback;
+                    window.requestIdleCallback = function(cb, opts) {
+                        return origRIC.call(window, function(deadline) {
+                            try {
+                                return cb(deadline);
+                            } catch (e) {
+                                if (e && e.message && (e.message.includes('startTime') || e.message.includes('reportAllChanges') || e.message.includes('undefined'))) {
+                                    return;
+                                }
+                                throw e;
+                            }
+                        }, opts);
+                    };
+                }
+            } catch (_) {}
+
+            // Safe requestAnimationFrame shim
+            try {
+                if (typeof window.requestAnimationFrame !== 'undefined') {
+                    const origRAF = window.requestAnimationFrame;
+                    window.requestAnimationFrame = function(cb) {
+                        return origRAF.call(window, function(ts) {
+                            try {
+                                return cb(ts);
+                            } catch (e) {
+                                if (e && e.message && (e.message.includes('startTime') || e.message.includes('reportAllChanges') || e.message.includes('undefined'))) {
+                                    return;
+                                }
+                                throw e;
+                            }
+                        });
+                    };
+                }
+            } catch (_) {}
+
+            // Safe setTimeout wrapper for extension callbacks
+            try {
+                const origST = window.setTimeout;
+                window.setTimeout = function(fn, delay, ...args) {
+                    if (typeof fn === 'function') {
+                        const safeFn = function() {
+                            try {
+                                return fn.apply(this, arguments);
+                            } catch (e) {
+                                if (e && e.message && (e.message.includes('startTime') || e.message.includes('reportAllChanges') || e.message.includes('undefined'))) {
+                                    return;
+                                }
+                                throw e;
+                            }
+                        };
+                        return origST.call(window, safeFn, delay, ...args);
+                    }
+                    return origST.apply(window, arguments);
+                };
+            } catch (_) {}
+
             function shouldSuppress(m) {
               if (!m) return false;
+              var str = String(m);
               for (var i = 0; i < suppressed.length; i++) {
-                if (m.indexOf(suppressed[i]) !== -1) return true;
+                if (str.indexOf(suppressed[i]) !== -1) return true;
               }
               return false;
             }
             window.addEventListener('error', function(event) {
-                var msg = event.message || (event.error && event.error.message) || '';
-                if (shouldSuppress(msg)) {
+                var msg = event.message || (event.error && event.error.message) || (event.error && String(event.error)) || '';
+                var filename = event.filename || '';
+                var stack = (event.error && event.error.stack) || '';
+                if (shouldSuppress(msg) || shouldSuppress(filename) || shouldSuppress(stack) || filename.includes('VM') || filename.includes('extensions::') || filename.includes('chrome-extension://') || filename.includes('usePusher') || filename.includes('hcaptcha') || msg.includes('startTime') || msg.includes('reportAllChanges') || stack.includes('reportAllChanges') || stack.includes('startTime') || msg.includes('QUIC')) {
+                    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
                     event.preventDefault();
                     event.stopPropagation();
                     return true;
@@ -127,7 +418,9 @@
             }, true);
             window.addEventListener('unhandledrejection', function(event) {
                 var msg = (event.reason && event.reason.message) || String(event.reason) || '';
-                if (shouldSuppress(msg)) {
+                var stack = (event.reason && event.reason.stack) || '';
+                if (shouldSuppress(msg) || shouldSuppress(stack) || msg.includes('usePusher') || msg.includes('CLOSING or CLOSED') || msg.includes('Evervault') || msg.includes('QUIC') || msg.includes('startTime') || msg.includes('reportAllChanges') || stack.includes('reportAllChanges')) {
+                    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
                     event.preventDefault();
                     event.stopPropagation();
                     return true;
@@ -135,8 +428,13 @@
             }, true);
             // Extra safety: window.onerror return true prevents default console output in some browsers
             window.onerror = function(msg, url, line, col, err) {
-                var m = msg || (err && err.message) || '';
-                return shouldSuppress(m);
+                var m = msg || (err && err.message) || (err && String(err)) || '';
+                var u = url || '';
+                var s = (err && err.stack) || '';
+                if (shouldSuppress(m) || shouldSuppress(s) || u.includes('VM') || u.includes('chrome-extension://') || u.includes('usePusher') || u.includes('hcaptcha') || m.includes('startTime') || m.includes('reportAllChanges') || s.includes('reportAllChanges') || m.includes('QUIC')) {
+                    return true;
+                }
+                return false;
             };
         })();
     </script>
@@ -178,7 +476,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#FE7803" />
     <meta name="color-scheme" content="dark" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.firebaseio.com https://unpkg.com; frame-src 'self' https://*.firebaseapp.com https://*.google.com; child-src 'self' https://*.firebaseapp.com https://*.google.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com https://smtpjs.com https://*.smtpjs.com https://api.hit-pay.com https://api.sandbox.hit-pay.com https://*.hit-pay.com https://*.stripe.com https://r.stripe.com https://m.stripe.com wss://*.pusher.com https://*.pusher.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://*.hit-pay.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.firebaseio.com https://unpkg.com https://smtpjs.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.pusher.com; frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com; child-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com;">
     <link rel="manifest" href="/manifest.json" />
     
     <!-- Leaflet CSS & JS for Maps (self-hosted to avoid tracking prevention blocks) -->
@@ -401,6 +699,15 @@
 
         .ridersbud-popup-btn:hover {
             background-color: #d96802;
+        }
+
+        /* Clean Dark Theme for OpenStreetMap Free Tiles */
+        .leaflet-tile-pane {
+            filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+
+        .leaflet-container {
+            background-color: #0A0A0C !important;
         }
 
         /* Move leaflet attribution to bottom left */

@@ -23,9 +23,8 @@ import {
 } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import liveData from '../data/liveData.json';
 import { paymentService } from '../services/PaymentService';
-import { sendEmail } from '../services/emailService';
+import { sendEmail, sendTemplatedEmail } from '../services/emailService';
 
 interface DatabaseContextType {
     db: Database | null;
@@ -43,7 +42,7 @@ interface DatabaseContextType {
     deleteMechanic: (mechanicId: string) => Promise<void>;
     addBooking: (booking: Omit<Booking, 'id'>) => Promise<Booking | null>;
     updateBooking: (bookingId: string, updates: Partial<Booking>) => Promise<void>;
-    updateBookingPayment: (bookingId: string, amount: number, status: 'pending' | 'partial' | 'paid') => Promise<void>;
+    updateBookingPayment: (bookingId: string, amount: number, status: 'pending' | 'partial' | 'paid' | 'downpayment_paid', extraData?: Partial<Booking>) => Promise<void>;
     updateBookingStatus: (bookingId: string, status: BookingStatus) => Promise<void>;
     assignMechanicToBooking: (bookingId: string, mechanic: Mechanic) => Promise<void>;
     cancelBooking: (bookingId: string, reason: string) => Promise<void>;
@@ -79,7 +78,9 @@ interface DatabaseContextType {
     markNotificationAsRead: (notificationId: string) => Promise<void>;
     markAllNotificationsAsRead: (recipientId: string) => Promise<void>;
     deleteNotification: (notificationId: string) => Promise<void>;
-    clearAllNotifications: (recipientId: string) => Promise<void>;
+    clearAllNotifications: (recipientId: string, specificIds?: string[]) => Promise<void>;
+    clearAllNotificationsByPrefix: (prefix: string) => Promise<void>;
+    purgeGoogleMapsApiNotifications: () => Promise<number>;
     addPayoutRequest: (request: { mechanicId: string; mechanicName: string; amount: number; paymentMethod: string; accountDetails: string; notes?: string }) => Promise<void>;
     updatePayoutStatus: (payoutId: string, status: 'Pending' | 'Approved' | 'Paid' | 'Rejected', mechanicId: string, amount: number, adminDetails?: { id: string; name: string; notes?: string; transactionId?: string }) => Promise<void>;
     addReview: (bookingId: string, review: Omit<Review, 'id' | 'date'>) => Promise<void>;
@@ -119,6 +120,8 @@ interface DatabaseContextType {
     // Liaison Services
     addLiaisonBooking: (booking: Omit<LiaisonBooking, 'id'>) => Promise<void>;
     updateLiaisonBookingStatus: (id: string, status: LiaisonBooking['status'], notes?: string, officerName?: string) => Promise<void>;
+    deleteLiaisonBooking: (id: string) => Promise<void>;
+    deleteServiceRequest: (id: string) => Promise<void>;
 }
 
 // Stable context reference across HMR to prevent "must be used within a Provider" errors
@@ -176,7 +179,10 @@ const FIRESTORE_SUPPRESS = [
     'ObjectMultiplex',
     'malformed chunk',
     'MaxListenersExceededWarning',
-    'EventEmitter memory leak',
+    'ERR_QUIC_PROTOCOL_ERROR',
+    'Write/channel',
+    'Listen/channel',
+    'webchannel',
     'contentscript',
 ];
 
@@ -220,6 +226,12 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             gcashQrCodeUrl: '',
             defaultCustomerImageUrl: '/assets/logo.png',
             defaultMechanicImageUrl: '/assets/logo.png',
+            hitpayEnabled: true,
+            hitpaySandboxMode: true,
+            hitpayApiKey: 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb',
+            hitpaySalt: 'Wj5xX1V5DmDJ4hZOlvR9GrTWrgZi8OAJImleDzSMsB7xOlYgK74QlsoCTSetXAAM',
+            hitpaySandboxApiKey: 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8',
+            hitpaySandboxSalt: 'EsIA9lzyrf9czdNqs7IVZMCKrEmONcvxfSNJpPdaGDr4PxwC6g89J00RtPKreNUL',
             modules: [
                 { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
                 { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
@@ -261,9 +273,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         // Load data from liveData.json as a local fallback for a given collection.
         // Used when Firestore permission-denied errors occur on local bypass sessions.
-        const loadLocalFallback = <T,>(colName: string, onNext: (data: T[]) => void) => {
+        let cachedLiveData: Record<string, any> | null = null;
+        const loadLocalFallback = async <T,>(colName: string, onNext: (data: T[]) => void) => {
             try {
-                const localCollection = (liveData as Record<string, any>)[colName];
+                if (!cachedLiveData) {
+                    cachedLiveData = (await import('../data/liveData.json')).default;
+                }
+                const localCollection = cachedLiveData[colName];
                 if (Array.isArray(localCollection) && localCollection.length > 0) {
                     console.info(`[LocalFallback] Loaded ${localCollection.length} docs for "${colName}" from liveData.json`);
                     onNext(localCollection as T[]);
@@ -312,15 +328,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     },
                     (err) => {
                         const errCode = err?.code || '';
-                        if (errCode === 'permission-denied' || errCode === 'unavailable') {
+                        const errMsg = err?.message || '';
+                        // 404 = stale session / channel gone — Firebase auto-retries internally.
+                        // Suppress the noisy console output since it's self-healing.
+                        if (errMsg.includes('404') || errCode === 'not-found') {
+                            // No-op: the SDK will re-establish the channel automatically
+                        } else if (errCode === 'permission-denied' || errCode === 'unavailable') {
                             // On localhost with bypass login or when offline/unavailable, try liveData.json as a read fallback
                             if (isLocalhost) {
                                 loadLocalFallback<T>(label, onNext);
                             } else {
                                 console.warn(`Error for ${label}: ${errCode} — continuing without data`);
                             }
+                        } else if (errMsg.includes('QUIC') || errMsg.includes('net::')) {
+                            // Network transport errors — self-healing, suppress noise
                         } else {
-                            console.warn(`Snapshot error for ${label}:`, errCode || err?.message || err);
+                            console.warn(`Snapshot error for ${label}:`, errCode || errMsg || err);
                         }
                         if (onDone) onDone();
                     }
@@ -338,6 +361,33 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 q,
                 (data) => {
                     setDb(prev => prev ? { ...prev, [stateKey]: data } : null);
+
+                    if (colName === 'services' && Array.isArray(data)) {
+                        const existingServices = data as any[];
+                        const hasPMS = existingServices.some(s => 
+                            (s.name && s.name.trim().toLowerCase() === 'pms') || 
+                            (s.id && s.id === 'pms') ||
+                            (s.name && s.name.toLowerCase().includes('periodic maintenance'))
+                        );
+                        if (!hasPMS) {
+                            console.info("[DatabaseContext] Auto-seeding missing PMS service in services collection...");
+                            const pmsService = {
+                                id: 'pms',
+                                name: 'PMS',
+                                description: 'Periodic Maintenance Service covering multi-point vehicle inspection, fluid checks, filter cleaning, and preventive tuning.',
+                                price: 3500,
+                                estimatedTime: '2-3 hours',
+                                imageUrl: 'https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?q=80&w=800&auto=format&fit=crop',
+                                category: 'Maintenance',
+                                isActive: true,
+                                icon: '<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>'
+                            };
+                            setDoc(doc(firestore, 'services', 'pms'), pmsService).catch(err => {
+                                console.warn("Failed to auto-seed PMS service:", err);
+                            });
+                        }
+                    }
+
                     // Auto-seed if collection is empty
                     if (data.length === 0) {
                         if (colName === 'rentalCars') {
@@ -604,7 +654,41 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             const q = collection(firestore, colName);
             const unsubscribe = safeOnSnapshot<T>(
                 q,
-                (data) => setDb(prev => prev ? { ...prev, [stateKey]: data } : null),
+                (data) => {
+                    if (stateKey === 'notifications' && Array.isArray(data)) {
+                        const isGoogleMapsTest = (item: any) => {
+                            const title = (item?.title || '').toLowerCase();
+                            const message = (item?.message || '').toLowerCase();
+                            return (
+                                title.includes('google map') ||
+                                title.includes('google maps') ||
+                                title.includes('maps api') ||
+                                message.includes('google maps api') ||
+                                message.includes('api key connection test')
+                            );
+                        };
+
+                        // Filter from memory state immediately
+                        const cleanNotifications = (data as any[]).filter(n => !isGoogleMapsTest(n));
+                        setDb(prev => prev ? { ...prev, notifications: cleanNotifications } : null);
+
+                        // Batch delete any matching docs in the background
+                        const staleDocs = (data as any[]).filter(isGoogleMapsTest);
+                        if (staleDocs.length > 0) {
+                            try {
+                                const batch = writeBatch(firestore);
+                                staleDocs.forEach(d => {
+                                    if (d.id) batch.delete(doc(firestore, 'notifications', d.id));
+                                });
+                                batch.commit().catch(e => console.warn('[DatabaseContext] Auto-purge Maps notifs error:', e));
+                            } catch (e) {
+                                console.warn('[DatabaseContext] Auto-purge batch error:', e);
+                            }
+                        }
+                    } else {
+                        setDb(prev => prev ? { ...prev, [stateKey]: data } : null);
+                    }
+                },
                 colName
             );
             privateUnsubs.push(unsubscribe);
@@ -613,7 +697,39 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         const subscribePrivateQuery = <T,>(q: any, stateKey: keyof Database) => {
             const unsubscribe = safeOnSnapshot<T>(
                 q,
-                (data) => setDb(prev => prev ? { ...prev, [stateKey]: data } : null),
+                (data) => {
+                    if (stateKey === 'notifications' && Array.isArray(data)) {
+                        const isGoogleMapsTest = (item: any) => {
+                            const title = (item?.title || '').toLowerCase();
+                            const message = (item?.message || '').toLowerCase();
+                            return (
+                                title.includes('google map') ||
+                                title.includes('google maps') ||
+                                title.includes('maps api') ||
+                                message.includes('google maps api') ||
+                                message.includes('api key connection test')
+                            );
+                        };
+
+                        const cleanNotifications = (data as any[]).filter(n => !isGoogleMapsTest(n));
+                        setDb(prev => prev ? { ...prev, notifications: cleanNotifications } : null);
+
+                        const staleDocs = (data as any[]).filter(isGoogleMapsTest);
+                        if (staleDocs.length > 0) {
+                            try {
+                                const batch = writeBatch(firestore);
+                                staleDocs.forEach(d => {
+                                    if (d.id) batch.delete(doc(firestore, 'notifications', d.id));
+                                });
+                                batch.commit().catch(e => console.warn('[DatabaseContext] Auto-purge query Maps notifs error:', e));
+                            } catch (e) {
+                                console.warn('[DatabaseContext] Auto-purge batch error:', e);
+                            }
+                        }
+                    } else {
+                        setDb(prev => prev ? { ...prev, [stateKey]: data } : null);
+                    }
+                },
                 stateKey
             );
             privateUnsubs.push(unsubscribe);
@@ -649,26 +765,49 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             markPublicCollectionLoaded();
         }
 
-        try {
-            subscribePublic('adminUsers', 'adminUsers');
-            subscribePublic('services', 'services');
-            subscribePublic('parts', 'parts');
-            subscribePublic('banners', 'banners');
-            subscribePublic('faqs', 'faqs');
-            subscribePublic('mechanics', 'mechanics');
-            subscribePublic('promoCodes', 'promoCodes');
-            subscribePublic('roles', 'roles');
-            subscribePublic('rentalCars', 'rentalCars');
-            subscribePublic('hireDrivers', 'hireDrivers');
-            subscribePublic('subscriptions', 'subscriptions');
-            subscribePublic('appServices', 'appServices');
-            subscribePublic('serviceProviders', 'serviceProviders');
-            subscribePublic('servicePricing', 'servicePricing');
-            subscribePublic<LiaisonBranch>('liaisonBranches', 'liaisonBranches');
-            subscribePublic<LiaisonStaff>('liaisonStaff', 'liaisonStaff');
-        } catch (err) {
-            console.warn("Error setting up public Firestore listeners:", err);
-        }
+        // Stagger public subscriptions in batches to avoid QUIC_TOO_MANY_RTOS.
+        // Opening too many simultaneous Firestore listeners overwhelms the transport.
+        const publicBatches = [
+            [
+                ['adminUsers', 'adminUsers'] as const,
+                ['services', 'services'] as const,
+                ['parts', 'parts'] as const,
+                ['banners', 'banners'] as const,
+                ['faqs', 'faqs'] as const,
+            ],
+            [
+                ['mechanics', 'mechanics'] as const,
+                ['promoCodes', 'promoCodes'] as const,
+                ['roles', 'roles'] as const,
+                ['rentalCars', 'rentalCars'] as const,
+                ['hireDrivers', 'hireDrivers'] as const,
+            ],
+            [
+                ['subscriptions', 'subscriptions'] as const,
+                ['appServices', 'appServices'] as const,
+                ['serviceProviders', 'serviceProviders'] as const,
+                ['servicePricing', 'servicePricing'] as const,
+            ],
+        ];
+        const publicTimers: any[] = [];
+        publicBatches.forEach((batch, i) => {
+            publicTimers.push(setTimeout(() => {
+                try {
+                    batch.forEach(([col, key]) => subscribePublic(col, key));
+                } catch (err) {
+                    console.warn("Error setting up public Firestore listeners batch:", err);
+                }
+            }, i * 200));
+        });
+        // Liaison branches/staff are less critical — subscribe last
+        publicTimers.push(setTimeout(() => {
+            try {
+                subscribePublic<LiaisonBranch>('liaisonBranches', 'liaisonBranches');
+                subscribePublic<LiaisonStaff>('liaisonStaff', 'liaisonStaff');
+            } catch (err) {
+                console.warn("Error setting up liaison Firestore listeners:", err);
+            }
+        }, 800));
 
         // --- PRIVATE listeners (torn down and re-built on every auth change / admin bypass login) ---
         const checkAndSubscribe = async (user: any) => {
@@ -764,40 +903,53 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 return;
             }
 
+            // Helper to stagger private subscriptions and avoid QUIC transport overwhelm
+            const staggerPrivate = (fn: () => void, delayMs: number) => {
+                setTimeout(fn, delayMs);
+            };
+
             if (isAdmin) {
+                // Batch 1 (immediate): core data
                 subscribePrivate('bookings', 'bookings');
                 subscribePrivate('customers', 'customers');
                 subscribePrivate('orders', 'orders');
-                subscribePrivate('tasks', 'tasks');
-                subscribePrivate('payouts', 'payouts');
-                // Admin notifications: subscribe to all notifications to display customer and mechanic alerts
-                subscribePrivate('notifications', 'notifications');
-                subscribePrivate('rentalBookings', 'rentalBookings');
-                subscribePrivate('serviceRequests', 'serviceRequests');
-                subscribePrivate('serviceActivityLogs', 'serviceActivityLogs');
-                subscribePrivate<LiaisonBooking>('liaisonBookings', 'liaisonBookings');
+                // Batch 2 (200ms): secondary data
+                staggerPrivate(() => {
+                    subscribePrivate('tasks', 'tasks');
+                    subscribePrivate('payouts', 'payouts');
+                    subscribePrivate('notifications', 'notifications');
+                }, 200);
+                // Batch 3 (500ms): tertiary data
+                staggerPrivate(() => {
+                    subscribePrivate('rentalBookings', 'rentalBookings');
+                    subscribePrivate('serviceRequests', 'serviceRequests');
+                    subscribePrivate('serviceActivityLogs', 'serviceActivityLogs');
+                    subscribePrivate<LiaisonBooking>('liaisonBookings', 'liaisonBookings');
+                }, 500);
             } else if (isMechanic && user) {
                 subscribePrivate('bookings', 'bookings');
                 subscribePrivate('customers', 'customers');
-                subscribePrivateQuery(query(collection(firestore, 'tasks'), where('mechanicId', '==', user.uid)), 'tasks');
-                subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', user.uid)), 'payouts');
-                // Mechanic notifications: only their own + broadcast 'all'
-                subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                    where('recipientId', 'in', [user.uid, 'all']),
-                    where('recipientRole', '==', 'mechanic')
-                ), 'notifications');
+                staggerPrivate(() => {
+                    subscribePrivateQuery(query(collection(firestore, 'tasks'), where('mechanicId', '==', user.uid)), 'tasks');
+                    subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', user.uid)), 'payouts');
+                    subscribePrivateQuery(query(collection(firestore, 'notifications'),
+                        where('recipientId', 'in', [user.uid, 'all']),
+                        where('recipientRole', '==', 'mechanic')
+                    ), 'notifications');
+                }, 200);
                 setDb(prev => prev ? { ...prev, orders: [], rentalBookings: [] } : null);
             } else if (isMechanicSession && bypassMechanic) {
                 const mechanicId = bypassMechanic.id;
                 subscribePrivate('bookings', 'bookings');
                 subscribePrivate('customers', 'customers');
-                subscribePrivateQuery(query(collection(firestore, 'tasks'), where('mechanicId', '==', mechanicId)), 'tasks');
-                subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', mechanicId)), 'payouts');
-                // Mechanic notifications: only their own + broadcast 'all'
-                subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                    where('recipientId', 'in', [mechanicId, 'all']),
-                    where('recipientRole', '==', 'mechanic')
-                ), 'notifications');
+                staggerPrivate(() => {
+                    subscribePrivateQuery(query(collection(firestore, 'tasks'), where('mechanicId', '==', mechanicId)), 'tasks');
+                    subscribePrivateQuery(query(collection(firestore, 'payouts'), where('mechanicId', '==', mechanicId)), 'payouts');
+                    subscribePrivateQuery(query(collection(firestore, 'notifications'),
+                        where('recipientId', 'in', [mechanicId, 'all']),
+                        where('recipientRole', '==', 'mechanic')
+                    ), 'notifications');
+                }, 200);
                 setDb(prev => prev ? { ...prev, orders: [], rentalBookings: [] } : null);
             } else if (user || bypassCustomer) {
                 // Standard Customer
@@ -812,15 +964,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
                     subscribePrivateQuery(query(collection(firestore, 'bookings'), where('customerId', '==', customerId)), 'bookings');
                     subscribePrivateQuery(query(collection(firestore, 'orders'), where('customerId', '==', customerId)), 'orders');
-                    subscribePrivateQuery(query(collection(firestore, 'rentalBookings'), where('customerId', '==', customerId)), 'rentalBookings');
-                    subscribePrivateQuery(query(collection(firestore, 'serviceRequests'), where('customerId', '==', customerId)), 'serviceRequests');
-                    subscribePrivateQuery(query(collection(firestore, 'serviceActivityLogs'), where('customerId', '==', customerId)), 'serviceActivityLogs');
-                    subscribePrivateQuery(query(collection(firestore, 'liaisonBookings'), where('customerId', '==', customerId)), 'liaisonBookings');
-                    // Customer notifications: only their own + broadcast 'all'
-                    subscribePrivateQuery(query(collection(firestore, 'notifications'),
-                        where('recipientId', 'in', [customerId, 'all']),
-                        where('recipientRole', '==', 'customer')
-                    ), 'notifications');
+                    staggerPrivate(() => {
+                        subscribePrivateQuery(query(collection(firestore, 'rentalBookings'), where('customerId', '==', customerId)), 'rentalBookings');
+                        subscribePrivateQuery(query(collection(firestore, 'serviceRequests'), where('customerId', '==', customerId)), 'serviceRequests');
+                        subscribePrivateQuery(query(collection(firestore, 'serviceActivityLogs'), where('customerId', '==', customerId)), 'serviceActivityLogs');
+                        subscribePrivateQuery(query(collection(firestore, 'liaisonBookings'), where('customerId', '==', customerId)), 'liaisonBookings');
+                        subscribePrivateQuery(query(collection(firestore, 'notifications'),
+                            where('recipientId', 'in', [customerId, 'all']),
+                            where('recipientRole', '==', 'customer')
+                        ), 'notifications');
+                    }, 200);
                 }
                 setDb(prev => prev ? { ...prev, tasks: [], payouts: [] } : null);
             }
@@ -841,6 +994,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         return () => {
             if (safetyTimer) clearTimeout(safetyTimer);
+            publicTimers.forEach(t => clearTimeout(t));
             authUnsub();
             window.removeEventListener('adminAuthChange', handleAdminAuthChange);
             window.removeEventListener('customerAuthChange', handleAdminAuthChange);
@@ -1089,12 +1243,10 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return { ...prev, rentalBookings: filtered };
         });
 
-        if (auth.currentUser) {
-            try {
-                await deleteDoc(doc(firestore, 'rentalBookings', id));
-            } catch (e) {
-                console.warn(`[Firestore Delete Failed] deleteRentalBooking for ${id} failed:`, e);
-            }
+        try {
+            await deleteDoc(doc(firestore, 'rentalBookings', id));
+        } catch (e) {
+            console.warn(`[Firestore Delete Failed] deleteRentalBooking for ${id} failed:`, e);
         }
     };
 
@@ -1184,6 +1336,36 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             read: false,
             link: '/customer-portal/requests'
         });
+    };
+
+    const deleteLiaisonBooking = async (id: string) => {
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                liaisonBookings: (prev.liaisonBookings || []).filter(b => b.id !== id)
+            };
+        });
+        try {
+            await deleteDoc(doc(firestore, 'liaisonBookings', id));
+        } catch (e) {
+            console.warn(`[Firestore Delete Failed] deleteLiaisonBooking for ${id} failed:`, e);
+        }
+    };
+
+    const deleteServiceRequest = async (id: string) => {
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                serviceRequests: (prev.serviceRequests || []).filter(r => r.id !== id)
+            };
+        });
+        try {
+            await deleteDoc(doc(firestore, 'serviceRequests', id));
+        } catch (e) {
+            console.warn(`[Firestore Delete Failed] deleteServiceRequest for ${id} failed:`, e);
+        }
     };
 
     const addPart = async (part: Omit<Part, 'id'>) => {
@@ -1465,13 +1647,39 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             link: '/admin-portal/bookings'
         });
 
-        if (db?.settings?.emailOnNewBooking && db.settings.smtpHost) {
-            sendEmail(
-                db.settings.contactEmail || 'admin@ridersbud.com',
-                'New Booking Received - RidersBUD',
-                `A new booking has been received from ${booking.customerName} for ${booking.services[0]?.name || 'Service'}.`,
-                db.settings
-            ).catch(err => console.error("Failed to send SMTP email", err));
+        if (db?.settings?.smtpHost) {
+            const templateData = {
+                customerName: booking.customerName || 'Valued Customer',
+                customerPhone: booking.customerPhone || '',
+                customerEmail: booking.customerEmail || '',
+                bookingId: ref.id,
+                serviceName: booking.services?.[0]?.name || (booking as any).serviceType || 'Automotive Service',
+                date: booking.date || new Date().toLocaleDateString(),
+                time: booking.time || '',
+                totalAmount: (booking.totalAmount || booking.price || 0).toLocaleString(),
+                paymentMethod: booking.paymentMethod || 'HitPay / GCash',
+                pickupLocation: (booking as any).pickupLocation || (booking as any).location || 'Customer Address'
+            };
+
+            // Admin alert
+            if (db.settings.emailOnNewBooking) {
+                sendTemplatedEmail(
+                    'admin_new_booking',
+                    db.settings.contactEmail || 'admin@ridersbud.com',
+                    templateData,
+                    db.settings
+                ).catch(err => console.warn("Admin SMTP email notification skipped:", err?.message || err));
+            }
+
+            // Customer confirmation
+            if (booking.customerEmail) {
+                sendTemplatedEmail(
+                    'booking_confirmed',
+                    booking.customerEmail,
+                    templateData,
+                    db.settings
+                ).catch(err => console.warn("Customer SMTP email notification skipped:", err?.message || err));
+            }
         }
 
         return { id: ref.id, ...newBooking } as Booking;
@@ -1512,8 +1720,35 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
     };
 
-    const updateBookingPayment = async (id: string, amount: number, status: 'pending' | 'partial' | 'paid') => {
+    const updateBookingPayment = async (id: string, amount: number, status: 'pending' | 'partial' | 'paid' | 'downpayment_paid', extraData?: Partial<Booking>) => {
         const booking = db?.bookings.find(b => b.id === id);
+        const isFull = status === 'paid' || extraData?.isPaid === true;
+        const txReference = extraData?.balancePaymentRef || extraData?.downpaymentRef || extraData?.hitpayReference || `TXN-${Date.now()}`;
+        const txType = isFull ? 'balance' : 'downpayment';
+        
+        const newTransaction = {
+            id: `tx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            type: txType as 'downpayment' | 'balance' | 'full',
+            amount: amount,
+            method: extraData?.paymentMethod || 'HitPay (Online)',
+            reference: txReference,
+            paidAt: new Date().toISOString(),
+            status: 'completed',
+            gatewayResponse: {
+                hitpayPaymentRequestId: extraData?.hitpayPaymentRequestId,
+                hitpayReference: extraData?.hitpayReference
+            }
+        };
+
+        const existingTxs = booking?.paymentTransactions || [];
+        const updatedTransactions = [...existingTxs.filter(t => t.reference !== txReference), newTransaction];
+
+        const updatePayload: any = {
+            paymentStatus: status,
+            isPaid: isFull,
+            paymentTransactions: updatedTransactions,
+            ...(extraData || {})
+        };
 
         if (!auth.currentUser) {
             console.info("[DatabaseContext] Performing local mock updateBookingPayment (bypass mode)");
@@ -1521,9 +1756,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 if (!prev) return null;
                 const updatedBookings = prev.bookings.map(b => b.id === id ? { 
                     ...b, 
-                    paymentStatus: status,
-                    isPaid: status === 'paid',
-                    paidAmount: (b.paidAmount || 0) + amount 
+                    ...updatePayload,
+                    paidAmount: extraData?.paidAmount !== undefined ? extraData.paidAmount : ((b.paidAmount || 0) + amount)
                 } : b);
                 return { ...prev, bookings: updatedBookings };
             });
@@ -1531,9 +1765,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             try {
                 const bookingRef = doc(firestore, 'bookings', id);
                 await updateDoc(bookingRef, {
-                    paymentStatus: status,
-                    isPaid: status === 'paid',
-                    paidAmount: increment(amount)
+                    ...updatePayload,
+                    paidAmount: extraData?.paidAmount !== undefined ? extraData.paidAmount : increment(amount)
                 });
             } catch (e) {
                 console.warn(`[Firestore Write Failed] updateBookingPayment for ${id} failed, falling back to local update:`, e);
@@ -1543,9 +1776,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         if (b.id === id) {
                             return {
                                 ...b,
-                                paymentStatus: status,
-                                isPaid: status === 'paid',
-                                paidAmount: (b.paidAmount || 0) + amount
+                                ...updatePayload,
+                                paidAmount: extraData?.paidAmount !== undefined ? extraData.paidAmount : ((b.paidAmount || 0) + amount)
                             };
                         }
                         return b;
@@ -1555,17 +1787,47 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
         }
 
-        if (booking?.customerId && status !== 'pending' && booking.paymentStatus !== status) {
+        // 1. Notify Customer
+        if (booking?.customerId && status !== 'pending') {
             await sendNotification({
                 recipientId: `customer-${booking.customerId}`,
-                title: '✅ Payment Updated',
-                message: `Your payment has been successfully recorded and your booking is confirmed.`,
+                title: isFull ? '✅ Final Payment Completed' : '💳 50% Downpayment Verified',
+                message: isFull 
+                    ? `Your full payment (Ref: ${txReference}) for Booking #${id.slice(-6).toUpperCase()} is confirmed. Thank you!`
+                    : `Your 50% initial downpayment (Ref: ${txReference}) for Booking #${id.slice(-6).toUpperCase()} has been secured & verified via ${extraData?.paymentMethod || 'HitPay'}.`,
                 type: 'success',
                 link: `/customer-portal/booking-detail/${id}`,
                 date: new Date().toISOString(),
                 read: false
-            });
+            }).catch(console.warn);
         }
+
+        // 2. Notify Assigned Mechanic if assigned
+        const targetMechanicId = booking?.mechanicId || booking?.mechanic?.id || extraData?.mechanicId;
+        if (targetMechanicId) {
+            await sendNotification({
+                recipientId: `mechanic-${targetMechanicId}`,
+                title: isFull ? '💰 Balance Payment Received' : '💳 50% Downpayment Secured',
+                message: isFull
+                    ? `Customer has settled the remaining balance for Job #${id.slice(-6).toUpperCase()}.`
+                    : `50% Downpayment (₱${amount.toLocaleString()}) has been paid and verified for Job #${id.slice(-6).toUpperCase()}. You may proceed with the job.`,
+                type: 'info',
+                link: `/mechanic-portal/job-details/${id}`,
+                date: new Date().toISOString(),
+                read: false
+            }).catch(console.warn);
+        }
+
+        // 3. Notify Admin
+        await sendNotification({
+            recipientId: 'admin',
+            title: isFull ? '💰 Final Payment Settled' : '💳 50% Downpayment Received',
+            message: `Booking #${id.slice(-6).toUpperCase()} received ₱${amount.toLocaleString()} via ${extraData?.paymentMethod || 'HitPay'} (Ref: ${txReference}).`,
+            type: 'info',
+            link: `/admin/bookings`,
+            date: new Date().toISOString(),
+            read: false
+        }).catch(console.warn);
     };
 
 
@@ -1744,12 +2006,25 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const cancelBooking = async (bookingId: string, reason: string) => {
+        const booking = db?.bookings.find(b => b.id === bookingId);
+        if (booking && (booking.status === 'Cancelled' || (booking.status as string) === 'CANCELLED')) {
+            console.warn(`[cancelBooking] Booking ${bookingId} is already cancelled.`);
+            return;
+        }
+
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                bookings: (prev.bookings || []).map(b => b.id === bookingId ? { ...b, status: 'Cancelled' as BookingStatus, cancellationReason: reason } : b)
+            };
+        });
+
         await updateDoc(doc(firestore, 'bookings', bookingId), {
             status: 'Cancelled' as BookingStatus,
             cancellationReason: reason
         });
 
-        const booking = db?.bookings.find(b => b.id === bookingId);
         if (booking) {
             const serviceName = booking.services?.[0]?.name || booking.service?.name || 'service';
             await sendNotification({
@@ -1787,19 +2062,51 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 });
             }
 
-            if (db?.settings?.emailOnCancellation && db.settings.smtpHost) {
-                sendEmail(
-                    db.settings.contactEmail || 'admin@ridersbud.com',
-                    'Booking Cancelled - RidersBUD',
-                    `The booking for ${serviceName} from ${booking.customerName} was cancelled. Reason: ${reason}.`,
-                    db.settings
-                ).catch(err => console.error("Failed to send SMTP email", err));
+            if (db?.settings?.smtpHost) {
+                const cancelData = {
+                    customerName: booking.customerName || 'Valued Customer',
+                    bookingId: booking.id,
+                    serviceName: serviceName,
+                    reason: reason || 'Requested by user/admin',
+                    refundStatus: 'In Review / Processing'
+                };
+
+                // Admin cancellation alert
+                if (db.settings.emailOnCancellation) {
+                    sendTemplatedEmail(
+                        'booking_cancelled',
+                        db.settings.contactEmail || 'admin@ridersbud.com',
+                        cancelData,
+                        db.settings
+                    ).catch(err => console.warn("Admin SMTP email notification skipped:", err?.message || err));
+                }
+
+                // Customer cancellation notification
+                if (booking.customerEmail) {
+                    sendTemplatedEmail(
+                        'booking_cancelled',
+                        booking.customerEmail,
+                        cancelData,
+                        db.settings
+                    ).catch(err => console.warn("Customer SMTP email notification skipped:", err?.message || err));
+                }
             }
         }
     };
 
     const deleteBooking = async (bookingId: string) => {
-        await deleteDoc(doc(firestore, 'bookings', bookingId));
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                bookings: (prev.bookings || []).filter(b => b.id !== bookingId)
+            };
+        });
+        try {
+            await deleteDoc(doc(firestore, 'bookings', bookingId));
+        } catch (e) {
+            console.warn(`[Firestore Delete Failed] deleteBooking for ${bookingId}:`, e);
+        }
     };
 
     const deleteAllBookings = async (collectionName: string = 'bookings') => {
@@ -2114,17 +2421,18 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const deleteOrder = async (id: string) => {
-        if (!auth.currentUser) {
-            setDb(prev => {
-                if (!prev) return null;
-                return {
-                    ...prev,
-                    orders: prev.orders.filter(o => o.id !== id)
-                };
-            });
-            return;
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                orders: (prev.orders || []).filter(o => o.id !== id)
+            };
+        });
+        try {
+            await deleteDoc(doc(firestore, 'orders', id));
+        } catch (e) {
+            console.warn(`[Firestore Delete Failed] deleteOrder for ${id} failed:`, e);
         }
-        await deleteDoc(doc(firestore, 'orders', id));
     };
 
     const deleteAllOrders = async () => {
@@ -2565,30 +2873,43 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
     };
 
-    const clearAllNotifications = async (recipientId: string) => {
+    const clearAllNotifications = async (recipientId: string, specificIds?: string[]) => {
         let cleanId = recipientId;
         if (cleanId.startsWith('customer-')) cleanId = cleanId.replace('customer-', '');
         else if (cleanId.startsWith('mechanic-')) cleanId = cleanId.replace('mechanic-', '');
+
+        const isAdmin = cleanId === 'admin' || recipientId === 'admin';
+        const isMechanic = cleanId.startsWith('m-') || recipientId.startsWith('mechanic-');
+
+        const isMatchingNotification = (n: any) => {
+            if (specificIds && specificIds.length > 0) {
+                return specificIds.includes(n.id);
+            }
+            if (isAdmin) {
+                return n.recipientRole === 'admin' || n.recipientId === 'admin' || n.recipientId === 'all' || !n.recipientRole;
+            }
+            if (isMechanic) {
+                return n.recipientId === cleanId || n.recipientId === `mechanic-${cleanId}` || (n.recipientRole === 'mechanic');
+            }
+            // Customer or General
+            return n.recipientId === cleanId || n.recipientId === `customer-${cleanId}` || n.recipientRole === 'customer' || n.recipientId === 'all' || !n.recipientRole;
+        };
 
         setDb(prev => {
             if (!prev) return null;
             return {
                 ...prev,
-                notifications: (prev.notifications || []).filter(n =>
-                    !((n.recipientId === cleanId || n.recipientId === recipientId) && n.recipientId !== 'all')
-                )
+                notifications: (prev.notifications || []).filter(n => !isMatchingNotification(n))
             };
         });
 
         try {
             const batch = writeBatch(firestore);
-            // Only delete notifications where recipientId EXACTLY matches current user
-            // NEVER delete or modify 'all' broadcast notifications (they belong to everyone)
-            const myNotifs = db?.notifications.filter(n =>
-                (n.recipientId === cleanId || n.recipientId === recipientId) && n.recipientId !== 'all'
-            ) || [];
+            const myNotifs = db?.notifications?.filter(isMatchingNotification) || [];
             myNotifs.forEach(n => {
-                batch.delete(doc(firestore, 'notifications', n.id));
+                if (n.id) {
+                    batch.delete(doc(firestore, 'notifications', n.id));
+                }
             });
             if (myNotifs.length > 0) {
                 await batch.commit();
@@ -2639,6 +2960,64 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
         } catch (e) {
             console.warn("[Notification] markAllNotificationsAsReadByPrefix failed:", e);
+        }
+    };
+
+    const purgeGoogleMapsApiNotifications = async (): Promise<number> => {
+        try {
+            // Find in local memory / Firestore
+            const notifsQuery = query(collection(firestore, 'notifications'));
+            const snap = await getDocs(notifsQuery);
+            const targetDocIds: string[] = [];
+
+            snap.docs.forEach(docSnap => {
+                const data = docSnap.data();
+                const title = (data.title || '').toLowerCase();
+                const message = (data.message || '').toLowerCase();
+                if (
+                    title.includes('google map') ||
+                    title.includes('google maps') ||
+                    title.includes('maps api') ||
+                    message.includes('google maps api') ||
+                    message.includes('api key connection test')
+                ) {
+                    targetDocIds.push(docSnap.id);
+                }
+            });
+
+            // Optimistically update local database state
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    notifications: (prev.notifications || []).filter(n => {
+                        const title = (n.title || '').toLowerCase();
+                        const message = (n.message || '').toLowerCase();
+                        return !(
+                            title.includes('google map') ||
+                            title.includes('google maps') ||
+                            title.includes('maps api') ||
+                            message.includes('google maps api') ||
+                            message.includes('api key connection test') ||
+                            targetDocIds.includes(n.id)
+                        );
+                    })
+                };
+            });
+
+            if (targetDocIds.length > 0) {
+                const batch = writeBatch(firestore);
+                targetDocIds.forEach(id => {
+                    batch.delete(doc(firestore, 'notifications', id));
+                });
+                await batch.commit();
+                console.info(`[Notification] Successfully purged ${targetDocIds.length} Google Maps API notifications.`);
+            }
+
+            return targetDocIds.length;
+        } catch (e) {
+            console.warn("[Notification] purgeGoogleMapsApiNotifications failed:", e);
+            return 0;
         }
     };
 
@@ -2851,6 +3230,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             clearAllNotifications,
             clearAllNotificationsByPrefix,
             markAllNotificationsAsReadByPrefix,
+            purgeGoogleMapsApiNotifications,
             addReview,
             updateReview,
             verifyBookingPayment,
@@ -2873,6 +3253,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             deleteHireDriver,
             addLiaisonBooking,
             updateLiaisonBookingStatus,
+            deleteLiaisonBooking,
+            deleteServiceRequest,
         }}>
             {children}
         </DatabaseContext.Provider>

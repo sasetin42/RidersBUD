@@ -74,10 +74,10 @@ const MiniMap: React.FC<{ lat: number, lng: number }> = React.memo(({ lat, lng }
                 keyboard: false
             }).setView([lat, lng], 15);
 
-            // Dark Mode Tile Layer
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-                subdomains: 'abcd',
-                maxZoom: 20
+            // Free OpenStreetMap Tile Layer
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
             }).addTo(mapInstance.current);
 
         } else {
@@ -951,24 +951,53 @@ const MechanicJobDetailScreen: React.FC = () => {
                 )}
 
                 {/* Payment Information Card */}
-                {(booking.paymentMethod === 'GCash' || booking.paymentStatus === 'partial') && (
+                {(booking.paymentMethod?.includes('HitPay') || booking.paymentMethod === 'GCash' || booking.paymentStatus === 'partial' || booking.paymentStatus === 'downpayment_paid' || booking.isVerified || (booking.paidAmount && booking.paidAmount > 0)) && (
                     <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-primary/20 shadow-[0_0_20px_rgba(249,115,22,0.1)] overflow-hidden relative group">
                         <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full -translate-y-12 translate-x-12 blur-3xl opacity-50" />
                         <h2 className="text-[10px] font-bold tracking-widest text-primary mb-4 flex items-center justify-between relative z-10">
                             <span className="flex items-center gap-2">
                                 <CreditCard size={14} />
-                                GCash Downpayment Detail
+                                Downpayment & Payment Details
                             </span>
-                            {booking.paymentMethod === 'GCash' && (
+                            {booking.paymentMethod?.includes('HitPay') ? (
+                                <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-[8px] font-black border border-emerald-500/30 flex items-center gap-1">
+                                    <CheckCircle size={9} />
+                                    Secured via HitPay Online
+                                </span>
+                            ) : booking.isVerified ? (
+                                <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-[8px] font-black shadow-sm">
+                                    50% DP Verified
+                                </span>
+                            ) : booking.paymentMethod === 'GCash' ? (
                                 <span className="bg-primary/20 text-primary px-2 py-0.5 rounded text-[8px] font-black shadow-sm">Secured via GCash</span>
-                            )}
+                            ) : null}
                         </h2>
 
                         <div className="space-y-4 relative z-10">
+                            {/* Reference Information */}
+                            {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference) && (
+                                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1 text-[10px]">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-400 font-mono">Gateway / Method:</span>
+                                        <span className="text-white font-bold">{booking.paymentMethod || 'HitPay Online'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-400 font-mono">Reference No:</span>
+                                        <span className="text-primary font-mono font-bold">{booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference}</span>
+                                    </div>
+                                    {booking.downpaymentPaidAt && (
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-gray-400 font-mono">Paid Timestamp:</span>
+                                            <span className="text-gray-300 font-mono">{new Date(booking.downpaymentPaidAt).toLocaleString()}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="text-[10px] text-gray-500 font-bold mb-1 tracking-tight">Downpayment Received</p>
-                                    <p className="text-xl font-black text-white">₱{(booking.paidAmount || 0).toLocaleString()}</p>
+                                    <p className="text-[10px] text-gray-500 font-bold mb-1 tracking-tight">50% Downpayment Received</p>
+                                    <p className="text-xl font-black text-white">₱{(booking.paidAmount || (booking.totalAmount ? booking.totalAmount * 0.5 : 0)).toLocaleString()}</p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] text-gray-500 font-bold mb-1 tracking-tight">Remaining Balance</p>
@@ -1352,15 +1381,18 @@ const MechanicJobDetailScreen: React.FC = () => {
                                         handleUpdateStatus('In Progress');
                                     }
                                     else if (booking.status === 'In Progress') {
-                                        console.log('⚠️ Cannot complete job directly - use PROCESS PAYMENT & COMPLETE button instead');
-                                        alert('Please use the "PROCESS PAYMENT & COMPLETE" button to finish this job.');
+                                        console.log('➡️ Updating to: Work Done');
+                                        handleUpdateStatus('Work Done');
+                                    }
+                                    else if (booking.status === 'Work Done') {
+                                        handleProcessPayment();
                                     }
                                     else {
                                         console.log('⚠️ Unknown status:', booking.status);
                                         alert(`Current status "${booking.status}" is not handled`);
                                     }
                                 }}
-                                disabled={isLoading || booking.status === 'Completed' || booking.status === 'In Progress'}
+                                disabled={isLoading || booking.status === 'Completed'}
                                 className="w-full bg-primary hover:bg-orange-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed border-0"
                             >
                                 {isLoading ? <Spinner size="sm" color="text-white" /> : (
@@ -1370,9 +1402,10 @@ const MechanicJobDetailScreen: React.FC = () => {
                                             {(booking.status === 'Upcoming' || booking.status === 'Booking Confirmed') && 'Accept Job'}
                                             {booking.status === 'Mechanic Assigned' && 'Start Travel'}
                                             {booking.status === 'En Route' && 'Arrived'}
-                                            {booking.status === 'In Progress' && 'Complete Job'}
+                                            {booking.status === 'In Progress' && 'Finish & Mark Work Done'}
+                                            {booking.status === 'Work Done' && (booking.paymentStatus === 'paid' || booking.isPaid ? 'Complete Booking' : 'Verify Balance & Complete')}
                                             {booking.status === 'Completed' && 'Completed'}
-                                            {!['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(booking.status) && 'Update Status'}
+                                            {!['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Work Done', 'Completed'].includes(booking.status) && 'Update Status'}
                                         </span>
                                     </>
                                 )}
@@ -1384,7 +1417,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                     <div className="grid grid-cols-3 gap-2 mt-4">
                         <button
                             onClick={() => setShowProgressModal(true)}
-                            disabled={booking.status !== 'In Progress'}
+                            disabled={booking.status !== 'In Progress' && booking.status !== 'Work Done'}
                             className="bg-[#26262F] hover:bg-[#32323D] text-white py-3 rounded-xl text-[9px] font-black tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
                             <FileText size={14} className="text-blue-400" />
@@ -1392,7 +1425,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </button>
                         <button
                             onClick={() => setShowAdditionalCostsModal(true)}
-                            disabled={booking.status !== 'In Progress'}
+                            disabled={booking.status !== 'In Progress' && booking.status !== 'Work Done'}
                             className="bg-[#26262F] hover:bg-[#32323D] text-white py-3 rounded-xl text-[9px] font-black tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
                             <DollarSign size={14} className="text-primary" />
@@ -1400,7 +1433,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </button>
                         <button
                             onClick={() => setShowETAModal(true)}
-                            disabled={['In Progress', 'Completed', 'Cancelled'].includes(booking.status)}
+                            disabled={['In Progress', 'Work Done', 'Completed', 'Cancelled'].includes(booking.status)}
                             className="bg-[#26262F] hover:bg-[#32323D] text-white py-3 rounded-xl text-[9px] font-black tracking-widest flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
                             <Timer size={14} className="text-emerald-400" />
@@ -1408,15 +1441,24 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </button>
                     </div>
 
-                    {/* Payment Button - Large and Prominent */}
-                    {booking.status === 'In Progress' && (
+                    {/* Payment & Completion Button - Large, Prominent and Reactive */}
+                    {(booking.status === 'In Progress' || booking.status === 'Work Done') && (
                         <button
-                            onClick={handleProcessPayment}
+                            onClick={booking.status === 'In Progress' ? () => handleUpdateStatus('Work Done') : handleProcessPayment}
                             disabled={isLoading}
-                            className="w-full mt-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white py-5 rounded-2xl text-base font-black  tracking-wider flex items-center justify-center gap-3 transition-all shadow-2xl shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
+                            className={`w-full mt-4 text-white py-5 rounded-2xl text-base font-black tracking-wider flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
+                                booking.status === 'Work Done' && (booking.paymentStatus === 'paid' || booking.isPaid)
+                                    ? 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 shadow-2xl shadow-green-500/30'
+                                    : booking.status === 'Work Done'
+                                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 shadow-2xl shadow-orange-500/30'
+                                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-2xl shadow-blue-500/30'
+                            }`}
                         >
                             <DollarSign size={28} className="animate-pulse" />
-                            <span>Process Payment & Complete</span>
+                            <span>
+                                {booking.status === 'In Progress' && 'Complete Work & Request Balance'}
+                                {booking.status === 'Work Done' && (booking.paymentStatus === 'paid' || booking.isPaid ? 'Finalize & Complete Job' : 'Awaiting Balance Payment / Verify')}
+                            </span>
                         </button>
                     )}
                 </div>
@@ -1573,49 +1615,75 @@ const MechanicJobDetailScreen: React.FC = () => {
                             {/* Tab Content */}
                             {activeReceiptTab === 'downpayment' ? (
                                 <div className="space-y-2">
-                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">1st Payment / Downpayment Receipt</h4>
-                                    <div className="rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 p-2 flex items-center justify-center group relative min-h-[120px]">
-                                        <img
-                                            src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
-                                            alt="GCash Downpayment Receipt"
-                                            className="max-h-[220px] w-auto object-contain rounded-xl transition-all duration-300 group-hover:opacity-95"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).src = '/assets/receipt_mockup.png';
-                                            }}
-                                        />
-                                        <a
-                                            href={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 gap-1.5 text-white font-black text-[10px] tracking-widest uppercase font-mono"
-                                        >
-                                            <ExternalLink size={14} />
-                                            Open Full Size
-                                        </a>
-                                    </div>
+                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">1st Payment / 50% Downpayment</h4>
+                                    {(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) ? (
+                                        <div className="rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 p-2 flex items-center justify-center group relative min-h-[120px]">
+                                            <img
+                                                src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
+                                                alt="GCash Downpayment Receipt"
+                                                className="max-h-[220px] w-auto object-contain rounded-xl transition-all duration-300 group-hover:opacity-95"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = '/assets/receipt_mockup.png';
+                                                }}
+                                            />
+                                            <a
+                                                href={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 gap-1.5 text-white font-black text-[10px] tracking-widest uppercase font-mono"
+                                            >
+                                                <ExternalLink size={14} />
+                                                Open Full Size
+                                            </a>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center space-y-2">
+                                            <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
+                                                <CheckCircle size={20} />
+                                            </div>
+                                            <p className="text-xs font-black text-white">HitPay Online Downpayment Verified</p>
+                                            <p className="text-[10px] text-gray-400 font-mono">Ref: {booking.downpaymentRef || 'HITPAY-DP-PAID'}</p>
+                                            <span className="inline-block px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase">
+                                                50% DP Paid (₱{(Number(booking.downpaymentAmount || ((booking.totalAmount || 0) * 0.5))).toLocaleString()})
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="space-y-2">
-                                    <h4 className="text-[10px] font-bold text-primary uppercase tracking-widest font-mono">Final / Balance Payment Receipt</h4>
-                                    <div className="rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 p-2 flex items-center justify-center group relative min-h-[120px]">
-                                        <img
-                                            src={booking.gcashBalanceReceiptUrl}
-                                            alt="GCash Balance Receipt"
-                                            className="max-h-[220px] w-auto object-contain rounded-xl transition-all duration-300 group-hover:opacity-95"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).src = '/assets/receipt_mockup.png';
-                                            }}
-                                        />
-                                        <a
-                                            href={booking.gcashBalanceReceiptUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 gap-1.5 text-white font-black text-[10px] tracking-widest uppercase font-mono"
-                                        >
-                                            <ExternalLink size={14} />
-                                            Open Full Size
-                                        </a>
-                                    </div>
+                                    <h4 className="text-[10px] font-bold text-primary uppercase tracking-widest font-mono">Final / 50% Balance Settlement</h4>
+                                    {booking.gcashBalanceReceiptUrl ? (
+                                        <div className="rounded-2xl overflow-hidden border border-white/10 bg-neutral-950 p-2 flex items-center justify-center group relative min-h-[120px]">
+                                            <img
+                                                src={booking.gcashBalanceReceiptUrl}
+                                                alt="GCash Balance Receipt"
+                                                className="max-h-[220px] w-auto object-contain rounded-xl transition-all duration-300 group-hover:opacity-95"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = '/assets/receipt_mockup.png';
+                                                }}
+                                            />
+                                            <a
+                                                href={booking.gcashBalanceReceiptUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 gap-1.5 text-white font-black text-[10px] tracking-widest uppercase font-mono"
+                                            >
+                                                <ExternalLink size={14} />
+                                                Open Full Size
+                                            </a>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center space-y-2">
+                                            <div className="w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto">
+                                                <CheckCircle size={20} />
+                                            </div>
+                                            <p className="text-xs font-black text-white">HitPay Online Balance Verified</p>
+                                            <p className="text-[10px] text-gray-400 font-mono">Ref: {booking.balancePaymentRef || 'HITPAY-BAL-PAID'}</p>
+                                            <span className="inline-block px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase">
+                                                50% Balance Settled (₱{(Number((booking.totalAmount || 0) * 0.5)).toLocaleString()})
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -21,6 +21,8 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
     const mapInstanceRef = useRef<any>(null);
     const markersLayerRef = useRef<any>(null); // To hold the cluster group
     const markersRef = useRef<{ [key: string]: any }>({}); // To hold individual markers for updates
+    const customerMarkerRef = useRef<any>(null);
+    const customerAccuracyCircleRef = useRef<any>(null);
     const navigate = useNavigate();
 
     // Use refs for props and callbacks to prevent stale closures in Leaflet event handlers
@@ -243,6 +245,41 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
                 markersRef.current[mechanic.id] = newMarker;
             }
         });
+
+        // Customer Location marker & live accuracy halo
+        if (customerLocation && mapInstanceRef.current) {
+            if (!customerMarkerRef.current) {
+                const userIcon = L.divIcon({
+                    html: `
+                        <div class="rb-user-location-marker">
+                            <div class="rb-user-location-pulse"></div>
+                            <div class="rb-user-location-core"></div>
+                        </div>
+                    `,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16],
+                });
+                customerMarkerRef.current = L.marker([customerLocation.lat, customerLocation.lng], { icon: userIcon }).addTo(mapInstanceRef.current);
+            } else {
+                customerMarkerRef.current.setLatLng([customerLocation.lat, customerLocation.lng]);
+            }
+
+            const accuracyRadius = (customerLocation as any).accuracy ? Math.max(12, (customerLocation as any).accuracy) : 40;
+            if (!customerAccuracyCircleRef.current) {
+                customerAccuracyCircleRef.current = L.circle([customerLocation.lat, customerLocation.lng], {
+                    radius: accuracyRadius,
+                    color: '#FE7803',
+                    fillColor: '#FE7803',
+                    fillOpacity: 0.14,
+                    weight: 1.5,
+                    dashArray: '4, 4',
+                }).addTo(mapInstanceRef.current);
+            } else {
+                customerAccuracyCircleRef.current.setLatLng([customerLocation.lat, customerLocation.lng]);
+                customerAccuracyCircleRef.current.setRadius(accuracyRadius);
+            }
+        }
 
         if (selectedMechanicId && markersRef.current[selectedMechanicId] && mapInstanceRef.current && markersLayerRef.current) {
             const marker = markersRef.current[selectedMechanicId];

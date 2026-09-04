@@ -15,49 +15,7 @@ export const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-import { initializeFirestore, getFirestore, memoryLocalCache } from "firebase/firestore";
-
-// Clear stale Firestore localStorage entries to prevent QuotaExceededError
-try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith('firestore_') || key.startsWith('firebase_') || key.startsWith('_firebase_'))) {
-            keysToRemove.push(key);
-        }
-    }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-} catch (_) {}
-
-// Clear corrupt Firestore IndexedDB databases BEFORE Firestore init to prevent
-// "INTERNAL ASSERTION FAILED: Unexpected state (ve: -1)" from corrupt target state.
-// deleteDatabase() queues synchronously so the subsequent open() inside
-// initializeFirestore will run after the delete per IndexedDB spec (FIFO per database).
-try {
-    if (typeof indexedDB !== 'undefined') {
-        const projectId = firebaseConfig.projectId;
-        const knownDbNames = [
-            `firestore/[DEFAULT]/${projectId}/(default)`,
-            `firestore/[DEFAULT]/${projectId}/(default)/main`,
-            `firestore/${projectId}/(default)/main`,
-            `firestore/${projectId}/(default)`,
-            `firestore/${projectId}`,
-        ];
-        knownDbNames.forEach(name => {
-            try { indexedDB.deleteDatabase(name); } catch (_) {}
-        });
-        // Also delete any legacy/non-standard Firestore databases asynchronously
-        if (indexedDB.databases) {
-            indexedDB.databases().then(dbs => {
-                dbs.forEach(db => {
-                    if (db.name && db.name.startsWith('firestore/')) {
-                        try { indexedDB.deleteDatabase(db.name); } catch (_) {}
-                    }
-                });
-            }).catch(() => {});
-        }
-    }
-} catch (_) {}
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 
 let dbInstance;
 const globalDb = (globalThis as any)._firebaseDb;
@@ -66,10 +24,12 @@ if (globalDb) {
 } else {
     try {
         dbInstance = initializeFirestore(app, {
-            localCache: memoryLocalCache(),
-            experimentalForceLongPolling: true,
+            localCache: persistentLocalCache({
+                tabManager: persistentMultipleTabManager()
+            }),
+            experimentalAutoDetectLongPolling: true,
             ignoreUndefinedProperties: true
-        });
+        } as any);
         (globalThis as any)._firebaseDb = dbInstance;
     } catch (e) {
         console.warn("Firestore init with settings failed, falling back to default:", e);

@@ -469,6 +469,12 @@ textarea {
     font-family: 'Outfit', 'Inter', sans-serif !important;
 }
 
+/* OpenStreetMap Dark Mode Layer Filter (Watermark-Free) */
+.leaflet-dark-mode .leaflet-tile-pane,
+.leaflet-container.leaflet-dark-tiles .leaflet-tile-pane {
+    filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7) !important;
+}
+
 /* ================================================
    RIDERSBUD BRANDED MAP PIN — Circle Logo + Stem
    ================================================ */
@@ -570,22 +576,32 @@ textarea {
     display: flex;
     flex-direction: column;
     align-items: center;
-    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.5));
+    justify-content: flex-end;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.6));
     position: relative;
+    width: 56px;
+    height: 76px;
+    pointer-events: auto;
+    cursor: grab;
+}
+
+.rb-location-pin-wrapper:active {
+    cursor: grabbing;
 }
 
 .rb-location-pin-wrapper::before {
     content: '';
     position: absolute;
-    top: 50%;
+    top: 22px;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 56px;
-    height: 56px;
+    width: 52px;
+    height: 52px;
     border-radius: 50%;
-    background: rgba(254, 120, 3, 0.15);
+    background: rgba(254, 120, 3, 0.25);
     animation: rb-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
     z-index: 0;
+    pointer-events: none;
 }
 
 .rb-location-circle {
@@ -598,39 +614,45 @@ textarea {
     align-items: center;
     justify-content: center;
     position: relative;
-    z-index: 1;
-    box-shadow: 0 0 0 4px rgba(254,120,3,0.25), 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 2;
+    box-shadow: 0 0 0 4px rgba(254,120,3,0.35), 0 4px 16px rgba(0,0,0,0.6);
+    flex-shrink: 0;
 }
 
 .rb-location-circle img {
     width: 28px;
     height: 28px;
     object-fit: contain;
-    border-radius: 0;
+    border-radius: 50%;
 }
 
 .rb-location-stem {
     width: 3px;
-    height: 16px;
-    background: linear-gradient(to bottom, #FE7803, rgba(254,120,3,0));
+    height: 22px;
+    background: linear-gradient(to bottom, #FE7803, #FE7803 80%, rgba(254,120,3,0.6));
     border-radius: 2px;
     position: relative;
     z-index: 1;
+    margin-top: -2px;
+    flex-shrink: 0;
 }
 
 .rb-location-dot {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: #FE7803;
-    box-shadow: 0 0 8px rgba(254,120,3,0.8);
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 10px rgba(254,120,3,1);
     position: relative;
-    z-index: 1;
+    z-index: 2;
+    margin-top: -3px;
+    flex-shrink: 0;
 }
 
 /* Small location pin wrapper override for Route Map */
 .rb-location-pin-wrapper.small-pin {
-    transform: scale(0.6);
+    transform: scale(0.65);
     transform-origin: bottom center;
 }
 
@@ -778,6 +800,61 @@ textarea {
 
 .premium-marker-shadow {
     filter: drop-shadow(0 0 12px rgba(254, 120, 3, 0.4));
+}
+
+/* Realtime Heading Compass Indicator */
+.rb-pin-compass-wrap {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    width: 64px;
+    height: 64px;
+    margin-top: -32px;
+    margin-left: -32px;
+    pointer-events: none;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+}
+
+.rb-compass-arrow {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 10px solid #FE7803;
+    filter: drop-shadow(0 0 6px rgba(254, 120, 3, 0.9));
+}
+
+/* User Location Marker & Pulse Core */
+.rb-user-location-marker {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.rb-user-location-pulse {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: rgba(254, 120, 3, 0.25);
+    animation: rb-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.rb-user-location-core {
+    position: relative;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: #FE7803;
+    border: 2.5px solid #ffffff;
+    box-shadow: 0 0 10px rgba(254, 120, 3, 0.8), 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 
 /* Voice Activity Pulse Indicator */

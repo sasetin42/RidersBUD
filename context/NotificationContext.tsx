@@ -13,6 +13,7 @@ interface NotificationContextType {
     markAllAsRead: (recipientId?: string) => void;
     deleteNotification: (id: string) => void;
     clearAllNotifications: (recipientId: string) => Promise<void>;
+    purgeGoogleMapsApiNotifications: () => Promise<number>;
     unreadCount: number;
 }
 
@@ -30,9 +31,20 @@ export const useNotification = () => {
     return context;
 };
 
+/** Normalize recipient ID to prevent mismatch between 'customer-123' and '123' */
+const normalizeRecipientId = (id: string | null | undefined): string | null => {
+    if (!id) return null;
+    let clean = id.trim();
+    if (clean.startsWith('customer-')) clean = clean.replace('customer-', '');
+    if (clean.startsWith('mechanic-')) clean = clean.replace('mechanic-', '');
+    return clean;
+};
+
 /** Build a localStorage key scoped to the active user so each user has their own clearedAt timestamp */
-const getClearedAtKey = (recipientId: string | null) =>
-    recipientId ? `ridersbud_notif_clearedAt_${recipientId}` : null;
+const getClearedAtKey = (recipientId: string | null) => {
+    const clean = normalizeRecipientId(recipientId);
+    return clean ? `ridersbud_notif_clearedAt_${clean}` : null;
+};
 
 export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const {
@@ -42,6 +54,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         markAllNotificationsAsRead,
         deleteNotification: dbDeleteNotification,
         clearAllNotifications: dbClearAllNotifications,
+        purgeGoogleMapsApiNotifications: dbPurgeGoogleMapsApiNotifications,
     } = useDatabase();
 
     const { user, isAuthenticated } = useAuth();
@@ -77,6 +90,19 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     // Each user ONLY sees notifications that belong to them — NEVER cross-user notifications.
     const notifications = [...(db?.notifications || [])]
         .filter(n => {
+            // Filter out system Google Maps API test notifications from regular notification feeds
+            const title = (n.title || '').toLowerCase();
+            const message = (n.message || '').toLowerCase();
+            if (
+                title.includes('google maps api') ||
+                title.includes('google map api') ||
+                title.includes('google maps api key') ||
+                message.includes('api key connection test succeeded') ||
+                message.includes('api key connection test')
+            ) {
+                return false;
+            }
+
             // Hide notifications that were cleared (by timestamp)
             if (clearedAt > 0 && (n.timestamp ?? 0) <= clearedAt) return false;
 
@@ -147,9 +173,8 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
      *
      * Strategy:
      * 1. Record the current timestamp as `clearedAt` in state + localStorage.
-     *    This immediately hides ALL notifications (including broadcast 'all' docs)
-     *    from the UI without touching the global Firestore documents.
-     * 2. In parallel, delete user-specific Firestore documents (non-broadcast) via batch.
+     *    This immediately hides ALL notifications from the UI.
+     * 2. In parallel, delete all matching Firestore documents in batch.
      *
      * Result: UI clears INSTANTLY (optimistic), Firestore cleanup follows asynchronously.
      */
@@ -163,14 +188,16 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             localStorage.setItem(key, String(now));
         }
 
-        // 2. Delete user-specific Firestore docs (broadcast 'all' docs are NOT deleted — they belong to everyone)
+        // 2. Identify all notification IDs currently displayed/visible to this user
+        const targetIds = notifications.map(n => n.id).filter(Boolean);
+
+        // 3. Delete all matching docs from Firestore & local DB
         try {
-            await dbClearAllNotifications(recipientId);
+            await dbClearAllNotifications(recipientId, targetIds);
         } catch (e) {
             console.warn('[NotificationContext] clearAllNotifications Firestore delete failed:', e);
-            // Even if Firestore delete fails, the clearedAt filter keeps the UI clear
         }
-    }, [dbClearAllNotifications]);
+    }, [dbClearAllNotifications, notifications]);
 
     // --- Sound and Voice Announcements ---
     const [lastNotifiedId, setLastNotifiedId] = useState<string | null>(null);
@@ -298,6 +325,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         markAllAsRead,
         deleteNotification,
         clearAllNotifications,
+        purgeGoogleMapsApiNotifications: dbPurgeGoogleMapsApiNotifications,
         unreadCount,
     };
 

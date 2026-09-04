@@ -10,7 +10,8 @@ import {
     updateProfile,
     User as FirebaseAuthUser,
     GoogleAuthProvider,
-    signInWithPopup,
+    signInWithRedirect,
+    getRedirectResult,
     setPersistence,
     browserLocalPersistence
 } from 'firebase/auth';
@@ -73,11 +74,14 @@ const loadMechanicSessionFromStorage = (): { isBypassed: boolean; user: Mechanic
 };
 
 export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [isMechanicAuthenticated, setIsMechanicAuthenticated] = useState<boolean>(false);
-    const [mechanic, setMechanic] = useState<Mechanic | null>(null);
-    const [loading, setLoading] = useState(true);
+    const initialSession = loadMechanicSessionFromStorage();
+    const hasInitialMechanicSession = localStorage.getItem('ridersbud_mechanic_session') === 'true';
+
+    const [isMechanicAuthenticated, setIsMechanicAuthenticated] = useState<boolean>(() => !!(initialSession.user || hasInitialMechanicSession));
+    const [mechanic, setMechanic] = useState<Mechanic | null>(() => initialSession.user);
+    const [loading, setLoading] = useState<boolean>(() => !initialSession.isBypassed);
     const [firebaseUser, setFirebaseUser] = useState<FirebaseAuthUser | null>(null);
-    const [isBypassed, setIsBypassed] = useState(false);
+    const [isBypassed, setIsBypassed] = useState<boolean>(() => initialSession.isBypassed);
     const isLocationUpdatingRef = useRef<boolean>(false);
 
     useEffect(() => {
@@ -147,10 +151,19 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         let retryTimeoutId: any;
 
         if (isMechanicAuthenticated && mechanic?.isOnline && mechanic?.id) {
-            const updateLocation = () => {
+            const updateLocation = async () => {
                 if (isLocationUpdatingRef.current) {
-                    console.log("[Location] Update already in progress. Skipping duplicate call.");
                     return;
+                }
+
+                // Check permissions first to prevent repeated browser warnings
+                if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+                    try {
+                        const status = await navigator.permissions.query({ name: 'geolocation' });
+                        if (status.state === 'denied') {
+                            return;
+                        }
+                    } catch (_) {}
                 }
 
                 if ('geolocation' in navigator) {
@@ -173,26 +186,34 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                     };
 
                     const handleFallback = () => {
-                        navigator.geolocation.getCurrentPosition(
-                            handleSuccess,
-                            () => {
-                                isLocationUpdatingRef.current = false;
-                            },
-                            { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-                        );
+                        try {
+                            navigator.geolocation.getCurrentPosition(
+                                handleSuccess,
+                                () => {
+                                    isLocationUpdatingRef.current = false;
+                                },
+                                { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+                            );
+                        } catch (_) {
+                            isLocationUpdatingRef.current = false;
+                        }
                     };
 
-                    navigator.geolocation.getCurrentPosition(
-                        handleSuccess,
-                        (error) => {
-                            if (error.code === error.TIMEOUT) {
-                                handleFallback();
-                            } else {
-                                isLocationUpdatingRef.current = false;
-                            }
-                        },
-                        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-                    );
+                    try {
+                        navigator.geolocation.getCurrentPosition(
+                            handleSuccess,
+                            (error) => {
+                                if (error.code === error.TIMEOUT) {
+                                    handleFallback();
+                                } else {
+                                    isLocationUpdatingRef.current = false;
+                                }
+                            },
+                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+                        );
+                    } catch (_) {
+                        isLocationUpdatingRef.current = false;
+                    }
                 }
             };
 
@@ -344,58 +365,45 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
             }
             throw error;
         }
-    };
-
-    const loginWithGoogle = async () => {
+    };    const loginWithGoogle = async () => {
         const provider = new GoogleAuthProvider();
         try {
             await setPersistence(auth, browserLocalPersistence);
-            try {
-                const result = await signInWithPopup(auth, provider);
-                const { user: fbUser } = result;
-                
-                // Check if they are actually a customer trying to log in under mechanic tab
-                const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
-                if (customerDoc.exists()) {
-                    await signOut(auth);
-                    throw new Error("This account is not registered as a Mechanic. Please select the correct tab.");
-                }
-
-                // Check if mechanic doc exists
-                const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
-                if (!mechanicDoc.exists()) {
-                    // We DON'T create the doc yet because we need mandatory fields (documents, specializations)
-                    // The user will be redirected to "Complete Profile"
-                    console.log("New Google Mechanic - Needs profile completion");
-                }
-            } catch (popupError: any) {
-                const isBlockError = popupError.code === 'auth/popup-blocked' || 
-                    popupError.code === 'auth/popup-closed-by-user' || 
-                    popupError.code === 'auth/cancelled-popup-request' ||
-                    popupError.code === 'auth/network-request-failed' ||
-                    (popupError.message && (
-                        popupError.message.includes('COOP') || 
-                        popupError.message.includes('Cross-Origin-Opener-Policy') ||
-                        popupError.message.includes('block') ||
-                        popupError.message.includes('blocked') ||
-                        popupError.message.includes('failed') ||
-                        popupError.message.includes('fetch')
-                    )) ||
-                    (popupError.name === 'DOMException' || popupError.message?.includes('closed'));
-
-                if (isBlockError) {
-                    console.info("Popup blocked, network failed, or COOP isolation triggered. Trying redirect sign-in...", popupError);
-                    const { signInWithRedirect } = await import('firebase/auth');
-                    await signInWithRedirect(auth, provider);
-                } else {
-                    throw popupError;
-                }
-            }
+            await signInWithRedirect(auth, provider);
         } catch (error: any) {
             console.error("Mechanic Google Login Error:", error);
             throw error;
         }
     };
+
+    // Handle redirect result on mount (completes the redirect sign-in flow)
+    useEffect(() => {
+        const handleRedirectResult = async () => {
+            try {
+                const result = await getRedirectResult(auth);
+                if (!result) return;
+
+                const fbUser = result.user;
+
+                // Check if they are actually a customer trying to log in under mechanic tab
+                const customerDoc = await getDoc(doc(firestore, 'customers', fbUser.uid));
+                if (customerDoc.exists()) {
+                    await signOut(auth);
+                    return;
+                }
+
+                // Check if mechanic doc exists
+                const mechanicDoc = await getDoc(doc(firestore, 'mechanics', fbUser.uid));
+                if (!mechanicDoc.exists()) {
+                    // New Google mechanic — needs profile completion
+                    console.log("New Google Mechanic - Needs profile completion");
+                }
+            } catch (error: any) {
+                console.error("Mechanic redirect result error:", error);
+            }
+        };
+        handleRedirectResult();
+    }, []);
 
     const logout = async () => {
         await signOut(auth);

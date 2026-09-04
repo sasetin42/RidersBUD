@@ -118,10 +118,13 @@ export interface Settings {
     authLogoUrl?: string;
     adminLoginLogoUrl?: string;
     adminPanelLogoUrl?: string;
+    customerHeaderLogoUrl?: string;
+    mechanicHeaderLogoUrl?: string;
     adminSidebarLogoUrl?: string;
     sidebarLogoUrl?: string;
     mapLogoUrl?: string;
     invoiceLogoUrl?: string;
+    emailLogoUrl?: string;
     loadingLogoUrl?: string;
     adminPanelTitle?: string;
     sidebarColor?: string;
@@ -141,6 +144,7 @@ export interface Settings {
     payoutSchedule?: string;
 
     // HitPay Payment Gateway
+    hitpayEnabled?: boolean;
     hitpayApiKey?: string;
     hitpaySalt?: string;
     hitpaySandboxApiKey?: string;
@@ -165,6 +169,9 @@ export interface Settings {
     smtpPassword?: string;
     smtpFromName?: string;
     smtpFromEmail?: string;
+
+    // Email Notification Templates
+    emailTemplates?: Record<string, EmailTemplate>;
 
     // Verification
     verificationRequirements?: any[]; // Using any for simplicity as it's defined inside AdminSettings currently
@@ -197,6 +204,18 @@ export interface Settings {
     defaultMapCenterLng?: number;
     defaultMapZoom?: number;
     enableTrafficLayer?: boolean;
+
+    // Leaflet Customization & Live Telemetry
+    leafletTileProvider?: 'osm-dark' | 'osm' | 'esri-dark' | 'esri-satellite' | 'esri-streets' | 'cyclosm' | 'custom';
+    leafletCustomTileUrl?: string;
+    leafletCustomAttribution?: string;
+    leafletEnableClustering?: boolean;
+    leafletClusterMaxZoom?: number;
+    leafletLiveUpdateInterval?: number; // In seconds
+    leafletShowHeadingCompass?: boolean;
+    leafletShowAccuracyCircle?: boolean;
+    leafletShowLiveTrail?: boolean;
+    leafletMapTheme?: 'dark' | 'light' | 'auto';
 }
 
 export interface ModuleConfig {
@@ -204,6 +223,18 @@ export interface ModuleConfig {
     name: string;
     enabled: boolean;
     bannerMessage?: string;
+}
+
+export interface EmailTemplate {
+    id: string;
+    name: string;
+    category: 'Bookings' | 'Drivers & Fleet' | 'E-Commerce' | 'Accounts' | 'Operations';
+    subject: string;
+    body: string;
+    enabled: boolean;
+    variables: string[];
+    description: string;
+    updatedAt?: string;
 }
 
 export interface HitPayConfig {
@@ -488,12 +519,14 @@ export interface Booking {
     id: string;
     customerId?: string;
     customerName: string;
+    customerEmail?: string;
     customerPhone?: string;
     services: Service[];
     service: Service;
     vehicle: Vehicle;
     date: string;
     time: string;
+    price?: number;
     status: BookingStatus;
     payoutRequested?: boolean;
     location?: {
@@ -508,12 +541,34 @@ export interface Booking {
     endLocation?: string;
     endDate?: string;
     rentalDays?: number;
-    paymentMethod?: 'Cash' | 'GCash' | 'Card';
-    paymentStatus?: 'pending' | 'partial' | 'paid';
+    paymentMethod?: string;
+    paymentStatus?: 'pending' | 'partial' | 'paid' | 'downpayment_paid' | string;
     paidAmount?: number;
     totalAmount?: number;
     isPaid?: boolean;
     isRental?: boolean;
+    downpaymentAmount?: number;
+    downpaymentRef?: string;
+    downpaymentPaidAt?: string;
+    downpaymentMethod?: string;
+    balancePaymentRef?: string;
+    balancePaidAt?: string;
+    balanceAmount?: number;
+    balancePaid?: boolean;
+    remainingBalance?: number;
+    hitpayPaymentRequestId?: string;
+    hitpayReference?: string;
+    hitpayStatus?: string;
+    paymentTransactions?: Array<{
+        id: string;
+        type: 'downpayment' | 'balance' | 'full';
+        amount: number;
+        method: string;
+        reference: string;
+        paidAt: string;
+        status: string;
+        gatewayResponse?: any;
+    }>;
     gcashReference?: string;
     gcashReceiptUrl?: string;
     gcashDeclineReason?: string;
@@ -627,6 +682,12 @@ export interface RentalCar {
     imageUrl: string;
     features?: string[];
     description?: string;
+    baggageCapacity?: number;
+    mileageLimit?: string;
+    insuranceIncluded?: string;
+    depositAmount?: number;
+    cancellationPolicy?: string;
+    engineType?: string;
 }
 
 export interface HireDriver {
@@ -645,6 +706,9 @@ export interface HireDriver {
     totalTrips?: number;
     languages?: string[];
     description?: string;
+    specializations?: string[];
+    vehicleTypes?: string[];
+    availabilitySchedule?: string;
 }
 
 export interface RentalBooking {

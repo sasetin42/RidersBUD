@@ -31,8 +31,18 @@ export const sendEmail = async (
         formData.append('Subject', subject);
         formData.append('Body', body);
 
-        // Making POST request to smtpjs.com
-        const response = await fetch('https://smtpjs.com/v3/smtpjs.aspx', {
+        // Target either local development bridge or endpoint
+        const isLocal = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' || 
+                        window.location.hostname.startsWith('192.168.') ||
+                        window.location.hostname.startsWith('10.') ||
+                        window.location.port !== '';
+
+        const endpoint = isLocal
+            ? '/api/smtp-bridge'
+            : 'https://smtpjs.com/v3/smtpjs.aspx';
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -42,15 +52,58 @@ export const sendEmail = async (
 
         const resultText = await response.text();
         
-        if (resultText === "OK") {
+        if (response.ok && (resultText === "OK" || resultText.includes("OK"))) {
             return true;
         } else {
-            console.error("SMTP JS Error: ", resultText);
-            throw new Error(resultText);
+            let cleanError = resultText;
+            if (cleanError.includes('<!DOCTYPE') || cleanError.includes('<html') || cleanError.includes('Cloudflare')) {
+                cleanError = 'SMTP Relay request was blocked by security policy. Please ensure the local dev server is running or check SMTP credentials.';
+            }
+            // SMTP server unreachable or returned an error — not fatal for the booking
+            console.warn(`SMTP email skipped: ${cleanError}`);
+            return false;
         }
 
-    } catch (error) {
-        console.error("Failed to send email: ", error);
-        throw error;
+    } catch (error: any) {
+        let msg = error?.message || 'SMTP operation failed.';
+        if (msg.includes('<!DOCTYPE') || msg.includes('<html')) {
+            msg = 'SMTP Relay request was blocked. Please verify your host, port, and credentials.';
+        }
+        // Email failure should not block the booking flow
+        console.warn(`SMTP email skipped: ${msg}`);
+        return false;
     }
 };
+
+import { DEFAULT_EMAIL_TEMPLATES, renderEmailTemplate } from '../data/defaultEmailTemplates';
+
+/**
+ * Sends an email using a configured EmailTemplate (with fallback to system defaults)
+ */
+export const sendTemplatedEmail = async (
+    templateId: string,
+    to: string,
+    data: Record<string, any>,
+    settings?: Settings
+): Promise<boolean> => {
+    if (!settings || !to) return false;
+
+    // Fetch custom template from settings or fallback to system defaults
+    const customTemplate = settings.emailTemplates?.[templateId];
+    const defaultTemplate = DEFAULT_EMAIL_TEMPLATES[templateId];
+    const activeTemplate = customTemplate || defaultTemplate;
+
+    if (!activeTemplate) {
+        console.warn(`Template with id '${templateId}' not found.`);
+        return false;
+    }
+
+    if (activeTemplate.enabled === false) {
+        console.log(`Email notification for template '${templateId}' is disabled.`);
+        return false;
+    }
+
+    const { subject, html } = renderEmailTemplate(activeTemplate, data, settings);
+    return sendEmail(to, subject, html, settings);
+};
+

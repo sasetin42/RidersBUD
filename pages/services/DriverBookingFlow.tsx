@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useDatabase } from '../../context/DatabaseContext';
 import CustomerHeader from '../../components/CustomerHeader';
-import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Car, Phone, Info, Check, CheckCircle2, User, FileText, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Car, Phone, Info, Check, CheckCircle2, User, FileText, AlertCircle, Award, Navigation, Loader2, Radio } from 'lucide-react';
 import Spinner from '../../components/Spinner';
+
+declare const L: any;
 
 interface FormState {
     pickupLocation: string;
@@ -19,10 +21,16 @@ interface FormState {
     plateNumber: string;
     contactNumber: string;
     specialInstructions: string;
+    selectedDriverId?: string;
+    selectedDriverName?: string;
 }
 
 const DriverBookingFlow: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
+    const [searchParams] = useSearchParams();
+    const queryDriverId = searchParams.get('driverId') || '';
+    const queryDriverName = searchParams.get('driverName') || '';
+
     const { user } = useAuth();
     const { db, addServiceRequest } = useDatabase();
     const navigate = useNavigate();
@@ -35,33 +43,79 @@ const DriverBookingFlow: React.FC = () => {
     const [showCalendar, setShowCalendar] = useState(false);
     const [currentMonth, setCurrentMonth] = useState(new Date());
 
+    // Map & Geolocation States
+    const routeMapRef = useRef<HTMLDivElement>(null);
+    const routeMapInstanceRef = useRef<any>(null);
+    const routeStartMarkerRef = useRef<any>(null);
+    const routeEndMarkerRef = useRef<any>(null);
+    const routePolylineRef = useRef<any>(null);
+
+    const [leafletLoaded, setLeafletLoaded] = useState(typeof window !== 'undefined' && !!(window as any).L);
+    const [isLocating, setIsLocating] = useState(false);
+    const [startCoords, setStartCoords] = useState<[number, number] | null>(null);
+    const [endCoords, setEndCoords] = useState<[number, number] | null>(null);
+
+    // Autocomplete Suggestions
+    const [startSuggestions, setStartSuggestions] = useState<any[]>([]);
+    const [endSuggestions, setEndSuggestions] = useState<any[]>([]);
+    const [showStartSuggestions, setShowStartSuggestions] = useState(false);
+    const [showEndSuggestions, setShowEndSuggestions] = useState(false);
+
+    useEffect(() => {
+        if (leafletLoaded) return;
+        const interval = setInterval(() => {
+            if ((window as any).L) {
+                setLeafletLoaded(true);
+                clearInterval(interval);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [leafletLoaded]);
+
     const [form, setForm] = useState<FormState>({
         pickupLocation: '',
         destination: '',
         date: '',
         time: '08:00 AM',
         duration: '8 Hours (Full Day)',
-        vehicleType: 'Sedan',
+        vehicleType: user?.vehicles?.[0]?.type || 'Sedan',
         driveCustomerCar: true,
-        vehicleBrand: '',
-        vehicleModel: '',
-        plateNumber: '',
+        vehicleBrand: user?.vehicles?.[0]?.make || '',
+        vehicleModel: user?.vehicles?.[0]?.model || '',
+        plateNumber: user?.vehicles?.[0]?.plateNumber || '',
         contactNumber: user?.phone || '',
-        specialInstructions: ''
+        specialInstructions: '',
+        selectedDriverId: queryDriverId,
+        selectedDriverName: queryDriverName,
     });
 
+    const [selectedVehicleId, setSelectedVehicleId] = useState<string>(user?.vehicles?.[0]?.plateNumber || '');
+
     useEffect(() => {
-        if (user?.phone) {
-            setForm(prev => ({ ...prev, contactNumber: user.phone }));
+        if (user) {
+            setForm(prev => {
+                const primary = user.vehicles?.find(v => v.isPrimary) || user.vehicles?.[0];
+                return {
+                    ...prev,
+                    contactNumber: user.phone || prev.contactNumber,
+                    vehicleBrand: prev.vehicleBrand || primary?.make || '',
+                    vehicleModel: prev.vehicleModel || primary?.model || '',
+                    plateNumber: prev.plateNumber || primary?.plateNumber || '',
+                    vehicleType: prev.vehicleType || primary?.type || 'Sedan',
+                };
+            });
+            if (user.vehicles?.length && !selectedVehicleId) {
+                const primary = user.vehicles.find(v => v.isPrimary) || user.vehicles[0];
+                setSelectedVehicleId(primary.plateNumber);
+            }
         }
     }, [user]);
 
-    const totalSteps = 3;
+    const totalSteps = 2;
 
     // Helper: Form validation per step
     const isStepValid = () => {
-        if (currentStep === 1) return true;
-        if (currentStep === 2) {
+        if (currentStep === 1) {
             const hasBasic = form.pickupLocation.trim() !== '' &&
                              form.destination.trim() !== '' &&
                              form.date !== '' &&
@@ -116,6 +170,7 @@ const DriverBookingFlow: React.FC = () => {
                 scheduledDate: form.date,
                 notes: form.specialInstructions,
                 totalAmount: calculateEstimatedFee(),
+                driverName: form.selectedDriverName || undefined,
                 vehicleDetails: form.driveCustomerCar ? {
                     brand: form.vehicleBrand,
                     model: form.vehicleModel,
@@ -128,7 +183,9 @@ const DriverBookingFlow: React.FC = () => {
                     time: form.time,
                     duration: form.duration,
                     vehicleType: form.vehicleType,
-                    driveCustomerCar: form.driveCustomerCar
+                    driveCustomerCar: form.driveCustomerCar,
+                    selectedDriverId: form.selectedDriverId,
+                    selectedDriverName: form.selectedDriverName,
                 },
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -142,6 +199,269 @@ const DriverBookingFlow: React.FC = () => {
             setSubmitting(false);
         }
     };
+
+    // Live Geocoding and Location Helper with robust fallback and loading state
+    const handleUseLiveLocation = () => {
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser.');
+            return;
+        }
+        setIsLocating(true);
+
+        const onGeoSuccess = async (position: GeolocationPosition) => {
+            const { latitude, longitude } = position.coords;
+            setStartCoords([latitude, longitude]);
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
+                    { signal: controller.signal }
+                );
+                clearTimeout(timeoutId);
+                const data = await res.json();
+                if (data && data.display_name) {
+                    setForm(f => ({ ...f, pickupLocation: data.display_name }));
+                } else {
+                    setForm(f => ({ ...f, pickupLocation: `Live Location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` }));
+                }
+            } catch (e) {
+                setForm(f => ({ ...f, pickupLocation: `Live Location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})` }));
+            } finally {
+                setIsLocating(false);
+            }
+        };
+
+        const onGeoError = (error: GeolocationPositionError) => {
+            console.warn('High accuracy location timeout, trying low accuracy fallback...', error);
+            // Fallback attempt with low accuracy for fast response
+            navigator.geolocation.getCurrentPosition(
+                onGeoSuccess,
+                (fallbackErr) => {
+                    console.error('Geolocation failed completely:', fallbackErr);
+                    setIsLocating(false);
+                    let errMsg = 'Unable to retrieve your location.';
+                    if (fallbackErr.code === 1) {
+                        errMsg = 'Location access denied. Please enable location permissions in your browser or device settings.';
+                    } else if (fallbackErr.code === 2) {
+                        errMsg = 'Location position unavailable. Please ensure your device GPS is turned on.';
+                    } else if (fallbackErr.code === 3) {
+                        errMsg = 'Location request timed out. Please try again.';
+                    }
+                    alert(errMsg);
+                },
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+            );
+        };
+
+        navigator.geolocation.getCurrentPosition(
+            onGeoSuccess,
+            onGeoError,
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+        );
+    };
+
+    // Fetch suggestions for Start / Pick-Up Location (Philippines only)
+    useEffect(() => {
+        if (!form.pickupLocation || form.pickupLocation.startsWith('My Location') || form.pickupLocation.length < 2) {
+            setStartSuggestions([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=ph&q=${encodeURIComponent(form.pickupLocation)}&limit=5`);
+                const data = await res.json();
+                if (data) {
+                    setStartSuggestions(data);
+                }
+            } catch (e) {
+                console.warn("Start suggestions fetch failed", e);
+            }
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [form.pickupLocation]);
+
+    // Fetch suggestions for Destination / End Location (Philippines only)
+    useEffect(() => {
+        if (!form.destination || form.destination.length < 2) {
+            setEndSuggestions([]);
+            return;
+        }
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&countrycodes=ph&q=${encodeURIComponent(form.destination)}&limit=5`);
+                const data = await res.json();
+                if (data) {
+                    setEndSuggestions(data);
+                }
+            } catch (e) {
+                console.warn("End suggestions fetch failed", e);
+            }
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [form.destination]);
+
+    const handleSelectStartSuggestion = (suggestion: any) => {
+        setForm(f => ({ ...f, pickupLocation: suggestion.display_name }));
+        setStartCoords([parseFloat(suggestion.lat), parseFloat(suggestion.lon)]);
+        setStartSuggestions([]);
+        setShowStartSuggestions(false);
+    };
+
+    const handleSelectEndSuggestion = (suggestion: any) => {
+        setForm(f => ({ ...f, destination: suggestion.display_name }));
+        setEndCoords([parseFloat(suggestion.lat), parseFloat(suggestion.lon)]);
+        setEndSuggestions([]);
+        setShowEndSuggestions(false);
+    };
+
+    // Instantiate and update Route Map in Step 1
+    useEffect(() => {
+        if (currentStep !== 1 || !routeMapRef.current || typeof L === 'undefined') return;
+
+        // Clean up map instance if the container DOM element was unmounted and remounted
+        if (routeMapInstanceRef.current) {
+            try {
+                const container = routeMapInstanceRef.current.getContainer();
+                if (container !== routeMapRef.current) {
+                    routeMapInstanceRef.current.remove();
+                    routeMapInstanceRef.current = null;
+                    routeStartMarkerRef.current = null;
+                    routeEndMarkerRef.current = null;
+                    routePolylineRef.current = null;
+                }
+            } catch (e) {
+                routeMapInstanceRef.current = null;
+                routeStartMarkerRef.current = null;
+                routeEndMarkerRef.current = null;
+                routePolylineRef.current = null;
+            }
+        }
+
+        if (!routeMapInstanceRef.current) {
+            routeMapInstanceRef.current = L.map(routeMapRef.current, {
+                zoomControl: false,
+                attributionControl: false
+            }).setView([14.5995, 120.9842], 12);
+
+            const osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            });
+
+            osmTile.addTo(routeMapInstanceRef.current);
+        }
+
+        const map = routeMapInstanceRef.current;
+
+        if (startCoords) {
+            if (routeStartMarkerRef.current) {
+                routeStartMarkerRef.current.setLatLng(startCoords);
+            } else {
+                const greenIcon = L.divIcon({
+                    html: `<div class="rb-location-pin-wrapper start-pin small-pin">
+                        <div class="rb-location-circle" style="border: 3px solid #10B981;">
+                            <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Pickup" onerror="this.style.display='none'" style="width:34px;height:34px;object-fit:contain;border-radius:50%;" />
+                        </div>
+                        <div class="rb-location-stem" style="background: #10B981;"></div>
+                        <div class="rb-location-dot" style="background: #10B981;"></div>
+                    </div>`,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [34, 46],
+                    iconAnchor: [17, 46]
+                });
+                routeStartMarkerRef.current = L.marker(startCoords, { icon: greenIcon }).addTo(map);
+            }
+        } else if (routeStartMarkerRef.current) {
+            routeStartMarkerRef.current.remove();
+            routeStartMarkerRef.current = null;
+        }
+
+        if (endCoords) {
+            if (routeEndMarkerRef.current) {
+                routeEndMarkerRef.current.setLatLng(endCoords);
+            } else {
+                const redIcon = L.divIcon({
+                    html: `<div class="rb-location-pin-wrapper end-pin small-pin">
+                        <div class="rb-location-circle" style="border: 3px solid #EF4444;">
+                            <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Destination" onerror="this.style.display='none'" style="width:34px;height:34px;object-fit:contain;border-radius:50%;" />
+                        </div>
+                        <div class="rb-location-stem" style="background: #EF4444;"></div>
+                        <div class="rb-location-dot" style="background: #EF4444;"></div>
+                    </div>`,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [34, 46],
+                    iconAnchor: [17, 46]
+                });
+                routeEndMarkerRef.current = L.marker(endCoords, { icon: redIcon }).addTo(map);
+            }
+        } else if (routeEndMarkerRef.current) {
+            routeEndMarkerRef.current.remove();
+            routeEndMarkerRef.current = null;
+        }
+
+        if (startCoords && endCoords) {
+            const drawStraightLine = () => {
+                if (routePolylineRef.current) {
+                    routePolylineRef.current.setLatLngs([startCoords, endCoords]);
+                    routePolylineRef.current.setStyle({ dashArray: '5, 10', weight: 4 });
+                } else {
+                    routePolylineRef.current = L.polyline([startCoords, endCoords], {
+                        color: accentColor,
+                        weight: 4,
+                        opacity: 0.8,
+                        dashArray: '5, 10'
+                    }).addTo(map);
+                }
+                const bounds = L.latLngBounds([startCoords, endCoords]);
+                map.fitBounds(bounds, { padding: [50, 50] });
+            };
+
+            // Fetch real road route geometry from OpenStreetMap OSRM API
+            fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startCoords[1]},${startCoords[0]};${endCoords[1]},${endCoords[0]}?overview=full&geometries=geojson`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.routes && data.routes.length > 0) {
+                        const routePoints = data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]]);
+                        if (routePolylineRef.current) {
+                            routePolylineRef.current.setLatLngs(routePoints);
+                            routePolylineRef.current.setStyle({ dashArray: '', weight: 5 });
+                        } else {
+                            routePolylineRef.current = L.polyline(routePoints, {
+                                color: accentColor,
+                                weight: 5,
+                                opacity: 0.9,
+                                lineJoin: 'round'
+                            }).addTo(map);
+                        }
+                        const bounds = L.latLngBounds(routePoints);
+                        map.fitBounds(bounds, { padding: [40, 40] });
+                    } else {
+                        drawStraightLine();
+                    }
+                })
+                .catch(err => {
+                    console.warn("OSRM routing failed, using fallback:", err);
+                    drawStraightLine();
+                });
+        } else {
+            if (routePolylineRef.current) {
+                routePolylineRef.current.remove();
+                routePolylineRef.current = null;
+            }
+            if (startCoords) {
+                map.setView(startCoords, 14);
+            } else if (endCoords) {
+                map.setView(endCoords, 14);
+            }
+        }
+
+        setTimeout(() => {
+            if (map) map.invalidateSize(true);
+        }, 300);
+
+    }, [currentStep, startCoords, endCoords, leafletLoaded, accentColor, db?.settings]);
 
     // Custom Calendar Date Selection Helpers
     const getDaysInMonth = (date: Date) => {
@@ -203,83 +523,180 @@ const DriverBookingFlow: React.FC = () => {
 
             {/* Content Area */}
             <main className="flex-grow p-6 pb-24 overflow-y-auto max-w-lg mx-auto w-full">
-                {/* Step 1: Welcome / Description */}
+                {/* Step 1: Trip & Vehicle Details */}
                 {currentStep === 1 && (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="relative rounded-2xl overflow-hidden border border-white/10">
-                            <img 
-                                src="https://storage.googleapis.com/aistudio-hosting/generative-ai/e499715a-a38f-4d32-80f2-9b2512f7a6b2/assets/driver_hero.png" 
-                                alt="Driver Hero" 
-                                className="w-full h-44 object-cover"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-4">
-                                <span className="bg-primary text-white font-black text-[9px] px-2 py-0.5 rounded uppercase tracking-wider" style={{ backgroundColor: accentColor }}>Special Services</span>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <h2 className="text-xl font-black uppercase tracking-tight">Driver for Hire</h2>
-                            <p className="text-xs text-gray-400 leading-relaxed">
-                                Need a designated driver, airport transfer, or chauffeur for long out-of-town road trips? Book a vetted, professional driver on demand.
-                            </p>
-                        </div>
-
-                        <div className="bg-[#111113] border border-white/5 rounded-2xl p-4 space-y-3.5">
-                            <h3 className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">Service Requirements</h3>
-                            <ul className="space-y-2.5">
-                                <li className="flex items-start gap-2.5 text-xs text-gray-400">
-                                    <CheckCircle2 size={14} className="text-green-500 shrink-0 mt-0.5" />
-                                    <span>Valid driver's license matching vehicle class.</span>
-                                </li>
-                                <li className="flex items-start gap-2.5 text-xs text-gray-400">
-                                    <CheckCircle2 size={14} className="text-green-500 shrink-0 mt-0.5" />
-                                    <span>Vehicle registration and active insurance policy.</span>
-                                </li>
-                                <li className="flex items-start gap-2.5 text-xs text-gray-400">
-                                    <CheckCircle2 size={14} className="text-green-500 shrink-0 mt-0.5" />
-                                    <span>Customer matches vehicle type requirements.</span>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                )}
-
-                {/* Step 2: Trip & Vehicle Details */}
-                {currentStep === 2 && (
                     <div className="space-y-5 animate-fadeIn">
+                        {/* Selected Driver Banner */}
+                        <div className="p-3.5 bg-gradient-to-r from-[#16161A] to-[#121215] border border-white/10 rounded-2xl flex items-center justify-between gap-3 shadow-lg">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold shrink-0" style={{ color: accentColor }}>
+                                    <Award size={20} />
+                                </div>
+                                <div className="min-w-0">
+                                    <span className="text-[9px] text-light-gray/60 uppercase font-black tracking-widest block">
+                                        {form.selectedDriverName ? 'Assigned Driver' : 'Booking Mode'}
+                                    </span>
+                                    <h3 className="text-sm font-black text-white truncate">
+                                        {form.selectedDriverName ? form.selectedDriverName : 'Auto-Assign Best Available Driver'}
+                                    </h3>
+                                </div>
+                            </div>
+                            <span className="text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2.5 py-1 rounded-full whitespace-nowrap shrink-0 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                {form.selectedDriverName ? 'Selected' : 'Auto-Assign'}
+                            </span>
+                        </div>
+
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-1">Trip Details</h2>
                             <p className="text-xs text-gray-400">Please provide precise schedule and location information.</p>
                         </div>
 
                         <div className="space-y-4">
-                            {/* Pick up & Destination */}
-                            <div className="grid grid-cols-1 gap-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Pick-Up Location *</label>
+                            {/* Click outside backdrop for suggestions */}
+                            {(showStartSuggestions || showEndSuggestions) && (
+                                <div
+                                    className="fixed inset-0 z-[9990] bg-transparent"
+                                    onClick={() => { setShowStartSuggestions(false); setShowEndSuggestions(false); }}
+                                />
+                            )}
+
+                            {/* Pick up & Destination Locations Card */}
+                            <div className="bg-[#141417] p-4 rounded-2xl border border-white/[0.08] space-y-3.5 relative shadow-xl">
+                                <div className="space-y-1.5 relative z-[9995]">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            <span className={`w-2 h-2 rounded-full ${isLocating ? 'bg-amber-400 animate-ping' : 'bg-emerald-400'}`}></span>
+                                            Pick-Up Location *
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={handleUseLiveLocation}
+                                            disabled={isLocating}
+                                            className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                                                isLocating 
+                                                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 cursor-wait' 
+                                                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50 active:scale-95'
+                                            }`}
+                                            title="Use your real-time live location"
+                                        >
+                                            {isLocating ? (
+                                                <>
+                                                    <Loader2 size={11} className="animate-spin text-amber-400" />
+                                                    <span>Locating...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Navigation size={11} />
+                                                    <span>Live GPS</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                     <div className="relative">
-                                        <MapPin className="absolute left-3.5 top-3.5 text-gray-500" size={16} />
+                                        <MapPin className={`absolute left-3.5 top-3.5 transition-colors ${isLocating ? 'text-amber-400 animate-bounce' : 'text-emerald-400'}`} size={16} />
                                         <input 
                                             type="text"
-                                            value={form.pickupLocation}
+                                            value={isLocating && !form.pickupLocation ? "Locating your real-time coordinates..." : form.pickupLocation}
                                             onChange={e => setForm(f => ({ ...f, pickupLocation: e.target.value }))}
-                                            placeholder="Enter pick-up address/area"
-                                            className="w-full bg-[#111113] border border-white/10 rounded-xl py-3 pl-11 pr-4 text-xs font-medium text-white focus:border-primary/50 transition-colors"
+                                            onFocus={() => { setShowStartSuggestions(true); setShowEndSuggestions(false); }}
+                                            placeholder="Enter pick-up address or use GPS..."
+                                            autoComplete="off"
+                                            disabled={isLocating}
+                                            className={`w-full bg-[#0C0C0E] border rounded-xl py-3 pl-11 pr-4 text-xs font-medium text-white placeholder-gray-500 transition-all ${
+                                                isLocating 
+                                                    ? 'border-amber-500/60 bg-amber-500/[0.03] text-amber-200' 
+                                                    : 'border-white/10 focus:border-emerald-500/50'
+                                            }`}
                                         />
+
+                                        {/* Suggestions dropdown */}
+                                        {showStartSuggestions && startSuggestions.length > 0 && (
+                                            <div className="absolute left-0 right-0 top-full bg-[#16161A] border border-white/10 rounded-xl mt-1.5 z-[9999] overflow-y-auto max-h-48 shadow-2xl">
+                                                {startSuggestions.map((s: any) => (
+                                                    <button
+                                                        key={s.place_id}
+                                                        type="button"
+                                                        onClick={() => handleSelectStartSuggestion(s)}
+                                                        className="w-full text-left px-3.5 py-2.5 text-xs text-gray-200 hover:bg-white/10 border-b border-white/5 last:border-b-0 truncate transition-colors flex items-center gap-2"
+                                                    >
+                                                        <span className="text-emerald-400 text-xs shrink-0">📍</span>
+                                                        <span className="truncate">{s.display_name}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Destination *</label>
+                                <div className="space-y-1.5 relative z-[9994]">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                                            Destination *
+                                        </label>
+                                    </div>
                                     <div className="relative">
-                                        <MapPin className="absolute left-3.5 top-3.5 text-gray-500" size={16} />
+                                        <MapPin className="absolute left-3.5 top-3.5 text-rose-500" size={16} />
                                         <input 
                                             type="text"
                                             value={form.destination}
                                             onChange={e => setForm(f => ({ ...f, destination: e.target.value }))}
-                                            placeholder="Enter destination address/area"
-                                            className="w-full bg-[#111113] border border-white/10 rounded-xl py-3 pl-11 pr-4 text-xs font-medium text-white focus:border-primary/50 transition-colors"
+                                            onFocus={() => { setShowEndSuggestions(true); setShowStartSuggestions(false); }}
+                                            placeholder="Enter drop-off destination address..."
+                                            autoComplete="off"
+                                            className="w-full bg-[#0C0C0E] border border-white/10 rounded-xl py-3 pl-11 pr-4 text-xs font-medium text-white placeholder-gray-500 focus:border-rose-500/50 transition-colors"
                                         />
+
+                                        {/* Suggestions dropdown */}
+                                        {showEndSuggestions && endSuggestions.length > 0 && (
+                                            <div className="absolute left-0 right-0 top-full bg-[#16161A] border border-white/10 rounded-xl mt-1.5 z-[9999] overflow-y-auto max-h-48 shadow-2xl">
+                                                {endSuggestions.map((s: any) => (
+                                                    <button
+                                                        key={s.place_id}
+                                                        type="button"
+                                                        onClick={() => handleSelectEndSuggestion(s)}
+                                                        className="w-full text-left px-3.5 py-2.5 text-xs text-gray-200 hover:bg-white/10 border-b border-white/5 last:border-b-0 truncate transition-colors flex items-center gap-2"
+                                                    >
+                                                        <span className="text-rose-500 text-xs shrink-0">📍</span>
+                                                        <span className="truncate">{s.display_name}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Real-time Live Interactive Route Map */}
+                                <div className="space-y-1.5 pt-1">
+                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                                        <span>Route Live Map Preview</span>
+                                        {startCoords && endCoords && (
+                                            <span className="text-[9px] text-emerald-400 font-black animate-pulse flex items-center gap-1">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                                Live Route Active
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-lg shadow-black/40">
+                                        <div ref={routeMapRef} className="relative w-full h-[220px] bg-[#0C0C0E] z-[1]" />
+                                        {/* Custom Overlay Zoom Controls */}
+                                        <div className="absolute right-3 top-3 flex flex-col gap-1.5 z-20">
+                                            <button
+                                                type="button"
+                                                onClick={() => { if (routeMapInstanceRef.current) routeMapInstanceRef.current.zoomIn(); }}
+                                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#16161A]/95 border border-white/15 text-white hover:bg-white/10 active:scale-95 transition-all text-sm font-black shadow-md"
+                                            >
+                                                +
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { if (routeMapInstanceRef.current) routeMapInstanceRef.current.zoomOut(); }}
+                                                className="w-7 h-7 flex items-center justify-center rounded-lg bg-[#16161A]/95 border border-white/15 text-white hover:bg-white/10 active:scale-95 transition-all text-sm font-black shadow-md"
+                                            >
+                                                −
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -418,6 +835,60 @@ const DriverBookingFlow: React.FC = () => {
                             {/* Customer Vehicle Inputs */}
                             {form.driveCustomerCar && (
                                 <div className="p-4 bg-black/20 border border-white/5 rounded-2xl space-y-3.5 animate-fadeIn">
+                                    {/* Saved Vehicles Quick Selection */}
+                                    {user?.vehicles && user.vehicles.length > 0 && (
+                                         <div className="space-y-1.5 pb-2 border-b border-white/5">
+                                             <label className="text-[10px] font-black text-light-gray/60 uppercase tracking-widest flex items-center justify-between">
+                                                 <span>// Saved Garage Vehicles</span>
+                                                 <span className="text-[9px] text-emerald-400 font-bold">Auto-Detected</span>
+                                             </label>
+                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                 {user.vehicles.map((v) => {
+                                                     const isSelected = form.plateNumber === v.plateNumber;
+                                                     return (
+                                                         <button
+                                                             key={v.plateNumber}
+                                                             type="button"
+                                                             onClick={() => {
+                                                                 setSelectedVehicleId(v.plateNumber);
+                                                                 setForm(f => ({
+                                                                     ...f,
+                                                                     vehicleBrand: v.make || '',
+                                                                     vehicleModel: v.model || '',
+                                                                     plateNumber: v.plateNumber || '',
+                                                                     vehicleType: v.type || f.vehicleType || 'Sedan'
+                                                                 }));
+                                                             }}
+                                                             className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                                                                 isSelected 
+                                                                     ? 'bg-primary/10 border-primary text-white shadow-md' 
+                                                                     : 'bg-[#111113] border-white/5 text-light-gray/70 hover:text-white hover:border-white/20'
+                                                             }`}
+                                                             style={isSelected ? { borderColor: accentColor } : undefined}
+                                                         >
+                                                             <div className="flex items-center gap-2">
+                                                                 <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-primary shrink-0" style={{ color: accentColor }}>
+                                                                     <Car size={13} />
+                                                                 </div>
+                                                                 <div>
+                                                                     <p className="text-xs font-bold text-white leading-tight">
+                                                                         {v.make} {v.model}
+                                                                     </p>
+                                                                     <p className="text-[10px] font-mono text-light-gray/50 uppercase">
+                                                                         {v.plateNumber}
+                                                                     </p>
+                                                                 </div>
+                                                             </div>
+                                                             {isSelected && (
+                                                                 <Check size={14} className="text-primary shrink-0" style={{ color: accentColor }} />
+                                                             )}
+                                                         </button>
+                                                     );
+                                                 })}
+                                             </div>
+                                         </div>
+                                    )}
+
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1.5">
                                             <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Vehicle Brand *</label>
@@ -499,8 +970,8 @@ const DriverBookingFlow: React.FC = () => {
                     </div>
                 )}
 
-                {/* Step 3: Review Details */}
-                {currentStep === 3 && (
+                {/* Step 2: Review Details */}
+                {currentStep === 2 && (
                     <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Review Summary</h2>
@@ -508,6 +979,22 @@ const DriverBookingFlow: React.FC = () => {
                         </div>
 
                         <div className="bg-[#111113] border border-white/5 p-5 rounded-2xl space-y-4">
+                            {/* Assigned Chauffeur Summary */}
+                            <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold shrink-0" style={{ color: accentColor }}>
+                                        <Award size={16} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Assigned Driver</span>
+                                        <h4 className="font-bold text-[12px] text-white leading-tight truncate">{form.selectedDriverName || 'Auto-Assign Best Available Driver'}</h4>
+                                    </div>
+                                </div>
+                                <span className="text-[9px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
+                                    {form.selectedDriverName ? 'Selected' : 'Auto-Assign'}
+                                </span>
+                            </div>
+
                             {/* Trip Locations */}
                             <div className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-start gap-3.5">
                                 <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">

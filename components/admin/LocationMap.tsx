@@ -16,8 +16,9 @@ const LocationMap: React.FC<LocationMapProps> = ({ latitude, longitude, popupTex
         if (!mapRef.current || mapInstance.current || typeof L === 'undefined' || !latitude || !longitude) return;
 
         mapInstance.current = L.map(mapRef.current).setView([latitude, longitude], 14);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-            attribution: '&copy; CARTO'
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19
         }).addTo(mapInstance.current);
 
         const icon = L.divIcon({
