@@ -20,6 +20,20 @@ interface CancellationDetailsModalProps {
 export const CancellationDetailsModal: React.FC<CancellationDetailsModalProps> = ({ data, onClose }) => {
     const navigate = useNavigate();
 
+    const handleDismiss = () => {
+        // Cancel everything & clear booking session state
+        try {
+            sessionStorage.removeItem('ridersbud_booking_state');
+            sessionStorage.removeItem('pendingHitPayBookingTx');
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+            sessionStorage.removeItem('pendingHitPayTx');
+        } catch (e) {
+            console.warn('Failed to clear session storage:', e);
+        }
+        onClose();
+        navigate('/customer-portal/');
+    };
+
     const handleRetry = () => {
         onClose();
         if (data.retryPath) {
@@ -27,7 +41,7 @@ export const CancellationDetailsModal: React.FC<CancellationDetailsModalProps> =
         } else if (data.type === 'Order') {
             navigate('/customer-portal/cart');
         } else {
-            navigate('/customer-portal/services');
+            navigate('/customer-portal/booking');
         }
     };
 
@@ -102,20 +116,26 @@ export const CancellationDetailsModal: React.FC<CancellationDetailsModalProps> =
                         )}
                     </div>
 
-                    {/* Items List if available */}
+                    {/* Items/Services List if available */}
                     {data.items && data.items.length > 0 && (
                         <div className="space-y-2">
-                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                Cancelled Items / Services ({data.items.length})
+                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center justify-between">
+                                <span>Cancelled Services / Items</span>
+                                <span className="text-primary font-mono text-[10px]">{data.items.length} {data.items.length === 1 ? 'service' : 'services'}</span>
                             </h4>
-                            <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar bg-[#121214] p-3 rounded-2xl border border-white/5">
+                            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar bg-[#121214] p-3 rounded-2xl border border-white/5">
                                 {data.items.map((item, idx) => (
-                                    <div key={idx} className="flex justify-between items-center text-xs py-1 border-b border-white/5 last:border-0">
-                                        <span className="text-gray-300 truncate max-w-[220px]">
-                                            {item.name} {item.quantity ? `(x${item.quantity})` : ''}
-                                        </span>
+                                    <div key={idx} className="flex justify-between items-center text-xs py-1.5 border-b border-white/5 last:border-0">
+                                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                                            <span className="text-gray-200 font-bold truncate">
+                                                {item.name} {item.quantity ? `(x${item.quantity})` : ''}
+                                            </span>
+                                        </div>
                                         {item.price !== undefined && (
-                                            <span className="text-gray-400 font-mono font-bold">₱{item.price.toLocaleString()}</span>
+                                            <span className="text-gray-300 font-mono font-bold shrink-0">
+                                                ₱{Number(item.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
                                         )}
                                     </div>
                                 ))}
@@ -126,24 +146,24 @@ export const CancellationDetailsModal: React.FC<CancellationDetailsModalProps> =
                     {/* Notice */}
                     <div className="flex items-start gap-2.5 bg-white/5 p-3 rounded-xl border border-white/5 text-[11px] text-gray-400">
                         <ShieldAlert size={16} className="text-yellow-500 shrink-0 mt-0.5" />
-                        <span>Items have been safely preserved in your cart/session so you can restart or modify your checkout whenever you're ready.</span>
+                        <span>Your service selection has been preserved so you can easily review, re-book, or complete checkout at any time.</span>
                     </div>
                 </div>
 
                 {/* Modal Actions */}
-                <div className="p-4 bg-[#141416] border-t border-white/5 flex gap-3">
+                <div className="p-3 bg-[#141416] border-t border-white/5 flex gap-2.5">
                     <button
-                        onClick={onClose}
-                        className="flex-1 py-3 px-4 bg-white/5 hover:bg-white/10 text-gray-300 font-bold rounded-xl text-xs transition active:scale-95 text-center"
+                        onClick={handleDismiss}
+                        className="flex-1 py-2.5 px-3 bg-white/5 hover:bg-white/10 text-gray-300 font-bold rounded-xl text-xs transition active:scale-95 text-center whitespace-nowrap"
                     >
                         Dismiss
                     </button>
                     <button
                         onClick={handleRetry}
-                        className="flex-1 py-3 px-4 bg-gradient-to-r from-primary to-orange-600 hover:from-orange-600 hover:to-primary text-white font-black rounded-xl text-xs transition active:scale-95 shadow-lg shadow-primary/20 flex items-center justify-center gap-1.5 text-center"
+                        className="flex-1 py-2.5 px-3 bg-gradient-to-r from-primary to-orange-600 hover:from-orange-600 hover:to-primary text-white font-black rounded-xl text-xs transition active:scale-95 shadow-lg shadow-primary/20 flex items-center justify-center gap-1.5 text-center whitespace-nowrap"
                     >
-                        <RefreshCw size={13} />
-                        Retry Checkout
+                        <RefreshCw size={13} className="shrink-0" />
+                        <span>Retry Checkout</span>
                     </button>
                 </div>
             </div>

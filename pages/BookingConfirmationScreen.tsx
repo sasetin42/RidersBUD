@@ -32,17 +32,47 @@ const BookingConfirmationScreen: React.FC = () => {
         const bookingId = queryParams.get('bookingId') || locationState.bookingId;
 
         if (status === 'canceled' || status === 'failed') {
-            const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx');
+            const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
             let parsedBookingId = bookingId;
             let cancelAmount = 0;
+            let cancelledItems: Array<{ name: string; quantity?: number; price?: number }> = [];
+
             if (pendingTx) {
                 try {
                     const parsed = JSON.parse(pendingTx);
                     parsedBookingId = parsed.bookingId || parsedBookingId;
                     cancelAmount = parsed.amount || parsed.totalAmount || 0;
+                    if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
+                        cancelledItems = parsed.items;
+                    } else if (parsed.services && Array.isArray(parsed.services)) {
+                        cancelledItems = parsed.services.map((s: any) => ({
+                            name: s.name || 'Vehicle Service',
+                            price: s.price || 0
+                        }));
+                    }
                 } catch (e) {}
             }
+
+            const existingBooking = db?.bookings?.find(b => b.id === parsedBookingId);
+            if (existingBooking) {
+                if (cancelAmount === 0) {
+                    cancelAmount = existingBooking.totalAmount || existingBooking.price || 0;
+                }
+                if (cancelledItems.length === 0 && existingBooking.services && existingBooking.services.length > 0) {
+                    cancelledItems = existingBooking.services.map((s: any) => ({
+                        name: s.name || 'Vehicle Service',
+                        price: s.price || 0
+                    }));
+                } else if (cancelledItems.length === 0 && (existingBooking as any).service) {
+                    cancelledItems = [{
+                        name: (existingBooking as any).service.name || 'Vehicle Service',
+                        price: (existingBooking as any).service.price || cancelAmount
+                    }];
+                }
+            }
+
             sessionStorage.removeItem('pendingHitPayBookingTx');
+            localStorage.removeItem('last_hitpay_booking_tx');
 
             if (parsedBookingId && cancelBooking) {
                 cancelBooking(parsedBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
@@ -53,8 +83,9 @@ const BookingConfirmationScreen: React.FC = () => {
                 referenceId: parsedBookingId ? `BOK-${parsedBookingId}` : 'BOK-CANCELLED',
                 amount: cancelAmount,
                 date: new Date().toLocaleString(),
-                reason: 'Payment process was cancelled at the gateway before confirmation.',
-                retryPath: '/customer-portal/services'
+                reason: 'Payment process was cancelled by the user at the payment gateway.',
+                items: cancelledItems,
+                retryPath: '/customer-portal/booking'
             };
 
             window.history.replaceState({}, document.title, window.location.pathname);
