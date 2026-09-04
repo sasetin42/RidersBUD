@@ -19,10 +19,12 @@ import { ref, set } from 'firebase/database';
 import { db as firestore, rtdb } from '../../firebase';
 import MechanicCustomerChatModal from '../../components/mechanic/MechanicCustomerChatModal';
 import DirectionsModal from '../../components/mechanic/DirectionsModal';
+import LiveRouteMapModal from '../../components/LiveRouteMapModal';
 import { CallButton } from '../../components/CallUI';
 import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { useCall } from '../../context/CallContext';
 import { Geolocation } from '@capacitor/geolocation';
+import { safeGetCurrentPosition, safeWatchPosition, safeClearWatch, isGeolocationPermissionDenied } from '../../utils/locationHelper';
 
 // Default currency configuration
 const DEFAULT_CURRENCY = 'PHP';
@@ -75,8 +77,10 @@ const MiniMap: React.FC<{ lat: number, lng: number }> = React.memo(({ lat, lng }
             }).setView([lat, lng], 15);
 
             // Free OpenStreetMap Tile Layer
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
+                subdomains: 'abc',
+                crossOrigin: true,
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(mapInstance.current);
 
@@ -211,6 +215,8 @@ const MechanicJobDetailScreen: React.FC = () => {
     // Modal States
     const [showChatModal, setShowChatModal] = useState(false);
     const [showDirectionsModal, setShowDirectionsModal] = useState(false);
+    const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
+    const [mechanicCurrentLocation, setMechanicCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [showProgressModal, setShowProgressModal] = useState(false);
     const [showETAModal, setShowETAModal] = useState(false);
     const [showPaymentReminderModal, setShowPaymentReminderModal] = useState(false);
@@ -225,7 +231,8 @@ const MechanicJobDetailScreen: React.FC = () => {
     const [progressReport, setProgressReport] = useState({ before: '', after: '', notes: '' });
     const [beforeImages, setBeforeImages] = useState<string[]>([]);
     const [afterImages, setAfterImages] = useState<string[]>([]);
-    const [etaMinutes, setEtaMinutes] = useState(30);
+    const [etaMinutes, setEtaMinutes] = useState(20);
+    const [etaNote, setEtaNote] = useState('');
 
     // Additional Costs State
     const [showAdditionalCostsModal, setShowAdditionalCostsModal] = useState(false);
@@ -262,10 +269,31 @@ const MechanicJobDetailScreen: React.FC = () => {
 
         const isNative = (window as any).Capacitor !== undefined;
 
+        // Fetch immediate initial location with graceful fallback
+        isGeolocationPermissionDenied().then(isDenied => {
+            if (isDenied) return;
+
+            if (isNative) {
+                Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 5000 })
+                    .then((pos) => {
+                        if (pos?.coords) {
+                            setMechanicCurrentLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+                        }
+                    })
+                    .catch(() => {});
+            } else {
+                safeGetCurrentPosition(
+                    (pos) => setMechanicCurrentLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    () => {},
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+            }
+        });
+
         if (booking?.status === 'En Route' && bookingId) {
-            console.log('📡 Starting live location tracking for En Route status...');
-            
             const handleSuccess = (lat: number, lng: number) => {
+                setMechanicCurrentLocation({ lat, lng });
+
                 // 1. Update RTDB for high-performance live tracking
                 const trackingRef = ref(rtdb, `tracking/${bookingId}/mechanicLocation`);
                 set(trackingRef, {
@@ -285,50 +313,91 @@ const MechanicJobDetailScreen: React.FC = () => {
                 }).catch(() => {});
             };
 
-            if (isNative) {
-                Geolocation.watchPosition(
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                    (position) => {
-                        if (position) {
-                            handleSuccess(position.coords.latitude, position.coords.longitude);
+            isGeolocationPermissionDenied().then(isDenied => {
+                if (isDenied) return;
+
+                if (isNative) {
+                    Geolocation.watchPosition(
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                        (position) => {
+                            if (position) {
+                                handleSuccess(position.coords.latitude, position.coords.longitude);
+                            }
                         }
-                    }
-                ).then((id) => {
-                    nativeWatchId = id;
-                }).catch((err) => {
-                    console.warn('[Mechanic Location] Native watch failed, falling back to web watch:', err);
-                    if ('geolocation' in navigator) {
-                        webWatchId = navigator.geolocation.watchPosition(
+                    ).then((id) => {
+                        nativeWatchId = id;
+                    }).catch(() => {
+                        safeWatchPosition(
                             (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
                             () => {},
                             { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                        );
-                    }
-                });
-            } else if ('geolocation' in navigator) {
-                webWatchId = navigator.geolocation.watchPosition(
-                    (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
-                    () => {},
-                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                );
-            }
+                        ).then(id => {
+                            webWatchId = id;
+                        });
+                    });
+                } else {
+                    safeWatchPosition(
+                        (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                        () => {},
+                        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                    ).then(id => {
+                        webWatchId = id;
+                    });
+                }
+            });
         }
 
         return () => {
             if (nativeWatchId !== null) {
-                console.log('📡 Stopping native live location tracking...');
                 Geolocation.clearWatch({ id: nativeWatchId }).catch(() => {});
             }
             if (webWatchId !== null) {
-                console.log('📡 Stopping web live location tracking...');
-                navigator.geolocation.clearWatch(webWatchId);
+                safeClearWatch(webWatchId);
             }
         };
     }, [booking?.status, bookingId]);
 
-    // Real-time Firestore listener for booking
+    // Real-time Firestore listener for booking with fallback to db context
     useEffect(() => {
         if (!bookingId) return;
+
+        const populateCustomer = (bData: any) => {
+            if (bData?.customerId) {
+                const customerRef = doc(firestore, 'customers', bData.customerId);
+                onSnapshot(customerRef, (customerSnap) => {
+                    if (customerSnap.exists()) {
+                        setCustomer({ id: customerSnap.id, ...customerSnap.data() });
+                    } else {
+                        setCustomer({
+                            id: bData.customerId,
+                            name: bData.customerName,
+                            phone: bData.customerPhone,
+                            email: bData.customerEmail,
+                            picture: bData.customerAvatar || bData.customerImage
+                        });
+                    }
+                    setLoading(false);
+                }, () => {
+                    setCustomer({
+                        id: bData.customerId,
+                        name: bData.customerName,
+                        phone: bData.customerPhone,
+                        email: bData.customerEmail,
+                        picture: bData.customerAvatar || bData.customerImage
+                    });
+                    setLoading(false);
+                });
+            } else {
+                setCustomer({
+                    id: 'unknown',
+                    name: bData.customerName,
+                    phone: bData.customerPhone || bData.phone,
+                    email: bData.customerEmail || bData.email,
+                    picture: bData.customerAvatar || bData.customerImage
+                });
+                setLoading(false);
+            }
+        };
 
         const bookingRef = doc(firestore, 'bookings', bookingId);
         const unsubscribe = onSnapshot(bookingRef, (docSnap) => {
@@ -343,64 +412,61 @@ const MechanicJobDetailScreen: React.FC = () => {
                 }
 
                 setBooking(bookingData);
-                console.log('📋 Booking Data:', bookingData);
-
-                // Fetch customer data if available
-                if (bookingData?.customerId) {
-                    console.log('🔍 Fetching customer with ID:', bookingData.customerId);
-                    const customerRef = doc(firestore, 'customers', bookingData.customerId);
-                    onSnapshot(customerRef, (customerSnap) => {
-                        if (customerSnap.exists()) {
-                            const customerData = { id: customerSnap.id, ...customerSnap.data() };
-                            console.log('✅ Customer Data from Firestore:', customerData);
-                            setCustomer(customerData);
-                        } else {
-                            console.warn('⚠️ Customer not found in Firestore, using booking data');
-                            // Fallback: Extract customer info from booking data
-                            const fallbackCustomer = {
-                                id: bookingData.customerId,
-                                name: bookingData.customerName,
-                                phone: bookingData.customerPhone,
-                                email: bookingData.customerEmail,
-                                picture: bookingData.customerAvatar || bookingData.customerImage
-                            };
-                            console.log('📦 Fallback Customer Data:', fallbackCustomer);
-                            setCustomer(fallbackCustomer);
-                        }
-                        setLoading(false);
-                    });
+                populateCustomer(bookingData);
+            } else {
+                // Check memory/db context fallback before marking not found
+                const fallbackBooking = db?.bookings?.find((b: any) => b.id === bookingId);
+                if (fallbackBooking) {
+                    setBooking(fallbackBooking);
+                    populateCustomer(fallbackBooking);
                 } else {
-                    console.warn('⚠️ No customerId in booking, extracting from booking data');
-                    // No customerId - extract directly from booking
-                    const fallbackCustomer = {
-                        id: 'unknown',
-                        name: bookingData.customerName,
-                        phone: bookingData.customerPhone || bookingData.phone,
-                        email: bookingData.customerEmail || bookingData.email,
-                        picture: bookingData.customerAvatar || bookingData.customerImage
-                    };
-                    console.log('📦 Fallback Customer Data (no ID):', fallbackCustomer);
-                    setCustomer(fallbackCustomer);
+                    setBooking(null);
                     setLoading(false);
                 }
+            }
+        }, () => {
+            const fallbackBooking = db?.bookings?.find((b: any) => b.id === bookingId);
+            if (fallbackBooking) {
+                setBooking(fallbackBooking);
+                populateCustomer(fallbackBooking);
             } else {
-                console.error('❌ Booking not found');
+                setBooking(null);
                 setLoading(false);
             }
-        }, (error) => {
-            console.error('❌ Error fetching booking:', error);
-            setLoading(false);
         });
 
         return () => { try { unsubscribe(); } catch (_) {} };
-    }, [bookingId]);
+    }, [bookingId, db?.bookings]);
 
-    if (loading || !booking) {
+    if (loading) {
         return (
             <div className="flex flex-col h-full bg-[#0a0a0a]">
                 <Header title="Job Details" showBack rightAction={<NotificationBell />} icon={<Wrench size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
+                </div>
+            </div>
+        );
+    }
+
+    if (!booking) {
+        return (
+            <div className="flex flex-col h-full bg-[#0a0a0a] text-white">
+                <Header title="Job Details" showBack rightAction={<NotificationBell />} icon={<Wrench size={22} />} />
+                <div className="flex-grow flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mb-4 border border-red-500/20">
+                        <Calendar size={28} className="text-red-500" />
+                    </div>
+                    <h3 className="text-white font-extrabold text-lg">Job Not Found</h3>
+                    <p className="text-xs text-gray-400 mt-2 max-w-xs leading-relaxed">
+                        We couldn't find this booking. It may have been completed, cancelled, or re-assigned.
+                    </p>
+                    <button
+                        onClick={() => navigate('/mechanic-portal/dashboard', { replace: true })}
+                        className="mt-6 bg-primary hover:bg-primary/90 text-black font-black text-xs px-6 py-3 rounded-2xl transition shadow-lg shadow-primary/10 hover:scale-105 duration-200"
+                    >
+                        Back to Dashboard
+                    </button>
                 </div>
             </div>
         );
@@ -586,15 +652,39 @@ const MechanicJobDetailScreen: React.FC = () => {
         if (!booking) return;
         setIsLoading(true);
         try {
-            await updateBooking(booking.id, {
-                eta: etaMinutes,
+            const formattedEta = etaMinutes < 1 ? 'Arriving now' : `${etaMinutes} mins away`;
+            const payload: any = {
+                eta: formattedEta,
+                etaMinutes: etaMinutes,
                 etaUpdatedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
-            });
+            };
+            if (etaNote.trim()) {
+                payload.etaNote = etaNote.trim();
+            }
+
+            await updateBooking(booking.id, payload);
+
+            // Notify Customer in real-time
+            if (booking.customerId || customer?.id) {
+                const noteSuffix = etaNote.trim() ? ` (${etaNote.trim()})` : '';
+                await addNotification({
+                    title: '🚗 Mechanic ETA Updated',
+                    message: `${mechanic?.name || 'Your mechanic'} updated arrival time: ${formattedEta}${noteSuffix}.`,
+                    recipientId: `customer-${booking.customerId || customer?.id}`,
+                    type: 'info',
+                    read: false,
+                    timestamp: Date.now(),
+                    link: `/customer-portal/booking-detail/${booking.id}`
+                });
+            }
+
+            showToastNotification(`ETA updated to ${formattedEta} and customer notified!`, 'success');
             setShowETAModal(false);
-            console.log('✅ ETA updated to:', etaMinutes, 'minutes');
+            console.log('✅ ETA updated to:', formattedEta, 'with note:', etaNote);
         } catch (error) {
             console.error('❌ Error updating ETA:', error);
+            showToastNotification('Failed to update ETA. Please try again.', 'error');
         } finally {
             setIsLoading(false);
         }
@@ -952,56 +1042,71 @@ const MechanicJobDetailScreen: React.FC = () => {
 
                 {/* Payment Information Card */}
                 {(booking.paymentMethod?.includes('HitPay') || booking.paymentMethod === 'GCash' || booking.paymentStatus === 'partial' || booking.paymentStatus === 'downpayment_paid' || booking.isVerified || (booking.paidAmount && booking.paidAmount > 0)) && (
-                    <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-primary/20 shadow-[0_0_20px_rgba(249,115,22,0.1)] overflow-hidden relative group">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full -translate-y-12 translate-x-12 blur-3xl opacity-50" />
-                        <h2 className="text-[10px] font-bold tracking-widest text-primary mb-4 flex items-center justify-between relative z-10">
-                            <span className="flex items-center gap-2">
-                                <CreditCard size={14} />
-                                Downpayment & Payment Details
-                            </span>
-                            {booking.paymentMethod?.includes('HitPay') ? (
-                                <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-[8px] font-black border border-emerald-500/30 flex items-center gap-1">
-                                    <CheckCircle size={9} />
-                                    Secured via HitPay Online
-                                </span>
-                            ) : booking.isVerified ? (
-                                <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-[8px] font-black shadow-sm">
-                                    50% DP Verified
-                                </span>
-                            ) : booking.paymentMethod === 'GCash' ? (
-                                <span className="bg-primary/20 text-primary px-2 py-0.5 rounded text-[8px] font-black shadow-sm">Secured via GCash</span>
-                            ) : null}
-                        </h2>
+                    <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5 relative overflow-hidden group hover:border-white/10 transition-all shadow-xl">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-12 translate-x-12 blur-3xl pointer-events-none" />
+                        
+                        <div className="flex items-center justify-between mb-4 relative z-10">
+                            <h2 className="text-[11px] font-black tracking-widest text-primary uppercase flex items-center gap-2">
+                                <CreditCard size={14} className="text-primary" />
+                                Payment Details
+                            </h2>
+                            <div className="flex items-center gap-1.5">
+                                {(booking.paymentStatus === 'paid' || booking.isPaid) && (
+                                    <span className="bg-emerald-500/15 text-emerald-400 px-2.5 py-1 rounded-full text-[9px] font-black border border-emerald-500/30 flex items-center gap-1 shadow-sm">
+                                        <CheckCircle size={10} />
+                                        Fully Paid
+                                    </span>
+                                )}
+                            </div>
+                        </div>
 
-                        <div className="space-y-4 relative z-10">
-                            {/* Reference Information */}
-                            {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference) && (
-                                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1 text-[10px]">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-400 font-mono">Gateway / Method:</span>
-                                        <span className="text-white font-bold">{booking.paymentMethod || 'HitPay Online'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-400 font-mono">Reference No:</span>
-                                        <span className="text-primary font-mono font-bold">{booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference}</span>
-                                    </div>
-                                    {booking.downpaymentPaidAt && (
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-gray-400 font-mono">Paid Timestamp:</span>
-                                            <span className="text-gray-300 font-mono">{new Date(booking.downpaymentPaidAt).toLocaleString()}</span>
+                        <div className="space-y-3.5 relative z-10">
+                            {/* Reference Information Grid */}
+                            <div className="p-3.5 bg-black/40 border border-white/5 rounded-2xl space-y-2 text-[11px]">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400 font-medium">Gateway / Method:</span>
+                                    <span className="text-white font-bold tracking-wide">{booking.paymentMethod || 'HitPay (Online)'}</span>
+                                </div>
+                                {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference) && (
+                                    <div className="flex justify-between items-center gap-2">
+                                        <span className="text-gray-400 font-medium flex-shrink-0">Reference No:</span>
+                                        <div className="flex items-center gap-1.5 overflow-hidden">
+                                            <span className="text-primary font-mono font-bold text-[10px] truncate">
+                                                {booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference}
+                                            </span>
+                                            <button
+                                                onClick={() => {
+                                                    const refNo = booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference;
+                                                    if (refNo) {
+                                                        navigator.clipboard.writeText(refNo);
+                                                        alert('Reference number copied!');
+                                                    }
+                                                }}
+                                                className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                                                title="Copy Reference"
+                                            >
+                                                <Copy size={11} />
+                                            </button>
                                         </div>
-                                    )}
-                                </div>
-                            )}
+                                    </div>
+                                )}
+                                {booking.downpaymentPaidAt && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-400 font-medium">Paid Timestamp:</span>
+                                        <span className="text-gray-300 font-medium font-mono text-[10px]">{new Date(booking.downpaymentPaidAt).toLocaleString()}</span>
+                                    </div>
+                                )}
+                            </div>
 
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-[10px] text-gray-500 font-bold mb-1 tracking-tight">50% Downpayment Received</p>
-                                    <p className="text-xl font-black text-white">₱{(booking.paidAmount || (booking.totalAmount ? booking.totalAmount * 0.5 : 0)).toLocaleString()}</p>
+                            {/* Payment Summary Cards */}
+                            <div className="grid grid-cols-2 gap-2.5">
+                                <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3.5 flex flex-col justify-center">
+                                    <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 mb-1">50% Initial DP PAID</p>
+                                    <p className="text-xl font-black text-white tracking-tight">₱{(booking.paidAmount || (booking.totalAmount ? booking.totalAmount * 0.5 : 0)).toLocaleString()}</p>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-[10px] text-gray-500 font-bold mb-1 tracking-tight">Remaining Balance</p>
-                                    <p className="text-lg font-bold text-gray-400">₱{((booking.totalAmount || booking.service?.price || 0) - (booking.paidAmount || 0)).toLocaleString()}</p>
+                                <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3.5 flex flex-col justify-center text-right">
+                                    <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1">Remaining Balance</p>
+                                    <p className="text-xl font-black text-primary tracking-tight">₱{((booking.totalAmount || booking.service?.price || 0) - (booking.paidAmount || 0)).toLocaleString()}</p>
                                 </div>
                             </div>
 
@@ -1311,30 +1416,67 @@ const MechanicJobDetailScreen: React.FC = () => {
                 </div>
 
                 {/* Bottom Section: Split Layout */}
-                <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5 flex flex-col h-full min-h-[300px]">
-                    <h2 className="text-[10px] font-bold  tracking-widest text-gray-500 mb-4 flex items-center gap-2">
+                <div className="bg-[#151515] rounded-[1.5rem] py-5 px-3 sm:px-4 border border-white/5 flex flex-col h-full min-h-[300px]">
+                    <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2 px-1">
                         <Clock size={14} />
                         Job Timeline {booking.date ? `• ${booking.date}` : ''}
                     </h2>
 
-                    <div className="flex gap-4 flex-grow">
-                        {/* Timeline Column */}
-                        <div className="w-[45%] relative pt-1 pb-1 flex flex-col justify-between">
-                            <div className="absolute left-[9px] top-3 bottom-3 w-[2px] bg-white/5"></div>
+                    <div className="flex gap-2.5 sm:gap-3 flex-grow">
+                        {/* Timeline Column - Mathematically Centered & Modernized */}
+                        <div className="w-[44%] relative py-1 flex flex-col justify-between">
                             {steps.map((step, idx) => {
                                 const isCompleted = idx <= currentStepIndex;
                                 const isCurrent = idx === currentStepIndex;
+                                const isLast = idx === steps.length - 1;
+                                const isNextCompleted = idx + 1 <= currentStepIndex;
+
                                 return (
-                                    <div key={step.status} className="relative flex items-center gap-3">
-                                        <div className={`w-5 h-5 rounded-full border-[3px] flex-shrink-0 z-10 transition-all ${isCompleted ? 'bg-primary border-[#151515] shadow-[0_0_10px_rgba(249,115,22,0.6)]' : 'bg-[#222] border-[#333]'}`}>
-                                            {isCompleted && <div className="hidden"></div>}
+                                    <div key={step.status} className="relative flex items-center gap-2.5 group">
+                                        {/* Node and Connecting Line Wrapper */}
+                                        <div className="relative flex flex-col items-center justify-center w-5 h-5 flex-shrink-0">
+                                            {/* Vertical Track Segment */}
+                                            {!isLast && (
+                                                <div 
+                                                    className={`absolute top-1/2 left-1/2 -translate-x-1/2 w-[2px] pointer-events-none transition-colors duration-300 ${
+                                                        isNextCompleted 
+                                                            ? 'bg-gradient-to-b from-[#FE7803] to-[#FE7803]/60 shadow-[0_0_6px_rgba(254,120,3,0.5)]' 
+                                                            : 'bg-white/10'
+                                                    }`} 
+                                                    style={{ height: 'calc(100% + 22px)' }}
+                                                />
+                                            )}
+
+                                            {/* Circular Dot Indicator */}
+                                            <div className={`relative z-10 w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                                isCurrent 
+                                                    ? 'bg-[#FE7803] ring-4 ring-[#FE7803]/25 shadow-[0_0_12px_rgba(254,120,3,0.8)] scale-110' 
+                                                    : isCompleted 
+                                                        ? 'bg-gradient-to-br from-[#FE7803] to-[#EA580C] shadow-[0_0_8px_rgba(254,120,3,0.5)]' 
+                                                        : 'bg-[#18181D] border-2 border-white/15'
+                                            }`}>
+                                                {isCurrent && (
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                                )}
+                                                {isCompleted && !isCurrent && (
+                                                    <div className="w-1 h-1 rounded-full bg-white/90" />
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex-1">
-                                            <p className={`text-[10px] font-bold leading-tight ${isCurrent ? 'text-primary' : isCompleted ? 'text-white' : 'text-gray-600'}`}>
+
+                                        {/* Step Details */}
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-[10px] font-black leading-tight tracking-tight truncate ${
+                                                isCurrent 
+                                                    ? 'text-[#FE7803] drop-shadow-[0_0_6px_rgba(254,120,3,0.4)]' 
+                                                    : isCompleted 
+                                                        ? 'text-white' 
+                                                        : 'text-gray-500'
+                                            }`}>
                                                 {step.label}
                                             </p>
                                             {step.time && (
-                                                <p className="text-[8px] text-gray-500 font-medium mt-0.5">
+                                                <p className="text-[8px] text-gray-400 font-mono font-medium mt-0.5 leading-none">
                                                     {step.time}
                                                 </p>
                                             )}
@@ -1345,24 +1487,65 @@ const MechanicJobDetailScreen: React.FC = () => {
                         </div>
 
                         {/* Actions Grid */}
-                        <div className="flex-1 flex flex-col gap-2">
+                        <div className="flex-1 flex flex-col gap-2 justify-center">
+                            {/* Pin Location Button */}
                             <button 
-                                onClick={handleDirectNavigation}
-                                disabled={!(booking.location?.lat && booking.location?.lng) && !(customer?.lat && customer?.lng) && !(booking.location?.address || customer?.address)}
-                                className="w-full bg-red-500 hover:bg-red-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed border-0"
+                                onClick={() => setShowLiveRouteModal(true)}
+                                className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-red-600/20 overflow-hidden border border-red-400/30 bg-gradient-to-r from-[#DC2626] via-[#B91C1C] to-[#991B1B] hover:brightness-110"
                             >
-                                <MapPin size={16} />
-                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Pin Location</span>
-                            </button>
-                            <button onClick={() => setShowChatModal(true)} className="w-full bg-blue-500 hover:bg-blue-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-blue-500/20 transition-all border-0">
-                                <MessageSquare size={16} />
-                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Live Chat</span>
-                            </button>
-                            <button onClick={handleCall} className="w-full bg-green-500 hover:bg-green-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-green-500/20 transition-all border-0">
-                                <Phone size={16} />
-                                <span className="text-[10px] font-black tracking-wider whitespace-nowrap">Call</span>
+                                <div className="flex items-center gap-1.5">
+                                    <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                        <MapPin size={12} className="text-white drop-shadow" />
+                                    </div>
+                                    <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                    <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm whitespace-nowrap">
+                                        Pin Location
+                                    </span>
+                                </div>
+                                <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                    <ChevronRight size={12} />
+                                </div>
                             </button>
 
+                            {/* Live Chat Button */}
+                            <button 
+                                onClick={() => setShowChatModal(true)} 
+                                className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-blue-600/20 overflow-hidden border border-blue-400/30 bg-gradient-to-r from-[#2563EB] via-[#1D4ED8] to-[#1E40AF] hover:brightness-110"
+                            >
+                                <div className="flex items-center gap-1.5">
+                                    <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                        <MessageSquare size={12} className="text-white drop-shadow" />
+                                    </div>
+                                    <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                    <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm whitespace-nowrap">
+                                        Live Chat
+                                    </span>
+                                </div>
+                                <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                    <ChevronRight size={12} />
+                                </div>
+                            </button>
+
+                            {/* Call Button */}
+                            <button 
+                                onClick={handleCall} 
+                                className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-emerald-600/20 overflow-hidden border border-emerald-400/30 bg-gradient-to-r from-[#059669] via-[#047857] to-[#065F46] hover:brightness-110"
+                            >
+                                <div className="flex items-center gap-1.5">
+                                    <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                        <Phone size={12} className="text-white drop-shadow" />
+                                    </div>
+                                    <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                    <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm whitespace-nowrap">
+                                        Call
+                                    </span>
+                                </div>
+                                <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                    <ChevronRight size={12} />
+                                </div>
+                            </button>
+
+                            {/* Primary Status Update Action Button */}
                             <button
                                 onClick={() => {
                                     console.log('🖱️ Update Status button clicked!');
@@ -1393,20 +1576,32 @@ const MechanicJobDetailScreen: React.FC = () => {
                                     }
                                 }}
                                 disabled={isLoading || booking.status === 'Completed'}
-                                className="w-full bg-primary hover:bg-orange-600 rounded-xl flex items-center justify-center gap-2 py-3 text-white shadow-md shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed border-0"
+                                className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-orange-600/25 overflow-hidden border border-orange-400/40 bg-gradient-to-r from-[#FE7803] via-[#EA580C] to-[#C2410C] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {isLoading ? <Spinner size="sm" color="text-white" /> : (
+                                {isLoading ? (
+                                    <div className="w-full flex items-center justify-center">
+                                        <Spinner size="sm" color="text-white" />
+                                    </div>
+                                ) : (
                                     <>
-                                        <CheckCircle size={16} className="text-white" />
-                                        <span className="text-[10px] font-black tracking-wider whitespace-nowrap">
-                                            {(booking.status === 'Upcoming' || booking.status === 'Booking Confirmed') && 'Accept Job'}
-                                            {booking.status === 'Mechanic Assigned' && 'Start Travel'}
-                                            {booking.status === 'En Route' && 'Arrived'}
-                                            {booking.status === 'In Progress' && 'Finish & Mark Work Done'}
-                                            {booking.status === 'Work Done' && (booking.paymentStatus === 'paid' || booking.isPaid ? 'Complete Booking' : 'Verify Balance & Complete')}
-                                            {booking.status === 'Completed' && 'Completed'}
-                                            {!['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Work Done', 'Completed'].includes(booking.status) && 'Update Status'}
-                                        </span>
+                                        <div className="flex items-center gap-1.5 overflow-hidden">
+                                            <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex-shrink-0 flex items-center justify-center text-white shadow-inner">
+                                                <CheckCircle size={12} className="text-white drop-shadow" />
+                                            </div>
+                                            <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                            <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm truncate">
+                                                {(booking.status === 'Upcoming' || booking.status === 'Booking Confirmed') && 'Accept Job'}
+                                                {booking.status === 'Mechanic Assigned' && 'Start Travel'}
+                                                {booking.status === 'En Route' && 'Arrived'}
+                                                {booking.status === 'In Progress' && 'Finish Work'}
+                                                {booking.status === 'Work Done' && (booking.paymentStatus === 'paid' || booking.isPaid ? 'Complete' : 'Verify Balance')}
+                                                {booking.status === 'Completed' && 'Completed'}
+                                                {!['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Work Done', 'Completed'].includes(booking.status) && 'Update'}
+                                            </span>
+                                        </div>
+                                        <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex-shrink-0 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform">
+                                            <ChevronRight size={12} />
+                                        </div>
                                     </>
                                 )}
                             </button>
@@ -1704,34 +1899,105 @@ const MechanicJobDetailScreen: React.FC = () => {
 
             {/* ETA Update Modal */}
             {showETAModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-md w-full border border-white/10 shadow-2xl animate-scaleUp">
-                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                            <Timer className="text-primary" />
-                            Update ETA
-                        </h3>
-                        <p className="text-gray-400 text-sm mb-4">Set estimated time of arrival in minutes</p>
-                        <input
-                            type="number"
-                            value={etaMinutes}
-                            onChange={(e) => setEtaMinutes(Number(e.target.value))}
-                            className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white text-center text-2xl font-bold mb-6 focus:outline-none"
-                            min="1"
-                            max="180"
-                        />
-                        <div className="flex gap-3">
+                <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-[#1A1A1E] rounded-3xl p-6 max-w-md w-full border border-white/10 shadow-2xl animate-scaleUp">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                                    <Timer size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-black text-white leading-tight">
+                                        Update Travel ETA
+                                    </h3>
+                                    <p className="text-gray-400 text-[11px]">Inform customer of real-time arrival</p>
+                                </div>
+                            </div>
                             <button
                                 onClick={() => setShowETAModal(false)}
-                                className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold transition-all"
+                                className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-all"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="mb-4">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2 font-mono">
+                                Quick Presets
+                            </label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[5, 10, 15, 30].map(mins => (
+                                    <button
+                                        key={mins}
+                                        type="button"
+                                        onClick={() => setEtaMinutes(mins)}
+                                        className={`py-2 rounded-xl text-xs font-black transition-all border ${
+                                            etaMinutes === mins
+                                                ? 'bg-primary text-white border-primary shadow-lg shadow-primary/25 scale-[1.02]'
+                                                : 'bg-white/5 text-gray-300 border-white/5 hover:bg-white/10'
+                                        }`}
+                                    >
+                                        {mins}m
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Custom Minute Input */}
+                        <div className="mb-4">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5 font-mono">
+                                Estimated Minutes
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    value={etaMinutes}
+                                    onChange={(e) => setEtaMinutes(Math.max(1, Number(e.target.value)))}
+                                    className="w-full bg-black/60 border border-white/10 rounded-2xl px-4 py-3 text-white text-center text-2xl font-black focus:outline-none focus:border-primary/50 transition-all font-mono"
+                                    min="1"
+                                    max="240"
+                                />
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-xs">
+                                    mins
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Optional Traffic / Status Note */}
+                        <div className="mb-6">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5 font-mono">
+                                Traffic / Travel Note (Optional)
+                            </label>
+                            <input
+                                type="text"
+                                value={etaNote}
+                                onChange={(e) => setEtaNote(e.target.value)}
+                                placeholder="e.g., Heavy traffic near intersection, preparing tools"
+                                className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 transition-all font-medium"
+                            />
+                        </div>
+
+                        <div className="flex gap-2.5">
+                            <button
+                                onClick={() => setShowETAModal(false)}
+                                className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-2xl font-bold transition-all text-xs"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleUpdateETA}
                                 disabled={isLoading}
-                                className="flex-1 bg-primary hover:bg-orange-600 text-white py-3 rounded-xl font-bold transition-all disabled:opacity-50"
+                                className="flex-1 bg-gradient-to-r from-primary to-orange-600 hover:from-orange-600 hover:to-primary text-white py-3 rounded-2xl font-black transition-all disabled:opacity-50 text-xs shadow-lg shadow-primary/20 flex items-center justify-center gap-1.5"
                             >
-                                {isLoading ? 'Updating...' : 'Update'}
+                                {isLoading ? (
+                                    <Spinner size="sm" color="text-white" />
+                                ) : (
+                                    <>
+                                        <Bell size={14} />
+                                        Save & Notify
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>
@@ -1740,39 +2006,72 @@ const MechanicJobDetailScreen: React.FC = () => {
 
             {/* Progress Report Modal */}
             {showProgressModal && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-start sm:items-center justify-center p-4 animate-fadeIn overflow-y-auto">
-                    <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-lg w-full border border-white/10 shadow-2xl animate-scaleUp my-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                            <FileText className="text-primary" />
-                            Progress Report
-                        </h3>
-                        <p className="text-gray-400 text-sm mb-6">Document the work accomplished</p>
+                <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[9999] flex items-center justify-center p-3 sm:p-5 animate-fadeIn overflow-y-auto">
+                    <div className="bg-[#141416]/95 border border-white/10 rounded-3xl p-5 sm:p-7 max-w-xl w-full shadow-[0_20px_50px_rgba(0,0,0,0.8)] backdrop-blur-xl animate-scaleUp my-auto max-h-[92vh] overflow-y-auto custom-scrollbar relative">
+                        {/* Header */}
+                        <div className="flex items-start justify-between pb-4 mb-5 border-b border-white/10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary/20 to-orange-600/10 border border-primary/30 flex items-center justify-center text-primary shadow-inner shadow-primary/20 flex-shrink-0">
+                                    <FileText size={20} className="text-primary drop-shadow-[0_2px_8px_rgba(254,120,3,0.5)]" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black text-white tracking-wide flex items-center gap-2">
+                                        Progress Report
+                                        <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                                            Live Documentation
+                                        </span>
+                                    </h3>
+                                    <p className="text-xs text-gray-400 mt-0.5">Document repair progress, notes, and photos for the customer</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowProgressModal(false)}
+                                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition-colors flex-shrink-0"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
 
-                        <div className="space-y-4">
+                        <div className="space-y-5">
                             {/* Text Input Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label htmlFor="job-before-issue" className="text-white font-bold text-sm mb-2 block">Before (Issue/Problem)</label>
+                                {/* Before / Issue Textarea */}
+                                <div className="bg-[#0C0C0E]/70 border border-white/5 rounded-2xl p-3.5 focus-within:border-red-500/40 focus-within:ring-1 focus-within:ring-red-500/20 transition-all">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label htmlFor="job-before-issue" className="text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer">
+                                            <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
+                                            Before (Issue / Problem)
+                                        </label>
+                                        <span className="text-[10px] text-gray-500 font-mono">Initial Condition</span>
+                                    </div>
                                     <textarea
                                         id="job-before-issue"
                                         name="job-before-issue"
                                         value={progressReport.before}
                                         onChange={(e) => setProgressReport({ ...progressReport, before: e.target.value })}
-                                        className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white resize-none outline-none transition-all focus:border-white/20 text-sm"
+                                        className="w-full bg-transparent border-0 text-white placeholder-gray-500 resize-none outline-none text-xs sm:text-sm leading-relaxed p-1"
                                         rows={4}
-                                        placeholder="Describe the initial condition..."
+                                        placeholder="Describe the initial condition, diagnostic findings, or parts damaged..."
                                     />
                                 </div>
-                                <div>
-                                    <label htmlFor="job-after-fix" className="text-white font-bold text-sm mb-2 block">After (Solution/Fix)</label>
+
+                                {/* After / Solution Textarea */}
+                                <div className="bg-[#0C0C0E]/70 border border-white/5 rounded-2xl p-3.5 focus-within:border-emerald-500/40 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label htmlFor="job-after-fix" className="text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                                            After (Solution / Fix)
+                                        </label>
+                                        <span className="text-[10px] text-gray-500 font-mono">Completed Work</span>
+                                    </div>
                                     <textarea
                                         id="job-after-fix"
                                         name="job-after-fix"
                                         value={progressReport.after}
                                         onChange={(e) => setProgressReport({ ...progressReport, after: e.target.value })}
-                                        className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white resize-none outline-none transition-all focus:border-white/20 text-sm"
+                                        className="w-full bg-transparent border-0 text-white placeholder-gray-500 resize-none outline-none text-xs sm:text-sm leading-relaxed p-1"
                                         rows={4}
-                                        placeholder="Describe what was done..."
+                                        placeholder="Describe what was repaired, tuned, or replaced..."
                                     />
                                 </div>
                             </div>
@@ -1780,15 +2079,24 @@ const MechanicJobDetailScreen: React.FC = () => {
                             {/* Image Upload Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Before Images Upload */}
-                                <div>
-                                    <label className="text-white font-bold text-sm mb-2 block flex items-center gap-2">
-                                        <ImageIcon size={16} className="text-red-400" />
-                                        Before Photos
-                                    </label>
-                                    <div className="space-y-2">
-                                        <label className="w-full bg-black/30 border-2 border-dashed border-white/20 hover:border-primary/50 rounded-xl px-2 py-4 flex flex-col items-center justify-center cursor-pointer transition-all group h-32">
-                                            <Upload size={20} className="text-gray-400 group-hover:text-primary mb-1" />
-                                            <span className="text-xs text-center text-gray-400 group-hover:text-white">Upload Images</span>
+                                <div className="bg-[#0C0C0E]/50 border border-white/5 rounded-2xl p-3.5">
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <label className="text-xs font-bold text-white flex items-center gap-2">
+                                            <div className="w-5 h-5 rounded-md bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+                                                <ImageIcon size={12} />
+                                            </div>
+                                            Before Photos
+                                        </label>
+                                        <span className="text-[10px] text-gray-500">{beforeImages.length} uploaded</span>
+                                    </div>
+                                    
+                                    <div className="space-y-2.5">
+                                        <label className="w-full bg-[#161619] hover:bg-[#1D1D22] border-2 border-dashed border-white/10 hover:border-red-400/40 rounded-xl px-3 py-3 flex flex-col items-center justify-center cursor-pointer transition-all group min-h-[90px]">
+                                            <div className="w-8 h-8 rounded-full bg-white/5 group-hover:bg-red-500/10 flex items-center justify-center text-gray-400 group-hover:text-red-400 mb-1.5 transition-colors">
+                                                <Upload size={14} />
+                                            </div>
+                                            <span className="text-xs font-bold text-gray-300 group-hover:text-white">Upload Before Photos</span>
+                                            <span className="text-[10px] text-gray-500">PNG, JPG up to 10MB</span>
                                             <input
                                                 type="file"
                                                 accept="image/*"
@@ -1797,17 +2105,21 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                 className="hidden"
                                             />
                                         </label>
+
                                         {beforeImages.length > 0 && (
-                                            <div className="grid grid-cols-3 gap-1">
+                                            <div className="grid grid-cols-3 gap-2 pt-1">
                                                 {beforeImages.map((img, idx) => (
-                                                    <div key={idx} className="relative group">
-                                                        <img src={img} alt={`Before ${idx + 1}`} className="w-full h-16 object-cover rounded border border-white/10" />
-                                                        <button
-                                                            onClick={() => removeImage(idx, 'before')}
-                                                            className="absolute top-0 right-0 bg-red-500 hover:bg-red-600 text-white rounded-bl p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                        >
-                                                            <X size={10} />
-                                                        </button>
+                                                    <div key={idx} className="relative group rounded-xl overflow-hidden border border-white/10 aspect-square shadow-sm">
+                                                        <img src={img} alt={`Before ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                            <button
+                                                                onClick={() => removeImage(idx, 'before')}
+                                                                className="w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90"
+                                                                title="Remove Photo"
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
@@ -1816,15 +2128,24 @@ const MechanicJobDetailScreen: React.FC = () => {
                                 </div>
 
                                 {/* After Images Upload */}
-                                <div>
-                                    <label className="text-white font-bold text-sm mb-2 block flex items-center gap-2">
-                                        <ImageIcon size={16} className="text-green-400" />
-                                        After Photos
-                                    </label>
-                                    <div className="space-y-2">
-                                        <label className="w-full bg-black/30 border-2 border-dashed border-white/20 hover:border-primary/50 rounded-xl px-2 py-4 flex flex-col items-center justify-center cursor-pointer transition-all group h-32">
-                                            <Upload size={20} className="text-gray-400 group-hover:text-primary mb-1" />
-                                            <span className="text-xs text-center text-gray-400 group-hover:text-white">Upload Images</span>
+                                <div className="bg-[#0C0C0E]/50 border border-white/5 rounded-2xl p-3.5">
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <label className="text-xs font-bold text-white flex items-center gap-2">
+                                            <div className="w-5 h-5 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                                <ImageIcon size={12} />
+                                            </div>
+                                            After Photos
+                                        </label>
+                                        <span className="text-[10px] text-gray-500">{afterImages.length} uploaded</span>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        <label className="w-full bg-[#161619] hover:bg-[#1D1D22] border-2 border-dashed border-white/10 hover:border-emerald-400/40 rounded-xl px-3 py-3 flex flex-col items-center justify-center cursor-pointer transition-all group min-h-[90px]">
+                                            <div className="w-8 h-8 rounded-full bg-white/5 group-hover:bg-emerald-500/10 flex items-center justify-center text-gray-400 group-hover:text-emerald-400 mb-1.5 transition-colors">
+                                                <Upload size={14} />
+                                            </div>
+                                            <span className="text-xs font-bold text-gray-300 group-hover:text-white">Upload After Photos</span>
+                                            <span className="text-[10px] text-gray-500">PNG, JPG up to 10MB</span>
                                             <input
                                                 type="file"
                                                 accept="image/*"
@@ -1833,17 +2154,21 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                 className="hidden"
                                             />
                                         </label>
+
                                         {afterImages.length > 0 && (
-                                            <div className="grid grid-cols-3 gap-1">
+                                            <div className="grid grid-cols-3 gap-2 pt-1">
                                                 {afterImages.map((img, idx) => (
-                                                    <div key={idx} className="relative group">
-                                                        <img src={img} alt={`After ${idx + 1}`} className="w-full h-16 object-cover rounded border border-white/10" />
-                                                        <button
-                                                            onClick={() => removeImage(idx, 'after')}
-                                                            className="absolute top-0 right-0 bg-red-500 hover:bg-red-600 text-white rounded-bl p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                        >
-                                                            <X size={10} />
-                                                        </button>
+                                                    <div key={idx} className="relative group rounded-xl overflow-hidden border border-white/10 aspect-square shadow-sm">
+                                                        <img src={img} alt={`After ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                            <button
+                                                                onClick={() => removeImage(idx, 'after')}
+                                                                className="w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90"
+                                                                title="Remove Photo"
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
@@ -1853,42 +2178,64 @@ const MechanicJobDetailScreen: React.FC = () => {
                             </div>
 
                             {/* Notes - Full Width */}
-                            <div>
-                                <label htmlFor="job-notes" className="text-white font-bold text-sm mb-2 block">Additional Notes</label>
+                            <div className="bg-[#0C0C0E]/70 border border-white/5 rounded-2xl p-3.5 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label htmlFor="job-notes" className="text-xs font-bold text-white flex items-center gap-1.5">
+                                        <FileText size={12} className="text-primary" />
+                                        Recommendation Notes
+                                    </label>
+                                </div>
                                 <textarea
                                     id="job-notes"
                                     name="job-notes"
                                     value={progressReport.notes}
                                     onChange={(e) => setProgressReport({ ...progressReport, notes: e.target.value })}
-                                    className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white resize-none outline-none transition-all focus:border-white/20 text-xs"
+                                    className="w-full bg-transparent border-0 text-white placeholder-gray-500 resize-none outline-none text-xs leading-relaxed p-1"
                                     rows={2}
-                                    placeholder="Any additional details..."
+                                    placeholder="Provide any maintenance tips, parts replaced warranty, or next inspection notes..."
                                 />
                             </div>
                         </div>
 
                         {/* Progress History */}
                         {booking.progressHistory && booking.progressHistory.length > 0 && (
-                            <div className="mt-6 pt-6 border-t border-white/10">
-                                <h4 className="text-white font-bold text-sm mb-3">Previous Reports</h4>
-                                <div className="space-y-3 max-h-96 overflow-y-auto">
+                            <div className="mt-6 pt-5 border-t border-white/10">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h4 className="text-xs font-black uppercase tracking-wider text-gray-300 flex items-center gap-2">
+                                        <Clock size={13} className="text-primary" />
+                                        Previous Reports ({booking.progressHistory.length})
+                                    </h4>
+                                </div>
+                                <div className="space-y-3 max-h-72 overflow-y-auto custom-scrollbar pr-1">
                                     {booking.progressHistory.map((entry: any, idx: number) => (
-                                        <div key={idx} className="bg-black/30 rounded-lg p-3 border border-white/5">
-                                            <div className="text-[10px] text-gray-500 mb-2">
-                                                {new Date(entry.timestamp).toLocaleString()}
+                                        <div key={idx} className="bg-[#0C0C0E] rounded-2xl p-3.5 border border-white/5 space-y-2.5">
+                                            <div className="flex items-center justify-between text-[10px] text-gray-400 pb-2 border-b border-white/5">
+                                                <span className="font-mono text-gray-500">{new Date(entry.timestamp).toLocaleString()}</span>
+                                                <span className="px-2 py-0.5 rounded-full bg-white/5 text-gray-300 font-bold border border-white/5">Log #{idx + 1}</span>
                                             </div>
                                             <div className="text-xs space-y-2">
-                                                <p><span className="text-red-400 font-bold">Before:</span> <span className="text-gray-300">{entry.before}</span></p>
-                                                <p><span className="text-green-400 font-bold">After:</span> <span className="text-gray-300">{entry.after}</span></p>
-                                                {entry.notes && <p className="text-gray-400">{entry.notes}</p>}
+                                                <div className="p-2 rounded-xl bg-red-500/5 border border-red-500/10">
+                                                    <p className="text-[11px] text-red-400 font-bold mb-0.5">Before Issue</p>
+                                                    <p className="text-gray-300 text-xs leading-relaxed">{entry.before}</p>
+                                                </div>
+                                                <div className="p-2 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                                    <p className="text-[11px] text-emerald-400 font-bold mb-0.5">After Fix</p>
+                                                    <p className="text-gray-300 text-xs leading-relaxed">{entry.after}</p>
+                                                </div>
+                                                {entry.notes && (
+                                                    <div className="p-2 rounded-xl bg-white/5 border border-white/5">
+                                                        <p className="text-[11px] text-gray-400 font-bold mb-0.5">Notes</p>
+                                                        <p className="text-gray-300 text-xs">{entry.notes}</p>
+                                                    </div>
+                                                )}
 
                                                 {/* Before Images */}
                                                 {entry.beforeImages && entry.beforeImages.length > 0 && (
                                                     <div>
-                                                        <p className="text-red-400 font-bold mb-1">Before Photos:</p>
-                                                        <div className="grid grid-cols-3 gap-1">
+                                                        <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider mb-1.5">Before Photos:</p>
+                                                        <div className="grid grid-cols-4 gap-1.5">
                                                             {entry.beforeImages.map((img: string, imgIdx: number) => (
-                                                                <img key={imgIdx} src={img} alt={`Before ${imgIdx + 1}`} className="w-full h-16 object-cover rounded border border-white/10" />
+                                                                <img key={imgIdx} src={img} alt={`Before ${imgIdx + 1}`} className="w-full h-14 object-cover rounded-lg border border-white/10" />
                                                             ))}
                                                         </div>
                                                     </div>
@@ -1897,10 +2244,10 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                 {/* After Images */}
                                                 {entry.afterImages && entry.afterImages.length > 0 && (
                                                     <div>
-                                                        <p className="text-green-400 font-bold mb-1">After Photos:</p>
-                                                        <div className="grid grid-cols-3 gap-1">
+                                                        <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1.5">After Photos:</p>
+                                                        <div className="grid grid-cols-4 gap-1.5">
                                                             {entry.afterImages.map((img: string, imgIdx: number) => (
-                                                                <img key={imgIdx} src={img} alt={`After ${imgIdx + 1}`} className="w-full h-16 object-cover rounded border border-white/10" />
+                                                                <img key={imgIdx} src={img} alt={`After ${imgIdx + 1}`} className="w-full h-14 object-cover rounded-lg border border-white/10" />
                                                             ))}
                                                         </div>
                                                     </div>
@@ -1912,19 +2259,32 @@ const MechanicJobDetailScreen: React.FC = () => {
                             </div>
                         )}
 
-                        <div className="flex gap-3 mt-6">
+                        {/* Footer Action Buttons */}
+                        <div className="flex items-center gap-3 pt-5 mt-5 border-t border-white/10">
                             <button
+                                type="button"
                                 onClick={() => setShowProgressModal(false)}
-                                className="flex-1 bg-white/5 hover:bg-white/10 text-white py-3 rounded-xl font-bold transition-all"
+                                className="flex-1 h-[48px] bg-white/5 hover:bg-white/10 text-white font-bold rounded-2xl transition-all active:scale-98 text-xs tracking-wider uppercase border border-white/10 flex items-center justify-center"
                             >
                                 Cancel
                             </button>
                             <button
+                                type="button"
                                 onClick={handleSaveProgress}
                                 disabled={isLoading || !progressReport.before || !progressReport.after}
-                                className="flex-1 bg-primary hover:bg-orange-600 text-white py-3 rounded-xl font-bold transition-all disabled:opacity-50"
+                                className="flex-1 h-[48px] bg-gradient-to-r from-primary via-orange-500 to-orange-600 hover:brightness-110 text-white font-black rounded-2xl transition-all active:scale-98 text-xs tracking-wider uppercase shadow-lg shadow-primary/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-primary/40"
                             >
-                                {isLoading ? 'Saving...' : 'Save Report'}
+                                {isLoading ? (
+                                    <>
+                                        <Spinner size="sm" color="text-white" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle size={15} />
+                                        Report Save
+                                    </>
+                                )}
                             </button>
                         </div>
                     </div>
@@ -2552,6 +2912,32 @@ const MechanicJobDetailScreen: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {/* Realtime Live Route Map Modal */}
+            <LiveRouteMapModal
+                isOpen={showLiveRouteModal}
+                onClose={() => setShowLiveRouteModal(false)}
+                customerLocation={booking.location || (customer?.lat && customer?.lng ? { lat: customer.lat, lng: customer.lng, address: customer.address } : null)}
+                customerImageUrl={booking.customerPhoto || booking.customerImage || booking.customerAvatar || customer?.picture || customer?.imageUrl || null}
+                customerName={booking.customerName || customer?.name || 'Customer'}
+                customerPhone={booking.customerPhone || customer?.phone || ''}
+                customerVehicle={booking.vehicle ? `${booking.vehicle.year || ''} ${booking.vehicle.make || ''} ${booking.vehicle.model || ''}`.trim() : customer?.vehicles?.[0] ? `${customer.vehicles[0].year || ''} ${customer.vehicles[0].make || ''} ${customer.vehicles[0].model || ''}`.trim() : ''}
+                customerAddress={booking.location?.address || customer?.address || ''}
+                mechanicLocation={mechanicCurrentLocation || (booking.mechanicLocation?.lat && booking.mechanicLocation?.lng ? { lat: booking.mechanicLocation.lat, lng: booking.mechanicLocation.lng } : null) || (mechanic?.lat && mechanic?.lng ? { lat: mechanic.lat, lng: mechanic.lng } : null)}
+                mechanic={mechanic}
+                viewMode="mechanic"
+                title={`Live Navigation — Job #${bookingSequenceId || booking.id.slice(-6)}`}
+                status={booking.status}
+                eta={booking.eta || (etaMinutes ? `${etaMinutes} mins away` : null)}
+                etaNote={booking.etaNote || etaNote || null}
+                onCallCustomer={handleCall}
+                onChatCustomer={() => {
+                    setShowLiveRouteModal(false);
+                    setShowChatModal(true);
+                }}
+                onOpenExternalNav={handleDirectNavigation}
+                appLogoUrl={db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}
+            />
         </div >
     );
 };

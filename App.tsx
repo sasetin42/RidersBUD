@@ -27,6 +27,7 @@ import { Shield } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
+import { isGeolocationPermissionDenied, safeGetCurrentPosition, safeWatchPosition, safeClearWatch, initPermissionMonitor, onPermissionChange } from './utils/locationHelper';
 
 const LoginScreen = React.lazy(() => import('./pages/LoginScreen'));
 const SignUpScreen = React.lazy(() => import('./pages/SignUpScreen'));
@@ -230,6 +231,9 @@ const AppContent: React.FC = () => {
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
 
+        // Prime the geolocation permission cache early so all subsequent checks are synchronous
+        initPermissionMonitor();
+
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
@@ -407,57 +411,50 @@ const AppContent: React.FC = () => {
         const isNative = Capacitor.isNativePlatform();
 
         const runWebGeolocation = async () => {
-            if (!('geolocation' in navigator)) {
+            const isDenied = await isGeolocationPermissionDenied();
+            if (isDenied) {
                 setIsLocationBlocked(true);
-                setLocationError("Geolocation is not supported by your device/browser.");
                 setLocationChecking(false);
+                handleError({
+                    code: 1, // PERMISSION_DENIED
+                    message: "Geolocation permission has been blocked or ignored in browser settings.",
+                    PERMISSION_DENIED: 1,
+                    POSITION_UNAVAILABLE: 2,
+                    TIMEOUT: 3
+                } as GeolocationPositionError);
                 return;
             }
 
-            // Check if permission is already explicitly denied to avoid triggering repeated browser warnings
-            if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
-                try {
-                    const status = await navigator.permissions.query({ name: 'geolocation' });
-                    if (status.state === 'denied') {
-                        setIsLocationBlocked(true);
-                        setLocationChecking(false);
+            safeGetCurrentPosition(
+                handleSuccess,
+                async (error) => {
+                    if (error.code === error.PERMISSION_DENIED) {
+                        handleError(error);
+                        return;
+                    }
+                    const denied = await isGeolocationPermissionDenied();
+                    if (denied) {
                         handleError({
-                            code: 1, // PERMISSION_DENIED
-                            message: "Geolocation permission has been blocked in browser settings.",
+                            code: 1,
+                            message: "Geolocation permission has been blocked or ignored in browser settings.",
                             PERMISSION_DENIED: 1,
                             POSITION_UNAVAILABLE: 2,
                             TIMEOUT: 3
                         } as GeolocationPositionError);
                         return;
                     }
-                } catch (_) {}
-            }
-
-            try {
-                navigator.geolocation.getCurrentPosition(
-                    handleSuccess,
-                    (error) => {
-                        if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
-                            navigator.geolocation.getCurrentPosition(
-                                handleSuccess,
-                                handleError,
-                                { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-                            );
-                        } else {
-                            handleError(error);
-                        }
-                    },
-                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
-                );
-            } catch (err) {
-                handleError({
-                    code: 1,
-                    message: "Geolocation access error",
-                    PERMISSION_DENIED: 1,
-                    POSITION_UNAVAILABLE: 2,
-                    TIMEOUT: 3
-                } as GeolocationPositionError);
-            }
+                    if (error.code === error.TIMEOUT || error.code === error.POSITION_UNAVAILABLE) {
+                        safeGetCurrentPosition(
+                            handleSuccess,
+                            handleError,
+                            { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+                        );
+                    } else {
+                        handleError(error);
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+            );
         };
 
         if (isNative) {
@@ -844,20 +841,22 @@ const AppContent: React.FC = () => {
     useEffect(() => {
         if (!isAuthenticated || !user || !updateCustomerLocation) return;
 
+        let intervalId: ReturnType<typeof setInterval> | null = null;
+
         const updateLocation = async () => {
             const now = Date.now();
             if (isCustomerLocationUpdatingRef.current || (now - lastCustomerLocationUpdateRef.current) < 25000) {
                 return;
             }
 
-            // Check if permission is denied before executing to prevent repeated browser console errors
-            if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
-                try {
-                    const status = await navigator.permissions.query({ name: 'geolocation' });
-                    if (status.state === 'denied') {
-                        return;
-                    }
-                } catch (_) {}
+            const isDenied = await isGeolocationPermissionDenied();
+            if (isDenied) {
+                // Stop polling — no point retrying when browser has blocked geolocation
+                if (intervalId !== null) {
+                    clearInterval(intervalId);
+                    intervalId = null;
+                }
+                return;
             }
 
             if ('geolocation' in navigator) {
@@ -876,31 +875,44 @@ const AppContent: React.FC = () => {
                     onComplete();
                 };
 
-                try {
-                    navigator.geolocation.getCurrentPosition(
-                        handleSuccess,
-                        (error) => {
-                            if (error.code === error.TIMEOUT) {
-                                navigator.geolocation.getCurrentPosition(
-                                    handleSuccess,
-                                    onComplete,
-                                    { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
-                                );
-                            } else {
-                                onComplete();
-                            }
-                        },
-                        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-                    );
-                } catch (_) {
-                    onComplete();
-                }
+                safeGetCurrentPosition(
+                    handleSuccess,
+                    (error) => {
+                        if (error.code === error.TIMEOUT) {
+                            safeGetCurrentPosition(
+                                handleSuccess,
+                                onComplete,
+                                { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+                            );
+                        } else {
+                            onComplete();
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+                );
             }
         };
 
         updateLocation();
-        const intervalId = setInterval(updateLocation, 60000);
-        return () => clearInterval(intervalId);
+        intervalId = setInterval(updateLocation, 60000);
+
+        // Also listen for permission changes — restart polling if permission is re-granted
+        const unsubscribe = onPermissionChange((state) => {
+            if (state === 'denied') {
+                if (intervalId !== null) {
+                    clearInterval(intervalId);
+                    intervalId = null;
+                }
+            } else if (state === 'granted' && intervalId === null) {
+                updateLocation();
+                intervalId = setInterval(updateLocation, 60000);
+            }
+        });
+
+        return () => {
+            if (intervalId !== null) clearInterval(intervalId);
+            unsubscribe();
+        };
     }, [isAuthenticated, user, updateCustomerLocation]);
 
     // Serialized active booking status to trigger effects when statuses change
@@ -921,49 +933,58 @@ const AppContent: React.FC = () => {
         const isNative = Capacitor.isNativePlatform();
 
         if (activeBooking && watchIdRef.current === null) {
-            if (isNative) {
-                Geolocation.watchPosition(
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                    (position) => {
-                        if (position) {
-                            updateCustomerLocation(user.id, {
-                                lat: position.coords.latitude,
-                                lng: position.coords.longitude
-                            });
+            // Guard: only attempt geolocation if permission is not denied
+            isGeolocationPermissionDenied().then(isDenied => {
+                if (isDenied || watchIdRef.current !== null) return;
+
+                if (isNative) {
+                    Geolocation.watchPosition(
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                        (position) => {
+                            if (position) {
+                                updateCustomerLocation(user.id, {
+                                    lat: position.coords.latitude,
+                                    lng: position.coords.longitude
+                                });
+                            }
                         }
-                    }
-                ).then((id) => {
-                    watchIdRef.current = id;
-                }).catch(() => {
-                    // Fallback to web watch if native watch fails
-                    watchIdRef.current = navigator.geolocation.watchPosition(
+                    ).then((id) => {
+                        watchIdRef.current = id;
+                    }).catch(() => {
+                        // Fallback to web watch if native watch fails
+                        safeWatchPosition(
+                            (position) => {
+                                updateCustomerLocation(user.id, {
+                                    lat: position.coords.latitude,
+                                    lng: position.coords.longitude
+                                });
+                            },
+                            () => {},
+                            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                        ).then(id => {
+                            watchIdRef.current = id;
+                        });
+                    });
+                } else {
+                    safeWatchPosition(
                         (position) => {
                             updateCustomerLocation(user.id, {
                                 lat: position.coords.latitude,
                                 lng: position.coords.longitude
                             });
                         },
-                        (error) => {},
+                        () => {},
                         { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                    );
-                });
-            } else {
-                watchIdRef.current = navigator.geolocation.watchPosition(
-                    (position) => {
-                        updateCustomerLocation(user.id, {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude
-                        });
-                    },
-                    (error) => {},
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                );
-            }
+                    ).then(id => {
+                        watchIdRef.current = id;
+                    });
+                }
+            });
         } else if (!activeBooking && watchIdRef.current !== null) {
             if (isNative && typeof watchIdRef.current === 'string') {
                 Geolocation.clearWatch({ id: watchIdRef.current });
             } else if (typeof watchIdRef.current === 'number') {
-                navigator.geolocation.clearWatch(watchIdRef.current);
+                safeClearWatch(watchIdRef.current);
             }
             watchIdRef.current = null;
         }
@@ -984,49 +1005,58 @@ const AppContent: React.FC = () => {
         const isNative = Capacitor.isNativePlatform();
 
         if (activeJob && mechanicWatchIdRef.current === null) {
-            if (isNative) {
-                Geolocation.watchPosition(
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                    (position) => {
-                        if (position) {
-                            updateMechanicLocation(mechanic.id, {
-                                lat: position.coords.latitude,
-                                lng: position.coords.longitude
-                            }, activeJob.id);
+            // Guard: only attempt geolocation if permission is not denied
+            isGeolocationPermissionDenied().then(isDenied => {
+                if (isDenied || mechanicWatchIdRef.current !== null) return;
+
+                if (isNative) {
+                    Geolocation.watchPosition(
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                        (position) => {
+                            if (position) {
+                                updateMechanicLocation(mechanic.id, {
+                                    lat: position.coords.latitude,
+                                    lng: position.coords.longitude
+                                }, activeJob.id);
+                            }
                         }
-                    }
-                ).then((id) => {
-                    mechanicWatchIdRef.current = id;
-                }).catch(() => {
-                    // Fallback to web watch if native watch fails
-                    mechanicWatchIdRef.current = navigator.geolocation.watchPosition(
+                    ).then((id) => {
+                        mechanicWatchIdRef.current = id;
+                    }).catch(() => {
+                        // Fallback to web watch if native watch fails
+                        safeWatchPosition(
+                            (position) => {
+                                updateMechanicLocation(mechanic.id, {
+                                    lat: position.coords.latitude,
+                                    lng: position.coords.longitude
+                                }, activeJob.id);
+                            },
+                            () => {},
+                            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                        ).then(id => {
+                            mechanicWatchIdRef.current = id;
+                        });
+                    });
+                } else {
+                    safeWatchPosition(
                         (position) => {
                             updateMechanicLocation(mechanic.id, {
                                 lat: position.coords.latitude,
                                 lng: position.coords.longitude
                             }, activeJob.id);
                         },
-                        (error) => {},
+                        () => {},
                         { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                    );
-                });
-            } else {
-                mechanicWatchIdRef.current = navigator.geolocation.watchPosition(
-                    (position) => {
-                        updateMechanicLocation(mechanic.id, {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude
-                        }, activeJob.id);
-                    },
-                    (error) => {},
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                );
-            }
+                    ).then(id => {
+                        mechanicWatchIdRef.current = id;
+                    });
+                }
+            });
         } else if (!activeJob && mechanicWatchIdRef.current !== null) {
             if (isNative && typeof mechanicWatchIdRef.current === 'string') {
                 Geolocation.clearWatch({ id: mechanicWatchIdRef.current });
             } else if (typeof mechanicWatchIdRef.current === 'number') {
-                navigator.geolocation.clearWatch(mechanicWatchIdRef.current);
+                safeClearWatch(mechanicWatchIdRef.current);
             }
             mechanicWatchIdRef.current = null;
         }

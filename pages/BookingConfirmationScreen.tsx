@@ -53,7 +53,7 @@ const BookingConfirmationScreen: React.FC = () => {
                 } catch (e) {}
             }
 
-            const existingBooking = db?.bookings?.find(b => b.id === parsedBookingId);
+            const existingBooking = database?.bookings?.find(b => b.id === parsedBookingId);
             if (existingBooking) {
                 if (cancelAmount === 0) {
                     cancelAmount = existingBooking.totalAmount || existingBooking.price || 0;

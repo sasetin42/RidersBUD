@@ -415,12 +415,23 @@ const HomeScreen: React.FC = () => {
                     specialistExperience: mechanic?.experience || '5+ Years Certified',
                     specialistLocation: mechanic?.currentLocation || 'Manila Hub',
                     totalAmount: b.totalAmount || subtotal + laborFee + platformFee - discount,
+                    downpaymentAmount: b.downpaymentAmount || b.paidAmount || (b.totalAmount ? b.totalAmount * 0.5 : (subtotal + laborFee + platformFee - discount) * 0.5),
+                    paidAmount: b.paidAmount || 0,
                     subtotal,
                     laborFee,
                     platformFee,
                     discount,
                     paymentMethod: b.paymentMethod || 'HitPay / GCash',
-                    paymentStatus: b.isVerified ? 'Paid / Verified' : (b.paymentStatus || 'Pending Verification'),
+                    paymentStatus: (() => {
+                        const paidAmt = b.paidAmount || 0;
+                        const totAmt = b.totalAmount || (subtotal + laborFee + platformFee - discount);
+                        const isFullyPaid = (b.paymentStatus === 'paid' || b.isPaid) && (paidAmt >= totAmt || totAmt === 0);
+                        if (isFullyPaid) return 'Fully Paid';
+                        if (b.paymentStatus === 'downpayment_paid' || b.paymentStatus === 'partial' || b.isVerified || paidAmt > 0) {
+                            return '50% DP PAID';
+                        }
+                        return b.paymentStatus || 'Pending DP';
+                    })(),
                     isVerified: !!b.isVerified,
                     isCancelable: !isCompleted && !isCancelled && !isOngoing,
                     isCancelled: isCancelled,
@@ -1114,9 +1125,14 @@ const HomeScreen: React.FC = () => {
 
                                                 {/* Details Content */}
                                                 <div className="flex-1 min-w-0 space-y-1">
-                                                    <h3 className="text-white font-bold text-xs sm:text-sm leading-snug group-hover:text-primary transition-colors truncate">
-                                                        {tx.title}
-                                                    </h3>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <h3 className="text-white font-bold text-xs sm:text-sm leading-snug group-hover:text-primary transition-colors truncate">
+                                                            {tx.title}
+                                                        </h3>
+                                                        <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap shrink-0">
+                                                            ₱{tx.totalAmount.toLocaleString()}
+                                                        </span>
+                                                    </div>
 
                                                     {/* Date & Schedule */}
                                                     <p className="text-[10px] sm:text-[11px] text-gray-300 font-medium flex items-center gap-1.5">
@@ -1170,8 +1186,9 @@ const HomeScreen: React.FC = () => {
                                             <div className="flex items-center justify-between gap-2 pt-2.5 sm:pt-3 border-t border-white/5">
                                                 {/* Price & Payment Badge */}
                                                 <div className="flex items-center gap-1.5 min-w-0">
+                                                    {/* Show Downpayment amount if 50% DP PAID, else show total or remaining */}
                                                     <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
-                                                        ₱{tx.totalAmount.toLocaleString()}
+                                                        ₱{(tx.paymentStatus === '50% DP PAID' ? (tx.downpaymentAmount || tx.totalAmount * 0.5) : tx.totalAmount).toLocaleString()}
                                                     </span>
                                                     <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-lg border uppercase whitespace-nowrap truncate ${
                                                         tx.isVerified || (typeof tx.paymentStatus === 'string' && tx.paymentStatus.toLowerCase().includes('paid'))
@@ -1184,24 +1201,6 @@ const HomeScreen: React.FC = () => {
 
                                                 {/* Action Buttons */}
                                                 <div className="flex items-center gap-1.5 shrink-0">
-                                                    {/* Chat trigger */}
-                                                    {(tx.specialistName || isMaint || isLiaison || isDrive || isTow) && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                if (isMaint && tx.id) {
-                                                                    navigate(`/customer-portal/booking-detail/${tx.id}?chat=true`);
-                                                                } else {
-                                                                    navigate('/customer-portal/support-chat');
-                                                                }
-                                                            }}
-                                                            className="text-xs font-bold text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-white/10 transition flex items-center justify-center shrink-0"
-                                                            title="Chat / Inquire"
-                                                        >
-                                                            <MessageSquare size={12} />
-                                                        </button>
-                                                    )}
-
                                                     {/* Live Tracking button */}
                                                     {tx.isActive && (
                                                         <button
@@ -1213,21 +1212,12 @@ const HomeScreen: React.FC = () => {
                                                                     setSelectedDetailsBooking(tx);
                                                                 }
                                                             }}
-                                                            className="text-[10px] sm:text-xs font-bold text-white bg-primary hover:bg-orange-600 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl transition flex items-center gap-1 shadow-sm shadow-primary/20"
+                                                            className="text-[9px] font-black text-white bg-primary hover:bg-orange-600 px-2 py-0.5 rounded-md transition flex items-center gap-1 shadow-sm shadow-primary/20"
                                                         >
-                                                            <Navigation size={11} />
+                                                            <Navigation size={9} />
                                                             <span>Track</span>
                                                         </button>
                                                     )}
-
-                                                    {/* View Details modal trigger */}
-                                                    <button
-                                                        onClick={() => setSelectedDetailsBooking(tx)}
-                                                        className="text-[10px] sm:text-xs font-bold text-gray-200 hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl border border-white/10 transition flex items-center gap-1"
-                                                    >
-                                                        <Eye size={11} className="text-gray-400" />
-                                                        <span>Details</span>
-                                                    </button>
 
                                                     {/* Cancel option if cancelable AND NOT already cancelled */}
                                                     {tx.isCancelable && !tx.isCancelled && (

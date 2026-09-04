@@ -460,148 +460,85 @@ const BookingHistoryScreen: React.FC = () => {
                                     const totalAmount = booking.totalAmount || booking.service?.price || 0;
                                     
                                     return (
-                                        <div key={booking.id} className="relative group">
-                                            <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/30 to-orange-500/20 rounded-2xl opacity-5 group-hover:opacity-20 transition duration-300 blur-sm"></div>
-                                            <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5 bg-[#16161C] border border-white/10 hover:border-primary/30 rounded-2xl p-5 sm:p-6 transition-all duration-300 shadow-xl">
-                                                <div className="flex items-start gap-4 flex-1 min-w-0">
-                                                    {/* Mechanic Profile Image */}
-                                                    <div className="w-14 h-14 rounded-xl border border-white/10 overflow-hidden flex-shrink-0 bg-neutral-900 flex items-center justify-center relative shadow-inner">
-                                                        {mechanicImage ? (
-                                                            <img src={mechanicImage} alt={mechanicName} className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-900 flex items-center justify-center font-black text-sm text-gray-400 font-sans">
-                                                                {mechanicName.charAt(0).toUpperCase()}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    
-                                                    {/* Details */}
-                                                    <div className="flex-1 min-w-0 space-y-1.5">
-                                                        <div className="flex flex-wrap items-center gap-2">
-                                                            <span className="text-[10px] font-black text-primary font-mono tracking-wider">
-                                                                JOB ID #{seqId}
+                                        <div
+                                            key={booking.id}
+                                            onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
+                                            className="group relative cursor-pointer overflow-hidden rounded-xl bg-[#16161C] border border-white/10 hover:border-primary/40 transition-all duration-200 active:scale-[0.99] shadow-md p-3 sm:p-3.5"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                {/* Mechanic Profile Image */}
+                                                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-lg border border-white/10 overflow-hidden flex-shrink-0 bg-neutral-900 flex items-center justify-center shadow-inner">
+                                                    {mechanicImage ? (
+                                                        <img src={mechanicImage} alt={mechanicName} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-900 flex items-center justify-center font-black text-xs text-gray-400">
+                                                            {mechanicName.charAt(0).toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Core Details */}
+                                                <div className="flex-1 min-w-0">
+                                                    {/* Top Row: Job ID, Status Badge & Price */}
+                                                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                                                        <div className="flex items-center gap-1.5 min-w-0">
+                                                            <span className="text-[10px] font-black text-primary font-mono tracking-tight shrink-0">
+                                                                #{seqId}
                                                             </span>
-                                                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black tracking-wider uppercase ${booking.status === 'Completed' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
+                                                            <span className={`px-1.5 py-0.2 rounded text-[8px] font-black tracking-wider uppercase shrink-0 ${booking.status === 'Completed' ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-red-500/15 text-red-400 border border-red-500/30'}`}>
                                                                 {booking.status}
                                                             </span>
-                                                            <span className="text-sm font-black text-primary ml-auto lg:ml-0">
-                                                                {totalAmount > 0 ? `₱${totalAmount.toLocaleString()}` : 'For Quotation'}
-                                                            </span>
-                                                        </div>
-                                                        <h3 className="text-sm font-bold text-white truncate tracking-tight">
-                                                            {serviceNames}
-                                                        </h3>
-                                                        <p className="text-[10px] text-gray-400 font-bold truncate flex items-center gap-1.5">
-                                                            <Wrench size={10} className="text-primary flex-shrink-0" />
-                                                            {vehicleInfo}
-                                                        </p>
-                                                        <p className="text-[10px] text-gray-500 font-bold truncate flex items-center gap-3 pb-1">
-                                                            <span className="flex items-center gap-1">
-                                                                <Calendar size={10} className="text-gray-600 flex-shrink-0" />
-                                                                {new Date(booking.date.replace(/-/g, '/')).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                            </span>
-                                                            <span className="flex items-center gap-1">
-                                                                <Clock size={10} className="text-gray-600 flex-shrink-0" />
-                                                                {booking.time}
-                                                            </span>
-                                                        </p>
- 
-                                                        {booking.additionalCosts && booking.additionalCosts.length > 0 && (() => {
-                                                            const additionalCostsTotal = booking.additionalCosts.reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-                                                            return (
-                                                                <div className="mt-2.5 p-3 bg-black/40 border border-white/5 rounded-xl space-y-1.5 text-[10px] max-w-sm">
-                                                                    <p className="font-black text-primary tracking-wider uppercase text-[8px] font-mono flex items-center gap-1">
-                                                                        <Wrench size={9} /> Additional Costs Details:
-                                                                    </p>
-                                                                    {booking.additionalCosts.map((cost: any, idx: number) => (
-                                                                        <div key={idx} className="flex justify-between items-center text-gray-400">
-                                                                            <span>• {cost.description || cost.item}</span>
-                                                                            <span className="font-bold text-white font-mono">₱{Number(cost.price).toLocaleString()}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                    <div className="h-px bg-white/5 my-1"></div>
-                                                                    <div className="flex justify-between items-center font-black text-emerald-400 text-[9px] uppercase tracking-wider font-mono">
-                                                                        <span>Total Service Amount</span>
-                                                                        <span>{(totalAmount + additionalCostsTotal) > 0 ? `₱${(totalAmount + additionalCostsTotal).toLocaleString()}` : 'For Quotation'}</span>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
- 
-                                                {/* Actions Section */}
-                                                <div className="flex flex-wrap items-center gap-2 lg:justify-end flex-shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-white/5">
-                                                    {/* Booking Summary Button */}
-                                                    <button
-                                                        onClick={() => navigate(`/customer-portal/booking-detail/${booking.id}`)}
-                                                        className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white font-bold py-2.5 px-3.5 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 flex items-center gap-1.5 border border-white/5"
-                                                    >
-                                                        <ClipboardList size={12} />
-                                                        Summary
-                                                    </button>
- 
-                                                    {/* Appointment Button */}
-                                                    <button
-                                                        onClick={() => navigate(`/customer-portal/booking-confirmation`, { state: { bookings: [booking] } })}
-                                                        className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white font-bold py-2.5 px-3.5 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 flex items-center gap-1.5 border border-white/5"
-                                                    >
-                                                        <Calendar size={12} />
-                                                        Appointment
-                                                    </button>
- 
-                                                    {booking.status === 'Completed' && (
-                                                        <button
-                                                            onClick={() => handleDownloadInvoice(booking)}
-                                                            className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white font-bold py-2.5 px-3.5 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 flex items-center gap-1.5 border border-white/5"
-                                                        >
-                                                            <FileText size={12} />
-                                                            Invoice
-                                                        </button>
-                                                    )}
- 
-                                                    <button
-                                                        onClick={() => {
-                                                            const serviceId = booking.services && booking.services.length > 0 ? booking.services[0].id : booking.service?.id;
-                                                            if (serviceId) {
-                                                                navigate(`/customer-portal/booking/${serviceId}`);
-                                                            } else {
-                                                                 navigate(`/customer-portal/booking`);
-                                                            }
-                                                        }}
-                                                        className="bg-primary/10 hover:bg-primary text-primary hover:text-black font-black py-2.5 px-4 rounded-xl text-[10px] tracking-wider uppercase transition-all duration-300 active:scale-95 border border-primary/20 hover:border-primary"
-                                                    >
-                                                        Book Again
-                                                    </button>
- 
-                                                    {/* Rate / Edit Review Button */}
-                                                    {booking.status === 'Completed' && booking.mechanic && (
-                                                        <div className="flex-shrink-0">
-                                                            {!booking.review ? (
-                                                                <button
-                                                                    onClick={() => handleOpenReviewModal(booking)}
-                                                                    className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 font-bold py-2 px-3 rounded-lg text-[10px] tracking-wider uppercase border border-yellow-500/20 transition-all flex items-center gap-1"
-                                                                >
-                                                                    <Star size={12} className="fill-yellow-500 text-yellow-500" />
-                                                                    Rate
-                                                                </button>
-                                                            ) : (
-                                                                isReviewEditable(booking) ? (
-                                                                    <button
-                                                                        onClick={() => handleOpenReviewModal(booking)}
-                                                                        className="bg-gray-700/50 hover:bg-gray-700 text-white font-bold py-2 px-3 rounded-lg text-[10px] tracking-wider uppercase border border-gray-600 transition-all"
-                                                                    >
-                                                                        Edit Review
-                                                                    </button>
-                                                                ) : (
-                                                                    <div className="flex items-center gap-1 text-yellow-500 font-bold px-2 py-1.5 text-[10px]">
-                                                                        <span>★ {booking.review.rating}</span>
-                                                                        <span className="text-gray-500 font-normal">Reviewed</span>
-                                                                    </div>
-                                                                )
+                                                            {booking.review && (
+                                                                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-yellow-400 bg-yellow-500/10 px-1 rounded border border-yellow-500/20">
+                                                                    <Star size={8} className="fill-yellow-400" />
+                                                                    {booking.review.rating}
+                                                                </span>
                                                             )}
                                                         </div>
-                                                    )}
+                                                        <span className="text-xs sm:text-sm font-black text-primary font-mono shrink-0">
+                                                            {totalAmount > 0 ? `₱${totalAmount.toLocaleString()}` : 'Quotation'}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Middle Row: Service Name */}
+                                                    <h3 className="text-xs sm:text-sm font-bold text-white truncate leading-snug group-hover:text-primary transition-colors">
+                                                        {serviceNames}
+                                                    </h3>
+
+                                                    {/* Bottom Row: Vehicle & Date / Time */}
+                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-[9px] sm:text-[10px] text-gray-400 font-medium">
+                                                        <span className="flex items-center gap-1 text-gray-300 truncate max-w-[140px] sm:max-w-none">
+                                                            <Wrench size={10} className="text-primary/70 shrink-0" />
+                                                            {vehicleInfo}
+                                                        </span>
+                                                        <span className="text-gray-600 hidden xs:inline">•</span>
+                                                        <span className="flex items-center gap-1 text-gray-500 shrink-0">
+                                                            <Calendar size={10} className="text-gray-600 shrink-0" />
+                                                            {new Date(booking.date.replace(/-/g, '/')).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                        </span>
+                                                        <span className="flex items-center gap-1 text-gray-500 shrink-0">
+                                                            <Clock size={10} className="text-gray-600 shrink-0" />
+                                                            {booking.time}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Additional Costs subtle line if present */}
+                                                    {booking.additionalCosts && booking.additionalCosts.length > 0 && (() => {
+                                                        const additionalCostsTotal = booking.additionalCosts.reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                                                        return (
+                                                            <div className="mt-1.5 flex items-center justify-between text-[9px] bg-black/40 px-2 py-1 rounded border border-white/5 text-gray-400">
+                                                                <span className="truncate">Includes {booking.additionalCosts.length} add-on(s)</span>
+                                                                <span className="font-bold text-emerald-400 font-mono ml-2 shrink-0">
+                                                                    Total: ₱{(totalAmount + additionalCostsTotal).toLocaleString()}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+
+                                                {/* Compact Right Chevron Indicator */}
+                                                <div className="flex-shrink-0 text-gray-600 group-hover:text-primary transition-transform duration-200 group-hover:translate-x-0.5 pl-1">
+                                                    <ArrowRight size={14} />
                                                 </div>
                                             </div>
                                         </div>

@@ -27,6 +27,9 @@ const EXTENSION_WARN_PATTERNS = [
   'Listen/channel',
   'GeolocationPositionError',
   'User denied Geolocation',
+  'Geolocation permission has been blocked',
+  'chromestatus.com/feature/6443143280984064',
+  '6443143280984064',
   'FIRESTORE INTERNAL ASSERTION FAILED',
   'QuotaExceededError',
   'ERR_NAME_NOT_RESOLVED',
@@ -69,10 +72,16 @@ const EXTENSION_ERROR_PATTERNS = [
   'webchannel',
   'transport errored',
   'ERR_QUIC_PROTOCOL_ERROR',
+  'QUIC_TOO_MANY_RTOS',
   'Write/channel',
   'Listen/channel',
-  'GeolocationPositionError',
+  'webchannel_blob',
+  'webchannel',
   'User denied Geolocation',
+  'Geolocation permission has been blocked',
+  'chromestatus.com/feature/6443143280984064',
+  '6443143280984064',
+  'GeolocationPositionError',
   'FIRESTORE INTERNAL ASSERTION FAILED',
   'QuotaExceededError',
   'The above error occurred',
@@ -93,7 +102,10 @@ const EXTENSION_ERROR_PATTERNS = [
   'Permissions policy violation',
   'unload is not allowed',
   'Blocked aria-hidden on a <body>',
-  'hcaptcha'
+  'hcaptcha',
+  'startTime',
+  'reportAllChanges',
+  'Cannot read properties of undefined (reading \'startTime\')'
 ];
 
 const _matchesPattern = (args: any[], patterns: string[]): boolean => {

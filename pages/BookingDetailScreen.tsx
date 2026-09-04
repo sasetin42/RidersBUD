@@ -25,6 +25,7 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db as firestore, rtdb } from '../firebase';
 import { Geolocation } from '@capacitor/geolocation';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
+import { safeWatchPosition, safeClearWatch, isGeolocationPermissionDenied } from '../utils/locationHelper';
 
 declare const L: any;
 
@@ -84,8 +85,10 @@ const MiniMap: React.FC<{ lat: number, lng: number }> = React.memo(({ lat, lng }
             }).setView([lat, lng], 15);
 
             // Free OpenStreetMap Tile Layer
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
+                subdomains: 'abc',
+                crossOrigin: true,
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(mapInstance.current);
 
@@ -388,11 +391,16 @@ const BookingDetailScreen: React.FC = () => {
     useEffect(() => {
         const currentStatus = booking?.status;
         const currentLocation = booking?.location;
-        if (!bookingId || currentStatus !== 'En Route') {
+        if (!bookingId || (currentStatus !== 'En Route' && currentStatus !== 'Mechanic Assigned')) {
             setMechanicLiveLocation(null);
             setEta(null);
             setDistance(null);
             return;
+        }
+
+        // 1. If mechanic set a custom ETA directly on the booking document, respect it
+        if (booking?.eta) {
+            setEta(typeof booking.eta === 'number' ? `${booking.eta} mins away` : String(booking.eta));
         }
 
         const trackingRef = ref(rtdb, `tracking/${bookingId}/mechanicLocation`);
@@ -405,18 +413,21 @@ const BookingDetailScreen: React.FC = () => {
                     const dist = calculateDistance(data.lat, data.lng, currentLocation.lat, currentLocation.lng);
                     setDistance(dist);
                     
-                    const timeInMinutes = Math.round(dist / (30 / 60));
-                    if (timeInMinutes < 1) {
-                        setEta('Arriving now');
-                    } else {
-                        setEta(`${timeInMinutes} mins away`);
+                    // Only auto-derive ETA if mechanic hasn't manually assigned a custom ETA
+                    if (!booking?.eta) {
+                        const timeInMinutes = Math.round(dist / (30 / 60));
+                        if (timeInMinutes < 1) {
+                            setEta('Arriving now');
+                        } else {
+                            setEta(`${timeInMinutes} mins away`);
+                        }
                     }
                 }
             }
         });
 
         return () => { try { unsubscribe(); } catch (_) {} };
-    }, [bookingId, booking?.status, booking?.location]);
+    }, [bookingId, booking?.status, booking?.location, booking?.eta]);
 
     // Customer live location tracking — writes to RTDB for admin map
     useEffect(() => {
@@ -435,33 +446,39 @@ const BookingDetailScreen: React.FC = () => {
                 }).catch(() => {});
             };
 
-            if (isNative) {
-                Geolocation.watchPosition(
-                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                    (position) => {
-                        if (position) {
-                            handleSuccess(position.coords.latitude, position.coords.longitude);
+            isGeolocationPermissionDenied().then(isDenied => {
+                if (isDenied) return;
+
+                if (isNative) {
+                    Geolocation.watchPosition(
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
+                        (position) => {
+                            if (position) {
+                                handleSuccess(position.coords.latitude, position.coords.longitude);
+                            }
                         }
-                    }
-                ).then((id) => {
-                    nativeWatchId = id;
-                }).catch((err) => {
-                    console.warn('[Customer Location] Native watch failed, falling back to web watch:', err);
-                    if ('geolocation' in navigator) {
-                        webWatchId = navigator.geolocation.watchPosition(
+                    ).then((id) => {
+                        nativeWatchId = id;
+                    }).catch((err) => {
+                        console.warn('[Customer Location] Native watch failed, falling back to web watch:', err);
+                        safeWatchPosition(
                             (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
                             () => {},
                             { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                        );
-                    }
-                });
-            } else if ('geolocation' in navigator) {
-                webWatchId = navigator.geolocation.watchPosition(
-                    (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
-                    () => {},
-                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                );
-            }
+                        ).then(id => {
+                            webWatchId = id;
+                        });
+                    });
+                } else {
+                    safeWatchPosition(
+                        (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                        () => {},
+                        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                    ).then(id => {
+                        webWatchId = id;
+                    });
+                }
+            });
         }
 
         return () => {
@@ -469,7 +486,7 @@ const BookingDetailScreen: React.FC = () => {
                 Geolocation.clearWatch({ id: nativeWatchId }).catch(() => {});
             }
             if (webWatchId !== null) {
-                navigator.geolocation.clearWatch(webWatchId);
+                safeClearWatch(webWatchId);
             }
             // Clean up RTDB location when leaving the page
             if (bookingId) {
@@ -768,22 +785,56 @@ const BookingDetailScreen: React.FC = () => {
                 </div>
 
                 {/* Status Explanation Alert banner */}
-                <div className="rounded-xl p-3 bg-[#161618] border border-white/5 flex items-center gap-2.5">
-                    <div className="p-1.5 bg-primary/10 rounded-lg text-primary flex-shrink-0">
-                        <AlertCircle size={15} />
+                <div className="rounded-2xl p-3.5 bg-[#161618] border border-white/5 space-y-2.5">
+                    <div className="flex items-center gap-2.5">
+                        <div className="p-1.5 bg-primary/10 rounded-lg text-primary flex-shrink-0">
+                            <AlertCircle size={15} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="font-bold text-[11px] text-white">Status Update</p>
+                            <p className="text-[10px] text-gray-400 truncate">
+                                {status === 'Upcoming' && 'Your booking is confirmed and scheduled.'}
+                                {status === 'Mechanic Assigned' && 'A professional mechanic has been assigned to your service.'}
+                                {status === 'En Route' && 'Your mechanic is on the way to your location.'}
+                                {status === 'In Progress' && 'Service is currently being performed.'}
+                                {status === 'Work Done' && 'Mechanic has finished work. Please confirm & release balance.'}
+                                {status === 'Completed' && 'Service has been completed successfully.'}
+                                {status === 'Cancelled' && 'This booking has been cancelled.'}
+                            </p>
+                        </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <p className="font-bold text-[11px] text-white">Status Update</p>
-                        <p className="text-[10px] text-gray-400 truncate">
-                            {status === 'Upcoming' && 'Your booking is confirmed and scheduled.'}
-                            {status === 'Mechanic Assigned' && 'A professional mechanic has been assigned to your service.'}
-                            {status === 'En Route' && 'Your mechanic is on the way to your location.'}
-                            {status === 'In Progress' && 'Service is currently being performed.'}
-                            {status === 'Work Done' && 'Mechanic has finished work. Please confirm & release balance.'}
-                            {status === 'Completed' && 'Service has been completed successfully.'}
-                            {status === 'Cancelled' && 'This booking has been cancelled.'}
-                        </p>
-                    </div>
+
+                    {/* Live ETA Card when En Route or Assigned */}
+                    {(status === 'En Route' || status === 'Mechanic Assigned') && (eta || (booking as any).eta) && (
+                        <div className="p-3 bg-gradient-to-r from-primary/15 via-[#1E1E24] to-black/60 border border-primary/30 rounded-xl flex items-center justify-between gap-3 animate-fadeIn">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary flex-shrink-0 relative">
+                                    <div className="absolute inset-0 bg-primary/20 rounded-lg animate-ping"></div>
+                                    <Navigation size={16} className="relative z-10 animate-pulse" />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[9px] font-black uppercase text-primary tracking-wider font-mono">Live Travel ETA</span>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    </div>
+                                    <p className="text-sm font-black text-white leading-tight">
+                                        {eta || (booking as any).eta || 'En Route'}
+                                    </p>
+                                    {(booking as any).etaNote && (
+                                        <p className="text-[10px] text-yellow-400 font-medium italic mt-0.5 truncate">
+                                            "{(booking as any).etaNote}"
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowLiveRouteModal(true)}
+                                className="px-3 py-1.5 bg-primary hover:bg-orange-600 text-white font-black text-[10px] uppercase tracking-wider rounded-lg shadow-md shadow-primary/20 transition-all flex items-center gap-1 shrink-0"
+                            >
+                                Track Map
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Payment Information Card (Online Gateway / HitPay / GCash) */}
@@ -1165,26 +1216,63 @@ const BookingDetailScreen: React.FC = () => {
                 </div>
 
                 {/* Split Timeline and Controls Section */}
-                <div className="bg-[#151515] rounded-[1.5rem] p-5 border border-white/5 flex flex-col min-h-[300px]">
-                    <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2">
+                <div className="bg-[#151515] rounded-[1.5rem] py-5 px-3.5 border border-white/5 flex flex-col min-h-[300px]">
+                    <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2 px-1">
                         <Clock size={14} />
                         Progress Timeline
                     </h2>
 
-                    <div className="flex gap-4 flex-grow">
-                        {/* Timeline Column */}
-                        <div className="w-[45%] relative pt-1 pb-1 flex flex-col justify-between">
-                            <div className="absolute left-[9px] top-3 bottom-3 w-[2px] bg-white/5"></div>
+                    <div className="flex gap-2.5 sm:gap-3 flex-grow">
+                        {/* Timeline Column - Mathematically Centered & Modernized */}
+                        <div className="w-[44%] relative py-1 flex flex-col justify-between">
                             {timelineSteps.map((step, idx) => {
                                 const isCompleted = idx <= currentStepIndex;
                                 const isCurrent = idx === currentStepIndex;
+                                const isLast = idx === timelineSteps.length - 1;
+                                const isNextCompleted = idx + 1 <= currentStepIndex;
+
                                 return (
-                                    <div key={step.status} className="relative flex items-center gap-3">
-                                        <div className={`w-5 h-5 rounded-full border-[3px] flex-shrink-0 z-10 transition-all ${isCompleted ? 'bg-primary border-[#151515] shadow-[0_0_10px_rgba(249,115,22,0.6)]' : 'bg-[#222] border-[#333]'}`}>
-                                            {isCompleted && <div className="hidden"></div>}
+                                    <div key={step.status} className="relative flex items-center gap-2.5 group">
+                                        {/* Node and Connecting Line Wrapper */}
+                                        <div className="relative flex flex-col items-center justify-center w-5 h-5 flex-shrink-0">
+                                            {/* Vertical Track Segment */}
+                                            {!isLast && (
+                                                <div 
+                                                    className={`absolute top-1/2 left-1/2 -translate-x-1/2 w-[2px] pointer-events-none transition-colors duration-300 ${
+                                                        isNextCompleted 
+                                                            ? 'bg-gradient-to-b from-[#FE7803] to-[#FE7803]/60 shadow-[0_0_6px_rgba(254,120,3,0.5)]' 
+                                                            : 'bg-white/10'
+                                                    }`} 
+                                                    style={{ height: 'calc(100% + 22px)' }}
+                                                />
+                                            )}
+
+                                            {/* Circular Dot Indicator */}
+                                            <div className={`relative z-10 w-4 h-4 rounded-full flex items-center justify-center transition-all duration-300 ${
+                                                isCurrent 
+                                                    ? 'bg-[#FE7803] ring-4 ring-[#FE7803]/25 shadow-[0_0_12px_rgba(254,120,3,0.8)] scale-110' 
+                                                    : isCompleted 
+                                                        ? 'bg-gradient-to-br from-[#FE7803] to-[#EA580C] shadow-[0_0_8px_rgba(254,120,3,0.5)]' 
+                                                        : 'bg-[#18181D] border-2 border-white/15'
+                                            }`}>
+                                                {isCurrent && (
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                                )}
+                                                {isCompleted && !isCurrent && (
+                                                    <div className="w-1 h-1 rounded-full bg-white/90" />
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex-1">
-                                            <p className={`text-[10px] font-bold leading-tight ${isCurrent ? 'text-primary' : isCompleted ? 'text-white' : 'text-gray-600'}`}>
+
+                                        {/* Step Details */}
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-[10px] font-black leading-tight tracking-tight truncate ${
+                                                isCurrent 
+                                                    ? 'text-[#FE7803] drop-shadow-[0_0_6px_rgba(254,120,3,0.4)]' 
+                                                    : isCompleted 
+                                                        ? 'text-white' 
+                                                        : 'text-gray-500'
+                                            }`}>
                                                 {step.label}
                                             </p>
                                         </div>
@@ -1194,7 +1282,7 @@ const BookingDetailScreen: React.FC = () => {
                         </div>
 
                         {/* Actions Grid */}
-                        <div className="flex-1 flex flex-col gap-3 justify-center">
+                        <div className="flex-1 flex flex-col gap-2 justify-center">
                             {/* PIN LOCATION - Interactive Mini Map */}
                             <button
                                 onClick={() => setShowLiveRouteModal(true)}
@@ -1226,21 +1314,7 @@ const BookingDetailScreen: React.FC = () => {
                                 )}
                             </button>
 
-                            {mechanic && (
-                                <button
-                                    onClick={handleCallMechanic}
-                                    disabled={callStatus !== 'idle' || !isMechanicAssigned}
-                                    className={`w-full rounded-xl border flex items-center justify-center gap-2 py-2.5 transition-all text-[12px] font-bold tracking-wide uppercase disabled:opacity-40 disabled:cursor-not-allowed ${
-                                        isMechanicAssigned 
-                                            ? 'bg-white/5 hover:bg-white/10 border-white/5 text-primary active:scale-95' 
-                                            : 'bg-white/5 border-white/5 text-gray-500'
-                                    }`}
-                                >
-                                    <Phone size={16} />
-                                    Call Mechanic
-                                </button>
-                            )}
-
+                            {/* Live Chat Button */}
                             <button
                                 onClick={() => {
                                     if (!isMechanicAssigned) {
@@ -1250,23 +1324,62 @@ const BookingDetailScreen: React.FC = () => {
                                     setIsChatOpen(true);
                                 }}
                                 disabled={!isMechanicAssigned}
-                                className={`w-full transition text-white font-bold py-2.5 rounded-xl text-[12px] tracking-wider uppercase flex items-center justify-center gap-2 whitespace-nowrap min-w-0 disabled:opacity-40 disabled:cursor-not-allowed ${
-                                    isMechanicAssigned
-                                        ? 'bg-primary hover:bg-orange-600 active:scale-95 shadow-lg shadow-primary/20'
-                                        : 'bg-white/5 border border-white/5 text-gray-500 shadow-none'
-                                }`}
+                                className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-blue-600/20 overflow-hidden border border-blue-400/30 bg-gradient-to-r from-[#2563EB] via-[#1D4ED8] to-[#1E40AF] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                <MessageSquare size={16} className="flex-shrink-0" />
-                                <span className="truncate whitespace-nowrap">Chat Mechanic</span>
+                                <div className="flex items-center gap-1.5">
+                                    <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                        <MessageSquare size={12} className="text-white drop-shadow" />
+                                    </div>
+                                    <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                    <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm whitespace-nowrap">
+                                        Live Chat
+                                    </span>
+                                </div>
+                                <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                    <ChevronRight size={12} />
+                                </div>
                             </button>
+
+                            {/* Call Button */}
+                            {mechanic && (
+                                <button
+                                    onClick={handleCallMechanic}
+                                    disabled={callStatus !== 'idle' || !isMechanicAssigned}
+                                    className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-emerald-600/20 overflow-hidden border border-emerald-400/30 bg-gradient-to-r from-[#059669] via-[#047857] to-[#065F46] hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                            <Phone size={12} className="text-white drop-shadow" />
+                                        </div>
+                                        <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                        <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm whitespace-nowrap">
+                                            Call
+                                        </span>
+                                    </div>
+                                    <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                        <ChevronRight size={12} />
+                                    </div>
+                                </button>
+                            )}
 
                             {/* Review Service & Mechanic persistent button for Completed Status */}
                             {status === 'Completed' && !booking.isReviewed && (
                                 <button
                                     onClick={() => setShowReviewModal(true)}
-                                    className="w-full bg-primary text-white font-black py-2.5 rounded-xl hover:bg-orange-600 transition text-[12px] tracking-widest uppercase shadow-lg shadow-primary/20 active:scale-95"
+                                    className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-orange-600/25 overflow-hidden border border-orange-400/40 bg-gradient-to-r from-[#FE7803] via-[#EA580C] to-[#C2410C] hover:brightness-110"
                                 >
-                                    Review Service & Mechanic
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                            <Star size={12} className="text-white drop-shadow" />
+                                        </div>
+                                        <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                        <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm whitespace-nowrap">
+                                            Review Service
+                                        </span>
+                                    </div>
+                                    <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                        <ChevronRight size={12} />
+                                    </div>
                                 </button>
                             )}
 
@@ -1280,9 +1393,20 @@ const BookingDetailScreen: React.FC = () => {
                                     return (
                                         <button
                                             onClick={() => navigate(`/customer-portal/service-payment/${booking.id}`)}
-                                            className="w-full bg-primary text-white hover:bg-orange-600 transition font-black py-2.5 rounded-xl text-[12px] tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-primary/20 cursor-pointer active:scale-95 animate-pulse"
+                                            className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-orange-600/25 overflow-hidden border border-orange-400/40 bg-gradient-to-r from-[#FE7803] via-[#EA580C] to-[#C2410C] hover:brightness-110 cursor-pointer animate-pulse"
                                         >
-                                            PAY 50% DOWNPAYMENT {isHitPayActive ? '(HITPAY)' : ''}
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                                    <CreditCard size={12} className="text-white drop-shadow" />
+                                                </div>
+                                                <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                                <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm truncate whitespace-nowrap">
+                                                    Pay 50% Deposit {isHitPayActive ? '(HitPay)' : ''}
+                                                </span>
+                                            </div>
+                                            <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                                <ChevronRight size={12} />
+                                            </div>
                                         </button>
                                     );
                                 }
@@ -1291,9 +1415,20 @@ const BookingDetailScreen: React.FC = () => {
                                     return (
                                         <button
                                             onClick={() => handleInitiateHitPayBalance(booking)}
-                                            className="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white hover:from-emerald-600 hover:to-green-700 font-black py-2.5 rounded-xl text-[12px] tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 cursor-pointer active:scale-95 animate-pulse"
+                                            className="group relative w-full h-[38px] rounded-full px-2 sm:px-2.5 flex items-center justify-between transition-all duration-300 transform active:scale-[0.98] shadow-md shadow-emerald-600/25 overflow-hidden border border-emerald-400/40 bg-gradient-to-r from-[#059669] via-[#047857] to-[#065F46] hover:brightness-110 cursor-pointer animate-pulse"
                                         >
-                                            SETTLE REMAINING BALANCE (HITPAY)
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white shadow-inner flex-shrink-0">
+                                                    <CheckCircle size={12} className="text-white drop-shadow" />
+                                                </div>
+                                                <div className="w-[1px] h-3.5 bg-white/25 flex-shrink-0"></div>
+                                                <span className="text-[10px] font-black text-white tracking-wider uppercase drop-shadow-sm truncate whitespace-nowrap">
+                                                    Settle Balance (HitPay)
+                                                </span>
+                                            </div>
+                                            <div className="w-5 h-5 rounded-full bg-white/15 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/90 group-hover:translate-x-0.5 transition-transform flex-shrink-0">
+                                                <ChevronRight size={12} />
+                                            </div>
                                         </button>
                                     );
                                 }
@@ -2163,6 +2298,8 @@ const BookingDetailScreen: React.FC = () => {
                 mechanic={mechanic}
                 title={`Live Navigation — Job #${bookingSequenceId || booking.id.slice(-6)}`}
                 status={booking.status}
+                eta={eta || (booking as any).eta || null}
+                etaNote={(booking as any).etaNote || null}
                 onCallMechanic={handleCallMechanic}
                 onChatMechanic={() => {
                     setShowLiveRouteModal(false);

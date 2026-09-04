@@ -83,9 +83,11 @@ const DirectionsModal: React.FC<DirectionsModalProps> = ({ booking, customer, on
         
         mapInstanceRef.current = L.map(mapRef.current).setView(mechanicStartPos, 14);
 
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 19
+            maxZoom: 19,
+            subdomains: 'abc',
+            crossOrigin: true
         }).addTo(mapInstanceRef.current);
 
         const customerIcon = L.divIcon({

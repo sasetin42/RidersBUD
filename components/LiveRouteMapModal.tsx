@@ -1,5 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Navigation, Phone, MessageSquare, Compass, ShieldCheck, MapPin, Clock, ArrowUpRight, Maximize2 } from 'lucide-react';
+import { 
+    X, 
+    Navigation, 
+    Phone, 
+    MessageSquare, 
+    MapPin, 
+    Clock, 
+    ShieldCheck, 
+    Car, 
+    Compass, 
+    ExternalLink, 
+    Layers, 
+    Maximize2, 
+    Activity, 
+    CheckCircle2 
+} from 'lucide-react';
 import { Mechanic } from '../types';
 
 declare const L: any;
@@ -12,10 +27,19 @@ interface LiveRouteMapModalProps {
     mechanic?: Mechanic | null;
     customerImageUrl?: string | null;
     customerName?: string;
+    customerPhone?: string;
+    customerVehicle?: string;
+    customerAddress?: string;
     title?: string;
     status?: string;
+    eta?: string | null;
+    etaNote?: string | null;
+    viewMode?: 'customer' | 'mechanic';
     onCallMechanic?: () => void;
     onChatMechanic?: () => void;
+    onCallCustomer?: () => void;
+    onChatCustomer?: () => void;
+    onOpenExternalNav?: () => void;
     appLogoUrl?: string;
 }
 
@@ -27,10 +51,19 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
     mechanic,
     customerImageUrl,
     customerName,
+    customerPhone,
+    customerVehicle,
+    customerAddress,
     title = 'Live Service Route',
     status = 'Confirmed',
+    eta,
+    etaNote,
+    viewMode = 'customer',
     onCallMechanic,
     onChatMechanic,
+    onCallCustomer,
+    onChatCustomer,
+    onOpenExternalNav,
     appLogoUrl = '/favicon.png'
 }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +82,13 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
 
     const mechLat = mechanicLocation?.lat ?? (mechanic?.lat ? mechanic.lat : custLat + 0.0125);
     const mechLng = mechanicLocation?.lng ?? (mechanic?.lng ? mechanic.lng : custLng + 0.0145);
+
+    const fallbackExternalNav = () => {
+        const destLat = viewMode === 'mechanic' ? custLat : mechLat;
+        const destLng = viewMode === 'mechanic' ? custLng : mechLng;
+        const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=driving`;
+        window.open(navUrl, '_blank', 'noopener,noreferrer');
+    };
 
     // Initialize Map once when modal opens
     useEffect(() => {
@@ -71,8 +111,11 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
             attributionControl: false
         }).setView([custLat, custLng], 14);
 
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        // Standard free OpenStreetMap tiles with dark CSS filter
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
+            subdomains: 'abc',
+            crossOrigin: true,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
@@ -80,55 +123,75 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
         const routeLayerGroup = L.layerGroup().addTo(map);
         routeLayerGroupRef.current = routeLayerGroup;
 
-        // Custom Customer Pin with Customer Uploaded Profile Image
+        // Modern Custom Customer Pin
         const customerIcon = L.divIcon({
             html: `
-                <div class="relative flex items-center justify-center">
-                    <div class="absolute w-12 h-12 rounded-full bg-emerald-500/25 animate-ping"></div>
-                    <div class="relative w-10 h-10 rounded-2xl bg-[#1E1E24] border-2 border-emerald-500 shadow-2xl flex items-center justify-center overflow-hidden">
+                <div class="relative flex items-center justify-center filter drop-shadow-[0_8px_16px_rgba(16,185,129,0.4)]">
+                    <div class="absolute w-12 h-12 rounded-full bg-emerald-500/20 animate-ping"></div>
+                    <div class="relative w-11 h-11 rounded-2xl bg-[#141419] border-2 border-emerald-400 p-0.5 shadow-2xl flex items-center justify-center overflow-hidden transition-transform duration-300 hover:scale-110">
                         ${customerImageUrl ? `
-                            <img src="${customerImageUrl}" alt="${customerName || 'Customer'}" style="width:100%;height:100%;object-fit:cover;" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'w-full h-full bg-emerald-500 flex items-center justify-center text-white font-black\\'>👤</div>';" />
+                            <img src="${customerImageUrl}" alt="${customerName || 'Customer'}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'w-full h-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-black rounded-xl\\'>👤</div>';" />
                         ` : `
-                            <div class="w-full h-full bg-emerald-500 flex items-center justify-center text-white">
+                            <div class="w-full h-full bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                 </svg>
                             </div>
                         `}
                     </div>
-                    <div class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 rounded-full border-2 border-[#1E1E24]"></div>
-                    <div class="absolute -bottom-1.5 w-2.5 h-2.5 bg-emerald-500 rotate-45"></div>
+                    <div class="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-[#141419] flex items-center justify-center">
+                        <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                    </div>
+                    <div class="absolute -bottom-1 w-2.5 h-2.5 bg-emerald-400 rotate-45 border-r border-b border-[#141419]"></div>
                 </div>
             `,
             className: 'rb-custom-customer-icon',
-            iconSize: [40, 40],
-            iconAnchor: [20, 40]
+            iconSize: [44, 44],
+            iconAnchor: [22, 44]
         });
 
         customerMarkerRef.current = L.marker([custLat, custLng], { icon: customerIcon })
             .addTo(map)
-            .bindPopup(`<div style="color:#111;font-weight:bold;font-size:12px;">📍 ${customerName || 'Your Location'} (Service Destination)</div>`);
+            .bindPopup(`
+                <div style="font-family:inherit;padding:4px;color:#111;">
+                    <div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:#059669;">
+                        <span>📍 Service Destination</span>
+                    </div>
+                    <div style="font-weight:700;font-size:12px;margin-top:2px;">${customerName || 'Customer'}</div>
+                    ${customerAddress ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;max-width:180px;">${customerAddress}</div>` : ''}
+                </div>
+            `);
 
-        // Custom Mechanic Pin
+        // Modern Custom Mechanic Pin
         const mechanicIcon = L.divIcon({
             html: `
-                <div class="relative flex items-center justify-center">
-                    <div class="absolute w-12 h-12 rounded-full bg-[#FE7803]/30 animate-pulse"></div>
-                    <div class="relative w-10 h-10 rounded-2xl bg-[#1E1E24] border-2 border-[#FE7803] shadow-2xl flex items-center justify-center overflow-hidden">
-                        <img src="${mechanic?.imageUrl || appLogoUrl}" alt="Mechanic" style="width:100%;height:100%;object-fit:cover;" onerror="this.src='${appLogoUrl}'" />
+                <div class="relative flex items-center justify-center filter drop-shadow-[0_8px_16px_rgba(254,120,3,0.45)]">
+                    <div class="absolute w-12 h-12 rounded-full bg-[#FE7803]/25 animate-pulse"></div>
+                    <div class="relative w-11 h-11 rounded-2xl bg-[#141419] border-2 border-[#FE7803] p-0.5 shadow-2xl flex items-center justify-center overflow-hidden transition-transform duration-300 hover:scale-110">
+                        <img src="${mechanic?.imageUrl || appLogoUrl}" alt="Mechanic" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.src='${appLogoUrl}'" />
                     </div>
-                    <div class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-[#1E1E24]"></div>
-                    <div class="absolute -bottom-1.5 w-2.5 h-2.5 bg-[#FE7803] rotate-45"></div>
+                    <div class="absolute -top-1 -right-1 w-4 h-4 bg-[#FE7803] rounded-full border-2 border-[#141419] flex items-center justify-center">
+                        <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                    </div>
+                    <div class="absolute -bottom-1 w-2.5 h-2.5 bg-[#FE7803] rotate-45 border-r border-b border-[#141419]"></div>
                 </div>
             `,
             className: 'rb-custom-mechanic-icon',
-            iconSize: [40, 40],
-            iconAnchor: [20, 40]
+            iconSize: [44, 44],
+            iconAnchor: [22, 44]
         });
 
         mechanicMarkerRef.current = L.marker([mechLat, mechLng], { icon: mechanicIcon })
             .addTo(map)
-            .bindPopup(`<div style="color:#111;font-weight:bold;font-size:12px;">🔧 Mechanic: ${mechanic?.name || 'Assigned Pro'}</div>`);
+            .bindPopup(`
+                <div style="font-family:inherit;padding:4px;color:#111;">
+                    <div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:#d97706;">
+                        <span>🔧 Pro Mechanic</span>
+                    </div>
+                    <div style="font-weight:700;font-size:12px;margin-top:2px;">${mechanic?.name || 'Assigned Specialist'}</div>
+                    <div style="font-size:10px;color:#6b7280;margin-top:2px;">Live GPS Tracking</div>
+                </div>
+            `);
 
         mapInstanceRef.current = map;
 
@@ -196,7 +259,7 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
 
                     try {
                         const bounds = L.latLngBounds(coords);
-                        map.fitBounds(bounds, { padding: [60, 60] });
+                        map.fitBounds(bounds, { padding: [70, 70] });
                     } catch (_) {}
                 } else {
                     drawFallback();
@@ -263,7 +326,7 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
                 [custLat, custLng],
                 [mechLat, mechLng]
             ]);
-            map.fitBounds(bounds, { padding: [60, 60], animate: true });
+            map.fitBounds(bounds, { padding: [70, 70], animate: true });
         }
     };
 
@@ -271,165 +334,208 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 animate-fadeIn">
-            <div className="relative flex flex-col w-full max-w-2xl h-[92vh] max-h-[760px] bg-[#121217] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+            <div className="relative flex flex-col w-full max-w-2xl h-[94vh] max-h-[800px] bg-[#121217] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
                 
                 {/* Modal Header */}
-                <div className="flex items-center justify-between px-5 py-4 bg-[#181820]/95 border-b border-white/10 z-20">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                            <Navigation size={20} className="animate-pulse" />
+                <div className="flex items-center justify-between px-3.5 sm:px-5 py-3 bg-[#181820]/95 backdrop-blur-md border-b border-white/10 z-20 gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-sm shadow-primary/20 flex-shrink-0">
+                            <Navigation size={16} className="animate-pulse" />
                         </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h3 className="text-sm sm:text-base font-black text-white tracking-tight leading-none">
-                                    {title}
-                                </h3>
-                                <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                                    Live GPS
-                                </span>
-                            </div>
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-xs sm:text-sm font-black text-white tracking-tight truncate whitespace-nowrap">
+                                {title}
+                            </h3>
+                            <p className="text-[10px] sm:text-[11px] text-gray-400 font-medium mt-0.5 flex items-center gap-1 truncate whitespace-nowrap">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+                                <span className="truncate">Realtime Live Dispatch Route</span>
+                            </p>
                         </div>
                     </div>
 
-                    <button
-                        onClick={onClose}
-                        className="w-9 h-9 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all active:scale-95"
-                    >
-                        <X size={18} />
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                            onClick={onClose}
+                            className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all active:scale-95 flex-shrink-0"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Map Body */}
                 <div className="relative flex-1 w-full bg-[#0a0a0e] overflow-hidden">
                     <div ref={mapContainerRef} className="w-full h-full" />
 
-                    {/* Floating Route Info Badge (Top Left) - Ultra Compact */}
-                    <div className="absolute top-3 left-3 z-[400] flex flex-col gap-1.5 max-w-[210px]">
-                        <div className="bg-[#181820]/95 backdrop-blur-md border border-white/10 rounded-xl p-2.5 shadow-xl">
-                            <div className="flex items-center justify-between gap-2 mb-1.5 pb-1.5 border-b border-white/5">
+                    {/* Top Controls Bar: Compact Telemetry HUD (Left) & Segmented View Switcher (Right) */}
+                    <div className="absolute top-2.5 inset-x-2.5 z-[400] flex items-start justify-between gap-2 pointer-events-none">
+                        {/* Compact Route Telemetry HUD Card */}
+                        <div className="bg-[#141419]/95 backdrop-blur-md border border-white/10 rounded-xl p-2 shadow-2xl pointer-events-auto flex flex-col gap-1 max-w-[170px] sm:max-w-[200px]">
+                            <div className="flex items-center justify-between gap-1.5 pb-1 border-b border-white/10">
                                 <div className="flex items-center gap-1 text-[9px] font-black text-[#FE7803] uppercase tracking-wider">
-                                    <Clock size={11} />
-                                    <span>Optimal Travel</span>
+                                    <Clock size={10} />
+                                    <span>{eta ? 'ETA' : 'Travel'}</span>
                                 </div>
                                 {isLoadingRoute ? (
-                                    <span className="text-[9px] text-gray-400 animate-pulse">Calculating...</span>
+                                    <span className="text-[8px] text-gray-400 animate-pulse">...</span>
                                 ) : (
-                                    <span className="text-[10px] font-black text-white bg-white/10 px-1.5 py-0.5 rounded">
-                                        ~{routeInfo?.durationMin ?? 1} mins
+                                    <span className="text-[9px] font-black text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md">
+                                        {eta || `~${routeInfo?.durationMin ?? 1}m`}
                                     </span>
                                 )}
                             </div>
 
-                            <div className="flex items-center justify-between text-[10px]">
-                                <div className="space-y-0.5">
-                                    <p className="text-[8px] text-gray-400 font-bold uppercase tracking-wider">Distance</p>
-                                    <p className="text-white font-black text-xs">
-                                        {routeInfo?.distanceKm ? `${routeInfo.distanceKm} km` : '2.4 km'}
-                                    </p>
+                            {etaNote && (
+                                <p className="text-[8px] text-yellow-300 font-medium italic truncate">
+                                    "{etaNote}"
+                                </p>
+                            )}
+
+                            <div className="flex items-center justify-between gap-1 text-[9px] pt-0.5">
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-[8px] text-gray-400 uppercase font-bold">Dist:</span>
+                                    <span className="text-white font-black text-[10px]">
+                                        {routeInfo?.distanceKm ? `${routeInfo.distanceKm}km` : '2.4km'}
+                                    </span>
                                 </div>
-                                <div className="space-y-0.5 text-right">
-                                    <p className="text-[8px] text-gray-400 font-bold uppercase tracking-wider">Route</p>
-                                    <p className="text-emerald-400 font-bold text-[10px] flex items-center gap-0.5 justify-end">
-                                        <ShieldCheck size={10} /> Best Road
-                                    </p>
-                                </div>
+                                <span className="text-emerald-400 font-bold text-[8px] flex items-center gap-0.5">
+                                    <ShieldCheck size={9} /> Optimal
+                                </span>
                             </div>
+                        </div>
+
+                        {/* Quick View Segmented Control */}
+                        <div className="bg-[#141419]/95 backdrop-blur-md border border-white/10 p-0.5 rounded-xl shadow-2xl pointer-events-auto flex items-center">
+                            <button
+                                onClick={() => handleFocusView('both')}
+                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                                    activeView === 'both' ? 'bg-[#FE7803] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                Route
+                            </button>
+                            <button
+                                onClick={() => handleFocusView('mechanic')}
+                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                                    activeView === 'mechanic' ? 'bg-[#FE7803] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                Mechanic
+                            </button>
+                            <button
+                                onClick={() => handleFocusView('customer')}
+                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
+                                    activeView === 'customer' ? 'bg-[#FE7803] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                Customer
+                            </button>
                         </div>
                     </div>
 
-                    {/* Quick View Filter Pills (Top Right) */}
-                    <div className="absolute top-4 right-4 z-[400] flex flex-col gap-1.5 bg-[#181820]/90 backdrop-blur-md border border-white/10 p-1 rounded-2xl shadow-xl">
-                        <button
-                            onClick={() => handleFocusView('both')}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
-                                activeView === 'both' ? 'bg-[#FE7803] text-white shadow-md shadow-primary/20' : 'text-gray-400 hover:text-white'
-                            }`}
-                        >
-                            Full Route
-                        </button>
-                        <button
-                            onClick={() => handleFocusView('mechanic')}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
-                                activeView === 'mechanic' ? 'bg-[#FE7803] text-white shadow-md shadow-primary/20' : 'text-gray-400 hover:text-white'
-                            }`}
-                        >
-                            Mechanic
-                        </button>
-                        <button
-                            onClick={() => handleFocusView('customer')}
-                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
-                                activeView === 'customer' ? 'bg-[#FE7803] text-white shadow-md shadow-primary/20' : 'text-gray-400 hover:text-white'
-                            }`}
-                        >
-                            Customer
-                        </button>
-                    </div>
-
                     {/* Map Zoom Controls (Bottom Right) */}
-                    <div className="absolute bottom-20 right-4 z-[400] flex flex-col gap-2">
+                    <div className="absolute bottom-4 right-2.5 z-[400] flex flex-col gap-1">
                         <button
                             onClick={() => mapInstanceRef.current?.zoomIn()}
-                            className="w-10 h-10 rounded-xl bg-[#181820]/90 backdrop-blur-md border border-white/10 text-white font-black text-lg flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all shadow-lg"
+                            className="w-8 h-8 rounded-lg bg-[#141419]/95 backdrop-blur-md border border-white/10 text-white font-black text-sm flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all shadow-lg"
                         >
                             +
                         </button>
                         <button
                             onClick={() => mapInstanceRef.current?.zoomOut()}
-                            className="w-10 h-10 rounded-xl bg-[#181820]/90 backdrop-blur-md border border-white/10 text-white font-black text-lg flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all shadow-lg"
+                            className="w-8 h-8 rounded-lg bg-[#141419]/95 backdrop-blur-md border border-white/10 text-white font-black text-sm flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all shadow-lg"
                         >
                             −
                         </button>
                     </div>
                 </div>
 
-                {/* Footer Mechanic Info & Actions */}
-                <div className="p-4 sm:p-5 bg-[#181820] border-t border-white/10 z-20 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                        {/* Mechanic Profile Snippet */}
-                        <div className="flex items-center gap-3 min-w-0">
-                            <div className="relative w-12 h-12 rounded-2xl bg-[#22222B] border border-primary/30 p-0.5 flex-shrink-0 overflow-hidden shadow-md">
-                                <img
-                                    src={mechanic?.imageUrl || appLogoUrl}
-                                    alt={mechanic?.name || 'Mechanic'}
-                                    className="w-full h-full object-cover rounded-xl"
-                                    onError={(e) => { (e.target as HTMLImageElement).src = appLogoUrl; }}
-                                />
-                            </div>
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <h4 className="text-sm font-black text-white truncate">
-                                        {mechanic?.name || 'Assigned Mechanic Specialist'}
-                                    </h4>
-                                    <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">
-                                        Verified
-                                    </span>
+                {/* Footer Info & Actions */}
+                <div className="p-3 sm:p-4 bg-[#181820] border-t border-white/10 z-20">
+                    <div className="flex items-center justify-between gap-2.5">
+                        {viewMode === 'mechanic' ? (
+                            /* Customer Profile Snippet (Mechanic View) */
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="relative w-10 h-10 rounded-xl bg-[#22222B] border border-emerald-500/40 p-0.5 flex-shrink-0 overflow-hidden shadow-md">
+                                    {customerImageUrl ? (
+                                        <img
+                                            src={customerImageUrl}
+                                            alt={customerName || 'Customer'}
+                                            className="w-full h-full object-cover rounded-lg"
+                                            onError={(e) => { (e.target as HTMLImageElement).src = appLogoUrl; }}
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full bg-emerald-500/20 text-emerald-400 rounded-lg flex items-center justify-center font-black text-sm">
+                                            👤
+                                        </div>
+                                    )}
                                 </div>
-                                <p className="text-[11px] text-gray-400 truncate mt-0.5">
-                                    {mechanic?.specializations?.join(', ') || 'General Automotive Specialist'}
-                                </p>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <h4 className="text-xs sm:text-sm font-black text-white truncate">
+                                            {customerName || 'Customer Destination'}
+                                        </h4>
+                                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-black uppercase px-1.5 py-0.2 rounded">
+                                            Client
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-300 truncate mt-0.5 flex items-center gap-1 font-medium">
+                                        {customerVehicle && (
+                                            <span className="text-[#FE7803] font-bold flex items-center gap-0.5">
+                                                <Car size={11} /> {customerVehicle}
+                                            </span>
+                                        )}
+                                        {customerVehicle && customerAddress && <span className="text-gray-500">•</span>}
+                                        <span className="text-gray-400 truncate">{customerAddress || (customerLocation?.address) || 'Customer Location'}</span>
+                                    </p>
+                                </div>
                             </div>
-                        </div>
+                        ) : (
+                            /* Mechanic Profile Snippet (Customer View) */
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="relative w-10 h-10 rounded-xl bg-[#22222B] border border-[#FE7803]/40 p-0.5 flex-shrink-0 overflow-hidden shadow-md">
+                                    <img
+                                        src={mechanic?.imageUrl || appLogoUrl}
+                                        alt={mechanic?.name || 'Mechanic'}
+                                        className="w-full h-full object-cover rounded-lg"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = appLogoUrl; }}
+                                    />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <h4 className="text-xs sm:text-sm font-black text-white truncate">
+                                            {mechanic?.name || 'Assigned Mechanic Specialist'}
+                                        </h4>
+                                        <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[8px] font-black uppercase px-1.5 py-0.2 rounded">
+                                            Verified Pro
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                                        {mechanic?.specializations?.join(', ') || 'Automotive Specialist'}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Direct Communication Quick Buttons */}
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            {onCallMechanic && (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {(onCallCustomer || onCallMechanic) && (
                                 <button
-                                    onClick={onCallMechanic}
-                                    className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-emerald-500 font-bold px-3 py-2.5 rounded-xl text-xs transition-all active:scale-95 shadow-md"
-                                    title="Call Mechanic"
+                                    onClick={onCallCustomer || onCallMechanic}
+                                    className="flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-emerald-500 font-bold px-3 py-2 rounded-xl text-[11px] transition-all active:scale-95 shadow-md"
+                                    title={viewMode === 'mechanic' ? 'Call Customer' : 'Call Mechanic'}
                                 >
-                                    <Phone size={14} />
+                                    <Phone size={13} />
                                     <span className="hidden sm:inline">Call</span>
                                 </button>
                             )}
-                            {onChatMechanic && (
+                            {(onChatCustomer || onChatMechanic) && (
                                 <button
-                                    onClick={onChatMechanic}
-                                    className="flex items-center gap-1.5 bg-[#FE7803]/10 hover:bg-[#FE7803] text-[#FE7803] hover:text-white border border-[#FE7803]/20 hover:border-[#FE7803] font-bold px-3 py-2.5 rounded-xl text-xs transition-all active:scale-95 shadow-md"
-                                    title="Message Mechanic"
+                                    onClick={onChatCustomer || onChatMechanic}
+                                    className="flex items-center gap-1 bg-[#FE7803]/10 hover:bg-[#FE7803] text-[#FE7803] hover:text-white border border-[#FE7803]/20 hover:border-[#FE7803] font-bold px-3 py-2 rounded-xl text-[11px] transition-all active:scale-95 shadow-md"
+                                    title={viewMode === 'mechanic' ? 'Message Customer' : 'Message Mechanic'}
                                 >
-                                    <MessageSquare size={14} />
+                                    <MessageSquare size={13} />
                                     <span className="hidden sm:inline">Chat</span>
                                 </button>
                             )}

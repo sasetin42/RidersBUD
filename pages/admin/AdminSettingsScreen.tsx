@@ -7,6 +7,7 @@ import { storageService } from '../../services/StorageService';
 import { sendEmail } from '../../services/emailService';
 import { DEFAULT_EMAIL_TEMPLATES, renderEmailTemplate } from '../../data/defaultEmailTemplates';
 import { LEAFLET_TILE_PROVIDERS, getLeafletTileConfig } from '../../utils/mapTileProviders';
+import { safeGetCurrentPosition } from '../../utils/locationHelper';
 import {
     Save, Globe, Clock, DollarSign, Bell, Shield, Upload, Image as ImageIcon,
     Layout, Smartphone, Wrench, CreditCard, Mail, FileCheck, Plus, Trash2, User,
@@ -437,10 +438,7 @@ const AdminSettingsScreen: React.FC = () => {
     }, [activeTab, localSettings?.leafletTileProvider, localSettings?.leafletCustomTileUrl, localSettings?.leafletCustomAttribution, db?.mechanics, db?.bookings]);
 
     const handleLocateCurrentPosition = () => {
-        if (!navigator.geolocation) {
-            return;
-        }
-        navigator.geolocation.getCurrentPosition(
+        safeGetCurrentPosition(
             (pos) => {
                 const lat = parseFloat(pos.coords.latitude.toFixed(6));
                 const lng = parseFloat(pos.coords.longitude.toFixed(6));
@@ -450,7 +448,7 @@ const AdminSettingsScreen: React.FC = () => {
                 if (adminMapInstanceRef.current) adminMapInstanceRef.current.setView([lat, lng], 15);
             },
             (err) => {
-                console.warn('Geolocation error:', err.message);
+                console.warn('Geolocation error:', err?.message || 'Access denied');
             },
             { enableHighAccuracy: true }
         );

@@ -17,18 +17,20 @@ export const LEAFLET_TILE_PROVIDERS: Record<string, TileProviderOption> = {
         name: 'OpenStreetMap Night (Dark Mode)',
         description: 'High-contrast dark night mode styled for RidersBUD without watermark.',
         badge: 'Recommended Dark',
-        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19
+        maxZoom: 19,
+        subdomains: 'abc'
     },
     'osm': {
         id: 'osm',
         name: 'OpenStreetMap Standard',
         description: 'Classic open community street map tiles with full global road coverage.',
         badge: 'Standard OSM',
-        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19
+        maxZoom: 19,
+        subdomains: 'abc'
     },
     'esri-dark': {
         id: 'esri-dark',

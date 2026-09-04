@@ -156,11 +156,23 @@ const MechanicJobsScreen: React.FC = () => {
             return { activeJobs: [], completedJobs: [], cancelledJobs: [], stats: { total: 0, completionRate: 0, activeCount: 0 } };
         }
 
-        const modules = db.settings?.modules;
+        const modules = db?.settings?.modules;
+
         const allMyBookings = db.bookings.filter(b => {
-            const isMatch = (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
-                (b.isVerified === true || b.gcashPaymentStatus === 'verified');
+            const isMatch = (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id);
             if (!isMatch) return false;
+
+            const paymentMethod = (b.paymentMethod || '').toLowerCase();
+            const isGCashBooking = paymentMethod === 'gcash' || !!b.gcashReceiptUrl || !!b.gcashPaymentStatus;
+            const isHitPayBooking = paymentMethod.includes('hitpay') || paymentMethod.includes('online') || !!b.hitpayReference || !!b.hitpayPaymentRequestId;
+
+            if (isGCashBooking) {
+                if (!(b.isVerified === true || b.gcashPaymentStatus === 'verified')) return false;
+            } else if (isHitPayBooking) {
+                if (!(b.isVerified === true || b.hitpayStatus === 'completed' || b.paymentStatus === 'downpayment_paid' || b.paymentStatus === 'partial' || b.isPaid === true || ((b.paidAmount || 0) > 0))) return false;
+            } else {
+                if (!(b.isVerified === true || b.isPaid === true || b.paymentStatus === 'paid' || b.paymentStatus === 'downpayment_paid' || b.paymentStatus === 'partial')) return false;
+            }
 
             if (modules) {
                 const services = b.services || (b.service ? [b.service] : []);
@@ -214,7 +226,7 @@ const MechanicJobsScreen: React.FC = () => {
                 cancelledCount: cancelled.length
             }
         };
-    }, [db, mechanic]);
+    }, [db, mechanic, db?.settings?.modules]);
 
     const displayedJobs = useMemo(() => {
         let list: Booking[] = [];

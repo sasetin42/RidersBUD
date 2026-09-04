@@ -6,31 +6,26 @@ import { getLeafletTileConfig } from '../../utils/mapTileProviders';
 
 declare const L: any;
 
-const GMAPS_API_KEY = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
 
-const fetchGoogleMapsETA = async (
+/**
+ * Estimates driving ETA using the Haversine formula.
+ * No external API key required — works offline too.
+ * Assumes average city driving speed of ~25 km/h + 2 min buffer.
+ */
+const fetchETAEstimate = (
     originLat: number, originLng: number,
-    destLat: number, destLng: number,
-    apiKey?: string
-): Promise<string> => {
-    try {
-        const keyToUse = apiKey || (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY || '';
-        if (!keyToUse) throw new Error('No API key');
-        const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originLat},${originLng}&destinations=${destLat},${destLng}&mode=driving&key=${keyToUse}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        const element = data?.rows?.[0]?.elements?.[0];
-        if (element?.status === 'OK') {
-            return element.duration.text;
-        }
-    } catch (_) { }
+    destLat: number, destLng: number
+): string => {
     const R = 6371;
     const dLat = (destLat - originLat) * Math.PI / 180;
     const dLon = (destLng - originLng) * Math.PI / 180;
     const a = Math.sin(dLat / 2) ** 2 + Math.cos(originLat * Math.PI / 180) * Math.cos(destLat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
     const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return `~${Math.round((dist / 25) * 60 + 2)} mins`;
+    const mins = Math.max(1, Math.round((dist / 25) * 60 + 2));
+    return `~${mins} min${mins !== 1 ? 's' : ''}`;
 };
+
+
 
 type MappedMechanic = Mechanic & { isAvailable?: boolean };
 
@@ -304,13 +299,12 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
                     }
 
                     const bId = booking.id;
-                    fetchGoogleMapsETA(mechanic.lat, mechanic.lng, booking.location!.lat, booking.location!.lng, settings?.googleMapsApiKey).then(etaText => {
-                        let updatedPopup = popupContent.replace('class="hidden"', 'class="block"');
-                        updatedPopup = updatedPopup.replace('Calculating...', etaText);
-                        if (bookingMarkersRef.current[bId]) {
-                            bookingMarkersRef.current[bId].setPopupContent(updatedPopup);
-                        }
-                    });
+                    const etaText = fetchETAEstimate(mechanic.lat, mechanic.lng, booking.location!.lat, booking.location!.lng);
+                    let updatedPopup = popupContent.replace('class="hidden"', 'class="block"');
+                    updatedPopup = updatedPopup.replace('Calculating...', etaText);
+                    if (bookingMarkersRef.current[bId]) {
+                        bookingMarkersRef.current[bId].setPopupContent(updatedPopup);
+                    }
                 }
             }
         });

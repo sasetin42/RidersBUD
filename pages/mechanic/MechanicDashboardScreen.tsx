@@ -135,10 +135,19 @@ const MechanicDashboardScreen: React.FC = () => {
 
         const paymentMethod = (booking.paymentMethod || '').toLowerCase();
         const isGCashBooking = paymentMethod === 'gcash' || !!booking.gcashReceiptUrl || !!booking.gcashPaymentStatus;
+        const isHitPayBooking = paymentMethod.includes('hitpay') || paymentMethod.includes('online') || !!booking.hitpayReference || !!booking.hitpayPaymentRequestId;
 
-        if (!isGCashBooking) return true;
+        if (isGCashBooking) {
+            return booking.isVerified === true || booking.gcashPaymentStatus === 'verified';
+        }
 
-        return booking.isVerified === true || booking.gcashPaymentStatus === 'verified';
+        if (isHitPayBooking) {
+            // Require 50% initial downpayment verification for HitPay bookings
+            return booking.isVerified === true || booking.hitpayStatus === 'completed' || booking.paymentStatus === 'downpayment_paid' || booking.paymentStatus === 'partial' || booking.isPaid === true || ((booking.paidAmount || 0) > 0);
+        }
+
+        // For other methods, if paymentStatus is pending or unpaid, gate behind verification
+        return booking.isVerified === true || booking.isPaid === true || booking.paymentStatus === 'paid' || booking.paymentStatus === 'downpayment_paid' || booking.paymentStatus === 'partial';
     }, [db?.settings?.modules]);
 
     // Find the currently active job for the mechanic
@@ -196,10 +205,13 @@ const MechanicDashboardScreen: React.FC = () => {
     const analyticsData = useMemo(() => {
         if (!mechanic || !db) return null;
 
-        const getJobTotal = (job: Booking) => {
-            if (job.totalAmount != null) return job.totalAmount;
-            const svcs = job.services && job.services.length > 0 ? job.services : job.service ? [job.service] : [];
-            return svcs.reduce((s, svc) => s + (svc.price || 0), 0);
+        const getJobTotal = (job: any) => {
+            if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
+            if (job.price != null && Number(job.price) > 0) return Number(job.price);
+            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+            return svcsSum + addCosts + (Number(job.laborFee) || 0);
         };
 
         const todayStr = new Date().toLocaleDateString('en-CA');
@@ -249,16 +261,18 @@ const MechanicDashboardScreen: React.FC = () => {
 
     const lifetimeStats = useMemo(() => {
         if (!mechanic || !db) return { averageJobValue: 0 };
-
-        const getJobTotal = (job: Booking) => {
-            if (job.totalAmount != null) return job.totalAmount;
-            const svcs = job.services && job.services.length > 0 ? job.services : job.service ? [job.service] : [];
-            return svcs.reduce((s, svc) => s + (svc.price || 0), 0);
+        const getJobTotal = (job: any) => {
+            if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
+            if (job.price != null && Number(job.price) > 0) return Number(job.price);
+            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+            return svcsSum + addCosts + (Number(job.laborFee) || 0);
         };
 
         const completedJobs = db.bookings.filter(b => 
             (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && 
-            isBookingApprovedForMechanicView(b) &&
+            isBookingApprovedForMechanicView(b) && 
             b.status === 'Completed' && b.isPaid !== false
         );
         if (completedJobs.length === 0) return { averageJobValue: 0 };

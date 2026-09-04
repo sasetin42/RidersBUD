@@ -186,9 +186,10 @@ const LiaisonBookingFlow: React.FC = () => {
                 dragging: true
             }).setView([defaultLat, defaultLng], 12);
 
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 19,
+                subdomains: 'abc',
                 crossOrigin: true
             }).addTo(mapInstanceRef.current);
         }

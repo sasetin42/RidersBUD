@@ -14,6 +14,7 @@ import { X, Paperclip, FileText, Trash2, MapPin, Phone, Search, Download, CheckC
 import Tooltip from './ui/Tooltip';
 import { db as firestoreDB } from '../firebase';
 import { collection, addDoc, query, orderBy, onSnapshot, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { safeGetCurrentPosition } from '../utils/locationHelper';
 
 
 
@@ -450,12 +451,7 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
     };
 
     const handleShareLocation = () => {
-        if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser');
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
+        safeGetCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
                 // Create a standard Google Maps link

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Booking, Customer, Mechanic } from '../../types';
 import { useChat, ChatMessage } from '../../utils/chatManager';
 import { optimizeImageToWebP } from '../../utils/imageOptimizer';
+import { safeGetCurrentPosition } from '../../utils/locationHelper';
 import { Send, MapPin, Paperclip, MoreHorizontal, X, CornerUpLeft, FileText, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -110,12 +111,7 @@ const CustomerMechanicChatModal: React.FC<CustomerMechanicChatModalProps> = ({ b
     };
 
     const handleShareLocation = () => {
-        if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser');
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
+        safeGetCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
                 const mapsLink = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;

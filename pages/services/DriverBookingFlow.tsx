@@ -5,6 +5,7 @@ import { useDatabase } from '../../context/DatabaseContext';
 import CustomerHeader from '../../components/CustomerHeader';
 import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Car, Phone, Info, Check, CheckCircle2, User, FileText, AlertCircle, Award, Navigation, Loader2, Radio } from 'lucide-react';
 import Spinner from '../../components/Spinner';
+import { safeGetCurrentPosition } from '../../utils/locationHelper';
 
 declare const L: any;
 
@@ -202,10 +203,6 @@ const DriverBookingFlow: React.FC = () => {
 
     // Live Geocoding and Location Helper with robust fallback and loading state
     const handleUseLiveLocation = () => {
-        if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser.');
-            return;
-        }
         setIsLocating(true);
 
         const onGeoSuccess = async (position: GeolocationPosition) => {
@@ -234,12 +231,14 @@ const DriverBookingFlow: React.FC = () => {
         };
 
         const onGeoError = (error: GeolocationPositionError) => {
-            console.warn('High accuracy location timeout, trying low accuracy fallback...', error);
-            // Fallback attempt with low accuracy for fast response
-            navigator.geolocation.getCurrentPosition(
+            if (error.code === 1) {
+                setIsLocating(false);
+                alert('Location access denied. Please enable location permissions in your browser or device settings.');
+                return;
+            }
+            safeGetCurrentPosition(
                 onGeoSuccess,
                 (fallbackErr) => {
-                    console.error('Geolocation failed completely:', fallbackErr);
                     setIsLocating(false);
                     let errMsg = 'Unable to retrieve your location.';
                     if (fallbackErr.code === 1) {
@@ -255,7 +254,7 @@ const DriverBookingFlow: React.FC = () => {
             );
         };
 
-        navigator.geolocation.getCurrentPosition(
+        safeGetCurrentPosition(
             onGeoSuccess,
             onGeoError,
             { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
@@ -345,8 +344,10 @@ const DriverBookingFlow: React.FC = () => {
                 attributionControl: false
             }).setView([14.5995, 120.9842], 12);
 
-            const osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
+                subdomains: 'abc',
+                crossOrigin: true,
                 attribution: '&copy; OpenStreetMap contributors'
             });
 

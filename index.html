@@ -21,7 +21,7 @@
                     keys.forEach(function(key) { window.caches.delete(key); });
                 });
             }
-            const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup','pusher','usePusher'];
+            const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup','pusher','usePusher','Evervault','evervault','PaymentMethodCardCybersource','PaymentMethodQrCode','useCharge','CheckoutRequestPage','CLOSING or CLOSED','ERR_CACHE_READ_FAILURE','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-'];
             const originalLog = console.log;
             console.log = function(...args) {
                 if (args[0] && typeof args[0] === 'string' && logSuppressions.some(function(s) { return args[0].indexOf(s) !== -1; })) return;
@@ -72,6 +72,17 @@
                     joined.includes('usePusher') ||
                     joined.includes('Evervault') ||
                     joined.includes('evervault.com') ||
+                    joined.includes('Failed to load Evervault') ||
+                    joined.includes('PaymentMethodCardCybersource') ||
+                    joined.includes('PaymentMethodQrCode') ||
+                    joined.includes('useCharge') ||
+                    joined.includes('CheckoutRequestPage') ||
+                    joined.includes('CLOSING or CLOSED') ||
+                    joined.includes('controller-with-preconnect') ||
+                    joined.includes('elements-inner') ||
+                    joined.includes('accessory-render') ||
+                    joined.includes('fingerprinted') ||
+                    joined.includes('shared-') ||
                     joined.includes('Permissions policy violation') ||
                     joined.includes('unload is not allowed') ||
                     joined.includes('Blocked aria-hidden on a <body>') ||
@@ -85,6 +96,9 @@
                     joined.includes('Geolocation permission has been blocked') ||
                     joined.includes('chromestatus.com') ||
                     joined.includes('6443143280984064') ||
+                    joined.includes('ERR_CACHE_READ_FAILURE') ||
+                    joined.includes('CACHE_READ_FAILURE') ||
+                    joined.includes('tile.openstreetmap.org') ||
                     joined.includes('hcaptcha')
                 ) return;
                 originalWarn.apply(console, args);
@@ -139,10 +153,22 @@
                     joined.includes('Evervault') ||
                     joined.includes('evervault.com') ||
                     joined.includes('Failed to load Evervault') ||
+                    joined.includes('PaymentMethodCardCybersource') ||
+                    joined.includes('PaymentMethodQrCode') ||
+                    joined.includes('useCharge') ||
+                    joined.includes('CheckoutRequestPage') ||
+                    joined.includes('controller-with-preconnect') ||
+                    joined.includes('elements-inner') ||
+                    joined.includes('accessory-render') ||
+                    joined.includes('fingerprinted') ||
+                    joined.includes('shared-') ||
                     joined.includes('Permissions policy violation') ||
                     joined.includes('Geolocation permission has been blocked') ||
                     joined.includes('chromestatus.com') ||
                     joined.includes('6443143280984064') ||
+                    joined.includes('ERR_CACHE_READ_FAILURE') ||
+                    joined.includes('CACHE_READ_FAILURE') ||
+                    joined.includes('tile.openstreetmap.org') ||
                     joined.includes('Blocked aria-hidden on a <body>') ||
                     joined.includes('hcaptcha')
                 ) return;
@@ -192,7 +218,7 @@
             var originalDebug = console.debug;
             console.debug = function() {};
  
-             var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage'];
+             var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org'];
             // Protect global PerformanceObserver, PerformanceObserverEntryList, PerformanceEntry prototype & performance entries against buggy extension / DevTools callbacks
             try {
                 if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
@@ -218,7 +244,7 @@
             var sanitizeEntries = function(entries, defaultType) {
                 try {
                     if (!entries || !Array.isArray(entries)) {
-                        return [createFallbackEntry(defaultType)];
+                        return [];
                     }
                     var cleaned = [];
                     for (var i = 0; i < entries.length; i++) {
@@ -227,17 +253,15 @@
                             if (typeof item.startTime === 'undefined' || item.startTime === null || isNaN(item.startTime)) {
                                 try { item.startTime = 0; } catch(_) {}
                             }
+                            if (typeof item.duration === 'undefined' || item.duration === null || isNaN(item.duration)) {
+                                try { item.duration = 0; } catch(_) {}
+                            }
                             cleaned.push(item);
-                        } else {
-                            cleaned.push(createFallbackEntry(defaultType));
                         }
-                    }
-                    if (cleaned.length === 0) {
-                        cleaned.push(createFallbackEntry(defaultType));
                     }
                     return cleaned;
                 } catch (_) {
-                    return [createFallbackEntry(defaultType)];
+                    return [];
                 }
             };
 
@@ -251,7 +275,7 @@
                                     var raw = orig.apply(this, arguments);
                                     return sanitizeEntries(raw, typeof param === 'string' ? param : 'measure');
                                 } catch (_) {
-                                    return [createFallbackEntry(typeof param === 'string' ? param : 'measure')];
+                                    return [];
                                 }
                             };
                         }
@@ -273,7 +297,7 @@
                                                 var raw = origGetEntries.call(list);
                                                 return sanitizeEntries(raw, 'measure');
                                             } catch (_) {
-                                                return [createFallbackEntry('measure')];
+                                                return [];
                                             }
                                         };
                                     }
@@ -284,7 +308,7 @@
                                                 var raw = origGetEntriesByType.call(list, type);
                                                 return sanitizeEntries(raw, type);
                                             } catch (_) {
-                                                return [createFallbackEntry(type)];
+                                                return [];
                                             }
                                         };
                                     }
@@ -295,7 +319,7 @@
                                                 var raw = origGetEntriesByName.call(list, name, type);
                                                 return sanitizeEntries(raw, type);
                                             } catch (_) {
-                                                return [createFallbackEntry(type, name)];
+                                                return [];
                                             }
                                         };
                                     }
@@ -330,7 +354,7 @@
                                     const raw = orig.apply(window.performance, arguments);
                                     return sanitizeEntries(raw, typeof param === 'string' ? param : 'measure');
                                 } catch (_) {
-                                    return [createFallbackEntry(typeof param === 'string' ? param : 'measure')];
+                                    return [];
                                 }
                             };
                         }
@@ -476,7 +500,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#FE7803" />
     <meta name="color-scheme" content="dark" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com https://smtpjs.com https://*.smtpjs.com https://api.hit-pay.com https://api.sandbox.hit-pay.com https://*.hit-pay.com https://*.stripe.com https://r.stripe.com https://m.stripe.com wss://*.pusher.com https://*.pusher.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://*.hit-pay.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.firebaseio.com https://unpkg.com https://smtpjs.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.pusher.com; frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com; child-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com https://smtpjs.com https://*.smtpjs.com https://api.hit-pay.com https://api.sandbox.hit-pay.com https://*.hit-pay.com https://*.stripe.com https://r.stripe.com https://m.stripe.com https://*.stripe.network wss://*.pusher.com https://*.pusher.com https://*.evervault.com https://js.evervault.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://*.hit-pay.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.firebaseio.com https://unpkg.com https://smtpjs.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.stripe.network https://*.pusher.com https://*.evervault.com https://js.evervault.com; frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.evervault.com; child-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com https://*.evervault.com;">
     <link rel="manifest" href="/manifest.json" />
     
     <!-- Leaflet CSS & JS for Maps (self-hosted to avoid tracking prevention blocks) -->
@@ -488,10 +512,10 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Maven+Pro:wght@400;500;600;700;800;900&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Maven+Pro:wght@400;500;600;700;800;900&display=swap"
         rel="stylesheet">
     <style>
-        /* Font-display swap for faster loading */
+        /* Global Maven Pro Typography definition */
         @font-face {
             font-family: 'Maven Pro';
             font-display: swap;

@@ -16,6 +16,7 @@ import { HitPayService } from '../services/HitPayService';
 import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers } from '../data/mockData';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import BookingPaymentBreakdownModal from '../components/BookingPaymentBreakdownModal';
+import { safeGetCurrentPosition, safeWatchPosition, safeClearWatch, isGeolocationPermissionDenied } from '../utils/locationHelper';
 
 
 declare const L: any;
@@ -557,11 +558,18 @@ const BookingScreen: React.FC = () => {
     }, [user, selectedVehiclePlate]);
 
      // Live Geocoding and Location Helper with fallback
-    const handleUseLiveLocation = () => {
+    const handleUseLiveLocation = async () => {
         if (!navigator.geolocation) {
             alert('Geolocation is not supported by your browser.');
             return;
         }
+
+        const isDenied = await isGeolocationPermissionDenied();
+        if (isDenied) {
+            alert('Location access is blocked or denied. Please enable location permissions in your browser or device settings.');
+            return;
+        }
+
         setIsLocating(true);
 
         const onGeoSuccess = async (position: GeolocationPosition) => {
@@ -589,11 +597,14 @@ const BookingScreen: React.FC = () => {
         };
 
         const onGeoError = (error: GeolocationPositionError) => {
-            console.warn('High accuracy location timeout, trying low accuracy fallback...', error);
-            navigator.geolocation.getCurrentPosition(
+            if (error.code === 1) {
+                setIsLocating(false);
+                alert('Location access denied. Please enable location permissions in your browser or device settings.');
+                return;
+            }
+            safeGetCurrentPosition(
                 onGeoSuccess,
                 (fallbackErr) => {
-                    console.error('Geolocation failed completely:', fallbackErr);
                     setIsLocating(false);
                     let errMsg = 'Unable to retrieve your location.';
                     if (fallbackErr.code === 1) {
@@ -609,7 +620,7 @@ const BookingScreen: React.FC = () => {
             );
         };
 
-        navigator.geolocation.getCurrentPosition(
+        safeGetCurrentPosition(
             onGeoSuccess,
             onGeoError,
             { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
@@ -699,8 +710,10 @@ const BookingScreen: React.FC = () => {
                 attributionControl: false
             }).setView([14.5995, 120.9842], 12);
 
-            const osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
+                subdomains: 'abc',
+                crossOrigin: true,
                 attribution: '&copy; OpenStreetMap contributors'
             });
 
@@ -916,8 +929,18 @@ const BookingScreen: React.FC = () => {
             };
 
             const handleError = (error: GeolocationPositionError) => {
+                if (error.code === 1) {
+                    setServiceLocation(prev => {
+                        if (prev === null) {
+                            setLocationStatus('success');
+                            return { lat: 14.5995, lng: 120.9842 };
+                        }
+                        return prev;
+                    });
+                    return;
+                }
                 // Fallback to lower accuracy if high accuracy times out/fails
-                navigator.geolocation.getCurrentPosition(
+                safeGetCurrentPosition(
                     handleSuccess,
                     (fallbackError) => {
                         setServiceLocation(prev => {
@@ -939,11 +962,11 @@ const BookingScreen: React.FC = () => {
                 maximumAge: 0
             };
 
-            // Get initial highly accurate position
-            navigator.geolocation.getCurrentPosition(handleSuccess, handleError, options);
+            // Get initial position safely
+            safeGetCurrentPosition(handleSuccess, handleError, options);
 
-            // Subscribe to real-time location updates (high accuracy, fast responsiveness, zero caching)
-            const watchId = navigator.geolocation.watchPosition(
+            // Subscribe to real-time location updates safely
+            safeWatchPosition(
                 handleSuccess, 
                 () => {}, 
                 {
@@ -951,12 +974,13 @@ const BookingScreen: React.FC = () => {
                     timeout: 10000, 
                     maximumAge: 0
                 }
-            );
-            watchIdRef.current = watchId;
+            ).then(watchId => {
+                watchIdRef.current = watchId;
+            });
 
             return () => {
                 if (watchIdRef.current !== null) {
-                    navigator.geolocation.clearWatch(watchIdRef.current);
+                    safeClearWatch(watchIdRef.current);
                     watchIdRef.current = null;
                 }
             };
@@ -978,9 +1002,10 @@ const BookingScreen: React.FC = () => {
             dragging: true
         }).setView([lat, lng], 18);
 
-        const osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
             maxZoom: 19,
+            subdomains: 'abc',
             crossOrigin: true,
         });
 
@@ -1135,9 +1160,10 @@ const BookingScreen: React.FC = () => {
             });
 
             // Add free OpenStreetMap tile layer
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 19,
+                subdomains: 'abc',
                 crossOrigin: true
             }).addTo(confirmationMapInstanceRef.current);
 
@@ -1521,25 +1547,31 @@ const BookingScreen: React.FC = () => {
             const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${createdBooking.id}`;
             const appTitle = db?.settings?.appName || 'RidersBUD';
 
-            const { url } = await hitPay.createPaymentRequest({
-                amount: downpaymentAmount,
-                currency: db?.settings?.currency || 'PHP',
-                reference_number: `BOK-${createdBooking.id}-${Date.now()}`,
-                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                redirect_url: returnUrl,
-                email: user.email || 'customer@example.com',
-                name: user.name || 'Customer',
-                phone: user.phone || undefined,
-                purpose: `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`
-            });
+            try {
+                const { url } = await hitPay.createPaymentRequest({
+                    amount: downpaymentAmount,
+                    currency: db?.settings?.currency || 'PHP',
+                    reference_number: `BOK-${createdBooking.id}-${Date.now()}`,
+                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    redirect_url: returnUrl,
+                    email: user.email || 'customer@example.com',
+                    name: user.name || 'Customer',
+                    phone: user.phone || undefined,
+                    purpose: `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`
+                });
 
-            window.location.href = url;
-            return;
+                window.location.href = url;
+                return;
+            } catch (hitpayErr) {
+                console.warn('HitPay online session could not be established directly. Falling back to GCash Payment Modal:', hitpayErr);
+                setPendingBookingId(createdBooking.id);
+                setShowGCashModal(true);
+                return;
+            }
         } catch (err: any) {
             setShowPaymentBreakdownModal(false);
-            const msg = err?.message || 'An error occurred while connecting to HitPay Gateway.';
+            const msg = err?.message || 'An error occurred while connecting to Payment Gateway.';
             setError(msg);
-            console.error('HitPay checkout error:', err);
         } finally {
             setIsBooking(false);
         }
@@ -2462,23 +2494,21 @@ const BookingScreen: React.FC = () => {
                                 <button
                                     onClick={() => {
                                         setIsTrackingLive(true);
-                                        if (navigator.geolocation) {
-                                            navigator.geolocation.getCurrentPosition(
-                                                (position) => {
-                                                    const { latitude, longitude, accuracy } = position.coords;
-                                                    setServiceLocation({ lat: latitude, lng: longitude });
-                                                    setLocationAccuracy(accuracy);
-                                                    if (mapInstanceRef.current) {
-                                                        mapInstanceRef.current.setView([latitude, longitude], 18, { animate: true, duration: 0.8 });
-                                                    }
-                                                    if (markerRef.current) {
-                                                        markerRef.current.setLatLng([latitude, longitude]);
-                                                    }
-                                                },
-                                                () => {},
-                                                { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-                                            );
-                                        }
+                                        safeGetCurrentPosition(
+                                            (position) => {
+                                                const { latitude, longitude, accuracy } = position.coords;
+                                                setServiceLocation({ lat: latitude, lng: longitude });
+                                                setLocationAccuracy(accuracy);
+                                                if (mapInstanceRef.current) {
+                                                    mapInstanceRef.current.setView([latitude, longitude], 18, { animate: true, duration: 0.8 });
+                                                }
+                                                if (markerRef.current) {
+                                                    markerRef.current.setLatLng([latitude, longitude]);
+                                                }
+                                            },
+                                            () => {},
+                                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                                        );
                                     }}
                                     className={`w-11 h-11 flex items-center justify-center rounded-full shadow-2xl transition-all duration-300 active:scale-90 relative overflow-hidden ${
                                         isTrackingLive

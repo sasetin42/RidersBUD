@@ -221,10 +221,13 @@ const MechanicEarningsScreen: React.FC = () => {
             });
         }
 
-        const getJobTotal = (job: Booking) => {
-            if (job.totalAmount != null) return job.totalAmount;
-            const svcs = job.services && job.services.length > 0 ? job.services : job.service ? [job.service] : [];
-            return svcs.reduce((s, svc) => s + svc.price, 0);
+        const getJobTotal = (job: any) => {
+            if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
+            if (job.price != null && Number(job.price) > 0) return Number(job.price);
+            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+            return svcsSum + addCosts + (Number(job.laborFee) || 0);
         };
 
         const paidJobsInPeriod = filteredJobs.filter(job => job.isPaid !== false);
@@ -259,16 +262,6 @@ const MechanicEarningsScreen: React.FC = () => {
                 value: earningsForDay
             };
         });
-
-        // Add visual fallback sample data if there are no earnings recorded for the period
-        const totalEarnedInWeek = dailyEarnings.reduce((sum, d) => sum + d.value, 0);
-        if (totalEarnedInWeek === 0) {
-            const sampleData = [0, 0, 0, 0, 0, 0, 2500];
-            dailyEarnings = dailyEarnings.map((d, idx) => ({
-                ...d,
-                value: sampleData[idx % sampleData.length]
-            }));
-        }
 
         const groupedHistory = filteredJobs.reduce((acc, job) => {
             let date = job.date;

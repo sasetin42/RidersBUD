@@ -1565,15 +1565,22 @@ const PayoutRequestModal: React.FC<{
     const lifetimeEarnings = useMemo(() => {
         if (!mechanic || !db) return 0;
         const completedJobs = db.bookings.filter(b => (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && b.status === 'Completed');
-        const calculatedEarnings = completedJobs.reduce((sum, job) => sum + (job.service?.price || job.services?.[0]?.price || 0), 0);
-        const grossEarnings = mechanic.totalEarnings || calculatedEarnings;
+        const calculatedEarnings = completedJobs.reduce((sum, job: any) => {
+            if (job.totalAmount != null && Number(job.totalAmount) > 0) return sum + Number(job.totalAmount);
+            if (job.price != null && Number(job.price) > 0) return sum + Number(job.price);
+            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+            return sum + svcsSum + addCosts + (Number(job.laborFee) || 0);
+        }, 0);
+        const grossEarnings = calculatedEarnings;
         
         const approvedPayoutsAmount = db.payouts
             .filter((p: any) => p.mechanicId === mechanic.id && (p.status === 'Approved' || p.status === 'Paid' || p.status === 'Completed'))
             .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
             
         return Math.max(0, grossEarnings - approvedPayoutsAmount);
-    }, [db?.bookings, db?.payouts, mechanic.totalEarnings, mechanic.id]);
+    }, [db?.bookings, db?.payouts, mechanic.id]);
 
     const effectiveAvailableBalance = availableBalance || lifetimeEarnings;
     const safeWithdrawable = Math.max(0, (effectiveAvailableBalance || 0) - pendingRequestsAmount);
@@ -2672,24 +2679,31 @@ const MechanicProfileManagementScreen: React.FC = () => {
             b.status === 'Completed'
         );
         
-        // Sum prices from completed jobs as robust real-time fallback
-        const calculatedEarnings = completedJobs.reduce((sum, job) => sum + (job.service?.price || job.services?.[0]?.price || 0), 0);
+        // Sum total earnings directly from completed jobs in real-time
+        const calculatedEarnings = completedJobs.reduce((sum, job: any) => {
+            if (job.totalAmount != null && Number(job.totalAmount) > 0) return sum + Number(job.totalAmount);
+            if (job.price != null && Number(job.price) > 0) return sum + Number(job.price);
+            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+            return sum + svcsSum + addCosts + (Number(job.laborFee) || 0);
+        }, 0);
         
-        const grossEarnings = mechanic.totalEarnings || calculatedEarnings;
+        const grossEarnings = calculatedEarnings;
 
         const approvedPayoutsAmount = db.payouts
             .filter((p: any) => p.mechanicId === mechanic.id && (p.status === 'Approved' || p.status === 'Paid' || p.status === 'Completed'))
             .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
             
         const lifetimeEarnings = Math.max(0, grossEarnings - approvedPayoutsAmount);
-        const availableForPayout = mechanic.walletBalance || 0;
+        const availableForPayout = mechanic.walletBalance || lifetimeEarnings;
 
         return {
             totalJobs: completedJobs.length,
             lifetimeEarnings,
             availableForPayout,
         };
-    }, [db.bookings, db.payouts, mechanic.totalEarnings, mechanic.walletBalance, mechanic.id]);
+    }, [db.bookings, db.payouts, mechanic.walletBalance, mechanic.id]);
 
     if (loading || !db || !mechanic) {
         return (

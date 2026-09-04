@@ -17,6 +17,7 @@ import {
 } from 'firebase/auth';
 import { usePresence } from '../hooks/usePresence';
 import { storageService } from '../services/StorageService';
+import { safeGetCurrentPosition, isGeolocationPermissionDenied } from '../utils/locationHelper';
 
 interface MechanicAuthContextType {
     isMechanicAuthenticated: boolean;
@@ -156,14 +157,9 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                     return;
                 }
 
-                // Check permissions first to prevent repeated browser warnings
-                if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
-                    try {
-                        const status = await navigator.permissions.query({ name: 'geolocation' });
-                        if (status.state === 'denied') {
-                            return;
-                        }
-                    } catch (_) {}
+                const isDenied = await isGeolocationPermissionDenied();
+                if (isDenied) {
+                    return;
                 }
 
                 if ('geolocation' in navigator) {
@@ -186,34 +182,26 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                     };
 
                     const handleFallback = () => {
-                        try {
-                            navigator.geolocation.getCurrentPosition(
-                                handleSuccess,
-                                () => {
-                                    isLocationUpdatingRef.current = false;
-                                },
-                                { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-                            );
-                        } catch (_) {
-                            isLocationUpdatingRef.current = false;
-                        }
+                        safeGetCurrentPosition(
+                            handleSuccess,
+                            () => {
+                                isLocationUpdatingRef.current = false;
+                            },
+                            { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+                        );
                     };
 
-                    try {
-                        navigator.geolocation.getCurrentPosition(
-                            handleSuccess,
-                            (error) => {
-                                if (error.code === error.TIMEOUT) {
-                                    handleFallback();
-                                } else {
-                                    isLocationUpdatingRef.current = false;
-                                }
-                            },
-                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-                        );
-                    } catch (_) {
-                        isLocationUpdatingRef.current = false;
-                    }
+                    safeGetCurrentPosition(
+                        handleSuccess,
+                        (error) => {
+                            if (error.code === error.TIMEOUT) {
+                                handleFallback();
+                            } else {
+                                isLocationUpdatingRef.current = false;
+                            }
+                        },
+                        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+                    );
                 }
             };
 

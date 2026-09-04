@@ -3,6 +3,7 @@ import { Booking, Customer, Mechanic } from '../../types';
 import { useChat, ChatMessage } from '../../utils/chatManager';
 import { optimizeImageToWebP } from '../../utils/imageOptimizer';
 import { useDatabase } from '../../context/DatabaseContext';
+import { safeGetCurrentPosition } from '../../utils/locationHelper';
 import { Send, MapPin, Paperclip, MoreHorizontal, X, CornerUpLeft, FileText, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -116,12 +117,7 @@ const MechanicCustomerChatModal: React.FC<MechanicCustomerChatModalProps> = ({ b
     };
 
     const handleShareLocation = () => {
-        if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser');
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
+        safeGetCurrentPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
                 const mapsLink = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;

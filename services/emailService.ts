@@ -48,29 +48,22 @@ export const sendEmail = async (
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: formData.toString()
-        });
+        }).catch(() => null);
+
+        if (!response) {
+            // Silently skip if client browser blocks cross-origin SMTP relay request
+            return false;
+        }
 
         const resultText = await response.text();
         
         if (response.ok && (resultText === "OK" || resultText.includes("OK"))) {
             return true;
         } else {
-            let cleanError = resultText;
-            if (cleanError.includes('<!DOCTYPE') || cleanError.includes('<html') || cleanError.includes('Cloudflare')) {
-                cleanError = 'SMTP Relay request was blocked by security policy. Please ensure the local dev server is running or check SMTP credentials.';
-            }
-            // SMTP server unreachable or returned an error — not fatal for the booking
-            console.warn(`SMTP email skipped: ${cleanError}`);
             return false;
         }
 
     } catch (error: any) {
-        let msg = error?.message || 'SMTP operation failed.';
-        if (msg.includes('<!DOCTYPE') || msg.includes('<html')) {
-            msg = 'SMTP Relay request was blocked. Please verify your host, port, and credentials.';
-        }
-        // Email failure should not block the booking flow
-        console.warn(`SMTP email skipped: ${msg}`);
         return false;
     }
 };

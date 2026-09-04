@@ -108,7 +108,7 @@ class HitPayService {
 
         let lastErrorMessage = '';
 
-        // Attempt 1: Vite proxy endpoint (handles CORS and server-to-server TLS connection to HitPay)
+        // Attempt 1: Vite proxy endpoint (handles CORS and server-to-server TLS connection to HitPay in dev mode)
         try {
             const proxyResp = await fetch('/api/hitpay-proxy', {
                 method: 'POST',
@@ -120,22 +120,18 @@ class HitPayService {
                 })
             });
 
-            if (proxyResp.ok) {
+            const contentType = proxyResp.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
                 const proxyResult = await proxyResp.json();
-                if (proxyResult && proxyResult.url) {
+                if (proxyResp.ok && proxyResult && proxyResult.url) {
                     console.log('✅ HitPay Official Checkout Session Created via Proxy:', proxyResult.id);
                     return { url: proxyResult.url, id: proxyResult.id };
                 } else if (proxyResult && proxyResult.error) {
                     lastErrorMessage = typeof proxyResult.error === 'string' ? proxyResult.error : JSON.stringify(proxyResult.error);
                 }
-            } else {
-                const errText = await proxyResp.text();
-                lastErrorMessage = `Proxy Error (${proxyResp.status}): ${errText}`;
-                console.warn('⚠️ HitPay Proxy Response Error:', errText);
             }
         } catch (proxyErr: any) {
-            console.warn('HitPay proxy attempt failed:', proxyErr);
-            lastErrorMessage = proxyErr?.message || 'Proxy connection error';
+            lastErrorMessage = proxyErr?.message || 'Proxy unavailable';
         }
 
         // Attempt 2: Direct HitPay API call fallback
@@ -158,15 +154,13 @@ class HitPayService {
                 }
             } else {
                 const errBody = await response.text();
-                console.warn(`⚠️ HitPay Direct API returned ${response.status}:`, errBody);
                 lastErrorMessage = `HitPay API Error (${response.status}): ${errBody}`;
             }
         } catch (error: any) {
-            console.warn('⚠️ Direct HitPay API Call Failed:', error);
             lastErrorMessage = error?.message || 'Direct HitPay API network error';
         }
 
-        throw new Error(`Unable to initialize HitPay payment session: ${lastErrorMessage || 'Please verify your HitPay API Key and network connection.'}`);
+        throw new Error(`Unable to initialize HitPay payment session: ${lastErrorMessage || 'HitPay is unreachable on client-side due to browser CORS restriction.'}`);
     }
 
     /**

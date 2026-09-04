@@ -277,30 +277,34 @@ const PaymentScreen: React.FC = () => {
                     throw new Error("Order creation failed.");
                 }
 
-                sessionStorage.setItem('pendingHitPayTx', JSON.stringify({
-                    paymentMethod: 'Credit Card',
-                    orderId: newOrder.id
-                }));
+                try {
+                    const { url } = await hitPay.createPaymentRequest({
+                        amount: total,
+                        currency: db?.settings?.currency || 'PHP',
+                        reference_number: reference,
+                        webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                        redirect_url: returnUrl, // Return exactly to this page
+                        email: user.email,
+                        name: deliveryDetails.fullName,
+                        phone: deliveryDetails.phone,
+                        address: {
+                            line1: deliveryDetails.addressLine1,
+                            city: deliveryDetails.city,
+                            postal_code: deliveryDetails.zipCode,
+                            country: 'PH'
+                        }
+                    });
 
-                const { url } = await hitPay.createPaymentRequest({
-                    amount: total,
-                    currency: db?.settings?.currency || 'PHP',
-                    reference_number: reference,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                    redirect_url: returnUrl, // Return exactly to this page
-                    email: user.email,
-                    name: deliveryDetails.fullName,
-                    phone: deliveryDetails.phone,
-                    address: {
-                        line1: deliveryDetails.addressLine1,
-                        city: deliveryDetails.city,
-                        postal_code: deliveryDetails.zipCode,
-                        country: 'PH'
-                    }
-                });
-
-                window.location.href = url;
-                return; // Stop execution here, user is leaving the page
+                    window.location.href = url;
+                    return; // Stop execution here, user is leaving the page
+                } catch (hitpayErr) {
+                    console.warn('HitPay online checkout unavailable. Falling back to GCash payment modal:', hitpayErr);
+                    setPendingOrderId(newOrder.id);
+                    setShowGCashModal(true);
+                    setIsProcessing(false);
+                    setProcessingStep('');
+                    return;
+                }
             }
 
                 const newOrderData = buildSafeOrderData(selectedMethod, 'Pending');
