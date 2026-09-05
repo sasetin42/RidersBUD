@@ -7,6 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
 import { Plus, Users, Search, Filter, Edit, Trash2, Mail, Shield, User, Camera, Check, X, FileText, Briefcase, Star, MapPin, Calendar, Clock, DollarSign, Award, ChevronRight, Phone, MessageSquare, ExternalLink, Download, ArrowRight, Eye, BadgeCheck, Activity, CheckCircle, UserCheck, TrendingUp, ChevronDown, ArrowUpDown, FileCheck, XCircle, AlertCircle, ZoomIn, File, Image as ImageIcon, FileText as DocIcon, Upload, Grid, List, MoreVertical } from 'lucide-react';
 import { storageService } from '../../services/StorageService';
+import { calculateMechanicWalletLedger } from '../../utils/mechanicLedger';
 
 type SortableKeys = 'name' | 'rating' | 'reviews' | 'registrationDate' | 'status';
 
@@ -1184,7 +1185,7 @@ const AdminMechanicsScreen: React.FC = () => {
                                                 {mechanic.reviews || 0}
                                             </td>
                                             <td className="p-4 text-sm font-bold text-green-400">
-                                                ₱{(mechanic.walletBalance || 0).toLocaleString()}
+                                                ₱{calculateMechanicWalletLedger(mechanic.id, mechanic, db.bookings || [], db.payouts || []).availableBalance.toLocaleString()}
                                             </td>
                                             <td className="p-4 text-right relative">
                                                 <div className="flex items-center justify-end gap-2">
@@ -1367,7 +1368,7 @@ const AdminMechanicsScreen: React.FC = () => {
                                 </div>
                                 <div className="bg-white/5 rounded-lg p-2 text-center">
                                     <p className="text-[8px] text-gray-500 font-medium">Balance</p>
-                                    <p className="text-xs font-bold text-green-400 mt-0.5">₱{(mechanic.walletBalance || 0).toLocaleString()}</p>
+                                    <p className="text-xs font-bold text-green-400 mt-0.5">₱{calculateMechanicWalletLedger(mechanic.id, mechanic, db.bookings || [], db.payouts || []).availableBalance.toLocaleString()}</p>
                                 </div>
                             </div>
 

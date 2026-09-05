@@ -14,10 +14,10 @@ import { CallButton } from '../components/CallUI';
 import { useCall } from '../context/CallContext';
 import {
     MapPin, Phone, MessageSquare, Navigation, CheckCircle, Clock,
-    Calendar, User, Car, Shield, ChevronRight, AlertCircle, Info,
+    Calendar, User, Car, Shield, ChevronRight, ChevronDown, AlertCircle, Info,
     ArrowRight, Map as MapIcon, Mail, Hash, Palette, Gauge,
     FileText, Wrench, DollarSign, Timer, Upload, X, Image as ImageIcon, Bell,
-    CreditCard, Eye, ClipboardList, Star, Copy, ExternalLink
+    CreditCard, Eye, ClipboardList, Star, Copy, ExternalLink, Check, Wallet
 } from 'lucide-react';
 
 import { ref, onValue, set } from 'firebase/database';
@@ -188,12 +188,21 @@ const BookingDetailScreen: React.FC = () => {
     const [showCompleteTransactionModal, setShowCompleteTransactionModal] = useState(false);
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [copiedReference, setCopiedReference] = useState(false);
+    const [copiedRefKey, setCopiedRefKey] = useState<string | null>(null);
+
+    const handleCopyReference = (text: string, key: string) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        setCopiedRefKey(key);
+        setTimeout(() => setCopiedRefKey(null), 2000);
+    };
     const [activeReceiptTab, setActiveReceiptTab] = useState<'downpayment' | 'balance'>('downpayment');
     const [confettiPieces, setConfettiPieces] = useState<any[]>([]);
     const [showMechanicDetailsModal, setShowMechanicDetailsModal] = useState(false);
     const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
     const [activeModalTab, setActiveModalTab] = useState<'info' | 'reviews'>('info');
     const [isInitiatingHitPay, setIsInitiatingHitPay] = useState(false);
+    const [showVehicleDetails, setShowVehicleDetails] = useState(false);
     
     // Live Location & ETA Tracking States
     const [mechanicLiveLocation, setMechanicLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -217,15 +226,19 @@ const BookingDetailScreen: React.FC = () => {
             if (targetBookingId && updateBookingPayment && fetchedBooking && !fetchedBooking.isPaid) {
                 finalizeRun.current = true;
                 const totalAmt = fetchedBooking.totalAmount || fetchedBooking.service?.price || 0;
-                const paidAmt = Number(fetchedBooking.paidAmount) || (totalAmt * 0.5);
                 const addCosts = (fetchedBooking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
+                const initialDp = fetchedBooking.downpaymentAmount 
+                    ? Number(fetchedBooking.downpaymentAmount)
+                    : (totalAmt * 0.5);
                 const fullTotal = totalAmt + addCosts;
-                const balanceAmt = Math.max(0, fullTotal - paidAmt);
+                const balanceAmt = Math.max(0, fullTotal - initialDp);
 
                 updateBookingPayment(targetBookingId, balanceAmt, 'paid', {
                     isPaid: true,
                     isVerified: true,
                     paidAmount: fullTotal,
+                    downpaymentAmount: initialDp,
+                    balanceAmount: balanceAmt,
                     remainingBalance: 0,
                     paymentStatus: 'paid',
                     balancePaid: true,
@@ -279,9 +292,13 @@ const BookingDetailScreen: React.FC = () => {
                 purpose: `${appTitle} — Final Balance Settlement (#${targetBooking.id.slice(-6).toUpperCase()})`
             });
 
-            window.location.href = url;
+            if (url.startsWith('/')) {
+                navigate(url);
+            } else {
+                window.location.href = url;
+            }
         } catch (err: any) {
-            console.error("HitPay direct checkout error:", err);
+            console.info("ℹ️ Online gateway requires manual/service payment verification. Redirecting to payment screen.");
             navigate(`/customer-portal/service-payment/${targetBooking.id}`);
         } finally {
             setIsInitiatingHitPay(false);
@@ -839,12 +856,21 @@ const BookingDetailScreen: React.FC = () => {
 
                 {/* Payment Information Card (Online Gateway / HitPay / GCash) */}
                 {(booking.paymentMethod?.includes('HitPay') || booking.paymentMethod === 'GCash' || booking.gcashReference || booking.downpaymentRef || booking.isVerified || booking.gcashDeclineReason || (booking.paidAmount && booking.paidAmount > 0)) && (
-                    <div className="bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-white/5 space-y-3 shadow-lg">
+                    <div className="relative overflow-hidden bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-[#FE8008]/30 space-y-3 shadow-xl shadow-black/40">
+                        {/* Top Accent Gradient Bar with #FE8008 */}
+                        <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#FE8008] via-[#FF9E3D] to-[#EA580C]" />
+
                         {/* Header with Title & Badge */}
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                                <CreditCard size={14} className="text-primary" />
-                                <h3 className="text-xs font-black text-white uppercase tracking-wider">Payment Breakdown</h3>
+                        <div className="flex items-center justify-between pt-0.5">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#FE8008] to-[#EA580C] p-[1px] flex items-center justify-center shadow-sm shadow-[#FE8008]/20">
+                                    <div className="w-full h-full bg-[#161618] rounded-[7px] flex items-center justify-center">
+                                        <CreditCard size={13} className="text-[#FE8008]" />
+                                    </div>
+                                </div>
+                                <h3 className="text-xs font-black uppercase tracking-wider bg-gradient-to-r from-white via-orange-50 to-[#FE8008] bg-clip-text text-transparent">
+                                    Payment Breakdown
+                                </h3>
                             </div>
                             {booking.isPaid ? (
                                 <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-black uppercase flex items-center gap-1">
@@ -876,71 +902,183 @@ const BookingDetailScreen: React.FC = () => {
                         )}
 
                         {/* Transaction Reference Box */}
-                        {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference || booking.balancePaymentRef) && (
-                            <div className="p-2.5 bg-black/40 border border-white/5 rounded-xl space-y-1.5 text-[11px]">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider">Method</span>
-                                    <span className="text-white font-bold text-xs">{booking.paymentMethod || 'HitPay (Online Gateway)'}</span>
-                                </div>
-                                {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference) && (
-                                    <div className="flex justify-between items-start gap-2 pt-1 border-t border-white/5">
-                                        <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider shrink-0 mt-0.5">DP Ref</span>
-                                        <span className="text-primary font-mono font-bold text-[11px] text-right break-all leading-tight">
-                                            {booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference}
-                                        </span>
-                                    </div>
-                                )}
-                                {booking.downpaymentPaidAt && (
-                                    <div className="flex justify-between items-center text-[10px] text-gray-500 font-mono">
-                                        <span>Paid At</span>
-                                        <span>{new Date(booking.downpaymentPaidAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
-                                    </div>
-                                )}
-                                {booking.balancePaymentRef && (
-                                    <div className="flex justify-between items-start gap-2 pt-1 border-t border-white/5">
-                                        <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider shrink-0">Balance Ref</span>
-                                        <span className="text-emerald-400 font-mono font-bold text-[11px] text-right break-all">
-                                            {booking.balancePaymentRef}
-                                        </span>
-                                    </div>
-                                )}
+                        {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference || booking.balancePaymentRef || booking.paymentMethod) && (
+                            <div className="p-2.5 bg-black/50 border border-[#FE8008]/20 rounded-xl space-y-2 text-[11px]">
+                                {/* Payment Method with Icon & Dynamic Channel (GCash, Maya, QR PH, Card) */}
+                                {(() => {
+                                    const rawMethod = booking.paymentMethod || 'HitPay (Online Gateway)';
+                                    const channel = (booking as any).paymentChannel || 
+                                                    (booking as any).channel || 
+                                                    (booking as any).hitpayChannel ||
+                                                    (booking as any).paymentTransactions?.[0]?.method ||
+                                                    (booking.downpaymentMethod && booking.downpaymentMethod !== rawMethod ? booking.downpaymentMethod : null);
+
+                                    let displayMethod = rawMethod;
+                                    if (rawMethod.toLowerCase().includes('hitpay') || rawMethod.toLowerCase().includes('online')) {
+                                        if (channel) {
+                                            const formattedChannel = channel.toUpperCase() === 'QRPH' ? 'QR PH' : 
+                                                                    channel.toLowerCase() === 'credit_card' || channel.toLowerCase() === 'card' ? 'Credit/Debit Card' :
+                                                                    channel.charAt(0).toUpperCase() + channel.slice(1);
+                                            displayMethod = `HitPay • ${formattedChannel}`;
+                                        } else if (booking.downpaymentRef?.startsWith('BOK-') || booking.hitpayReference) {
+                                            displayMethod = 'HitPay (Online • Multi-Channel)';
+                                        } else {
+                                            displayMethod = 'HitPay (Online Gateway)';
+                                        }
+                                    }
+
+                                    const dpRefVal = booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference;
+                                    const balRefVal = booking.balancePaymentRef;
+
+                                    return (
+                                        <>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                                                    <Wallet size={12} className="text-[#FE8008]" /> Method
+                                                </span>
+                                                <span className="text-white font-bold text-xs flex items-center gap-1">
+                                                    {displayMethod}
+                                                </span>
+                                            </div>
+
+                                            {dpRefVal && (
+                                                <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-white/5">
+                                                    <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider shrink-0 flex items-center gap-1.5">
+                                                        <Hash size={12} className="text-[#FE8008]" /> DP Ref
+                                                    </span>
+                                                    <div className="flex items-center gap-1.5 min-w-0 max-w-[70%] justify-end">
+                                                        <span className="text-[#FE8008] font-mono font-bold text-[11px] truncate whitespace-nowrap select-all text-right">
+                                                            {dpRefVal}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => handleCopyReference(dpRefVal, 'dpRef')}
+                                                            title="Copy DP Reference"
+                                                            className="p-1 rounded bg-white/5 hover:bg-[#FE8008]/20 border border-white/10 text-gray-300 hover:text-[#FE8008] transition shrink-0 flex items-center justify-center active:scale-90"
+                                                        >
+                                                            {copiedRefKey === 'dpRef' ? (
+                                                                <Check size={11} className="text-emerald-400" />
+                                                            ) : (
+                                                                <Copy size={11} />
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {booking.downpaymentPaidAt && (
+                                                <div className="flex justify-between items-center text-[10px] text-gray-400 font-mono">
+                                                    <span className="flex items-center gap-1.5 text-gray-500">
+                                                        <Calendar size={11} className="text-gray-500" /> DP Paid At
+                                                    </span>
+                                                    <span>{new Date(booking.downpaymentPaidAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                                                </div>
+                                            )}
+
+                                            {balRefVal && (
+                                                <div className="flex justify-between items-center gap-2 pt-1.5 border-t border-white/5">
+                                                    <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider shrink-0 flex items-center gap-1.5">
+                                                        <Hash size={12} className="text-emerald-400" /> Balance Ref
+                                                    </span>
+                                                    <div className="flex items-center gap-1.5 min-w-0 max-w-[70%] justify-end">
+                                                        <span className="text-emerald-400 font-mono font-bold text-[11px] truncate whitespace-nowrap select-all text-right">
+                                                            {balRefVal}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => handleCopyReference(balRefVal, 'balRef')}
+                                                            title="Copy Balance Reference"
+                                                            className="p-1 rounded bg-white/5 hover:bg-emerald-500/20 border border-white/10 text-gray-300 hover:text-emerald-400 transition shrink-0 flex items-center justify-center active:scale-90"
+                                                        >
+                                                            {copiedRefKey === 'balRef' ? (
+                                                                <Check size={11} className="text-emerald-400" />
+                                                            ) : (
+                                                                <Copy size={11} />
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {booking.balancePaidAt && (
+                                                <div className="flex justify-between items-center text-[10px] text-gray-400 font-mono">
+                                                    <span className="flex items-center gap-1.5 text-gray-500">
+                                                        <Clock size={11} className="text-gray-500" /> Final Paid At
+                                                    </span>
+                                                    <span>{new Date(booking.balancePaidAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                             </div>
                         )}
 
-                        {/* Financial Amounts (Paid vs Balance) */}
+                        {/* Financial Amounts (Initial Downpayment vs Final Payment / Remaining Balance) */}
                         {(() => {
                             const originalServicesFee = booking.services && booking.services.length > 0
                                 ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
                                 : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
-                            const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
-                            const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+
+                            // Initial 50% downpayment is fixed to 50% of the service cost or recorded downpaymentAmount
+                            const initialDownpayment = booking.downpaymentAmount != null && Number(booking.downpaymentAmount) > 0
+                                ? Number(booking.downpaymentAmount)
+                                : (originalServicesFee * 0.5);
+
                             const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+                            const totalServiceAmount = originalServicesFee + additionalCostsTotal;
+
+                            // Final / second payment: always recompute from live data so additional costs are included.
+                            // stored balanceAmount is stale — it was set before mechanic added extra costs.
+                            const computedFinalAmount = Math.max(0, totalServiceAmount - initialDownpayment);
+                            const finalPaymentAmount = computedFinalAmount > 0
+                                ? computedFinalAmount
+                                : (booking.balanceAmount != null ? Number(booking.balanceAmount) : 0);
+
+                            const isFullySettled = booking.isPaid === true || booking.balancePaid === true || booking.paymentStatus === 'paid';
+                            const serviceBalance = Math.max(0, originalServicesFee - initialDownpayment);
                             const totalBalanceToPay = serviceBalance + additionalCostsTotal;
 
                             return (
                                 <div className="space-y-2">
                                     <div className="grid grid-cols-2 gap-2">
-                                        {/* 50% Deposit Paid */}
-                                        <div className="bg-emerald-500/[0.05] border border-emerald-500/20 rounded-xl p-2.5 flex flex-col justify-between">
+                                        {/* 50% Initial Downpayment Card with Solid Gradient Accent */}
+                                        <div className="bg-gradient-to-br from-emerald-500/[0.12] via-emerald-500/[0.05] to-black/30 border border-emerald-500/25 rounded-xl p-2.5 flex flex-col justify-between">
                                             <div>
-                                                <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider">50% Deposit Paid</p>
-                                                <p className="text-base sm:text-lg font-black text-emerald-400 mt-0.5">
-                                                    {paidDownpayment > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}
+                                                <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                                                    <CheckCircle size={10} className="text-emerald-400" />
+                                                    50% Deposit Paid
+                                                </p>
+                                                <p className="text-base sm:text-lg font-black text-emerald-400 mt-0.5 font-mono">
+                                                    {initialDownpayment > 0 ? `₱${initialDownpayment.toLocaleString()}` : '—'}
                                                 </p>
                                             </div>
-                                            <span className="text-[8px] text-emerald-500/80 font-bold uppercase mt-1">Secured</span>
                                         </div>
 
-                                        {/* Remaining Balance */}
-                                        <div className="bg-white/[0.02] border border-white/5 rounded-xl p-2.5 flex flex-col justify-between">
-                                            <div>
-                                                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Remaining Balance</p>
-                                                <p className="text-base sm:text-lg font-black text-white mt-0.5">
-                                                    {serviceBalance > 0 ? `₱${serviceBalance.toLocaleString()}` : '₱0.00'}
-                                                </p>
+                                        {/* Final Payment (if settled) OR Remaining Balance (if pending) */}
+                                        {isFullySettled ? (
+                                            <div className="bg-gradient-to-br from-emerald-500/[0.15] via-emerald-500/[0.06] to-black/30 border border-emerald-500/35 rounded-xl p-2.5 flex flex-col justify-between shadow-sm">
+                                                <div>
+                                                    <p className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                                                        <CheckCircle size={10} className="text-emerald-400" />
+                                                        Final Payment
+                                                    </p>
+                                                    <p className="text-base sm:text-lg font-black text-emerald-300 mt-0.5 font-mono">
+                                                        {finalPaymentAmount > 0 ? `₱${finalPaymentAmount.toLocaleString()}` : '₱0.00'}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <span className="text-[8px] text-gray-500 font-medium mt-1">Due on completion</span>
-                                        </div>
+                                        ) : (
+                                            <div className="bg-gradient-to-br from-white/[0.05] via-white/[0.02] to-black/30 border border-white/10 rounded-xl p-2.5 flex flex-col justify-between">
+                                                <div>
+                                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                                        <Clock size={10} className="text-gray-400" />
+                                                        Remaining Balance
+                                                    </p>
+                                                    <p className="text-base sm:text-lg font-black text-white mt-0.5 font-mono">
+                                                        {totalBalanceToPay > 0 ? `₱${totalBalanceToPay.toLocaleString()}` : '₱0.00'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Additional costs if any */}
@@ -963,10 +1101,12 @@ const BookingDetailScreen: React.FC = () => {
                                                 <span className="text-gray-400 font-medium font-mono text-[10px]">Additional Total</span>
                                                 <span className="text-primary font-bold">+{formatCurrency(additionalCostsTotal)}</span>
                                             </div>
-                                            <div className="flex justify-between items-center pt-1 border-t border-white/5">
-                                                <span className="text-[10px] font-black text-white uppercase tracking-wider font-mono">Total Balance to Pay</span>
-                                                <span className="text-sm font-black text-emerald-400">{totalBalanceToPay > 0 ? `₱${totalBalanceToPay.toLocaleString()}` : 'For Quotation'}</span>
-                                            </div>
+                                            {!isFullySettled && (
+                                                <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                                                    <span className="text-[10px] font-black text-white uppercase tracking-wider font-mono">Total Balance to Pay</span>
+                                                    <span className="text-sm font-black text-emerald-400">{totalBalanceToPay > 0 ? `₱${totalBalanceToPay.toLocaleString()}` : 'For Quotation'}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -1023,10 +1163,10 @@ const BookingDetailScreen: React.FC = () => {
                             </div>
 
                             {/* Contact Action */}
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <div className="flex flex-col items-stretch gap-1.5 flex-shrink-0 min-w-[90px]">
                                 <button
                                     onClick={() => { setShowMechanicDetailsModal(true); setActiveModalTab('info'); }}
-                                    className="bg-primary hover:bg-orange-600 active:scale-95 transition-all text-white px-3 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm"
+                                    className="w-full bg-primary hover:bg-orange-600 active:scale-95 transition-all text-white px-3 py-1.5 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 shadow-sm"
                                 >
                                     <User size={11} />
                                     Details
@@ -1034,7 +1174,7 @@ const BookingDetailScreen: React.FC = () => {
                                 {booking.status === 'Completed' && !booking.isReviewed && !booking.review && (
                                     <button
                                         onClick={() => setShowReviewModal(true)}
-                                        className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all text-white px-3 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-1 shadow-sm"
+                                        className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition-all text-white px-3 py-1.5 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1 shadow-sm"
                                     >
                                         <Star size={11} className="fill-white" />
                                         Review
@@ -1097,17 +1237,26 @@ const BookingDetailScreen: React.FC = () => {
 
                 {/* Vehicle Information Card */}
                 <div className="bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-white/5 space-y-3">
-                    <h2 className="text-[10px] font-bold tracking-widest text-gray-400 uppercase flex items-center gap-1.5 font-mono">
-                        <Car size={12} className="text-primary" />
-                        Vehicle Information
-                    </h2>
+                    <button
+                        onClick={() => setShowVehicleDetails(prev => !prev)}
+                        className="w-full flex items-center justify-between text-left group"
+                    >
+                        <h2 className="text-[10px] font-bold tracking-widest text-gray-400 uppercase flex items-center gap-1.5 font-mono">
+                            <Car size={12} className="text-primary" />
+                            Vehicle Information
+                        </h2>
+                        <ChevronDown
+                            size={14}
+                            className={`text-gray-500 transition-transform duration-300 ${showVehicleDetails ? 'rotate-180' : ''}`}
+                        />
+                    </button>
 
                     {(booking?.serviceName === 'Driver for Hire' || booking?.serviceId === '7') ? (
                         booking.vehicleDetails ? (
                             <>
-                                <div className="flex items-center gap-4 mb-4">
-                                    <div className="w-14 h-14 rounded-full bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0 flex items-center justify-center shadow-lg">
-                                        <Car size={24} className="text-primary" />
+                                <div className="flex items-center gap-4">
+                                    <div className="w-11 h-11 rounded-xl bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0 flex items-center justify-center shadow-lg">
+                                        <Car size={20} className="text-primary" />
                                     </div>
                                     <div>
                                         <h3 className="text-[12px] font-bold text-white leading-tight">
@@ -1121,16 +1270,18 @@ const BookingDetailScreen: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                                        <span className="text-[9px] text-gray-500 font-semibold mb-1">Vehicle Type</span>
-                                        <p className="text-xs font-bold text-white tracking-wide">{booking.vehicleDetails.type || 'Sedan'}</p>
+                                {showVehicleDetails && (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                            <span className="text-[9px] text-gray-500 font-semibold mb-1">Vehicle Type</span>
+                                            <p className="text-xs font-bold text-white tracking-wide">{booking.vehicleDetails.type || 'Sedan'}</p>
+                                        </div>
+                                        <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                            <span className="text-[9px] text-gray-500 font-semibold mb-1">Owner Driven</span>
+                                            <p className="text-xs font-bold text-emerald-400">Yes (Customer's Car)</p>
+                                        </div>
                                     </div>
-                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                                        <span className="text-[9px] text-gray-500 font-semibold mb-1">Owner Driven</span>
-                                        <p className="text-xs font-bold text-emerald-400">Yes (Customer's Car)</p>
-                                    </div>
-                                </div>
+                                )}
                             </>
                         ) : (
                             <div className="p-4 bg-black/30 border border-white/5 rounded-xl text-center">
@@ -1140,8 +1291,8 @@ const BookingDetailScreen: React.FC = () => {
                         )
                     ) : (
                         <>
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="w-14 h-14 rounded-full bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0 group shadow-lg">
+                            <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl bg-[#151515] border border-white/10 overflow-hidden relative flex-shrink-0 group shadow-lg">
                                     {vehicle?.imageUrls && vehicle?.imageUrls.length > 0 ? (
                                         <img
                                             src={vehicle.imageUrls[0]}
@@ -1170,47 +1321,49 @@ const BookingDetailScreen: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                        <Hash size={10} className="text-primary" />
-                                        <span className="text-[9px] text-gray-500 font-semibold">Plate No.</span>
+                            {showVehicleDetails && (
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                            <Hash size={10} className="text-primary" />
+                                            <span className="text-[9px] text-gray-500 font-semibold">Plate No.</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-white tracking-wide">
+                                            {vehicle?.plateNumber || 'N/A'}
+                                        </p>
                                     </div>
-                                    <p className="text-xs font-bold text-white tracking-wide">
-                                        {vehicle?.plateNumber || 'N/A'}
-                                    </p>
-                                </div>
 
-                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                        <Palette size={10} className="text-primary" />
-                                        <span className="text-[9px] text-gray-500 font-semibold">Color</span>
+                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                            <Palette size={10} className="text-primary" />
+                                            <span className="text-[9px] text-gray-500 font-semibold">Color</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-white capitalize">
+                                            {vehicle?.color || 'N/A'}
+                                        </p>
                                     </div>
-                                    <p className="text-xs font-bold text-white capitalize">
-                                        {vehicle?.color || 'N/A'}
-                                    </p>
-                                </div>
 
-                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                        <Gauge size={10} className="text-primary" />
-                                        <span className="text-[9px] text-gray-500 font-semibold">Mileage</span>
+                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                            <Gauge size={10} className="text-primary" />
+                                            <span className="text-[9px] text-gray-500 font-semibold">Mileage</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-white">
+                                            {vehicle?.mileage ? `${vehicle.mileage.toLocaleString()} mi` : 'N/A'}
+                                        </p>
                                     </div>
-                                    <p className="text-xs font-bold text-white">
-                                        {vehicle?.mileage ? `${vehicle.mileage.toLocaleString()} mi` : 'N/A'}
-                                    </p>
-                                </div>
 
-                                <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                        <Car size={10} className="text-primary" />
-                                        <span className="text-[9px] text-gray-500 font-semibold">Vehicle Type</span>
+                                    <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 flex flex-col justify-center hover:border-white/10 transition-colors">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                            <Car size={10} className="text-primary" />
+                                            <span className="text-[9px] text-gray-500 font-semibold">Vehicle Type</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-white capitalize">
+                                            {vehicle?.type || 'Sedan'}
+                                        </p>
                                     </div>
-                                    <p className="text-xs font-bold text-white capitalize">
-                                        {vehicle?.type || 'Sedan'}
-                                    </p>
                                 </div>
-                            </div>
+                            )}
                         </>
                     )}
                 </div>
@@ -1961,12 +2114,7 @@ const BookingDetailScreen: React.FC = () => {
                                     </button>
                                 )}
 
-                                <button
-                                    onClick={() => navigate(`/customer-portal/service-payment/${booking.id}`)}
-                                    className="w-full text-center text-[11px] text-gray-500 hover:text-gray-400 py-1 font-medium transition-colors"
-                                >
-                                    Choose another payment method →
-                                </button>
+
                             </div>
 
                             {/* Mandatory Lock Notice Footer */}

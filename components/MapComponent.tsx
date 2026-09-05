@@ -14,10 +14,22 @@ export interface MapMarker {
     icon?: any; // Leaflet icon (L.Icon or L.DivIcon)
 }
 
+export interface MapPolyline {
+    id: string;
+    positions: [number, number][];
+    color?: string;
+    weight?: number;
+    opacity?: number;
+    dashArray?: string;
+    lineCap?: string;
+    lineJoin?: string;
+}
+
 interface MapComponentProps {
     center: [number, number];
     zoom: number;
     markers?: MapMarker[];
+    polylines?: MapPolyline[];
     bounds?: any; // Optional Leaflet bounds object to fit the view
     className?: string;
     style?: React.CSSProperties;
@@ -29,6 +41,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     center,
     zoom,
     markers = [],
+    polylines = [],
     bounds,
     className = '',
     style = {},
@@ -77,16 +90,22 @@ const MapComponent: React.FC<MapComponentProps> = ({
             mapInstanceRef.current.on('click', onMapClick);
         }
 
-        // Invalidate size after initialization to fix gray tiles in modals
-        const invalidateTimer = setTimeout(() => {
-            if (mapInstanceRef.current) {
-                mapInstanceRef.current.invalidateSize();
-            }
-        }, 350);
+        // Invalidate size after initialization to fix gray tiles in modals immediately
+        const timer1 = setTimeout(() => {
+            if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+        }, 100);
+        const timer2 = setTimeout(() => {
+            if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+        }, 300);
+        const timer3 = setTimeout(() => {
+            if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+        }, 600);
 
         // Cleanup function to remove map instance on unmount
         return () => {
-            clearTimeout(invalidateTimer);
+            clearTimeout(timer1);
+            clearTimeout(timer2);
+            clearTimeout(timer3);
             if (mapInstanceRef.current) {
                 mapInstanceRef.current.remove();
                 mapInstanceRef.current = null;
@@ -173,6 +192,69 @@ const MapComponent: React.FC<MapComponentProps> = ({
             }
         });
     }, [markers]); // Re-run whenever markers change
+
+    // Polylines layer
+    const polylinesLayerRef = useRef<any>(null);
+    const polylinesRef = useRef<Record<string, any>>({});
+
+    useEffect(() => {
+        if (!mapInstanceRef.current || typeof L === 'undefined') return;
+        if (!polylinesLayerRef.current) {
+            polylinesLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+        }
+
+        const currentPolylineIds = new Set(Object.keys(polylinesRef.current));
+        const newPolylineIds = new Set(polylines.map(p => p.id));
+
+        for (const id of currentPolylineIds) {
+            if (!newPolylineIds.has(id)) {
+                try {
+                    polylinesLayerRef.current.removeLayer(polylinesRef.current[id]);
+                } catch (e) {}
+                delete polylinesRef.current[id];
+            }
+        }
+
+        polylines.forEach(p => {
+            if (!p.positions || p.positions.length < 2) return;
+            if (polylinesRef.current[p.id]) {
+                const poly = polylinesRef.current[p.id];
+                try {
+                    poly.setLatLngs(p.positions);
+                    poly.setStyle({
+                        color: p.color || '#FE7803',
+                        weight: p.weight || 4,
+                        opacity: p.opacity || 0.8,
+                        dashArray: p.dashArray,
+                        lineCap: p.lineCap || 'round',
+                        lineJoin: p.lineJoin || 'round'
+                    });
+                } catch (e) {
+                    try { polylinesLayerRef.current.removeLayer(poly); } catch (e2) {}
+                    delete polylinesRef.current[p.id];
+                    const newPoly = L.polyline(p.positions, {
+                        color: p.color || '#FE7803',
+                        weight: p.weight || 4,
+                        opacity: p.opacity || 0.8,
+                        dashArray: p.dashArray,
+                        lineCap: p.lineCap || 'round',
+                        lineJoin: p.lineJoin || 'round'
+                    }).addTo(polylinesLayerRef.current);
+                    polylinesRef.current[p.id] = newPoly;
+                }
+            } else {
+                const newPoly = L.polyline(p.positions, {
+                    color: p.color || '#FE7803',
+                    weight: p.weight || 4,
+                    opacity: p.opacity || 0.8,
+                    dashArray: p.dashArray,
+                    lineCap: p.lineCap || 'round',
+                    lineJoin: p.lineJoin || 'round'
+                }).addTo(polylinesLayerRef.current);
+                polylinesRef.current[p.id] = newPoly;
+            }
+        });
+    }, [polylines]);
 
     return <div ref={mapRef} className={className} style={{ height: '100%', width: '100%', zIndex: 0, ...style }} />;
 };

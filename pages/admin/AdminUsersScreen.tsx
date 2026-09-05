@@ -8,7 +8,7 @@ import {
     Users, Shield, UserCheck, Activity, Edit, Trash2, Search, Download, Plus, X, Check, 
     AlertTriangle, Camera, Image as ImageIcon, ChevronDown, ArrowUpDown, History, 
     Key, Wrench, MapPin, Calendar, DollarSign, Star, FileText, Settings, Eye, Ban,
-    MoreVertical
+    MoreVertical, Landmark, Smartphone, QrCode
 } from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 import { storageService } from '../../services/StorageService';
@@ -60,6 +60,7 @@ const AdminUsersScreen: React.FC = () => {
     const [viewingUserDetail, setViewingUserDetail] = useState<UnifiedUser | null>(null);
     const [detailActiveTab, setDetailActiveTab] = useState<'overview' | 'profile' | 'extra' | 'bookings'>('overview');
     const [viewingLogsUser, setViewingLogsUser] = useState<any | null>(null);
+    const [qrModalUrl, setQrModalUrl] = useState<string | null>(null);
 
     // Action Dropdown State
     const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
@@ -1778,20 +1779,52 @@ const AdminUsersScreen: React.FC = () => {
                                                 </div>
 
                                                 <div className="bg-[#111113]/40 p-6 rounded-2xl border border-white/5 space-y-3">
-                                                    <h4 className="text-[10px] font-black text-amber-400 tracking-widest uppercase">GCash Payout Details</h4>
+                                                    <div className="flex items-center justify-between">
+                                                        <h4 className="text-[10px] font-black text-amber-400 tracking-widest uppercase flex items-center gap-1.5">
+                                                            {viewingUserDetail.originalData?.payoutDetails?.method === 'Bank Transfer' ? (
+                                                                <Landmark size={12} className="text-amber-400" />
+                                                            ) : (
+                                                                <Smartphone size={12} className="text-amber-400" />
+                                                            )}
+                                                            Payout Destination
+                                                        </h4>
+                                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                            {viewingUserDetail.originalData?.payoutDetails?.method || 'Direct'}
+                                                        </span>
+                                                    </div>
                                                     <div className="space-y-2 text-xs font-bold text-gray-300">
                                                         <div className="flex justify-between border-b border-white/5 pb-1.5">
-                                                            <span className="text-gray-500">Method</span>
-                                                            <span className="text-white">{viewingUserDetail.originalData?.payoutDetails?.walletName || 'GCash E-Wallet'}</span>
+                                                            <span className="text-gray-500">Channel / Bank</span>
+                                                            <span className="text-white">
+                                                                {viewingUserDetail.originalData?.payoutDetails?.method === 'Bank Transfer'
+                                                                    ? (viewingUserDetail.originalData?.payoutDetails?.bankName || 'Bank Transfer')
+                                                                    : (viewingUserDetail.originalData?.payoutDetails?.walletName || 'GCash E-Wallet')}
+                                                            </span>
                                                         </div>
                                                         <div className="flex justify-between border-b border-white/5 pb-1.5">
                                                             <span className="text-gray-500">Account Name</span>
                                                             <span className="text-white">{viewingUserDetail.originalData?.payoutDetails?.accountName || 'N/A'}</span>
                                                         </div>
-                                                        <div className="flex justify-between">
+                                                        <div className="flex justify-between border-b border-white/5 pb-1.5">
                                                             <span className="text-gray-500">Account Number</span>
                                                             <span className="text-primary font-mono">{viewingUserDetail.originalData?.payoutDetails?.accountNumber || 'N/A'}</span>
                                                         </div>
+                                                        {viewingUserDetail.originalData?.payoutDetails?.qrCodeUrl && (
+                                                            <div className="flex justify-between items-center pt-1">
+                                                                <span className="text-gray-500 flex items-center gap-1">
+                                                                    <QrCode size={12} className="text-amber-400" />
+                                                                    QR Code
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setQrModalUrl(viewingUserDetail.originalData?.payoutDetails?.qrCodeUrl)}
+                                                                    className="text-[10px] font-bold text-primary hover:text-orange-400 underline flex items-center gap-1"
+                                                                >
+                                                                    <Eye size={11} />
+                                                                    View Scan QR
+                                                                </button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -2112,6 +2145,42 @@ const AdminUsersScreen: React.FC = () => {
                     </div>
                 )}
 
+                {/* Payout QR Code Preview Modal */}
+                {qrModalUrl && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+                        <div className="bg-[#18181A] border border-white/10 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl p-6 text-center space-y-4">
+                            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                                    <QrCode size={16} className="text-amber-400" />
+                                    Mechanic Payout QR Code
+                                </h3>
+                                <button
+                                    onClick={() => setQrModalUrl(null)}
+                                    className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/5"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                            <div className="p-3 bg-white rounded-xl mx-auto inline-block shadow-inner">
+                                <img
+                                    src={qrModalUrl}
+                                    alt="Mechanic Payout QR"
+                                    className="w-64 h-64 object-contain"
+                                />
+                            </div>
+                            <p className="text-xs text-gray-400">
+                                Scan with any supported E-Wallet / Banking App to initiate real-time disbursement to this mechanic.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => setQrModalUrl(null)}
+                                className="w-full py-2.5 bg-primary hover:bg-orange-600 text-white font-black text-xs rounded-xl transition"
+                            >
+                                Close Preview
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

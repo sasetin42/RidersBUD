@@ -194,32 +194,49 @@ const PayoutDetailsModal: React.FC<{
                 )}
 
                 {request.status === 'Pending' && (
-                    <div className="flex gap-4 pt-4 border-t border-white/5">
+                    <div className="space-y-3 pt-4 border-t border-white/5">
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => handleProcess('Rejected')}
+                                disabled={processing}
+                                className="flex-1 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-red-500/20 disabled:opacity-50"
+                            >
+                                {processing ? <Spinner size="sm" /> : 'Reject Request'}
+                            </button>
+                            <button
+                                onClick={() => handleProcess('Approved')}
+                                disabled={processing}
+                                className="flex-1 bg-blue-500/10 hover:bg-blue-500 text-blue-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-blue-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(59,130,246,0.1)] hover:shadow-[0_0_30px_rgba(59,130,246,0.4)]"
+                            >
+                                {processing ? <Spinner size="sm" /> : 'Approve (Disbursal)'}
+                            </button>
+                        </div>
                         <button
-                            onClick={() => handleProcess('Rejected')}
+                            onClick={() => {
+                                if (!transactionId.trim() && !showPaidInput) {
+                                    setShowPaidInput(true);
+                                    return;
+                                }
+                                handleProcess('Paid');
+                            }}
                             disabled={processing}
-                            className="flex-1 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-red-500/20 disabled:opacity-50"
+                            className="w-full bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white font-black tracking-widest text-[10px] py-3 px-4 rounded-xl transition-all border border-emerald-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(16,185,129,0.1)] hover:shadow-[0_0_30px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2"
                         >
-                            {processing ? <Spinner size="sm" /> : 'Reject Request'}
-                        </button>
-                        <button
-                            onClick={() => handleProcess('Approved')}
-                            disabled={processing}
-                            className="flex-1 bg-blue-500/10 hover:bg-blue-500 text-blue-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-blue-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(59,130,246,0.1)] hover:shadow-[0_0_30px_rgba(59,130,246,0.4)]"
-                        >
-                            {processing ? <Spinner size="sm" /> : 'Approve Request'}
+                            <CheckCircle size={14} />
+                            {processing ? <Spinner size="sm" /> : 'Approve & Mark as Paid (Instant)'}
                         </button>
                     </div>
                 )}
 
                 {request.status === 'Approved' && (
-                    <div className="pt-4 border-t border-white/5">
+                    <div className="pt-4 border-t border-white/5 space-y-3">
                         <button
                             onClick={() => handleProcess('Paid')}
                             disabled={processing}
-                            className="w-full bg-green-500/10 hover:bg-green-500 text-green-500 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-green-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(34,197,94,0.1)] hover:shadow-[0_0_30px_rgba(34,197,94,0.4)]"
+                            className="w-full bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white font-black tracking-widest text-[10px] py-3.5 px-4 rounded-xl transition-all border border-emerald-500/20 disabled:opacity-50 shadow-[0_0_20px_rgba(16,185,129,0.1)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] flex items-center justify-center gap-2"
                         >
-                            {processing ? <Spinner size="sm" /> : 'Mark as Paid'}
+                            <CheckCircle size={15} />
+                            {processing ? <Spinner size="sm" /> : 'Confirm Transfer (Mark as Paid)'}
                         </button>
                     </div>
                 )}

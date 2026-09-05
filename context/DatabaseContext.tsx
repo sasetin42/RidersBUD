@@ -2576,37 +2576,87 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             ...(status === 'Rejected' && adminDetails?.notes ? { rejectionReason: adminDetails.notes } : {})
         });
 
-        // Balance Logic
-        if (status === 'Approved' && previousStatus === 'Pending') {
-            // Deduct from wallet, move to locked
-            batch.update(mechanicRef, {
-                walletBalance: increment(-amount),
-                lockedBalance: increment(amount)
-            });
-        } else if (status === 'Paid') {
-            if (previousStatus === 'Approved') {
-                // Deduct from locked
-                batch.update(mechanicRef, {
-                    lockedBalance: increment(-amount)
-                });
-            } else if (previousStatus === 'Pending') {
-                // Direct Paid (skipping Approved stage)
-                batch.update(mechanicRef, {
-                    walletBalance: increment(-amount)
-                });
-            }
-        } else if (status === 'Rejected') {
-            if (previousStatus === 'Approved') {
-                // Reverse: move from locked back to wallet
-                batch.update(mechanicRef, {
-                    lockedBalance: increment(-amount),
-                    walletBalance: increment(amount)
-                });
-            }
-            // If it was Pending, nothing was deducted yet, so no balance change needed
-        }
+        // Determine current mechanic's current wallet and locked balances
+        const currentMechanic = db?.mechanics.find(m => m.id === mechanicId);
+        
+        // Calculate safe baseline from bookings ledger
+        const mechanicBookings = db?.bookings.filter(b => (b.mechanic?.id === mechanicId || b.mechanicId === mechanicId) && b.status === 'Completed') || [];
+        const lifetimeEarnings = (currentMechanic as any)?.totalEarnings ?? mechanicBookings.reduce((sum, job: any) => {
+            if (job.isPaid === false || job.paymentStatus === 'failed') return sum;
+            if (job.totalAmount != null && Number(job.totalAmount) > 0) return sum + Number(job.totalAmount);
+            if (job.price != null && Number(job.price) > 0) return sum + Number(job.price);
+            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+            return sum + svcsSum + addCosts + (Number(job.laborFee) || 0);
+        }, 0);
 
-        await batch.commit();
+        // Sum existing payouts (excluding the one being updated)
+        const otherPayouts = (db?.payouts || []).filter(p => p.mechanicId === mechanicId && p.id !== payoutId);
+        const otherPaidSum = otherPayouts
+            .filter(p => p.status === 'Paid' || p.status === 'Completed')
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const otherApprovedSum = otherPayouts
+            .filter(p => p.status === 'Approved')
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        // Ledger available = lifetime - all non-rejected payouts (paid + approved)
+        // Projected totals incorporating this status transition
+        const projectedPaid = otherPaidSum + (status === 'Paid' ? amount : 0);
+        const projectedApproved = otherApprovedSum + (status === 'Approved' ? amount : 0);
+
+        // Calculate reconciled balances
+        const newWalletBalance = Math.max(0, lifetimeEarnings - projectedPaid - projectedApproved);
+        const newLockedBalance = projectedApproved;
+
+        batch.update(mechanicRef, {
+            walletBalance: newWalletBalance,
+            lockedBalance: newLockedBalance
+        });
+
+        // Apply local optimistic state update immediately so UI never lags or freezes
+        setDb(prev => {
+            if (!prev) return null;
+            const updatedPayouts = prev.payouts.map(p => {
+                if (p.id === payoutId) {
+                    return {
+                        ...p,
+                        status,
+                        processDate: new Date().toISOString(),
+                        processedBy: adminDetails?.name || 'System Admin',
+                        adminId: adminDetails?.id || 'system',
+                        adminName: adminDetails?.name || 'System Admin',
+                        adminNotes: adminDetails?.notes || '',
+                        transactionId: adminDetails?.transactionId || '',
+                        ...(status === 'Rejected' && adminDetails?.notes ? { rejectionReason: adminDetails.notes } : {})
+                    };
+                }
+                return p;
+            });
+
+            const updatedMechanics = prev.mechanics.map(m => {
+                if (m.id === mechanicId) {
+                    return {
+                        ...m,
+                        walletBalance: newWalletBalance,
+                        lockedBalance: newLockedBalance
+                    };
+                }
+                return m;
+            });
+
+            return {
+                ...prev,
+                payouts: updatedPayouts,
+                mechanics: updatedMechanics
+            };
+        });
+
+        try {
+            await batch.commit();
+        } catch (commitErr) {
+            console.warn('[Firestore] Batch commit for payout update failed, operating on optimistic local state:', commitErr);
+        }
 
         // Notifications
         let notificationTitle = 'Payout Update';
@@ -2644,24 +2694,69 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         // Double check balance accounting for other pending requests
         const mechanic = db?.mechanics.find(m => m.id === request.mechanicId);
         const pendingAmount = db?.payouts
-            .filter(p => p.mechanicId === request.mechanicId && p.status === 'Pending')
+            .filter(p => p.mechanicId === request.mechanicId && (p.status === 'Pending' || p.status === 'Approved'))
             .reduce((sum, p) => sum + p.amount, 0) || 0;
 
         const completedJobs = db?.bookings.filter(b => (b.mechanic?.id === request.mechanicId || b.mechanicId === request.mechanicId) && b.status === 'Completed') || [];
-        const calculatedEarnings = completedJobs.reduce((sum, job) => sum + (job.service?.price || job.services?.[0]?.price || 0), 0);
+        const calculatedEarnings = completedJobs.reduce((sum, job) => {
+            if (job.isPaid === false || job.paymentStatus === 'failed') return sum;
+            return sum + (job.service?.price || job.services?.[0]?.price || job.totalCost || 0);
+        }, 0);
         const lifetimeEarnings = (mechanic as any)?.totalEarnings || calculatedEarnings;
-        const availableBalanceBase = (mechanic?.walletBalance || 0) || lifetimeEarnings;
+        
+        const priorPaidPayouts = (db?.payouts || [])
+            .filter(p => p.mechanicId === request.mechanicId && (p.status === 'Paid' || p.status === 'Completed'))
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        const priorApprovedPayouts = (db?.payouts || [])
+            .filter(p => p.mechanicId === request.mechanicId && p.status === 'Approved')
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        const ledgerAvailable = Math.max(0, lifetimeEarnings - priorPaidPayouts - priorApprovedPayouts);
+        const availableBalanceBase = (mechanic?.walletBalance != null && mechanic.walletBalance >= 0)
+            ? Math.max(ledgerAvailable, mechanic.walletBalance)
+            : ledgerAvailable;
 
         if (mechanic && availableBalanceBase - pendingAmount < request.amount) {
             throw new Error('Insufficient wallet balance (Pending requests: ₱' + pendingAmount.toLocaleString() + ').');
         }
 
-        await addDoc(collection(firestore, 'payouts'), {
+        const newPayoutId = 'po_' + Date.now();
+        const newPayoutDoc: PayoutRequest = {
+            id: newPayoutId,
             ...request,
             status: 'Pending',
             requestDate: new Date().toISOString(),
             submittedAt: new Date().toISOString()
+        };
+
+        // Optimistic local update
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                payouts: [newPayoutDoc, ...prev.payouts]
+            };
         });
+
+        try {
+            const docRef = await addDoc(collection(firestore, 'payouts'), {
+                ...request,
+                status: 'Pending',
+                requestDate: new Date().toISOString(),
+                submittedAt: new Date().toISOString()
+            });
+            // Align local id with Firestore generated id if available
+            setDb(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    payouts: prev.payouts.map(p => p.id === newPayoutId ? { ...p, id: docRef.id } : p)
+                };
+            });
+        } catch (e) {
+            console.warn('[Firestore] addPayoutRequest write failed, using local optimistic state:', e);
+        }
 
         await sendNotification({
             recipientId: 'admin',

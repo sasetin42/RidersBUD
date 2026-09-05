@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import NotificationBell from '../../components/NotificationBell';
 import Header from '../../components/Header';
 import { getProfileImage, STORAGE_PATHS } from '../../utils/imageConstants';
-import { Bell, CheckCircle, Smartphone, Volume2, VolumeX, Clock, Sparkles, Star, User, Building2, CreditCard, DollarSign, Wallet, Lock, MessageSquare, Hash } from 'lucide-react';
+import { Bell, CheckCircle, Smartphone, Volume2, VolumeX, Clock, Sparkles, Star, User, Building2, CreditCard, DollarSign, Wallet, Lock, MessageSquare, Hash, Landmark, QrCode, AlertCircle, ShieldCheck, Check, Upload, Trash2, ArrowRight, ExternalLink, Plus, ChevronRight, ChevronDown, Copy, Zap, ArrowDownRight, Shield } from 'lucide-react';
 import {
     getMechanicNotificationSettings,
     saveMechanicNotificationSettings,
@@ -1577,13 +1577,15 @@ const PayoutRequestModal: React.FC<{
         
         const approvedPayoutsAmount = db.payouts
             .filter((p: any) => p.mechanicId === mechanic.id && (p.status === 'Approved' || p.status === 'Paid' || p.status === 'Completed'))
-            .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+            .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
             
-        return Math.max(0, grossEarnings - approvedPayoutsAmount);
-    }, [db?.bookings, db?.payouts, mechanic.id]);
+        const ledgerAvailable = Math.max(0, grossEarnings - approvedPayoutsAmount - pendingRequestsAmount);
+        return ledgerAvailable;
+    }, [db?.bookings, db?.payouts, mechanic?.id, pendingRequestsAmount]);
 
-    const effectiveAvailableBalance = availableBalance || lifetimeEarnings;
-    const safeWithdrawable = Math.max(0, (effectiveAvailableBalance || 0) - pendingRequestsAmount);
+    const safeWithdrawable = (availableBalance != null && availableBalance >= 0)
+        ? Math.max(0, Math.max(lifetimeEarnings, availableBalance - pendingRequestsAmount))
+        : lifetimeEarnings;
     const requestAmount = parseFloat(amount || '0');
     const initialHasPayoutDetails = mechanic.payoutDetails && mechanic.payoutDetails.accountName && mechanic.payoutDetails.accountNumber;
 
@@ -1592,32 +1594,46 @@ const PayoutRequestModal: React.FC<{
     const maxPayout = settings.maximumPayout || Number.MAX_SAFE_INTEGER;
 
     const estimatedRemaining = Math.max(0, safeWithdrawable - (isNaN(requestAmount) ? 0 : requestAmount));
-    const [selectedDestinationIndex, setSelectedDestinationIndex] = useState(0);
-
     const payoutDestinations = useMemo<PayoutDetails[]>(() => {
         const list: PayoutDetails[] = [];
         if (mechanic.payoutDetails && mechanic.payoutDetails.accountName) {
-            list.push(mechanic.payoutDetails);
-            // Mock secondary destinations for demo purposes since schema is single destination
-            list.push({
-                method: 'Bank Transfer',
-                accountName: mechanic.payoutDetails.accountName,
-                accountNumber: mechanic.payoutDetails.accountNumber + '9999',
-                bankName: 'BDO Unibank',
-            });
-            list.push({
-                method: 'E-Wallet',
-                accountName: mechanic.payoutDetails.accountName,
-                accountNumber: mechanic.payoutDetails.accountNumber + '8888',
-                walletName: 'Maya',
+            list.push({ ...mechanic.payoutDetails, isDefault: true });
+        }
+        if (mechanic.savedPayoutDestinations && mechanic.savedPayoutDestinations.length > 0) {
+            mechanic.savedPayoutDestinations.forEach(d => {
+                if (d && d.accountNumber && (!mechanic.payoutDetails || d.accountNumber !== mechanic.payoutDetails.accountNumber)) {
+                    list.push(d);
+                }
             });
         }
         return list;
-    }, [mechanic.payoutDetails]);
+    }, [mechanic.payoutDetails, mechanic.savedPayoutDestinations]);
+
+    const defaultIndex = useMemo(() => {
+        const idx = payoutDestinations.findIndex(d => d.isDefault);
+        return idx !== -1 ? idx : 0;
+    }, [payoutDestinations]);
+
+    const [selectedDestinationIndex, setSelectedDestinationIndex] = useState(defaultIndex);
+    const [isDestinationDropdownOpen, setIsDestinationDropdownOpen] = useState(false);
+    const [copiedAccountNumber, setCopiedAccountNumber] = useState(false);
+    const [copiedRefNumber, setCopiedRefNumber] = useState(false);
+    const [submittedReceiptData, setSubmittedReceiptData] = useState<{
+        referenceId: string;
+        timestamp: string;
+        destination: PayoutDetails | undefined;
+        amount: number;
+        remainingBalance: number;
+    } | null>(null);
+
+    // Keep selected index synchronized whenever payout destinations or default change
+    useEffect(() => {
+        setSelectedDestinationIndex(defaultIndex);
+    }, [defaultIndex]);
 
     const activeDestination = payoutDestinations[selectedDestinationIndex] || mechanic.payoutDetails;
 
-    const hasPayoutDetails = !!activeDestination;
+    const hasPayoutDetails = !!activeDestination && !!activeDestination.accountName && !!activeDestination.accountNumber;
 
     const validationError = useMemo(() => {
         if (!hasPayoutDetails) return 'Please set up payout details first.';
@@ -1647,6 +1663,19 @@ const PayoutRequestModal: React.FC<{
                 ? `${activeDestination?.bankName} (Bank)`
                 : `${activeDestination?.walletName} (E-Wallet)`;
 
+            const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+            const refCode = `PO-${new Date().getFullYear()}-${randomSuffix}`;
+            const now = new Date();
+            const formattedTime = now.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            }) + ' • ' + now.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+
             await addPayoutRequest({
                 mechanicId: mechanic.id,
                 mechanicName: mechanic.name,
@@ -1654,6 +1683,14 @@ const PayoutRequestModal: React.FC<{
                 paymentMethod: method,
                 accountDetails: `${activeDestination?.accountName} - ${activeDestination?.accountNumber}`,
                 notes: note.trim() || 'Standard payout request from profile.'
+            });
+
+            setSubmittedReceiptData({
+                referenceId: refCode,
+                timestamp: formattedTime,
+                destination: activeDestination,
+                amount: requestAmount,
+                remainingBalance: Math.max(0, safeWithdrawable - requestAmount)
             });
             setIsSuccess(true);
         } catch (e) {
@@ -1664,50 +1701,133 @@ const PayoutRequestModal: React.FC<{
     };
 
     if (isSuccess) {
+        const dest = submittedReceiptData?.destination || activeDestination;
+        const refId = submittedReceiptData?.referenceId || `PO-${new Date().getFullYear()}-0258`;
+        const timeStr = submittedReceiptData?.timestamp || new Date().toLocaleString();
+        const finalAmount = submittedReceiptData?.amount || requestAmount;
+        const postBalance = submittedReceiptData?.remainingBalance ?? estimatedRemaining;
+
         return (
             <Modal title={<h3 className="text-base font-black text-white tracking-tight">Payout Request Submitted</h3>} isOpen={true} onClose={onClose} compact>
-                <div className="text-center space-y-4">
-                    <div className="w-20 h-20 rounded-3xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                    </div>
-                    <h3 className="text-lg font-black text-white">Request Sent Successfully</h3>
-                    <div className="bg-field rounded-xl p-4 border border-white/10 text-left space-y-3.5">
-                        <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-400 shrink-0">
-                                <DollarSign size={16} />
-                            </div>
-                            <div>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Amount Requested</p>
-                                <p className="text-xl font-black text-green-400 mt-0.5">₱{requestAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                            </div>
+                <div className="space-y-4 text-center">
+                    {/* Glowing Success Badge */}
+                    <div className="relative mx-auto w-16 h-16 flex items-center justify-center">
+                        <div className="absolute inset-0 rounded-3xl bg-emerald-500/20 blur-xl animate-pulse" />
+                        <div className="relative w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-xl shadow-emerald-500/10">
+                            <CheckCircle size={32} className="stroke-[2.5]" />
                         </div>
-                        
-                        <div className="flex items-center gap-3 border-t border-white/5 pt-3">
-                            <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400 shrink-0">
-                                {activeDestination?.method === 'Bank Transfer' ? <Building2 size={16} /> : <Smartphone size={16} />}
-                            </div>
+                    </div>
+
+                    <div>
+                        <h3 className="text-lg font-black text-white tracking-tight">Request Sent Successfully</h3>
+                        <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
+                            Your payout has been logged and sent to the administrator queue for verification.
+                        </p>
+                    </div>
+
+                    {/* Digital Receipt Card */}
+                    <div className="bg-[#181818] rounded-2xl border border-white/10 p-4 text-left space-y-3.5 shadow-2xl">
+                        {/* Reference Number Banner */}
+                        <div className="flex items-center justify-between bg-black/40 px-3 py-2 rounded-xl border border-white/5">
                             <div>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Destination</p>
-                                <p className="text-sm text-white font-bold mt-0.5">
-                                    {activeDestination?.accountName} • {activeDestination?.method === 'Bank Transfer' ? activeDestination?.bankName : activeDestination?.walletName} ({activeDestination?.accountNumber.slice(-4)})
-                                </p>
+                                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Transaction Ref</p>
+                                <p className="text-xs font-mono font-black text-white tracking-wider">{refId}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    navigator.clipboard?.writeText(refId);
+                                    setCopiedRefNumber(true);
+                                    setTimeout(() => setCopiedRefNumber(false), 2000);
+                                }}
+                                className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-gray-300 hover:text-white flex items-center gap-1 transition"
+                                title="Copy Reference ID"
+                            >
+                                {copiedRefNumber ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                                <span>{copiedRefNumber ? 'Copied' : 'Copy'}</span>
+                            </button>
+                        </div>
+
+                        {/* Amount Requested */}
+                        <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400 shrink-0">
+                                    <DollarSign size={16} />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Amount Requested</p>
+                                    <p className="text-xl font-black text-emerald-400 tracking-tight mt-0.5">
+                                        ₱{finalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                            </div>
+                            <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                                Pending Review
+                            </span>
+                        </div>
+
+                        {/* Destination Details */}
+                        <div className="space-y-2 text-xs">
+                            <div className="flex items-center justify-between">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    {dest?.method === 'Bank Transfer' ? <Landmark size={13} className="text-primary" /> : <Smartphone size={13} className="text-primary" />}
+                                    Destination Channel
+                                </span>
+                                <span className="font-bold text-white flex items-center gap-1.5">
+                                    {dest?.method === 'Bank Transfer' ? dest?.bankName : dest?.walletName}
+                                    <span className="text-[10px] text-gray-400 font-normal">({dest?.method})</span>
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    <User size={13} className="text-sky-400" />
+                                    Account Holder
+                                </span>
+                                <span className="font-bold text-white">{dest?.accountName}</span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    <Hash size={13} className="text-emerald-400" />
+                                    Account Number
+                                </span>
+                                <span className="font-mono font-bold text-primary tracking-wider">
+                                    {dest?.accountNumber ? `•••• •••• ${dest.accountNumber.slice(-4)}` : '••••'}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    <Wallet size={13} className="text-gray-400" />
+                                    Remaining Safe Balance
+                                </span>
+                                <span className="font-black text-gray-300">
+                                    ₱{postBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3 border-t border-white/5 pt-3">
-                            <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-primary shrink-0">
-                                <Clock size={16} />
+                        {/* Processing Timeline */}
+                        <div className="bg-[#201D17] border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                                <Clock size={14} />
                             </div>
                             <div>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Expected Timeline</p>
-                                <p className="text-xs font-bold text-primary mt-0.5">{processingTimeline}</p>
+                                <p className="text-[10px] text-amber-400 font-black uppercase tracking-wider">Expected Timeline</p>
+                                <p className="text-xs font-bold text-gray-300 mt-0.5">{processingTimeline}</p>
+                                <p className="text-[10px] text-gray-500 mt-0.5">{timeStr}</p>
                             </div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="mt-2 w-full bg-primary text-white font-black py-3 rounded-xl hover:bg-orange-600 transition">
-                        Done
+
+                    {/* Done Action Button */}
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="w-full bg-primary hover:bg-orange-600 text-white font-black py-3.5 px-5 rounded-xl transition shadow-lg shadow-primary/25 min-h-[48px] flex items-center justify-center gap-2 text-xs tracking-wider uppercase"
+                    >
+                        <span>Done</span>
                     </button>
                 </div>
             </Modal>
@@ -1717,139 +1837,317 @@ const PayoutRequestModal: React.FC<{
     return (
         <Modal title={<h2 className="text-base font-black text-white tracking-tight">Request a Payout</h2>} isOpen={true} onClose={onClose} compact>
             <div className="space-y-4">
-                {/* Finance Summary - Total Earnings and Pending/Locked */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-[#132535] border border-sky-500/10 rounded-xl p-3 flex items-center justify-between">
-                        <div>
-                            <p className="text-[10px] text-gray-400 font-bold tracking-wider">Total Earnings</p>
-                            <p className="text-base font-black text-sky-400 mt-1">₱{lifetimeEarnings.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                {/* 1. Finance Overview HUD */}
+                <div className="grid grid-cols-2 gap-2.5">
+                    <div className="bg-gradient-to-br from-[#12241F] to-[#0A1713] border border-emerald-500/20 rounded-2xl p-3.5 relative overflow-hidden">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Available Balance</span>
+                            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                                <Wallet size={14} />
+                            </div>
                         </div>
-                        <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400 shrink-0">
-                            <Wallet size={16} />
-                        </div>
+                        <p className="text-lg font-black text-emerald-400 mt-1.5 tracking-tight">
+                            ₱{safeWithdrawable.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                            Gross: ₱{lifetimeEarnings.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
                     </div>
-                    <div className="bg-[#1f1b2e] border border-yellow-500/10 rounded-xl p-3 flex items-center justify-between">
-                        <div>
-                            <p className="text-[10px] text-gray-400 font-bold tracking-wider">Pending/Locked</p>
-                            <p className="text-base font-black text-yellow-400 mt-1">₱{pendingRequestsAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+
+                    <div className="bg-gradient-to-br from-[#231E12] to-[#161208] border border-amber-500/20 rounded-2xl p-3.5 relative overflow-hidden">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Pending / Locked</span>
+                            <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
+                                <Lock size={14} />
+                            </div>
                         </div>
-                        <div className="w-8 h-8 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-400 shrink-0">
-                            <Lock size={16} />
-                        </div>
+                        <p className="text-lg font-black text-amber-400 mt-1.5 tracking-tight">
+                            ₱{pendingRequestsAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                            In queue for payout
+                        </p>
                     </div>
                 </div>
 
+                {/* 2. Payout Destination Card */}
                 {!hasPayoutDetails ? (
-                    <div className="p-4 bg-red-900/50 border border-red-500/50 rounded-xl text-center">
-                        <p className="text-red-300 font-semibold">No Payout Details Found</p>
-                        <p className="text-xs text-red-200 mt-1">Please set up payout details before requesting a payout.</p>
+                    <div className="p-4 bg-red-900/30 border border-red-500/30 rounded-2xl text-center space-y-2">
+                        <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto text-red-400">
+                            <AlertCircle size={20} />
+                        </div>
+                        <p className="text-red-300 font-bold text-xs">No Payout Destination Configured</p>
+                        <p className="text-[11px] text-red-200/80">Please set up your bank account or e-wallet destination before requesting a payout.</p>
                         <button
                             type="button"
                             onClick={onEditPayoutDetails}
-                            className="mt-3 bg-primary text-white text-xs font-black px-4 py-2 rounded-lg hover:bg-orange-600 transition"
+                            className="mt-2 inline-flex items-center gap-1.5 bg-primary text-white text-xs font-black px-4 py-2.5 rounded-xl hover:bg-orange-600 transition shadow-lg shadow-primary/20"
                         >
-                            Set Up Details
+                            <CreditCard size={13} />
+                            Set Up Destination Now
                         </button>
                     </div>
                 ) : (
-                    <div className="bg-field p-4 rounded-xl border border-white/10 space-y-3">
-                        <div className="flex items-center justify-between mb-1">
-                            <h4 className="font-black text-white text-xs">Payout Destination</h4>
+                    <div className="bg-[#181818] rounded-2xl border border-white/10 p-3.5 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-black text-white uppercase tracking-wider">Payout Destination</span>
+                            </div>
                             <div className="flex items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={onEditPayoutDetails}
-                                    className="text-[10px] font-bold text-primary hover:underline uppercase tracking-wider"
+                                    className="text-[10px] font-black text-primary hover:underline uppercase tracking-wider flex items-center gap-1 bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-lg transition"
                                 >
-                                    Edit
+                                    <Plus size={10} />
+                                    Manage / Add
                                 </button>
-                                <span className="text-[10px] bg-green-500/10 border border-green-500/20 text-green-400 font-bold px-2 py-0.5 rounded-full">Verified</span>
-                            </div>
-                        </div>
-                        
-                        <div className="relative">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-primary">
-                                {activeDestination?.method === 'Bank Transfer' ? <Building2 size={15} /> : <Smartphone size={15} />}
-                            </div>
-                            <select
-                                id="payout-destination"
-                                name="payoutDestination"
-                                value={selectedDestinationIndex}
-                                onChange={(e) => setSelectedDestinationIndex(Number(e.target.value))}
-                                className="w-full p-2.5 pl-9 bg-black/40 border border-secondary rounded-xl text-xs text-white outline-none focus:border-white/20 cursor-pointer appearance-none"
-                            >
-                                {payoutDestinations.map((dest, idx) => (
-                                    <option key={idx} value={idx}>
-                                        {dest.method} — {dest.method === 'Bank Transfer' ? dest.bankName : dest.walletName} ({dest.accountNumber.slice(-4)})
-                                    </option>
-                                ))}
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
+                                <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <ShieldCheck size={11} /> Verified
+                                </span>
                             </div>
                         </div>
 
-                        <div className="space-y-2 pt-2 border-t border-white/5">
-                            <div className="flex items-center gap-2.5 text-xs text-light-gray">
-                                <User size={13} className="text-sky-400 shrink-0" />
-                                <span>Account: <span className="text-white font-bold">{activeDestination?.accountName}</span></span>
+                        {/* Interactive Channel Selector if multiple destinations exist */}
+                        {payoutDestinations.length > 1 && (
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsDestinationDropdownOpen(!isDestinationDropdownOpen)}
+                                    className="w-full p-2.5 bg-black/40 hover:bg-black/60 border border-white/10 hover:border-primary/40 rounded-xl text-xs text-white flex items-center justify-between transition group"
+                                >
+                                    <div className="flex items-center gap-2.5 overflow-hidden">
+                                        <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary shrink-0">
+                                            {activeDestination?.method === 'Bank Transfer' ? <Landmark size={15} /> : <Smartphone size={15} />}
+                                        </div>
+                                        <div className="text-left truncate">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-bold text-white text-xs truncate">
+                                                    {activeDestination?.method === 'Bank Transfer' ? activeDestination.bankName : activeDestination?.walletName}
+                                                </span>
+                                                <span className="text-[10px] text-gray-400">
+                                                    ({activeDestination?.method === 'Bank Transfer' ? 'Bank' : 'E-Wallet'})
+                                                </span>
+                                            </div>
+                                            <p className="text-[10px] font-mono text-gray-400 truncate">
+                                                {activeDestination?.accountName} • **** {activeDestination?.accountNumber?.slice(-4)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className={`text-gray-400 transition-transform duration-200 ${isDestinationDropdownOpen ? 'rotate-180 text-primary' : ''}`}>
+                                        <ChevronDown size={16} />
+                                    </div>
+                                </button>
+
+                                {isDestinationDropdownOpen && (
+                                    <div className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-[#1A1A1A] border border-white/15 rounded-xl shadow-2xl overflow-hidden divide-y divide-white/5 animate-in fade-in slide-in-from-top-1 duration-150 max-h-56 overflow-y-auto">
+                                        {payoutDestinations.map((dest, idx) => {
+                                            const isSelected = idx === selectedDestinationIndex;
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedDestinationIndex(idx);
+                                                        setIsDestinationDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full p-2.5 text-left flex items-center justify-between transition ${
+                                                        isSelected
+                                                            ? 'bg-primary/15 text-white'
+                                                            : 'hover:bg-white/5 text-gray-300'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                                                            isSelected ? 'bg-primary text-black font-black' : 'bg-white/5 text-gray-400'
+                                                        }`}>
+                                                            {dest.method === 'Bank Transfer' ? <Landmark size={13} /> : <Smartphone size={13} />}
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-xs font-bold text-white">
+                                                                    {dest.method === 'Bank Transfer' ? dest.bankName : dest.walletName}
+                                                                </span>
+                                                                {dest.isDefault && (
+                                                                    <span className="text-[8px] bg-primary/20 text-primary font-black px-1.5 py-0.2 rounded border border-primary/30">
+                                                                        DEFAULT
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[10px] text-gray-400 font-mono">
+                                                                {dest.accountName} • {dest.accountNumber}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && (
+                                                        <Check size={14} className="text-primary shrink-0" />
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
-                            <div className="flex items-center gap-2.5 text-xs text-light-gray">
-                                <Hash size={13} className="text-orange-400 shrink-0" />
-                                <span>Number: <span className="text-white font-bold">{activeDestination?.accountNumber}</span></span>
+                        )}
+
+                        {/* Active Account Details HUD */}
+                        <div className="p-3 bg-black/40 rounded-xl border border-white/5 space-y-2.5">
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    {activeDestination?.method === 'Bank Transfer' ? <Landmark size={13} className="text-primary" /> : <Smartphone size={13} className="text-primary" />}
+                                    Channel
+                                </span>
+                                <span className="text-white font-bold flex items-center gap-1.5">
+                                    {activeDestination?.method === 'Bank Transfer' ? activeDestination?.bankName : activeDestination?.walletName}
+                                    <span className="text-[10px] text-gray-400 font-normal px-1.5 py-0.5 bg-white/5 rounded">
+                                        {activeDestination?.method}
+                                    </span>
+                                </span>
                             </div>
-                            <div className="flex items-center gap-2.5 text-xs text-light-gray">
-                                <CreditCard size={13} className="text-emerald-400 shrink-0" />
-                                <span>Method: <span className="text-white font-bold">{activeDestination?.method} ({activeDestination?.method === 'Bank Transfer' ? activeDestination?.bankName : activeDestination?.walletName})</span></span>
+
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    <User size={13} className="text-sky-400" />
+                                    Account Holder
+                                </span>
+                                <span className="text-white font-bold">{activeDestination?.accountName}</span>
                             </div>
+
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    <Hash size={13} className="text-emerald-400" />
+                                    Account Number
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-primary font-mono font-bold tracking-wider">{activeDestination?.accountNumber}</span>
+                                    {activeDestination?.accountNumber && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                navigator.clipboard?.writeText(activeDestination.accountNumber);
+                                                setCopiedAccountNumber(true);
+                                                setTimeout(() => setCopiedAccountNumber(false), 2000);
+                                            }}
+                                            className="text-gray-400 hover:text-white transition p-1 hover:bg-white/10 rounded"
+                                            title="Copy Account Number"
+                                        >
+                                            {copiedAccountNumber ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {activeDestination?.qrCodeUrl && (
+                                <div className="flex items-center justify-between text-xs pt-1.5 border-t border-white/5">
+                                    <span className="text-gray-400 flex items-center gap-1.5">
+                                        <QrCode size={13} className="text-amber-400" />
+                                        QR Scan Status
+                                    </span>
+                                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded font-bold flex items-center gap-1">
+                                        <Zap size={10} /> Ready for Admin Instant Scan
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
 
-                <div className="space-y-2">
+                {/* 3. Amount Input & Quick Percentage Buttons */}
+                <div className="bg-[#181818] rounded-2xl border border-white/10 p-3.5 space-y-3">
                     <div className="flex items-center justify-between">
-                        <label htmlFor="payout-amount" className="text-xs text-light-gray">Amount to Withdraw</label>
+                        <label htmlFor="payout-amount" className="text-[11px] font-black text-white uppercase tracking-wider">
+                            Amount to Withdraw
+                        </label>
                         <button
                             type="button"
-                            onClick={() => setAmount(safeWithdrawable.toFixed(2))}
-                            className="text-[10px] font-bold text-primary hover:underline"
+                            onClick={() => {
+                                setAmount(safeWithdrawable.toFixed(2));
+                                setError('');
+                            }}
+                            className="text-[10px] font-black text-primary hover:text-orange-400 bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg transition"
                         >
-                            MAX
+                            MAX AVAILABLE
                         </button>
                     </div>
+
                     <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-primary font-bold text-sm">₱</span>
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary font-black text-lg">₱</span>
                         <input
                             id="payout-amount"
                             name="payoutAmount"
                             type="number"
+                            min="0"
+                            step="0.01"
                             value={amount}
                             onChange={e => { setAmount(e.target.value); setError(''); }}
                             disabled={!hasPayoutDetails}
-                            className="w-full p-3 pl-8 bg-field border border-secondary rounded-xl disabled:opacity-50 outline-none transition-all focus:border-white/20 text-sm font-semibold text-white"
+                            className={`w-full p-3 pl-9 bg-black/50 border rounded-xl text-base font-bold text-white outline-none transition-all placeholder:text-gray-600 disabled:opacity-40 ${
+                                validationError && requestAmount > 0 ? 'border-red-500/60 focus:border-red-500' : 'border-white/10 focus:border-primary/50'
+                            }`}
                             placeholder="0.00"
                         />
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => applyQuickAmount(0.25)} className="px-3 py-1.5 text-xs rounded-lg bg-white/5 border border-white/10 hover:bg-white/10">25%</button>
-                        <button type="button" onClick={() => applyQuickAmount(0.50)} className="px-3 py-1.5 text-xs rounded-lg bg-white/5 border border-white/10 hover:bg-white/10">50%</button>
-                        <button type="button" onClick={() => applyQuickAmount(0.75)} className="px-3 py-1.5 text-xs rounded-lg bg-white/5 border border-white/10 hover:bg-white/10">75%</button>
-                        <button type="button" onClick={() => applyQuickAmount(1)} className="px-3 py-1.5 text-xs rounded-lg bg-primary/15 border border-primary/30 text-primary hover:bg-primary/25">100%</button>
+                    {/* Touch-First Quick Amount Buttons (44px min touch area) */}
+                    <div className="grid grid-cols-4 gap-2">
+                        {[
+                            { label: '25%', ratio: 0.25 },
+                            { label: '50%', ratio: 0.50 },
+                            { label: '75%', ratio: 0.75 },
+                            { label: '100%', ratio: 1.00 }
+                        ].map(({ label, ratio }) => {
+                            const targetVal = Math.floor((safeWithdrawable * ratio) * 100) / 100;
+                            const isSelected = requestAmount > 0 && Math.abs(requestAmount - targetVal) < 0.05;
+                            return (
+                                <button
+                                    key={label}
+                                    type="button"
+                                    disabled={!hasPayoutDetails || safeWithdrawable <= 0}
+                                    onClick={() => applyQuickAmount(ratio)}
+                                    className={`py-2.5 rounded-xl text-xs font-black transition border min-h-[44px] flex items-center justify-center ${
+                                        isSelected
+                                            ? 'bg-primary text-black border-primary shadow-md shadow-primary/25'
+                                            : 'bg-black/30 hover:bg-white/10 text-gray-300 border-white/10'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
                     </div>
 
-                    <p className="text-[11px] text-gray-500">
-                        Limits: {minPayout ? `Min ₱${minPayout.toLocaleString()}` : 'No minimum'} • {maxPayout !== Number.MAX_SAFE_INTEGER ? `Max ₱${maxPayout.toLocaleString()}` : 'No maximum'}
-                    </p>
-                    <p className="text-[11px] text-gray-500">After request, estimated safe balance: <span className="text-white font-semibold">₱{estimatedRemaining.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                    {/* Limits & Rules */}
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
+                        <span>Min: <strong className="text-gray-300 font-bold">{minPayout ? `₱${minPayout.toLocaleString()}` : 'None'}</strong></span>
+                        <span>Max: <strong className="text-gray-300 font-bold">{maxPayout !== Number.MAX_SAFE_INTEGER ? `₱${maxPayout.toLocaleString()}` : 'None'}</strong></span>
+                    </div>
                 </div>
 
+                {/* 4. Live Computation HUD */}
+                <div className="bg-black/30 rounded-2xl border border-white/5 p-3.5 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">Withdrawal Amount:</span>
+                        <span className="font-bold text-white">
+                            ₱{requestAmount > 0 ? requestAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">Processing Fee:</span>
+                        <span className="font-bold text-emerald-400">Free (₱0.00)</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs border-t border-white/5 pt-2">
+                        <span className="text-gray-300 font-bold">Estimated Safe Balance Remaining:</span>
+                        <span className={`font-black ${estimatedRemaining <= 0 && requestAmount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                            ₱{estimatedRemaining.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                    </div>
+                </div>
+
+                {/* 5. Notes */}
                 <div>
-                    <label htmlFor="payout-notes" className="text-xs text-light-gray mb-1.5 block flex items-center gap-1.5">
+                    <label htmlFor="payout-notes" className="text-xs text-gray-300 mb-1.5 block flex items-center gap-1.5 font-bold">
                         <MessageSquare size={13} className="text-primary" />
-                        Notes (Optional)
+                        Notes for Admin (Optional)
                     </label>
                     <textarea
                         id="payout-notes"
@@ -1857,42 +2155,55 @@ const PayoutRequestModal: React.FC<{
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
                         rows={2}
-                        className="w-full p-3 bg-field border border-secondary rounded-xl outline-none transition-all focus:border-white/20 resize-none text-xs"
-                        placeholder="Add notes for admin (e.g., urgent payout for utilities)"
+                        className="w-full p-3 bg-field border border-white/10 rounded-xl outline-none transition-all focus:border-primary/50 resize-none text-xs text-white placeholder:text-gray-600"
+                        placeholder="Add notes for admin (e.g., urgent payout for shop supplies)"
                     />
                 </div>
 
-                <div className="bg-[#1A1A1A] border border-white/10 rounded-xl p-3 flex items-start gap-3">
+                {/* 6. Processing Timeline Banner */}
+                <div className="bg-[#191919] border border-white/10 rounded-xl p-3 flex items-start gap-3">
                     <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-primary mt-0.5 shrink-0">
                         <Clock size={16} />
                     </div>
                     <div>
-                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Processing Timeline</p>
-                        <p className="text-xs font-bold text-primary mt-1">{processingTimeline}</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Processing Timeline</p>
+                        <p className="text-xs font-bold text-primary mt-0.5">{processingTimeline}</p>
                     </div>
                 </div>
 
+                {/* Validation Error Alert */}
                 {(error || validationError) && (
-                    <p className="text-red-400 text-xs mt-1">{error || validationError}</p>
-
+                    <div className="p-3 bg-red-900/30 border border-red-500/40 rounded-xl flex items-center gap-2 text-red-400 text-xs">
+                        <AlertCircle size={15} className="shrink-0" />
+                        <span>{error || validationError}</span>
+                    </div>
                 )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
-                <button onClick={onClose} className="bg-field text-white font-bold py-2.5 px-4 rounded-xl hover:bg-gray-600 transition text-xs">
+            {/* Modal Actions */}
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/10 pt-4">
+                <button
+                    onClick={onClose}
+                    className="bg-white/5 hover:bg-white/10 text-white font-bold py-3 px-5 rounded-xl transition text-xs min-h-[44px]"
+                >
                     Cancel
                 </button>
                 <button
                     onClick={handleRequest}
                     disabled={!!validationError || isProcessing}
-                    className="bg-primary text-white font-black py-2.5 px-5 rounded-xl hover:bg-orange-600 transition disabled:opacity-50 min-w-[160px] flex justify-center items-center gap-2 text-xs"
+                    className="bg-primary text-white font-black py-3 px-6 rounded-xl hover:bg-orange-600 transition disabled:opacity-40 min-w-[170px] min-h-[44px] flex justify-center items-center gap-2 text-xs shadow-lg shadow-primary/20"
                 >
                     {isProcessing ? (
                         <>
                             <Spinner size="sm" />
-                            <span>Submitting...</span>
+                            <span>Submitting Request...</span>
                         </>
-                    ) : 'Request Payout'}
+                    ) : (
+                        <>
+                            <span>Request Payout</span>
+                            <ArrowRight size={14} />
+                        </>
+                    )}
                 </button>
             </div>
         </Modal>
@@ -1900,229 +2211,683 @@ const PayoutRequestModal: React.FC<{
 };
 const PayoutDetailsModal: React.FC<{
     payoutDetails: Mechanic['payoutDetails'];
+    savedPayoutDestinations?: PayoutDetails[];
     onClose: () => void;
-    onSave: (details: PayoutDetails) => void;
-}> = ({ payoutDetails, onClose, onSave }) => {
-    const [details, setDetails] = useState<PayoutDetails>(payoutDetails || {
-        method: 'Bank Transfer',
-        accountName: '',
-        accountNumber: '',
-    });
+    onSave: (details: PayoutDetails, allDestinations?: PayoutDetails[]) => void;
+}> = ({ payoutDetails, savedPayoutDestinations = [], onClose, onSave }) => {
+    // Initialise full list of accounts
+    const initialList = useMemo(() => {
+        const list: PayoutDetails[] = [];
+        if (payoutDetails && payoutDetails.accountNumber) {
+            list.push({
+                ...payoutDetails,
+                id: payoutDetails.id || 'default-' + (payoutDetails.accountNumber || 'primary'),
+                isDefault: true
+            });
+        }
+        if (savedPayoutDestinations && savedPayoutDestinations.length > 0) {
+            savedPayoutDestinations.forEach((item, idx) => {
+                if (item && item.accountNumber && (!payoutDetails || item.accountNumber !== payoutDetails.accountNumber)) {
+                    list.push({
+                        ...item,
+                        id: item.id || `saved-${idx}-${item.accountNumber}`,
+                        isDefault: false
+                    });
+                }
+            });
+        }
+        return list;
+    }, [payoutDetails, savedPayoutDestinations]);
+
+    const [destinations, setDestinations] = useState<PayoutDetails[]>(initialList);
+    const [viewMode, setViewMode] = useState<'list' | 'add'>('list');
+
+    // Form state for adding new destination
+    const [method, setMethod] = useState<'Bank Transfer' | 'E-Wallet'>('Bank Transfer');
+    const [accountName, setAccountName] = useState(payoutDetails?.accountName || '');
+    const [bankName, setBankName] = useState('BDO');
+    const [walletName, setWalletName] = useState<'GCash' | 'Paymaya' | 'Coins.ph' | 'GrabPay'>('GCash');
+    const [accountNumber, setAccountNumber] = useState('');
+    const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+    const [makeDefault, setMakeDefault] = useState(destinations.length === 0);
+    const [uploadingQr, setUploadingQr] = useState(false);
     const [error, setError] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setDetails(prev => ({ ...prev, [name]: value }));
+    // Preset options with brand badge colors
+    const presetBanks = [
+        { name: 'BDO', label: 'BDO Unibank' },
+        { name: 'BPI', label: 'Bank of the Philippine Islands' },
+        { name: 'Metrobank', label: 'Metrobank' },
+        { name: 'Unionbank', label: 'UnionBank of the Philippines' },
+        { name: 'Landbank', label: 'Land Bank of the Philippines' },
+        { name: 'Security Bank', label: 'Security Bank' },
+        { name: 'RCBC', label: 'Rizal Commercial Banking Corp' },
+        { name: 'PNB', label: 'Philippine National Bank' }
+    ];
+
+    const presetWallets = [
+        { name: 'GCash', label: 'GCash' },
+        { name: 'Paymaya', label: 'Maya (PayMaya)' },
+        { name: 'GrabPay', label: 'GrabPay' },
+        { name: 'Coins.ph', label: 'Coins.ph' }
+    ];
+
+    // Phone / Account number formatters
+    const formatPhoneNumber = (val: string) => {
+        const cleaned = val.replace(/\D/g, '').slice(0, 11);
+        if (cleaned.length <= 4) return cleaned;
+        if (cleaned.length <= 7) return `${cleaned.slice(0, 4)} ${cleaned.slice(4)}`;
+        return `${cleaned.slice(0, 4)} ${cleaned.slice(4, 7)} ${cleaned.slice(7, 11)}`;
+    };
+
+    const formatBankAccount = (val: string) => {
+        const cleaned = val.replace(/\D/g, '').slice(0, 18);
+        return cleaned.replace(/(.{4})/g, '$1 ').trim();
+    };
+
+    const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value;
+        if (method === 'E-Wallet') {
+            setAccountNumber(formatPhoneNumber(raw));
+        } else {
+            setAccountNumber(formatBankAccount(raw));
+        }
         setError('');
     };
 
-    const handleMethodSelect = (method: 'Bank Transfer' | 'E-Wallet') => {
-        setDetails(prev => {
-            const newDetails: PayoutDetails = {
-                method,
-                accountName: prev.accountName || '',
-                accountNumber: '',
-            };
-            if (method === 'Bank Transfer') {
-                newDetails.bankName = 'BDO';
-            } else {
-                newDetails.walletName = 'GCash';
+    const isNameValid = accountName.trim().length >= 3;
+    const cleanDigits = accountNumber.replace(/\s+/g, '');
+    const isNumberValid = method === 'E-Wallet' 
+        ? (cleanDigits.startsWith('09') && cleanDigits.length === 11)
+        : (cleanDigits.length >= 10 && cleanDigits.length <= 18);
+
+    const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploadingQr(true);
+        setError('');
+        try {
+            const base64 = await fileToBase64(file);
+            setQrCodeUrl(base64);
+        } catch (err) {
+            setError('Failed to process QR code image.');
+        } finally {
+            setUploadingQr(false);
+        }
+    };
+
+    // Set an existing account as primary/default
+    const handleSetDefault = (id?: string) => {
+        if (!id) return;
+        setDestinations(prev => prev.map(d => ({
+            ...d,
+            isDefault: d.id === id
+        })));
+    };
+
+    // Remove a saved destination
+    const handleDeleteDestination = (id?: string) => {
+        if (!id) return;
+        if (destinations.length <= 1) {
+            setError('You must keep at least one payout destination.');
+            return;
+        }
+        setDestinations(prev => {
+            const remaining = prev.filter(d => d.id !== id);
+            // If the deleted one was default, make the first remaining the new default
+            const hasDefault = remaining.some(d => d.isDefault);
+            if (!hasDefault && remaining.length > 0) {
+                remaining[0].isDefault = true;
             }
-            return newDetails;
+            return remaining;
         });
-        setError('');
     };
 
-    const handlePresetClick = (name: string) => {
-        setDetails(prev => {
-            if (prev.method === 'Bank Transfer') {
-                return { ...prev, bankName: name };
-            } else {
-                return { ...prev, walletName: name as 'GCash' | 'Paymaya' };
+    // Add new destination to state
+    const handleAddDestination = () => {
+        if (!accountName.trim()) {
+            setError('Account holder name is required.');
+            return;
+        }
+        if (method === 'Bank Transfer' && !bankName.trim()) {
+            setError('Please specify your bank name.');
+            return;
+        }
+        if (!cleanDigits) {
+            setError('Account or mobile number is required.');
+            return;
+        }
+        if (method === 'E-Wallet') {
+            if (!cleanDigits.startsWith('09') || cleanDigits.length !== 11) {
+                setError('Please enter a valid 11-digit Philippine mobile number starting with 09 (e.g. 0917 123 4567).');
+                return;
             }
-        });
-        setError('');
-    };
-
-    const handleSave = () => {
-        if (!details.accountName.trim()) {
-            setError('Account name is required.');
-            return;
-        }
-        if (details.method === 'Bank Transfer' && !details.bankName?.trim()) {
-            setError('Bank name is required.');
-            return;
-        }
-        if (!details.accountNumber.trim()) {
-            setError('Account or phone number is required.');
-            return;
-        }
-
-        // Numerical format check
-        const cleanNumber = details.accountNumber.replace(/\s+/g, '');
-        if (!/^\d+$/.test(cleanNumber)) {
-            setError('Account number must contain digits only.');
-            return;
-        }
-
-        if (details.method === 'E-Wallet') {
-            if (cleanNumber.length < 10 || cleanNumber.length > 12) {
-                setError('Please enter a valid mobile number (e.g. 09171234567).');
+        } else {
+            if (cleanDigits.length < 10) {
+                setError('Bank account numbers are typically 10 to 16 digits.');
                 return;
             }
         }
 
-        onSave(details);
+        // Duplicate check
+        const isDuplicate = destinations.some(d => d.accountNumber === cleanDigits);
+        if (isDuplicate) {
+            setError('This account or mobile number is already registered.');
+            return;
+        }
+
+        const newId = `dest-${Date.now()}`;
+        const newDest: PayoutDetails = {
+            id: newId,
+            method,
+            accountName: accountName.trim(),
+            accountNumber: cleanDigits,
+            bankName: method === 'Bank Transfer' ? bankName.trim() : undefined,
+            walletName: method === 'E-Wallet' ? walletName : undefined,
+            qrCodeUrl: qrCodeUrl || undefined,
+            isVerified: true,
+            isDefault: makeDefault || destinations.length === 0,
+            updatedAt: new Date().toISOString()
+        };
+
+        setDestinations(prev => {
+            if (newDest.isDefault) {
+                return [newDest, ...prev.map(d => ({ ...d, isDefault: false }))];
+            }
+            return [...prev, newDest];
+        });
+
+        // Reset form
+        setAccountNumber('');
+        setQrCodeUrl(null);
+        setError('');
+        setViewMode('list');
+    };
+
+    // Save all changes to database
+    const handleCommitAll = () => {
+        if (destinations.length === 0) {
+            setError('Please add at least one payout destination.');
+            return;
+        }
+
+        setIsSaving(true);
+        const defaultDest = destinations.find(d => d.isDefault) || destinations[0];
+        const primaryToSave: PayoutDetails = {
+            ...defaultDest,
+            isDefault: true
+        };
+
+        const allToSave = destinations.map(d => ({
+            ...d,
+            isDefault: d.id === primaryToSave.id
+        }));
+
+        onSave(primaryToSave, allToSave);
     };
 
     return (
-        <Modal title="Payout Details" isOpen={true} onClose={onClose}>
-            <div className="space-y-5">
-                {/* Method Card Selector */}
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400">Payout Method</label>
-                    <div className="grid grid-cols-2 gap-3">
+        <Modal title="Payout Destinations" isOpen={true} onClose={onClose} compact>
+            <div className="space-y-4 max-h-[82vh] overflow-y-auto pr-1 custom-scrollbar">
+                {/* Header HUD Banner */}
+                <div className="bg-gradient-to-r from-primary/15 via-[#1E1E1E] to-emerald-500/10 p-3.5 rounded-2xl border border-white/10 flex items-center justify-between shadow-inner">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0 shadow-sm">
+                            <Wallet size={16} />
+                        </div>
+                        <div>
+                            <p className="text-[11px] font-black text-white leading-tight">Multi-Channel Payouts</p>
+                            <p className="text-[9px] text-gray-400 font-bold mt-0.5">
+                                {destinations.length} linked account{destinations.length !== 1 ? 's' : ''} • Instant real-time sync
+                            </p>
+                        </div>
+                    </div>
+                    {viewMode === 'list' ? (
                         <button
                             type="button"
-                            onClick={() => handleMethodSelect('Bank Transfer')}
-                            className={`p-4 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                                details.method === 'Bank Transfer'
-                                    ? 'bg-primary/10 border-primary text-white'
-                                    : 'bg-[#18181b] border-white/5 text-gray-400 hover:border-white/10 hover:text-white'
-                            }`}
+                            onClick={() => { setViewMode('add'); setError(''); }}
+                            className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-primary bg-primary/15 border border-primary/30 hover:bg-primary/25 px-2.5 py-1.5 rounded-xl transition"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                            </svg>
-                            <span className="font-bold text-sm">Bank Transfer</span>
+                            <Plus size={12} /> Add Channel
                         </button>
+                    ) : (
                         <button
                             type="button"
-                            onClick={() => handleMethodSelect('E-Wallet')}
-                            className={`p-4 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                                details.method === 'E-Wallet'
-                                    ? 'bg-primary/10 border-primary text-white'
-                                    : 'bg-[#18181b] border-white/5 text-gray-400 hover:border-white/10 hover:text-white'
-                            }`}
+                            onClick={() => { setViewMode('list'); setError(''); }}
+                            className="text-[10px] font-bold text-gray-400 hover:text-white bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg transition"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                            </svg>
-                            <span className="font-bold text-sm">E-Wallet</span>
+                            Back to List
+                        </button>
+                    )}
+                </div>
+
+                {/* VIEW 1: LIST OF SAVED DESTINATIONS */}
+                {viewMode === 'list' && (
+                    <div className="space-y-3 animate-fadeIn">
+                        <div className="flex items-center justify-between px-0.5">
+                            <span className="text-[10px] font-black tracking-widest text-gray-400 uppercase">Registered Accounts & Wallets</span>
+                            <span className="text-[9px] text-gray-500">Tap "Default" to switch primary</span>
+                        </div>
+
+                        {destinations.length === 0 ? (
+                            <div className="text-center py-8 border border-dashed border-white/10 rounded-2xl bg-[#141414] space-y-2">
+                                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center mx-auto text-gray-500">
+                                    <CreditCard size={20} />
+                                </div>
+                                <p className="text-white font-bold text-xs">No Payout Accounts Linked</p>
+                                <p className="text-[10px] text-gray-500">Add your bank account or e-wallet to receive your earnings.</p>
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('add')}
+                                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-black rounded-lg hover:bg-orange-600 transition"
+                                >
+                                    <Plus size={13} /> Add Account Now
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-2.5">
+                                {destinations.map((dest) => {
+                                    const isDef = !!dest.isDefault;
+                                    const isBank = dest.method === 'Bank Transfer';
+                                    const title = isBank ? (dest.bankName || 'Bank Transfer') : (dest.walletName || 'E-Wallet');
+
+                                    return (
+                                        <div
+                                            key={dest.id}
+                                            className={`p-3 rounded-2xl border transition-all relative ${
+                                                isDef
+                                                    ? 'bg-[#18181b] border-primary/50 shadow-lg shadow-primary/5 ring-1 ring-primary/30'
+                                                    : 'bg-[#141416] border-white/5 hover:border-white/15'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                                        isDef ? 'bg-primary text-white' : 'bg-white/5 text-gray-400'
+                                                    }`}>
+                                                        {isBank ? <Landmark size={17} /> : <Smartphone size={17} />}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="font-black text-xs text-white truncate">{title}</p>
+                                                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-gray-400 border border-white/5">
+                                                                {dest.method}
+                                                            </span>
+                                                            {dest.qrCodeUrl && (
+                                                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-0.5">
+                                                                    <QrCode size={9} /> QR
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[11px] font-mono text-gray-300 font-bold mt-0.5">
+                                                            {dest.accountNumber}
+                                                        </p>
+                                                        <p className="text-[9px] text-gray-500 truncate">
+                                                            Holder: <span className="text-gray-300 font-semibold">{dest.accountName}</span>
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {isDef ? (
+                                                        <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-1 rounded-lg flex items-center gap-1">
+                                                            <Check size={11} /> Primary
+                                                        </span>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSetDefault(dest.id)}
+                                                            className="text-[9px] font-bold text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-2 py-1 rounded-lg transition"
+                                                        >
+                                                            Set Default
+                                                        </button>
+                                                    )}
+
+                                                    {destinations.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteDestination(dest.id)}
+                                                            className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
+                                                            title="Delete Destination"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={() => { setViewMode('add'); setError(''); }}
+                            className="w-full py-2.5 border border-dashed border-white/15 hover:border-primary/40 rounded-xl text-xs font-bold text-gray-400 hover:text-white flex items-center justify-center gap-1.5 bg-black/20 hover:bg-black/40 transition"
+                        >
+                            <Plus size={14} className="text-primary" />
+                            <span>Add Another Bank or E-Wallet</span>
                         </button>
                     </div>
-                </div>
-
-                {/* Account Name */}
-                <div className="space-y-2">
-                    <label htmlFor="mechanic-account-name" className="text-xs font-bold text-gray-400">Account Name</label>
-                    <input 
-                        id="mechanic-account-name"
-                        type="text" 
-                        name="accountName" 
-                        value={details.accountName} 
-                        onChange={handleInputChange} 
-                        placeholder="As it appears on your account" 
-                        className="w-full px-4 py-3.5 bg-field border border-secondary rounded-xl text-sm font-bold text-white outline-none transition-all placeholder-gray-600 focus:border-primary/50 focus:ring-1 focus:ring-primary/20" 
-                    />
-                </div>
-
-                {details.method === 'Bank Transfer' ? (
-                    <>
-                        {/* Bank Selector / Name */}
-                        <div className="space-y-2">
-                            <label htmlFor="mechanic-bank-name" className="text-xs font-bold text-gray-400">Bank Name</label>
-                            <input 
-                                id="mechanic-bank-name"
-                                type="text" 
-                                name="bankName" 
-                                value={details.bankName || ''} 
-                                onChange={handleInputChange} 
-                                placeholder="Enter bank name" 
-                                className="w-full px-4 py-3.5 bg-field border border-secondary rounded-xl text-sm font-bold text-white outline-none transition-all placeholder-gray-600 focus:border-primary/50 focus:ring-1 focus:ring-primary/20" 
-                            />
-                            {/* Preset Banks */}
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                                {['BDO', 'BPI', 'Metrobank', 'Unionbank'].map((bank) => (
-                                    <button
-                                        key={bank}
-                                        type="button"
-                                        onClick={() => handlePresetClick(bank)}
-                                        className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all ${
-                                            details.bankName === bank
-                                                ? 'bg-primary/20 text-primary border-primary/40'
-                                                : 'bg-[#18181b] text-gray-400 border-white/5 hover:text-white hover:border-gray-600'
-                                        }`}
-                                    >
-                                        {bank}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Account Number */}
-                        <div className="space-y-2">
-                            <label htmlFor="mechanic-account-number" className="text-xs font-bold text-gray-400">Account Number</label>
-                            <input 
-                                id="mechanic-account-number"
-                                type="text" 
-                                name="accountNumber" 
-                                value={details.accountNumber} 
-                                onChange={handleInputChange} 
-                                placeholder="Bank account number" 
-                                className="w-full px-4 py-3.5 bg-field border border-secondary rounded-xl text-sm font-bold text-white outline-none transition-all placeholder-gray-600 focus:border-primary/50 focus:ring-1 focus:ring-primary/20" 
-                            />
-                        </div>
-                    </>
-                ) : (
-                    <>
-                        {/* Wallet Selector */}
-                        <div className="space-y-2">
-                            <label className="text-xs font-bold text-gray-400">E-Wallet Provider</label>
-                            <div className="flex gap-2">
-                                {['GCash', 'Paymaya'].map((wallet) => (
-                                    <button
-                                        key={wallet}
-                                        type="button"
-                                        onClick={() => handlePresetClick(wallet)}
-                                        className={`w-1/2 py-3.5 text-center font-bold text-sm rounded-xl border transition-all ${
-                                            details.walletName === wallet
-                                                ? 'bg-primary/20 text-primary border-primary/40 shadow-lg shadow-primary/5'
-                                                : 'bg-[#18181b] text-gray-400 border-white/5 hover:text-white hover:border-gray-600'
-                                        }`}
-                                    >
-                                        {wallet === 'Paymaya' ? 'Maya' : wallet}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Phone Number */}
-                        <div className="space-y-2">
-                            <label htmlFor="mechanic-wallet-number" className="text-xs font-bold text-gray-400">Account Number (Mobile Phone)</label>
-                            <input 
-                                id="mechanic-wallet-number"
-                                type="tel" 
-                                name="accountNumber" 
-                                value={details.accountNumber} 
-                                onChange={handleInputChange} 
-                                placeholder="e.g., 09171234567" 
-                                className="w-full px-4 py-3.5 bg-field border border-secondary rounded-xl text-sm font-bold text-white outline-none transition-all placeholder-gray-600 focus:border-primary/50 focus:ring-1 focus:ring-primary/20" 
-                            />
-                        </div>
-                    </>
                 )}
 
+                {/* VIEW 2: ADD NEW DESTINATION FORM */}
+                {viewMode === 'add' && (
+                    <div className="space-y-4 animate-fadeIn">
+                        {/* Channel Selector */}
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black tracking-widest text-gray-400 uppercase ml-0.5">Select Channel Type</label>
+                            <div className="grid grid-cols-2 gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => { setMethod('Bank Transfer'); setError(''); }}
+                                    className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 relative ${
+                                        method === 'Bank Transfer'
+                                            ? 'bg-primary/10 border-primary text-white shadow-lg shadow-primary/10'
+                                            : 'bg-[#18181b] border-white/5 text-gray-400 hover:border-white/10 hover:text-white'
+                                    }`}
+                                >
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${method === 'Bank Transfer' ? 'bg-primary text-white' : 'bg-white/5 text-gray-400'}`}>
+                                        <Landmark size={16} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-black text-xs">Bank Transfer</p>
+                                        <p className="text-[8px] text-gray-400 font-bold truncate">Direct Philippine Bank</p>
+                                    </div>
+                                    {method === 'Bank Transfer' && (
+                                        <span className="w-2 h-2 rounded-full bg-primary absolute right-3 top-3" />
+                                    )}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => { setMethod('E-Wallet'); setError(''); }}
+                                    className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 relative ${
+                                        method === 'E-Wallet'
+                                            ? 'bg-primary/10 border-primary text-white shadow-lg shadow-primary/10'
+                                            : 'bg-[#18181b] border-white/5 text-gray-400 hover:border-white/10 hover:text-white'
+                                    }`}
+                                >
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${method === 'E-Wallet' ? 'bg-primary text-white' : 'bg-white/5 text-gray-400'}`}>
+                                        <Smartphone size={16} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="font-black text-xs">E-Wallet</p>
+                                        <p className="text-[8px] text-gray-400 font-bold truncate">GCash, Maya, etc.</p>
+                                    </div>
+                                    {method === 'E-Wallet' && (
+                                        <span className="w-2 h-2 rounded-full bg-primary absolute right-3 top-3" />
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Account Name */}
+                        <div className="space-y-1.5">
+                            <div className="flex items-center justify-between ml-0.5">
+                                <label htmlFor="new-payout-acc-name" className="text-[10px] font-black tracking-widest text-gray-400 uppercase">Account Holder Name</label>
+                                {isNameValid && (
+                                    <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-400">
+                                        <Check size={10} /> Valid
+                                    </span>
+                                )}
+                            </div>
+                            <div className="relative">
+                                <input
+                                    id="new-payout-acc-name"
+                                    name="accountName"
+                                    type="text"
+                                    value={accountName}
+                                    onChange={(e) => { setAccountName(e.target.value); setError(''); }}
+                                    placeholder="e.g. Juan Dela Cruz"
+                                    className={`w-full px-3.5 py-2.5 bg-black/40 border rounded-xl text-xs font-bold text-white outline-none transition-all placeholder-gray-600 ${
+                                        isNameValid ? 'border-emerald-500/40 focus:border-emerald-500' : 'border-white/10 focus:border-primary'
+                                    }`}
+                                />
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                    <User size={14} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Channel Specific Configuration */}
+                        {method === 'Bank Transfer' ? (
+                            <div className="space-y-2.5">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black tracking-widest text-gray-400 uppercase ml-0.5">Select Bank</label>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                        {presetBanks.map((b) => {
+                                            const isSelected = bankName.toLowerCase() === b.name.toLowerCase();
+                                            return (
+                                                <button
+                                                    key={b.name}
+                                                    type="button"
+                                                    onClick={() => { setBankName(b.name); setError(''); }}
+                                                    className={`p-2 rounded-xl text-center border font-black text-[10px] transition-all truncate ${
+                                                        isSelected
+                                                            ? 'bg-primary text-white border-primary shadow-md shadow-primary/20 scale-[1.02]'
+                                                            : 'bg-[#18181b] text-gray-400 border-white/5 hover:border-white/20 hover:text-white'
+                                                    }`}
+                                                    title={b.label}
+                                                >
+                                                    {b.name}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label htmlFor="new-bank-name" className="text-[9px] font-bold text-gray-500 uppercase ml-0.5">Bank Name</label>
+                                    <div className="relative">
+                                        <input
+                                            id="new-bank-name"
+                                            name="bankName"
+                                            type="text"
+                                            value={bankName}
+                                            onChange={(e) => { setBankName(e.target.value); setError(''); }}
+                                            placeholder="Enter or select bank"
+                                            className="w-full px-3.5 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs font-bold text-white outline-none focus:border-primary placeholder-gray-600"
+                                        />
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                            <Building2 size={14} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between ml-0.5">
+                                        <label htmlFor="new-bank-acc-num" className="text-[10px] font-black tracking-widest text-gray-400 uppercase">Bank Account Number</label>
+                                        {isNumberValid && (
+                                            <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-400 font-mono">
+                                                <Check size={10} /> {cleanDigits.length} Digits
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            id="new-bank-acc-num"
+                                            name="accountNumber"
+                                            type="text"
+                                            value={accountNumber}
+                                            onChange={handleNumberChange}
+                                            placeholder="0000 0000 0000"
+                                            className={`w-full px-3.5 py-2.5 bg-black/40 border rounded-xl text-xs font-mono font-bold text-white outline-none transition-all placeholder-gray-600 ${
+                                                isNumberValid ? 'border-emerald-500/40 focus:border-emerald-500 text-emerald-400' : 'border-white/10 focus:border-primary'
+                                            }`}
+                                        />
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                            <CreditCard size={14} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-2.5">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black tracking-widest text-gray-400 uppercase ml-0.5">E-Wallet Provider</label>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                        {presetWallets.map((w) => {
+                                            const isSelected = walletName === w.name;
+                                            return (
+                                                <button
+                                                    key={w.name}
+                                                    type="button"
+                                                    onClick={() => { setWalletName(w.name as any); setError(''); }}
+                                                    className={`p-2 rounded-xl text-center border font-black text-[10px] transition-all truncate ${
+                                                        isSelected
+                                                            ? 'bg-primary text-white border-primary shadow-md shadow-primary/20 scale-[1.02]'
+                                                            : 'bg-[#18181b] text-gray-400 border-white/5 hover:border-white/20 hover:text-white'
+                                                    }`}
+                                                >
+                                                    {w.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between ml-0.5">
+                                        <label htmlFor="new-wallet-phone" className="text-[10px] font-black tracking-widest text-gray-400 uppercase">
+                                            {walletName} Registered Mobile
+                                        </label>
+                                        {isNumberValid && (
+                                            <span className="inline-flex items-center gap-1 text-[8px] font-bold text-emerald-400 font-mono">
+                                                <Check size={10} /> 11-Digit Mobile
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            id="new-wallet-phone"
+                                            name="accountNumber"
+                                            type="tel"
+                                            value={accountNumber}
+                                            onChange={handleNumberChange}
+                                            placeholder="0917 000 0000"
+                                            className={`w-full px-3.5 py-2.5 bg-black/40 border rounded-xl text-xs font-mono font-bold text-white outline-none transition-all placeholder-gray-600 ${
+                                                isNumberValid ? 'border-emerald-500/40 focus:border-emerald-500 text-emerald-400' : 'border-white/10 focus:border-primary'
+                                            }`}
+                                        />
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                            <Smartphone size={14} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[9.5px] font-black text-gray-300 flex items-center gap-1.5">
+                                            <QrCode size={13} className="text-primary" /> {walletName} QR Code (Optional)
+                                        </span>
+                                        {qrCodeUrl && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setQrCodeUrl(null)}
+                                                className="text-[8.5px] text-red-400 font-bold hover:underline flex items-center gap-0.5"
+                                            >
+                                                <Trash2 size={10} /> Remove
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {qrCodeUrl ? (
+                                        <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-white/5">
+                                            <img
+                                                src={qrCodeUrl}
+                                                alt="Payout QR"
+                                                className="w-14 h-14 object-contain rounded-md border border-white/10 bg-white"
+                                            />
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-xs font-black text-white truncate">QR Code Attached</p>
+                                                <p className="text-[8px] text-emerald-400 font-bold mt-0.5">Admins can scan to pay instantly</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <label className="flex items-center justify-center gap-2 p-2.5 border border-dashed border-white/15 hover:border-primary/40 rounded-lg cursor-pointer text-[10px] font-bold text-gray-400 hover:text-white transition-all bg-black/20">
+                                            <Upload size={12} className="text-primary" />
+                                            <span>{uploadingQr ? 'Uploading...' : 'Upload QR Image (PNG/JPG)'}</span>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleQrUpload}
+                                                disabled={uploadingQr}
+                                                className="hidden"
+                                            />
+                                        </label>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Set as Default Switch */}
+                        <div className="flex items-center justify-between p-3 bg-black/30 border border-white/5 rounded-xl">
+                            <div>
+                                <p className="text-xs font-bold text-white">Set as Primary Payout Account</p>
+                                <p className="text-[9px] text-gray-500">Will be used as default for withdrawal requests</p>
+                            </div>
+                            <input
+                                type="checkbox"
+                                checked={makeDefault}
+                                onChange={(e) => setMakeDefault(e.target.checked)}
+                                className="w-4 h-4 accent-primary cursor-pointer rounded"
+                            />
+                        </div>
+
+                        {/* Form Action Buttons */}
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => { setViewMode('list'); setError(''); }}
+                                className="px-4 py-2 bg-white/5 text-gray-300 font-bold rounded-xl text-xs hover:bg-white/10 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleAddDestination}
+                                className="px-5 py-2 bg-primary hover:bg-orange-600 text-white font-black rounded-xl text-xs transition flex items-center gap-1.5 shadow-lg shadow-primary/20"
+                            >
+                                <Plus size={13} />
+                                Add to My Accounts
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Error Message */}
                 {error && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold text-center rounded-xl">
-                        {error}
+                    <div className="p-2.5 bg-red-500/10 border border-red-500/25 rounded-xl flex items-center gap-2 text-red-400 text-xs font-bold animate-fadeIn">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>{error}</span>
                     </div>
                 )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-3 border-t border-white/5 pt-5">
-                <button type="button" onClick={onClose} className="bg-[#1E1E1E] text-white font-bold py-3 px-6 rounded-xl hover:bg-gray-800 transition text-sm">Cancel</button>
-                <button type="button" onClick={handleSave} className="bg-primary text-white font-bold py-3 px-6 rounded-xl hover:bg-orange-600 transition text-sm shadow-lg shadow-primary/20">Save Details</button>
+            {/* Modal Bottom Save Action */}
+            <div className="mt-4 flex items-center justify-end border-t border-white/5 pt-3.5">
+                <div className="flex gap-2.5">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isSaving}
+                        className="px-5 py-2.5 bg-white/5 text-gray-300 font-bold rounded-xl hover:bg-white/10 hover:text-white transition-all text-xs"
+                    >
+                        Close
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleCommitAll}
+                        disabled={isSaving}
+                        className="px-6 py-2.5 bg-primary hover:bg-orange-600 active:scale-95 text-white font-black rounded-xl transition-all text-xs shadow-lg shadow-primary/25 flex items-center gap-1.5"
+                    >
+                        <ShieldCheck size={14} />
+                        <span>{isSaving ? 'Saving...' : 'Save & Sync All'}</span>
+                    </button>
+                </div>
             </div>
         </Modal>
     );
@@ -2693,14 +3458,21 @@ const MechanicProfileManagementScreen: React.FC = () => {
 
         const approvedPayoutsAmount = db.payouts
             .filter((p: any) => p.mechanicId === mechanic.id && (p.status === 'Approved' || p.status === 'Paid' || p.status === 'Completed'))
-            .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+            .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+
+        const pendingPayoutsAmount = db.payouts
+            .filter((p: any) => p.mechanicId === mechanic.id && p.status === 'Pending')
+            .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
             
-        const lifetimeEarnings = Math.max(0, grossEarnings - approvedPayoutsAmount);
-        const availableForPayout = mechanic.walletBalance || lifetimeEarnings;
+        // Available for payout equals gross completed earnings minus all active/settled payouts
+        const ledgerAvailable = Math.max(0, grossEarnings - approvedPayoutsAmount - pendingPayoutsAmount);
+        const availableForPayout = (mechanic.walletBalance != null && mechanic.walletBalance >= 0)
+            ? Math.max(ledgerAvailable, Math.max(0, mechanic.walletBalance - pendingPayoutsAmount))
+            : ledgerAvailable;
 
         return {
             totalJobs: completedJobs.length,
-            lifetimeEarnings,
+            lifetimeEarnings: grossEarnings,
             availableForPayout,
         };
     }, [db.bookings, db.payouts, mechanic.walletBalance, mechanic.id]);
@@ -2733,8 +3505,12 @@ const MechanicProfileManagementScreen: React.FC = () => {
         updateMechanicProfile({ ...mechanic, password: newPass });
     };
 
-    const handlePayoutDetailsSave = (payoutDetails: PayoutDetails) => {
-        updateMechanicProfile({ ...mechanic, payoutDetails });
+    const handlePayoutDetailsSave = (payoutDetails: PayoutDetails, savedDestinations?: PayoutDetails[]) => {
+        updateMechanicProfile({ 
+            ...mechanic, 
+            payoutDetails,
+            savedPayoutDestinations: savedDestinations !== undefined ? savedDestinations : (mechanic.savedPayoutDestinations || [])
+        });
         if (previousModal) {
             setActiveModal(previousModal);
             setPreviousModal(null);
@@ -2848,8 +3624,8 @@ const MechanicProfileManagementScreen: React.FC = () => {
                         icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 10a2 2 0 002-2V4.414l1.586 1.586a1 1 0 001.414-1.414l-4-4a1 1 0 00-1.414 0l-4 4a1 1 0 101.414 1.414L5 4.414V8a2 2 0 002 2zM14 10a2 2 0 00-2 2v3.586l-1.586-1.586a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l4-4a1 1 0 00-1.414-1.414L15 15.586V12a2 2 0 00-2-2z" /></svg>} 
                     />
                     <MenuItem 
-                        label="Payout Details" 
-                        subtitle="Manage GCash details, account info, and routing"
+                        label="Payout Destinations" 
+                        subtitle="Manage multiple E-Wallets, bank accounts, and QR codes"
                         onClick={() => setActiveModal('payouts')} 
                         icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" /><path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" /></svg>} 
                     />
@@ -2910,7 +3686,8 @@ const MechanicProfileManagementScreen: React.FC = () => {
             )}
             {activeModal === 'payouts' && (
                 <PayoutDetailsModal 
-                    payoutDetails={mechanic.payoutDetails} 
+                    payoutDetails={mechanic.payoutDetails}
+                    savedPayoutDestinations={mechanic.savedPayoutDestinations || []}
                     onClose={() => {
                         if (previousModal) {
                             setActiveModal(previousModal);

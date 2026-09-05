@@ -6,9 +6,10 @@ import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
 import { useNotification } from '../../context/NotificationContext';
-import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink, X, Wrench, MapPin, Phone } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink, X, Wrench, MapPin, Phone, Navigation, Truck, Sparkles, ChevronRight, Car, UserCheck, FileText, AlertTriangle, Activity, TrendingUp, Zap, Filter, CalendarDays, CalendarRange, Check, Tag, Maximize2, Route, Compass, MessageSquare } from 'lucide-react';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
-import MapComponent, { MapMarker } from '../../components/MapComponent';
+import MapComponent, { MapMarker, MapPolyline } from '../../components/MapComponent';
+import CustomerMechanicChatModal from '../../components/customer/CustomerMechanicChatModal';
 import { ref, onValue } from 'firebase/database';
 import { rtdb, db as firestoreDB } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -93,10 +94,25 @@ const getTimelineData = (status: BookingStatus, statusHistory?: { status: Bookin
     return history;
 };
 
-
-
-
-// Quick Action Button Component
+const statusColors: Record<string, string> = {
+    'Upcoming': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    'Booking Confirmed': 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+    'Mechanic Assigned': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    'En Route': 'bg-primary/15 text-primary border-primary/30',
+    'In Progress': 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    'Work Done': 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    'Completed': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    'Cancelled': 'bg-red-500/10 text-red-400 border-red-500/20',
+    'Reschedule Requested': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    'On Hold': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    'Pending': 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+    'Approved': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    'Received': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    'Booking Received': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    'LTO Processing': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    'Dispatched': 'bg-primary/15 text-primary border-primary/30',
+    'Assigned': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+};
 const QuickActionButton: React.FC<{
     icon: React.ReactNode;
     onClick: (e: React.MouseEvent) => void;
@@ -140,7 +156,9 @@ const BookingDetailsModal: React.FC<{ booking: Booking; customer?: Customer, onC
                         </h3>
                         {(() => {
                             const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
-                            const total = booking.totalAmount ?? svcs.reduce((s, svc) => s + svc.price, 0);
+                            const originalServicesFee = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0) || (Number(booking.totalAmount) || 0);
+                            const addCosts = (booking.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+                            const total = originalServicesFee + addCosts;
                             const dur = svcs.map(s => s.estimatedTime).filter(Boolean).join(' + ') || 'N/A';
                             return (
                                 <>
@@ -345,15 +363,17 @@ const PriceBreakdownModal: React.FC<{
     onClose: () => void;
 }> = ({ booking, onClose }) => {
     const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
-    const originalServicesTotal = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0);
-    const paidDownpayment = Number(booking.paidAmount) || (originalServicesTotal * 0.5);
-    const serviceBalance = Math.max(0, originalServicesTotal - paidDownpayment);
+    const originalServicesTotal = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0) || (Number(booking.totalAmount) || 0);
+    const initialDeposit = (booking.downpaymentAmount != null && Number(booking.downpaymentAmount) > 0)
+        ? Number(booking.downpaymentAmount)
+        : (booking.isVerified ? originalServicesTotal * 0.5 : 0);
     
     const additionalCosts = (booking as any).additionalCosts || [];
     const additionalCostsTotal = additionalCosts.reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
     
     const totalAmount = originalServicesTotal + additionalCostsTotal;
-    const remainingBalance = serviceBalance + additionalCostsTotal;
+    const remainingBalance = Math.max(0, totalAmount - initialDeposit);
+    const isFullyPaid = Boolean(booking.isPaid);
 
     const downpaymentReceipt = booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl || (booking as any).downpaymentReceiptUrl;
     const downpaymentRef = booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference || (booking as any).downpaymentReference;
@@ -532,11 +552,15 @@ const PriceBreakdownModal: React.FC<{
 
                             <div className="flex justify-between text-xs font-medium">
                                 <span className="text-gray-400">Paid Down Payment (50% Deposit)</span>
-                                <span className="text-green-400">{paidDownpayment > 0 ? `₱${paidDownpayment.toLocaleString()}` : '—'}</span>
+                                <span className="text-emerald-400 font-bold">{initialDeposit > 0 ? `₱${initialDeposit.toLocaleString()}` : '—'}</span>
                             </div>
-                            <div className="flex justify-between items-center bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
-                                <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider">Final Payment Due</span>
-                                <span className="text-sm font-black text-emerald-400">{remainingBalance > 0 ? `₱${remainingBalance.toLocaleString()}` : 'For Quotation'}</span>
+                            <div className={`flex justify-between items-center p-2.5 rounded-xl border ${isFullyPaid ? 'bg-emerald-500/15 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/20'}`}>
+                                <span className={`text-[10px] font-black uppercase tracking-wider ${isFullyPaid ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                    {isFullyPaid ? 'Final Payment (Settled)' : 'Final Payment Due'}
+                                </span>
+                                <span className={`text-sm font-black ${isFullyPaid ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                    {remainingBalance > 0 ? `₱${remainingBalance.toLocaleString()}` : 'For Quotation'}
+                                </span>
                             </div>
                     </div>
                 </div>
@@ -665,71 +689,656 @@ const MechanicAssignmentModal: React.FC<{
 
 
 const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> = ({ booking, onClose }) => {
-    const mapMarkers = useMemo(() => {
-        if (!booking.location || typeof L === 'undefined') return [];
-        return [{
-            id: 'service-location',
-            position: [booking.location.lat, booking.location.lng] as [number, number],
-            popupContent: `<div class="text-center font-bold"><p class="text-primary text-sm">Service Location</p><p class="text-xs text-gray-600 mt-1">${booking.location.address || 'Customer Location'}</p></div>`,
-            icon: L.divIcon({
-                html: `
-                    <div class="relative flex items-center justify-center">
-                        <!-- Pulsing ring animation -->
-                        <div class="absolute w-16 h-16 bg-red-500 rounded-full opacity-30 animate-ping"></div>
-                        <div class="absolute w-12 h-12 bg-red-500 rounded-full opacity-50 animate-pulse"></div>
-                        <!-- Main pin icon -->
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 relative z-10" viewBox="0 0 20 20" fill="#EF4444" style="filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));">
-                            <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 21l-4.95-6.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
-                        </svg>
-                        <!-- White center dot -->
-                        <div class="absolute top-[14px] left-1/2 -translate-x-1/2 w-2 h-2 bg-white rounded-full z-20"></div>
-                    </div>
-                `,
-                className: 'bg-transparent border-0',
-                iconSize: [48, 48],
-                iconAnchor: [24, 48],
-                popupAnchor: [0, -48]
-            })
-        }];
+    const { db } = useDatabase();
+    const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [mechanicLiveLocation, setMechanicLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [activeViewMode, setActiveViewMode] = useState<'both' | 'mechanic' | 'customer'>('both');
+    const [time, setTime] = useState<number>(0);
+    const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+
+    const customerObj = useMemo(() => {
+        return db.customers.find(c => c.name === booking.customerName || c.id === booking.customerId);
+    }, [db.customers, booking.customerName, booking.customerId]);
+
+    const mechanicObj = useMemo(() => {
+        return db.mechanics.find(m => m.id === booking.mechanicId || (booking.mechanic && m.id === booking.mechanic.id));
+    }, [db.mechanics, booking.mechanicId, booking.mechanic]);
+
+    const isDriverService = useMemo(() => {
+        return (booking.services?.[0]?.category === 'Driver for Hire') || 
+               (booking.service?.category === 'Driver for Hire') || 
+               (booking.services?.[0]?.name?.toLowerCase().includes('driver')) ||
+               (!!booking.driverName && !booking.mechanicId);
     }, [booking]);
 
+    const driverObj = useMemo(() => {
+        return (booking as any).driverObj || (db.hireDrivers || []).find(d => d.name === booking.driverName || d.id === (booking as any).driverId);
+    }, [db.hireDrivers, booking.driverName, (booking as any).driverId, (booking as any).driverObj]);
+
+    // Live movement tick for simulated active routes
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setTime(prev => prev + 1000);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Subscribe to real-time Firebase RTDB tracking
+    useEffect(() => {
+        if (!booking.id) return;
+        const customerRef = ref(rtdb, `tracking/${booking.id}/customerLocation`);
+        const mechanicRef = ref(rtdb, `tracking/${booking.id}/mechanicLocation`);
+
+        const unsubCustomer = onValue(customerRef, (snapshot) => {
+            const val = snapshot.val();
+            if (val) {
+                const lat = Number(val.lat);
+                const lng = Number(val.lng);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    setCustomerLiveLocation({ lat, lng });
+                }
+            }
+        }, (error) => {
+            console.warn("Realtime customer tracking blocked or unavailable:", error);
+        });
+
+        const unsubMechanic = onValue(mechanicRef, (snapshot) => {
+            const val = snapshot.val();
+            if (val) {
+                const lat = Number(val.lat);
+                const lng = Number(val.lng);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    setMechanicLiveLocation({ lat, lng });
+                }
+            }
+        }, (error) => {
+            console.warn("Realtime mechanic tracking blocked or unavailable:", error);
+        });
+
+        return () => {
+            unsubCustomer();
+            unsubMechanic();
+        };
+    }, [booking.id]);
+
+    // Base customer coordinate
+    const baseLat = booking.location ? Number((booking.location as any).latitude || booking.location.lat) : 14.291457;
+    const baseLng = booking.location ? Number((booking.location as any).longitude || booking.location.lng) : 121.001210;
+
+    const currentCustomerCoord = customerLiveLocation || (!isNaN(baseLat) && !isNaN(baseLng) ? { lat: baseLat, lng: baseLng } : null);
+    
+    // Mechanic coordinates
+    const currentMechanicCoord = useMemo(() => {
+        if (mechanicLiveLocation) return mechanicLiveLocation;
+        if (mechanicObj?.lat && mechanicObj?.lng) return { lat: Number(mechanicObj.lat), lng: Number(mechanicObj.lng) };
+        if (booking.mechanic?.lat && booking.mechanic?.lng) return { lat: Number(booking.mechanic.lat), lng: Number(booking.mechanic.lng) };
+        if (!isNaN(baseLat) && !isNaN(baseLng)) {
+            // Simulated position with animated pulse
+            return {
+                lat: baseLat + 0.0035 + Math.sin(time / 5000) * 0.0006,
+                lng: baseLng + 0.0035 + Math.cos(time / 5000) * 0.0006
+            };
+        }
+        return null;
+    }, [mechanicLiveLocation, mechanicObj, booking.mechanic, baseLat, baseLng, time]);
+
+    // Road route state between customer & mechanic/driver
+    const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
+    const [roadDistanceKm, setRoadDistanceKm] = useState<number | null>(null);
+    const [roadDurationMins, setRoadDurationMins] = useState<number | null>(null);
+    const [isRoutingActive, setIsRoutingActive] = useState<boolean>(false);
+
+    // Fetch accurate driving road route from OSRM with safe geodesic fallback
+    useEffect(() => {
+        if (!currentCustomerCoord || !currentMechanicCoord) {
+            setRouteGeometry([]);
+            setRoadDistanceKm(null);
+            setRoadDurationMins(null);
+            return;
+        }
+
+        let isSubscribed = true;
+        const custLat = currentCustomerCoord.lat;
+        const custLng = currentCustomerCoord.lng;
+        const mechLat = currentMechanicCoord.lat;
+        const mechLng = currentMechanicCoord.lng;
+
+        // Fallback straight path
+        const straightCoords: [number, number][] = [
+            [mechLat, mechLng],
+            [custLat, custLng]
+        ];
+
+        const latDiff = custLat - mechLat;
+        const lngDiff = custLng - mechLng;
+        const approxKm = Math.max(0.1, parseFloat((Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111).toFixed(1)));
+        const fallbackMins = Math.max(2, Math.round(approxKm * 2.8));
+
+        const osrmUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${mechLng},${mechLat};${custLng},${custLat}?overview=full&geometries=geojson`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+        fetch(osrmUrl, { signal: controller.signal })
+            .then(res => res.json())
+            .then(data => {
+                clearTimeout(timeoutId);
+                if (!isSubscribed) return;
+                if (data && data.routes && data.routes.length > 0) {
+                    const primary = data.routes[0];
+                    const pts: [number, number][] = (primary.geometry?.coordinates || []).map((c: any) => [c[1], c[0]]);
+                    if (pts.length > 0) {
+                        setRouteGeometry(pts);
+                        const dist = parseFloat((primary.distance / 1000).toFixed(1));
+                        const dur = Math.max(2, Math.round(primary.duration / 60));
+                        setRoadDistanceKm(dist);
+                        setRoadDurationMins(dur);
+                        setIsRoutingActive(true);
+                        return;
+                    }
+                }
+                // Fallback to straight line
+                setRouteGeometry(straightCoords);
+                setRoadDistanceKm(approxKm);
+                setRoadDurationMins(fallbackMins);
+                setIsRoutingActive(false);
+            })
+            .catch(() => {
+                if (!isSubscribed) return;
+                setRouteGeometry(straightCoords);
+                setRoadDistanceKm(approxKm);
+                setRoadDurationMins(fallbackMins);
+                setIsRoutingActive(false);
+            });
+
+        return () => {
+            isSubscribed = false;
+            controller.abort();
+            clearTimeout(timeoutId);
+        };
+    }, [currentCustomerCoord?.lat, currentCustomerCoord?.lng, currentMechanicCoord?.lat, currentMechanicCoord?.lng]);
+
+    // Distance & ETA calculation with live road routing prioritised
+    const distanceKm = useMemo(() => {
+        if (roadDistanceKm !== null) return roadDistanceKm;
+        if (!currentCustomerCoord || !currentMechanicCoord) return 2.4;
+        const R = 6371; // Earth radius in km
+        const dLat = (currentMechanicCoord.lat - currentCustomerCoord.lat) * Math.PI / 180;
+        const dLon = (currentMechanicCoord.lng - currentCustomerCoord.lng) * Math.PI / 180;
+        const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(currentCustomerCoord.lat * Math.PI / 180) * Math.cos(currentMechanicCoord.lat * Math.PI / 180) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return Math.max(0.1, Number((R * c).toFixed(1)));
+    }, [roadDistanceKm, currentCustomerCoord, currentMechanicCoord]);
+
+    const estimatedMins = useMemo(() => {
+        if (roadDurationMins !== null) return roadDurationMins;
+        return Math.max(2, Math.round(distanceKm * 2.8));
+    }, [roadDurationMins, distanceKm]);
+
+    // Construct high-precision route polylines
+    const mapPolylines = useMemo(() => {
+        const polylines: MapPolyline[] = [];
+        if (activeViewMode !== 'both' && activeViewMode !== 'mechanic') return polylines;
+        if (!routeGeometry || routeGeometry.length < 2) return polylines;
+
+        // 1. Glowing outer border for contrast on dark tiles
+        polylines.push({
+            id: `route-glow-${booking.id}`,
+            positions: routeGeometry,
+            color: '#FE7803',
+            weight: 8,
+            opacity: 0.35,
+            lineCap: 'round',
+            lineJoin: 'round'
+        });
+
+        // 2. High-definition inner core route path
+        polylines.push({
+            id: `route-core-${booking.id}`,
+            positions: routeGeometry,
+            color: '#FE7803',
+            weight: 4,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round'
+        });
+
+        return polylines;
+    }, [activeViewMode, routeGeometry, booking.id]);
+
+    // Map markers
+    const mapMarkers = useMemo(() => {
+        const markers: MapMarker[] = [];
+        if (typeof L === 'undefined') return markers;
+
+        const customerPic = customerObj?.picture || (booking as any).customerPhoto || '';
+        const mechanicPic = mechanicObj?.imageUrl || booking.mechanic?.imageUrl || driverObj?.imageUrl || '';
+
+        // Customer icon
+        const customerIcon = L.divIcon({
+            html: `
+                <div class="rb-map-pin-wrapper">
+                    <div class="rb-pin-circle" style="border: 3px solid #3B82F6; background: #121212; box-shadow: 0 4px 16px rgba(59, 130, 246, 0.6); width: 42px; height: 42px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                        ${customerPic ? `
+                            <img src="${customerPic}" alt="Customer" style="width:100%;height:100%;object-fit:cover;" />
+                        ` : `
+                            <div style="font-weight:900;font-size:12px;color:#3B82F6;">
+                                ${(booking.customerName || 'C').charAt(0)}
+                            </div>
+                        `}
+                    </div>
+                    <div class="rb-pin-stem" style="background: #3B82F6; width: 3px; height: 18px; margin: 0 auto;"></div>
+                    <div class="rb-pin-dot" style="background: #3B82F6; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #3B82F6;"></div>
+                </div>
+            `,
+            className: 'rb-leaflet-icon',
+            iconSize: [44, 70],
+            iconAnchor: [22, 70],
+            popupAnchor: [0, -74]
+        });
+
+        // Specialist icon (Mechanic / Driver)
+        const specialistIcon = L.divIcon({
+            html: `
+                <div class="rb-map-pin-wrapper">
+                    <div class="rb-pin-circle" style="border: 3px solid #FE7803; background: #121212; box-shadow: 0 4px 16px rgba(254, 120, 3, 0.6); width: 42px; height: 42px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                        ${mechanicPic ? `
+                            <img src="${mechanicPic}" alt="Specialist" style="width:100%;height:100%;object-fit:cover;" />
+                        ` : `
+                            <div style="font-weight:900;font-size:12px;color:#FE7803;">
+                                ${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0)}
+                            </div>
+                        `}
+                    </div>
+                    <div class="rb-pin-stem" style="background: #FE7803; width: 3px; height: 18px; margin: 0 auto;"></div>
+                    <div class="rb-pin-dot" style="background: #FE7803; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #FE7803;"></div>
+                </div>
+            `,
+            className: 'rb-leaflet-icon',
+            iconSize: [44, 70],
+            iconAnchor: [22, 70],
+            popupAnchor: [0, -74]
+        });
+
+        // Both pins are always shown by default in 'both' view, or if viewing specific person
+        // If 'both' is selected (default), both pins are immediately displayed
+        if (currentCustomerCoord && (activeViewMode === 'both' || activeViewMode === 'customer')) {
+            markers.push({
+                id: 'customerPin',
+                position: [currentCustomerCoord.lat, currentCustomerCoord.lng],
+                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-blue-400">Customer Location</span><br/>${booking.customerName}<br/><span class="text-gray-400 text-[10px]">${booking.location?.address || 'Service Destination'}</span></div>`,
+                icon: customerIcon
+            });
+        }
+
+        if (currentMechanicCoord && (activeViewMode === 'both' || activeViewMode === 'mechanic')) {
+            const label = isDriverService ? (booking.driverName || 'Assigned Driver') : (booking.mechanic?.name || 'Assigned Mechanic');
+            markers.push({
+                id: 'specialistPin',
+                position: [currentMechanicCoord.lat, currentMechanicCoord.lng],
+                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-primary">${isDriverService ? 'Driver' : 'Mechanic'} (Live)</span><br/>${label}</div>`,
+                icon: specialistIcon
+            });
+        }
+
+        return markers;
+    }, [currentCustomerCoord, currentMechanicCoord, activeViewMode, customerObj, mechanicObj, driverObj, booking, isDriverService]);
+
+    // Center point based on view mode
+    const mapCenter: [number, number] = useMemo(() => {
+        if (activeViewMode === 'customer' && currentCustomerCoord) {
+            return [currentCustomerCoord.lat, currentCustomerCoord.lng];
+        }
+        if (activeViewMode === 'mechanic' && currentMechanicCoord) {
+            return [currentMechanicCoord.lat, currentMechanicCoord.lng];
+        }
+        if (currentCustomerCoord && currentMechanicCoord) {
+            return [(currentCustomerCoord.lat + currentMechanicCoord.lat) / 2, (currentCustomerCoord.lng + currentMechanicCoord.lng) / 2];
+        }
+        if (currentCustomerCoord) return [currentCustomerCoord.lat, currentCustomerCoord.lng];
+        if (currentMechanicCoord) return [currentMechanicCoord.lat, currentMechanicCoord.lng];
+        return [14.291457, 121.001210];
+    }, [activeViewMode, currentCustomerCoord, currentMechanicCoord]);
+
+    // Zoom level based on view mode: Zoom in close (16) on single person, 14 for both route overview
+    const mapZoom = useMemo(() => {
+        if (activeViewMode === 'customer' || activeViewMode === 'mechanic') {
+            return 16;
+        }
+        return 14;
+    }, [activeViewMode]);
+
+    // Map bounds to instantly and cleanly fit both Customer and Specialist on modal open, plus route points
+    const mapBounds = useMemo(() => {
+        if (typeof L === 'undefined') return undefined;
+        if (activeViewMode === 'both') {
+            const pointsToFit: [number, number][] = [];
+            if (currentCustomerCoord) pointsToFit.push([currentCustomerCoord.lat, currentCustomerCoord.lng]);
+            if (currentMechanicCoord) pointsToFit.push([currentMechanicCoord.lat, currentMechanicCoord.lng]);
+            if (routeGeometry && routeGeometry.length > 0) {
+                pointsToFit.push(...routeGeometry);
+            }
+
+            if (pointsToFit.length >= 2) {
+                return L.latLngBounds(pointsToFit);
+            }
+        }
+        return undefined;
+    }, [activeViewMode, currentCustomerCoord, currentMechanicCoord, routeGeometry]);
+
+    // Service & Payment details
+    const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+    const serviceName = svcs.map(s => s.name).join(', ') || 'General Service';
+    const originalServicesFee = svcs.reduce((sum, s) => sum + (Number(s.price) || 0), 0) || (Number(booking.totalAmount) || 0);
+    const addCosts = (booking.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+    const totalFee = originalServicesFee + addCosts;
+    const depositAmount = (booking as any).downpaymentAmount ? Number((booking as any).downpaymentAmount) : (booking as any).isInitialDownpaymentPaid ? Math.round(originalServicesFee * 0.5) : Math.round(totalFee * 0.5);
+    const finalPaymentAmount = Math.max(0, totalFee - depositAmount);
+
+    // Active customer entity for chat modal
+    const chatCustomerData = useMemo(() => {
+        return customerObj || {
+            id: booking.customerId || 'cust_' + booking.id,
+            name: booking.customerName || 'Customer',
+            email: (booking as any).customerEmail || 'N/A',
+            phone: (booking as any).customerPhone || customerObj?.phone || 'N/A',
+            picture: (booking as any).customerPhoto || customerObj?.picture || ''
+        } as Customer;
+    }, [customerObj, booking]);
+
+    // Active mechanic entity for chat modal
+    const chatMechanicData = useMemo(() => {
+        return mechanicObj || (booking.mechanic ? {
+            ...booking.mechanic,
+            id: booking.mechanic.id || booking.mechanicId || 'mech_' + booking.id,
+            name: booking.mechanic.name || 'Assigned Mechanic',
+            email: (booking.mechanic as any).email || 'N/A',
+            phone: (booking.mechanic as any).phone || 'N/A'
+        } as Mechanic : {
+            id: booking.mechanicId || 'mech_' + booking.id,
+            name: isDriverService ? (booking.driverName || 'Assigned Driver') : (booking.mechanic?.name || 'Assigned Mechanic'),
+            email: 'N/A',
+            phone: (booking as any).driverPhone || 'N/A',
+            specialty: 'General Specialist'
+        } as any as Mechanic);
+    }, [mechanicObj, booking, isDriverService]);
+
     return (
-        <Modal title={`Service Location - Booking #${booking.id.slice(-6)}`} isOpen={true} onClose={onClose}>
-            <div className="space-y-4">
-                {booking.location ? (
-                    <>
-                        <div className="h-[400px] w-full rounded-2xl overflow-hidden border border-white/10 relative z-0">
+        <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div 
+                className="relative w-full max-w-5xl bg-[#121214] border border-white/15 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[92vh]" 
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header Bar */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-[#16161a] flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-primary to-orange-500 p-0.5 flex items-center justify-center shadow-lg shadow-primary/20">
+                            <div className="w-full h-full bg-[#121214] rounded-[14px] flex items-center justify-center text-primary">
+                                <Navigation size={18} />
+                            </div>
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-base sm:text-lg font-black text-white tracking-tight leading-none">
+                                    Real-time Location & Live Tracking
+                                </h3>
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                    Live GPS
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-gray-400 font-semibold mt-1">
+                                Booking Reference: <span className="font-mono text-white font-black">{booking.id}</span> • {booking.date} {booking.time ? `at ${formatTimeToAmPm(booking.time)}` : ''}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={onClose}
+                            className="w-9 h-9 rounded-xl bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-white/10 hover:border-red-500/30 flex items-center justify-center transition-all active:scale-95"
+                            aria-label="Close modal"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Modal Main Body Grid: Map on Left + Transaction Details on Right without vertical outer scrolling */}
+                <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+                    {/* Left: Interactive Map Container (7 columns on large screens) */}
+                    <div className="lg:col-span-7 flex flex-col min-h-[350px] lg:min-h-[520px] relative border-b lg:border-b-0 lg:border-r border-white/10 bg-[#0d0d0f]">
+                        {/* Floating Live Telemetry Badge & Tab Switcher Inline (Top Left of Map) */}
+                        <div className="absolute top-3 left-3 right-3 z-[400] flex flex-wrap items-center gap-2 pointer-events-none">
+                            {/* Estimated Travel Badge */}
+                            <div className="bg-[#141418]/95 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+                                    <div>
+                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider leading-none">Estimated Travel</p>
+                                        <p className="text-xs font-black text-white leading-tight mt-0.5">{distanceKm} km • ~{estimatedMins} mins</p>
+                                    </div>
+                                </div>
+                                <div className="h-5 w-px bg-white/10 hidden sm:block"></div>
+                                <span className={`hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                                    isRoutingActive 
+                                        ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
+                                        : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                                }`}>
+                                    {isRoutingActive ? 'Road Route' : 'Direct Line'}
+                                </span>
+                            </div>
+
+                            {/* View Switcher Segmented Control (Inline with Travel Badge) */}
+                            <div className="bg-[#141418]/95 backdrop-blur-md border border-white/15 p-1 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-1">
+                                <button
+                                    onClick={() => setActiveViewMode('both')}
+                                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                                        activeViewMode === 'both' ? 'bg-primary text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
+                                    }`}
+                                >
+                                    Both
+                                </button>
+                                <button
+                                    onClick={() => setActiveViewMode('mechanic')}
+                                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                                        activeViewMode === 'mechanic' ? 'bg-primary text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
+                                    }`}
+                                >
+                                    {isDriverService ? 'Driver' : 'Mechanic'}
+                                </button>
+                                <button
+                                    onClick={() => setActiveViewMode('customer')}
+                                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                                        activeViewMode === 'customer' ? 'bg-primary text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
+                                    }`}
+                                >
+                                    Customer
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Map Component */}
+                        <div className="flex-1 w-full h-full min-h-[350px]">
                             <MapComponent
-                                center={[booking.location.lat, booking.location.lng]}
-                                zoom={15}
+                                center={mapCenter}
+                                zoom={mapZoom}
                                 markers={mapMarkers}
+                                polylines={mapPolylines}
+                                bounds={mapBounds}
                             />
                         </div>
-                        <div className="flex items-center justify-between bg-white/5 p-4 rounded-xl border border-white/5">
+                    </div>
+
+                    {/* Right: Comprehensive Transaction Details Panel (5 columns on large screens) */}
+                    <div className="lg:col-span-5 p-3.5 sm:p-4 flex flex-col justify-between gap-2.5 bg-[#141417] overflow-y-auto lg:overflow-visible">
+                        
+                        {/* 1. Service Header & Status Card */}
+                        <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
+                                    <Wrench size={12} className="text-primary" /> Service Category
+                                </span>
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase border ${statusColors[booking.status] || 'bg-white/10 text-white border-white/20'}`}>
+                                    {booking.status}
+                                </span>
+                            </div>
                             <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                                    <MapPin size={16} />
+                                <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 p-0.5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                    <img
+                                        src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)}
+                                        alt={serviceName}
+                                        className="w-full h-full object-cover rounded-lg"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category); }}
+                                    />
                                 </div>
-                                <div>
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Service Destination</p>
-                                    <p className="text-white text-xs font-bold">{booking.location.address || 'Precise GPS Pin Confirmed'}</p>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="text-xs sm:text-sm font-black text-white truncate leading-snug">{serviceName}</h4>
+                                    <p className="text-[11px] text-primary font-bold mt-0.5 flex items-center gap-1.5">
+                                        <span>₱{totalFee.toLocaleString()} Total Value</span>
+                                        <span className="text-gray-600">•</span>
+                                        <span className="text-gray-400 font-normal">{booking.service?.estimatedTime || '1-2 hrs est.'}</span>
+                                    </p>
                                 </div>
                             </div>
-                            <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] font-black uppercase tracking-wider">
-                                Live GPS Active
-                            </span>
                         </div>
-                    </>
-                ) : (
-                    <div className="p-8 text-center bg-white/5 rounded-2xl border border-white/5 border-dashed">
-                        <p className="text-gray-500 font-bold">No precise location data available for this booking.</p>
+
+                        {/* 2. Customer & Vehicle Details Card */}
+                        <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
+                            <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
+                                <Users size={12} className="text-blue-400" /> Customer & Vehicle
+                            </span>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-400 font-black text-xs flex items-center justify-center border border-blue-500/30">
+                                        {booking.customerName.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-black text-white">{booking.customerName}</p>
+                                        <p className="text-[10px] text-gray-400">{customerObj?.phone || (booking as any).customerPhone || 'No phone provided'}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setIsChatOpen(true)}
+                                    className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/20 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                                    title="Open Chat with Customer"
+                                >
+                                    <MessageSquare size={12} />
+                                    <span>Chat</span>
+                                </button>
+                            </div>
+                            <div className="p-1.5 sm:p-2 rounded-xl bg-black/30 border border-white/5 flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                    <Car size={13} className="text-primary" />
+                                    <span className="text-gray-300 font-bold text-[11px]">
+                                        {booking.vehicle ? `${booking.vehicle.year || ''} ${booking.vehicle.make || ''} ${booking.vehicle.model || ''}`.trim() : 'Standard Vehicle'}
+                                    </span>
+                                </div>
+                                {booking.vehicle?.plateNumber && (
+                                    <span className="px-2 py-0.5 rounded bg-white/10 text-primary font-mono text-[10px] font-black border border-white/10">
+                                        {booking.vehicle.plateNumber}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 3. Assigned Mechanic */}
+                        <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
+                            <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
+                                <UserCheck size={12} className="text-amber-400" /> Assigned Mechanic
+                            </span>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-black text-xs flex items-center justify-center border border-amber-500/30 flex-shrink-0">
+                                        {(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0)}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-black text-white truncate">
+                                            {isDriverService ? (booking.driverName || driverObj?.name || 'Unassigned Driver') : (booking.mechanic?.name || mechanicObj?.name || 'Unassigned Mechanic')}
+                                        </p>
+                                        <p className="text-[10px] text-gray-400 truncate">
+                                            {isDriverService ? 'Professional Driver' : (mechanicObj?.specialty || 'General Mechanic Specialist')}
+                                        </p>
+                                    </div>
+                                </div>
+                                {(mechanicObj?.phone || (booking as any).driverPhone) && (
+                                    <a
+                                        href={`tel:${mechanicObj?.phone || (booking as any).driverPhone}`}
+                                        className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-white border border-amber-500/20 text-[10px] font-bold flex items-center gap-1 transition-all"
+                                    >
+                                        <Phone size={11} /> Call
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 4. Complete Payment Breakdown */}
+                        <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
+                                    <DollarSign size={12} className="text-emerald-400" /> Payment Breakdown
+                                </span>
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                    booking.isPaid ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                }`}>
+                                    {booking.isPaid ? 'Fully Settled' : 'Deposit Settled / Balance Due'}
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="p-2 rounded-xl bg-black/40 border border-white/5">
+                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">1st Payment (50%)</p>
+                                    <p className="text-sm font-black text-emerald-400 mt-0.5">₱{depositAmount.toLocaleString()}</p>
+                                    <p className="text-[9px] text-gray-500 mt-0.5 truncate">{booking.paymentMethod || 'HitPay Online'}</p>
+                                </div>
+                                <div className="p-2 rounded-xl bg-black/40 border border-white/5">
+                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Final Payment</p>
+                                    <p className={`text-sm font-black mt-0.5 ${finalPaymentAmount === 0 || booking.isPaid ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                        ₱{finalPaymentAmount.toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-500 mt-0.5">{finalPaymentAmount === 0 || booking.isPaid ? 'Paid & Completed' : 'Upon Completion'}</p>
+                                </div>
+                            </div>
+
+                            {/* Reference IDs */}
+                            <div className="pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] text-gray-400">
+                                <span>Reference ID:</span>
+                                <span className="font-mono text-white font-bold truncate max-w-[180px]">
+                                    {(booking as any).hitpayReference || (booking as any).downpaymentReference || booking.gcashReference || booking.id.slice(-10)}
+                                </span>
+                            </div>
+                        </div>
+
                     </div>
-                )}
-                <div className="flex justify-end">
-                    <button onClick={onClose} className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-xl transition-all  tracking-wider text-xs">Close</button>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="px-5 py-3 border-t border-white/10 bg-[#16161a] flex items-center justify-between flex-shrink-0">
+                    <span className="text-[11px] text-gray-400 font-medium">
+                        Real-time location stream active • Auto-refreshes with driver updates
+                    </span>
+                    <button
+                        onClick={onClose}
+                        className="px-5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition-all active:scale-95"
+                    >
+                        Close Window
+                    </button>
                 </div>
             </div>
-        </Modal>
+
+            {/* Fully Functional Chat Modal */}
+            {isChatOpen && (
+                <CustomerMechanicChatModal
+                    booking={booking}
+                    customer={chatCustomerData}
+                    mechanic={chatMechanicData}
+                    onClose={() => setIsChatOpen(false)}
+                />
+            )}
+        </div>
     );
 };
 
@@ -802,245 +1411,274 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
         };
     }, [booking.id]);
 
+    // Base customer coordinate
+    const baseLat = booking.location ? Number((booking.location as any).latitude || booking.location.lat) : 14.291457;
+    const baseLng = booking.location ? Number((booking.location as any).longitude || booking.location.lng) : 121.001210;
+
+    const currentCustomerCoord = customerLiveLocation || (!isNaN(baseLat) && !isNaN(baseLng) ? { lat: baseLat, lng: baseLng } : null);
+
+    // Mechanic / Driver coordinate resolution
+    const currentMechanicCoord = useMemo(() => {
+        if (mechanicLiveLocation) return mechanicLiveLocation;
+        if (mechanicObj?.lat && mechanicObj?.lng) return { lat: Number(mechanicObj.lat), lng: Number(mechanicObj.lng) };
+        if (booking.mechanic?.lat && booking.mechanic?.lng) return { lat: Number(booking.mechanic.lat), lng: Number(booking.mechanic.lng) };
+        if (driverObj?.lat && driverObj?.lng) return { lat: Number(driverObj.lat), lng: Number(driverObj.lng) };
+
+        // If booking is active or assigned, generate smooth real-time simulated coordinate
+        if (!isNaN(baseLat) && !isNaN(baseLng)) {
+            const isCompleted = booking.status === 'Completed';
+            const offset = isCompleted ? 0.0002 : 0.0035;
+            return {
+                lat: baseLat + offset + (isCompleted ? 0 : Math.sin(time / 5000) * 0.0006),
+                lng: baseLng + offset + (isCompleted ? 0 : Math.cos(time / 5000) * 0.0006)
+            };
+        }
+        return null;
+    }, [mechanicLiveLocation, mechanicObj, booking.mechanic, driverObj, baseLat, baseLng, booking.status, time]);
+
     const mapMarkers = useMemo(() => {
         const markers: MapMarker[] = [];
         if (typeof L === 'undefined') return markers;
 
-        const customerPic = customerObj?.picture || '';
-        const mechanicPic = mechanicObj?.imageUrl || booking.mechanic?.imageUrl || '';
-        const driverPic = driverObj?.imageUrl || '';
+        const customerPic = customerObj?.picture || (booking as any).customerPhoto || '';
+        const mechanicPic = mechanicObj?.imageUrl || booking.mechanic?.imageUrl || driverObj?.imageUrl || '';
+        const specialistName = isDriverService ? (booking.driverName || driverObj?.name || 'Assigned Driver') : (booking.mechanic?.name || mechanicObj?.name || 'Assigned Mechanic');
 
-        const customerHtml = `
-            <div class="rb-map-pin-wrapper">
-                <div class="rb-pin-circle" style="border: 2.5px solid #3B82F6; background: #121212; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);">
-                    ${customerPic ? `
-                        <img src="${customerPic}" alt="Customer" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
-                    ` : `
-                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:#3B82F6;">
-                            ${(booking.customerName || 'C').charAt(0)}
-                        </div>
-                    `}
-                </div>
-                <div class="rb-pin-stem" style="background: #3B82F6;"></div>
-                <div class="rb-pin-dot" style="background: #3B82F6; box-shadow: 0 0 6px #3B82F6;"></div>
-            </div>
-        `;
-
+        // High-definition Customer Pin
         const customerIcon = L.divIcon({
-            html: customerHtml,
-            className: 'rb-leaflet-icon',
-            iconSize: [42, 68],
-            iconAnchor: [21, 68],
-            popupAnchor: [0, -72]
-        });
-
-        const mechanicHtml = `
-            <div class="rb-map-pin-wrapper pulse-available">
-                <div class="rb-pin-circle" style="border: 2.5px solid #FE7803; background: #121212; box-shadow: 0 4px 12px rgba(254, 120, 3, 0.4);">
-                    ${mechanicPic ? `
-                        <img src="${mechanicPic}" alt="Mechanic" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
-                    ` : `
-                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:#FE7803;">
-                            M
-                        </div>
-                    `}
-                </div>
-                <div class="rb-pin-stem" style="background: #FE7803;"></div>
-                <div class="rb-pin-dot" style="background: #FE7803; box-shadow: 0 0 6px #FE7803;"></div>
-            </div>
-        `;
-
-        const mechanicIcon = L.divIcon({
-            html: mechanicHtml,
-            className: 'rb-leaflet-icon',
-            iconSize: [42, 68],
-            iconAnchor: [21, 68],
-            popupAnchor: [0, -72]
-        });
-
-        const driverHtml = `
-            <div class="rb-map-pin-wrapper pulse-available">
-                <div class="rb-pin-circle" style="border: 2.5px solid #FE7803; background: #121212; box-shadow: 0 4px 12px rgba(254, 120, 3, 0.4);">
-                    ${driverPic ? `
-                        <img src="${driverPic}" alt="Driver" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
-                    ` : `
-                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:#FE7803;">
-                            ${(booking.driverName || 'D').charAt(0)}
-                        </div>
-                    `}
-                </div>
-                <div class="rb-pin-stem" style="background: #FE7803;"></div>
-                <div class="rb-pin-dot" style="background: #FE7803; box-shadow: 0 0 6px #FE7803;"></div>
-            </div>
-        `;
-
-        const driverIcon = L.divIcon({
-            html: driverHtml,
-            className: 'rb-leaflet-icon',
-            iconSize: [42, 68],
-            iconAnchor: [21, 68],
-            popupAnchor: [0, -72]
-        });
-
-        const destHtml = `
-            <div class="rb-map-pin-wrapper">
-                <div class="rb-pin-circle" style="border: 2.5px solid #10B981; background: #121212; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);">
-                    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;color:#10B981;">
-                        🏁
+            html: `
+                <div class="rb-map-pin-wrapper">
+                    <div class="rb-pin-circle" style="border: 3px solid #3B82F6; background: #121212; box-shadow: 0 4px 16px rgba(59, 130, 246, 0.6); width: 38px; height: 38px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                        ${customerPic ? `
+                            <img src="${customerPic}" alt="Customer" style="width:100%;height:100%;object-fit:cover;" />
+                        ` : `
+                            <div style="font-weight:900;font-size:12px;color:#3B82F6;">
+                                ${(booking.customerName || 'C').charAt(0)}
+                            </div>
+                        `}
                     </div>
+                    <div class="rb-pin-stem" style="background: #3B82F6; width: 3px; height: 16px; margin: 0 auto;"></div>
+                    <div class="rb-pin-dot" style="background: #3B82F6; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #3B82F6;"></div>
                 </div>
-                <div class="rb-pin-stem" style="background: #10B981;"></div>
-                <div class="rb-pin-dot" style="background: #10B981; box-shadow: 0 0 6px #10B981;"></div>
-            </div>
-        `;
-
-        const destIcon = L.divIcon({
-            html: destHtml,
+            `,
             className: 'rb-leaflet-icon',
-            iconSize: [42, 68],
-            iconAnchor: [21, 68],
-            popupAnchor: [0, -72]
+            iconSize: [40, 64],
+            iconAnchor: [20, 64],
+            popupAnchor: [0, -68]
         });
 
-        // Base customer pickup / service location
-        let baseLat = NaN;
-        let baseLng = NaN;
-        if (booking.location) {
-            baseLat = Number((booking.location as any).latitude || booking.location.lat);
-            baseLng = Number((booking.location as any).longitude || booking.location.lng);
-        }
+        // High-definition Specialist Pin (Mechanic / Driver)
+        const specialistIcon = L.divIcon({
+            html: `
+                <div class="rb-map-pin-wrapper pulse-available">
+                    <div class="rb-pin-circle" style="border: 3px solid #FE7803; background: #121212; box-shadow: 0 4px 16px rgba(254, 120, 3, 0.6); width: 38px; height: 38px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                        ${mechanicPic ? `
+                            <img src="${mechanicPic}" alt="Specialist" style="width:100%;height:100%;object-fit:cover;" />
+                        ` : `
+                            <div style="font-weight:900;font-size:12px;color:#FE7803;">
+                                ${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0)}
+                            </div>
+                        `}
+                    </div>
+                    <div class="rb-pin-stem" style="background: #FE7803; width: 3px; height: 16px; margin: 0 auto;"></div>
+                    <div class="rb-pin-dot" style="background: #FE7803; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #FE7803;"></div>
+                </div>
+            `,
+            className: 'rb-leaflet-icon',
+            iconSize: [40, 64],
+            iconAnchor: [20, 64],
+            popupAnchor: [0, -68]
+        });
 
-        if (!isNaN(baseLat) && !isNaN(baseLng)) {
-            markers.push({
-                id: 'serviceLocation',
-                position: [baseLat, baseLng],
-                popupContent: isDriverService ? `Pickup: ${booking.details?.pickupLocation || booking.customerName || 'Customer'}` : `Service Location: ${booking.customerName || 'Customer'}`,
-                icon: customerIcon
-            });
-        }
-
-        // Destination location (for Driver for Hire)
+        // Destination Pin for Driver for Hire services
         const destLoc = (booking as any).destinationLocation;
         if (destLoc) {
             const destLat = Number(destLoc.latitude || destLoc.lat);
             const destLng = Number(destLoc.longitude || destLoc.lng);
             if (!isNaN(destLat) && !isNaN(destLng)) {
+                const destIcon = L.divIcon({
+                    html: `
+                        <div class="rb-map-pin-wrapper">
+                            <div class="rb-pin-circle" style="border: 3px solid #10B981; background: #121212; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.5); width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                                <span style="font-size: 13px;">🏁</span>
+                            </div>
+                            <div class="rb-pin-stem" style="background: #10B981; width: 2.5px; height: 14px; margin: 0 auto;"></div>
+                            <div class="rb-pin-dot" style="background: #10B981; width: 5px; height: 5px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 6px #10B981;"></div>
+                        </div>
+                    `,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [36, 56],
+                    iconAnchor: [18, 56],
+                    popupAnchor: [0, -60]
+                });
+
                 markers.push({
                     id: 'destinationLocation',
                     position: [destLat, destLng],
-                    popupContent: `Destination: ${destLoc.address || booking.details?.destination || 'Destination'}`,
+                    popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-emerald-400">Destination</span><br/>${destLoc.address || 'Drop-off'}</div>`,
                     icon: destIcon
                 });
             }
         }
 
-        // Live customer location
-        if (customerLiveLocation) {
-            const lat = Number(customerLiveLocation.lat);
-            const lng = Number(customerLiveLocation.lng);
-            if (!isNaN(lat) && !isNaN(lng)) {
-                markers.push({
-                    id: 'customerLive',
-                    position: [lat, lng],
-                    popupContent: `Customer (Live)`,
-                    icon: customerIcon
-                });
-            }
+        // 1. Customer Marker
+        if (currentCustomerCoord) {
+            markers.push({
+                id: 'customerLocation',
+                position: [currentCustomerCoord.lat, currentCustomerCoord.lng],
+                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-blue-400">Customer</span><br/>${booking.customerName}</div>`,
+                icon: customerIcon
+            });
         }
 
-        // Driver / Mechanic Live & Simulated Location
-        if (isDriverService) {
-            const activeDriverName = booking.driverName || driverObj?.name || 'Assigned Driver';
-            if (mechanicLiveLocation) {
-                const lat = Number(mechanicLiveLocation.lat);
-                const lng = Number(mechanicLiveLocation.lng);
-                if (!isNaN(lat) && !isNaN(lng)) {
-                    const simulatedLat = lat + Math.sin(time / 5000) * 0.0005;
-                    const simulatedLng = lng + Math.cos(time / 5000) * 0.0005;
-                    markers.push({
-                        id: 'driverLive',
-                        position: [simulatedLat, simulatedLng],
-                        popupContent: `Driver (Live): ${activeDriverName}`,
-                        icon: driverIcon
-                    });
-                }
-            } else if (!isNaN(baseLat) && !isNaN(baseLng)) {
-                const simBaseLat = baseLat + 0.002;
-                const simBaseLng = baseLng + 0.002;
-                const simulatedLat = simBaseLat + Math.sin(time / 5000) * 0.0005;
-                const simulatedLng = simBaseLng + Math.cos(time / 5000) * 0.0005;
-                markers.push({
-                    id: 'driverSimulated',
-                    position: [simulatedLat, simulatedLng],
-                    popupContent: `Driver: ${activeDriverName}`,
-                    icon: driverIcon
-                });
-            }
-        } else {
-            // Live mechanic location (simulated movement)
-            if (mechanicLiveLocation) {
-                const lat = Number(mechanicLiveLocation.lat);
-                const lng = Number(mechanicLiveLocation.lng);
-                if (!isNaN(lat) && !isNaN(lng)) {
-                    const simulatedLat = lat + Math.sin(time / 5000) * 0.0005;
-                    const simulatedLng = lng + Math.cos(time / 5000) * 0.0005;
-                    markers.push({
-                        id: 'mechanicLive',
-                        position: [simulatedLat, simulatedLng],
-                        popupContent: `Mechanic (Live): ${booking.mechanic?.name || 'Assigned'}`,
-                        icon: mechanicIcon
-                    });
-                }
-            } else if ((booking.status === 'En Route' || booking.status === 'In Progress') && !isNaN(baseLat) && !isNaN(baseLng)) {
-                // If no live location but status is active, simulate one starting from customer location + offset
-                const simBaseLat = baseLat + 0.003;
-                const simBaseLng = baseLng + 0.003;
-                const simulatedLat = simBaseLat + Math.sin(time / 5000) * 0.0005;
-                const simulatedLng = simBaseLng + Math.cos(time / 5000) * 0.0005;
-                markers.push({
-                    id: 'mechanicSimulated',
-                    position: [simulatedLat, simulatedLng],
-                    popupContent: `Mechanic (Simulated): ${booking.mechanic?.name || 'Assigned'}`,
-                    icon: mechanicIcon
-                });
-            } else if (booking.status === 'Completed' && !isNaN(baseLat) && !isNaN(baseLng)) {
-                if (!markers.some(m => m.id === 'serviceLocation')) {
-                    markers.push({
-                        id: 'serviceLocation',
-                        position: [baseLat, baseLng],
-                        popupContent: `Service Location: ${booking.customerName || 'Customer'}`,
-                        icon: customerIcon
-                    });
-                }
-                markers.push({
-                    id: 'mechanicCompleted',
-                    position: [baseLat + 0.00015, baseLng + 0.00015],
-                    popupContent: `Mechanic: ${booking.mechanic?.name || 'Assigned'}`,
-                    icon: mechanicIcon
-                });
-            }
+        // 2. Mechanic / Driver Marker
+        if (currentMechanicCoord) {
+            markers.push({
+                id: 'specialistLocation',
+                position: [currentMechanicCoord.lat, currentMechanicCoord.lng],
+                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-primary">${isDriverService ? 'Driver' : 'Mechanic'}</span><br/>${specialistName}</div>`,
+                icon: specialistIcon
+            });
         }
 
         return markers;
-    }, [booking, customerLiveLocation, mechanicLiveLocation, time, customerObj, mechanicObj, driverObj, isDriverService]);
+    }, [booking, currentCustomerCoord, currentMechanicCoord, customerObj, mechanicObj, driverObj, isDriverService]);
 
-    const centerPoint: [number, number] = useMemo(() => {
-        if (booking.location) {
-            const lat = Number((booking.location as any).latitude || booking.location.lat);
-            const lng = Number((booking.location as any).longitude || booking.location.lng);
-            if (!isNaN(lat) && !isNaN(lng)) {
-                return [lat, lng];
-            }
+    // Road route state for preview card
+    const [cardRouteGeometry, setCardRouteGeometry] = useState<[number, number][]>([]);
+    const [cardDistanceKm, setCardDistanceKm] = useState<number | null>(null);
+
+    // Fetch road route for the inline preview card
+    useEffect(() => {
+        if (!currentCustomerCoord || !currentMechanicCoord) {
+            setCardRouteGeometry([]);
+            setCardDistanceKm(null);
+            return;
         }
-        return [14.5995, 120.9842]; // Fallback to Manila
-    }, [booking.location]);
+
+        let isSubscribed = true;
+        const custLat = currentCustomerCoord.lat;
+        const custLng = currentCustomerCoord.lng;
+        const mechLat = currentMechanicCoord.lat;
+        const mechLng = currentMechanicCoord.lng;
+
+        const straightCoords: [number, number][] = [
+            [mechLat, mechLng],
+            [custLat, custLng]
+        ];
+
+        const latDiff = custLat - mechLat;
+        const lngDiff = custLng - mechLng;
+        const approxKm = Math.max(0.1, parseFloat((Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111).toFixed(1)));
+
+        const osrmUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${mechLng},${mechLat};${custLng},${custLat}?overview=full&geometries=geojson`;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        fetch(osrmUrl, { signal: controller.signal })
+            .then(res => res.json())
+            .then(data => {
+                clearTimeout(timeoutId);
+                if (!isSubscribed) return;
+                if (data && data.routes && data.routes.length > 0) {
+                    const primary = data.routes[0];
+                    const pts: [number, number][] = (primary.geometry?.coordinates || []).map((c: any) => [c[1], c[0]]);
+                    if (pts.length > 0) {
+                        setCardRouteGeometry(pts);
+                        setCardDistanceKm(parseFloat((primary.distance / 1000).toFixed(1)));
+                        return;
+                    }
+                }
+                setCardRouteGeometry(straightCoords);
+                setCardDistanceKm(approxKm);
+            })
+            .catch(() => {
+                if (!isSubscribed) return;
+                setCardRouteGeometry(straightCoords);
+                setCardDistanceKm(approxKm);
+            });
+
+        return () => {
+            isSubscribed = false;
+            controller.abort();
+            clearTimeout(timeoutId);
+        };
+    }, [currentCustomerCoord?.lat, currentCustomerCoord?.lng, currentMechanicCoord?.lat, currentMechanicCoord?.lng]);
+
+    // Live polylines for the card preview
+    const cardPolylines = useMemo(() => {
+        const polylines: MapPolyline[] = [];
+        if (!cardRouteGeometry || cardRouteGeometry.length < 2) return polylines;
+
+        // Glow polyline
+        polylines.push({
+            id: `card-glow-${booking.id}`,
+            positions: cardRouteGeometry,
+            color: '#FE7803',
+            weight: 6,
+            opacity: 0.35,
+            lineCap: 'round',
+            lineJoin: 'round'
+        });
+
+        // Core polyline
+        polylines.push({
+            id: `card-core-${booking.id}`,
+            positions: cardRouteGeometry,
+            color: '#FE7803',
+            weight: 3.5,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round'
+        });
+
+        return polylines;
+    }, [cardRouteGeometry, booking.id]);
+
+    // Compute center point
+    const centerPoint: [number, number] = useMemo(() => {
+        if (currentCustomerCoord && currentMechanicCoord) {
+            return [(currentCustomerCoord.lat + currentMechanicCoord.lat) / 2, (currentCustomerCoord.lng + currentMechanicCoord.lng) / 2];
+        }
+        if (currentCustomerCoord) return [currentCustomerCoord.lat, currentCustomerCoord.lng];
+        if (currentMechanicCoord) return [currentMechanicCoord.lat, currentMechanicCoord.lng];
+        return [14.291457, 121.001210];
+    }, [currentCustomerCoord, currentMechanicCoord]);
+
+    // Map bounds to cleanly and automatically fit both Customer, Specialist and complete route
+    const mapBounds = useMemo(() => {
+        if (typeof L === 'undefined') return undefined;
+        const pts: [number, number][] = [];
+        if (cardRouteGeometry && cardRouteGeometry.length > 0) {
+            pts.push(...cardRouteGeometry);
+        }
+        if (currentCustomerCoord) pts.push([currentCustomerCoord.lat, currentCustomerCoord.lng]);
+        if (currentMechanicCoord) pts.push([currentMechanicCoord.lat, currentMechanicCoord.lng]);
+
+        if (pts.length >= 2) {
+            return L.latLngBounds(pts);
+        }
+        return undefined;
+    }, [currentCustomerCoord, currentMechanicCoord, cardRouteGeometry]);
 
     return (
-        <div className="w-full h-full min-h-[140px] rounded-2xl bg-[#101010] relative overflow-hidden border border-white/5">
+        <div className="w-full h-full min-h-[160px] rounded-2xl bg-[#101010] relative overflow-hidden border border-white/5 group">
+            {/* Top Telemetry Overlay Badge */}
+            {cardDistanceKm !== null && (
+                <div className="absolute top-2.5 left-2.5 z-[400] flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/15 text-[10px] font-bold text-white shadow-lg pointer-events-none">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span>{cardDistanceKm} km</span>
+                    <span className="text-gray-400">•</span>
+                    <span className="text-primary font-black uppercase text-[9px] tracking-wider">Route Active</span>
+                </div>
+            )}
             <MapComponent 
                 center={centerPoint} 
                 zoom={14} 
                 markers={mapMarkers} 
+                polylines={cardPolylines}
+                bounds={mapBounds}
                 disableScrollZoom={true}
             />
         </div>
@@ -1073,6 +1711,7 @@ const AdminBookingsScreen: React.FC = () => {
     const [datePreset, setDatePreset] = useState<string>('all');
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'date', direction: 'descending' });
     const [activeAdminTab, setActiveAdminTab] = useState<'Services' | 'Car Rental' | 'Driver for Hire' | 'Liaison' | 'Towing'>('Services');
+    const [kpiFilter, setKpiFilter] = useState<'all' | 'total' | 'revenue' | 'completed' | 'active' | 'today' | 'unpaid'>('all');
     const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
     const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
     const [viewingBooking, setViewingBooking] = useState<Booking | null>(null);
@@ -1089,6 +1728,25 @@ const AdminBookingsScreen: React.FC = () => {
 
     const [priceDetailsBooking, setPriceDetailsBooking] = useState<Booking | null>(null);
     const [assigningBooking, setAssigningBooking] = useState<Booking | null>(null);
+    const [openStatusDropdownId, setOpenStatusDropdownId] = useState<string | null>(null);
+    const [activeOpenFilter, setActiveOpenFilter] = useState<'range' | 'mechanic' | 'status' | 'payment' | null>(null);
+    const [isSearchFocused, setIsSearchFocused] = useState<boolean>(false);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest('[data-filter-dropdown]')) {
+                setActiveOpenFilter(null);
+            }
+            if (!target.closest('[data-search-widget]')) {
+                setIsSearchFocused(false);
+            }
+            setOpenStatusDropdownId(null);
+        };
+        window.addEventListener('click', handleClickOutside);
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, []);
+
     const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
     const [isDeletingAll, setIsDeletingAll] = useState(false);
     const [editingDriverFields, setEditingDriverFields] = useState<{[key: string]: {driverName: string; driverPhone: string; estimatedArrivalTime: string; remarks: string}}>({});
@@ -1544,8 +2202,10 @@ const AdminBookingsScreen: React.FC = () => {
         if (!booking) return;
 
         const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
-        const bookingTotal = booking.totalAmount ?? svcs.reduce((s, svc) => s + svc.price, 0);
-        const remaining = bookingTotal - (booking.paidAmount || 0);
+        const originalServicesFee = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0) || (Number(booking.totalAmount) || 0);
+        const addCosts = (booking.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+        const bookingTotal = originalServicesFee + addCosts;
+        const remaining = Math.max(0, bookingTotal - (booking.paidAmount || 0));
 
         try {
             await updateBookingPayment(bookingId, remaining, 'paid');
@@ -1607,9 +2267,19 @@ const AdminBookingsScreen: React.FC = () => {
             const categoryMatch = selectedCategory === 'all' || svcs.some(s => s.category === selectedCategory);
             const statusMatch = selectedStatus === 'all' || booking.status === selectedStatus;
             const paymentMatch = paymentFilter === 'all' || (paymentFilter === 'paid' ? booking.isPaid : !booking.isPaid);
-            const searchMatch = searchQuery === '' || 
-                (booking.customerName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                svcs.some(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
+            const searchLower = searchQuery.toLowerCase().trim();
+            const searchMatch = searchLower === '' || 
+                (booking.customerName || '').toLowerCase().includes(searchLower) ||
+                (booking.customerPhone || '').toLowerCase().includes(searchLower) ||
+                (booking.customerEmail || '').toLowerCase().includes(searchLower) ||
+                (booking.id || '').toLowerCase().includes(searchLower) ||
+                (booking.mechanic?.name || '').toLowerCase().includes(searchLower) ||
+                (booking.driverName || '').toLowerCase().includes(searchLower) ||
+                (booking.agentName || '').toLowerCase().includes(searchLower) ||
+                svcs.some(s => (s.name || '').toLowerCase().includes(searchLower) || (s.category || '').toLowerCase().includes(searchLower)) ||
+                (booking.vehicle?.make || '').toLowerCase().includes(searchLower) ||
+                (booking.vehicle?.model || '').toLowerCase().includes(searchLower) ||
+                (booking.vehicle?.plateNumber || '').toLowerCase().includes(searchLower);
             let dateMatch = true;
             if (dateFilter.start && dateFilter.end) {
                 const startDate = new Date(dateFilter.start.replace(/-/g, '/')).getTime();
@@ -1619,7 +2289,31 @@ const AdminBookingsScreen: React.FC = () => {
                 const bookingDate = new Date(booking.date.replace(/-/g, '/')).getTime();
                 dateMatch = bookingDate >= startDate && bookingDate < endDate;
             }
-            return mechanicMatch && categoryMatch && statusMatch && searchMatch && dateMatch && paymentMatch;
+
+            // Interactive KPI filter matching
+            let kpiMatch = true;
+            if (kpiFilter === 'revenue') {
+                kpiMatch = Boolean(booking.isPaid);
+            } else if (kpiFilter === 'unpaid') {
+                kpiMatch = !booking.isPaid;
+            } else if (kpiFilter === 'completed') {
+                kpiMatch = booking.status === 'Completed';
+            } else if (kpiFilter === 'active') {
+                const upcomingList = activeAdminTab === 'Services' 
+                    ? ['Upcoming', 'Booking Confirmed', 'Mechanic Assigned', 'En Route', 'In Progress', 'Reschedule Requested']
+                    : activeAdminTab === 'Car Rental' 
+                    ? ['Received', 'Pending', 'Approved', 'Active']
+                    : activeAdminTab === 'Driver for Hire'
+                    ? ['Pending', 'Assigned']
+                    : activeAdminTab === 'Liaison'
+                    ? ['Booking Received', 'LTO Processing']
+                    : ['Pending', 'Dispatched'];
+                kpiMatch = upcomingList.includes(booking.status || '');
+            } else if (kpiFilter === 'today') {
+                kpiMatch = booking.date === new Date().toISOString().split('T')[0];
+            }
+
+            return mechanicMatch && categoryMatch && statusMatch && searchMatch && dateMatch && paymentMatch && kpiMatch;
         });
 
         if (sortConfig.key) {
@@ -1650,7 +2344,7 @@ const AdminBookingsScreen: React.FC = () => {
             });
         }
         return filteredBookings;
-    }, [selectedMechanicId, selectedCategory, selectedStatus, searchQuery, bookings, sortConfig, dateFilter, paymentFilter, bookingSequences, activeAdminTab]);
+    }, [selectedMechanicId, selectedCategory, selectedStatus, searchQuery, bookings, sortConfig, dateFilter, paymentFilter, bookingSequences, activeAdminTab, kpiFilter]);
 
     const getSortIndicator = (key: SortableKeys) => {
         if (sortConfig.key !== key) return <ArrowUpDown size={14} className="text-gray-600 ml-1" />;
@@ -1707,13 +2401,15 @@ const AdminBookingsScreen: React.FC = () => {
         });
 
         const getBookingTotal = (b: (typeof bookings)[0]) => {
-            if (b.totalAmount != null) return b.totalAmount;
             const svcs = b.services && b.services.length > 0 ? b.services : b.service ? [b.service] : [];
-            return svcs.reduce((s, svc) => s + svc.price, 0);
+            const originalServicesFee = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0) || (Number(b.totalAmount) || 0);
+            const addCosts = (b.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
+            return originalServicesFee + addCosts;
         };
+
         const totalRevenue = tabBookings.filter(b => b.status === 'Completed' && b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0);
-        const pendingRevenue = tabBookings.filter(b => b.status === 'Completed' && !b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0);
-        const avgBookingValue = tabBookings.length > 0 ? totalRevenue / (tabBookings.filter(b => b.status === 'Completed' && b.isPaid).length || 1) : 0;
+        const pendingRevenue = tabBookings.filter(b => !b.isPaid && b.status !== 'Cancelled').reduce((sum, b) => sum + getBookingTotal(b), 0);
+        const avgBookingValue = tabBookings.length > 0 ? (totalRevenue / (tabBookings.filter(b => b.status === 'Completed' && b.isPaid).length || 1)) : 0;
 
         const todayBookings = tabBookings.filter(b => b.date === new Date().toISOString().split('T')[0]).length;
 
@@ -1741,33 +2437,141 @@ const AdminBookingsScreen: React.FC = () => {
         };
         const upcomingStatuses = getUpcomingStatuses();
 
+        const completedCount = tabBookings.filter(b => b.status === 'Completed').length;
+        const completionRate = tabBookings.length > 0 ? Math.round((completedCount / tabBookings.length) * 100) : 0;
+        const activeCount = tabBookings.filter(b => upcomingStatuses.includes(b.status || '')).length;
+        const paidBookingsCount = tabBookings.filter(b => b.isPaid).length;
+        const unpaidBookingsCount = tabBookings.filter(b => !b.isPaid && b.status !== 'Cancelled').length;
+
         return {
             total: tabBookings.length,
             totalTrend: trendCalc(last30Days.length, previous30Days.length),
-            upcoming: tabBookings.filter(b => upcomingStatuses.includes(b.status || '')).length,
-            completed: tabBookings.filter(b => b.status === 'Completed').length,
+            upcoming: activeCount,
+            completed: completedCount,
+            completionRate,
             completedTrend: trendCalc(
                 last30Days.filter(b => b.status === 'Completed').length,
                 previous30Days.filter(b => b.status === 'Completed').length
             ),
             cancelled: tabBookings.filter(b => b.status === 'Cancelled').length,
             totalRevenue,
+            paidBookingsCount,
+            unpaidBookingsCount,
             revenueTrend: trendCalc(
                 last30Days.filter(b => b.status === 'Completed' && b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0),
                 previous30Days.filter(b => b.status === 'Completed' && b.isPaid).reduce((sum, b) => sum + getBookingTotal(b), 0)
             ),
             pendingRevenue,
             avgBookingValue,
-            todayBookings
+            todayBookings,
+            activeTab: activeAdminTab
         };
     }, [bookings, activeAdminTab]);
+
+    // Live search suggestions across Customer, Mechanic, Service, and Vehicle
+    const searchSuggestions = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return [];
+
+        const suggestions: Array<{
+            id: string;
+            category: 'Customer' | 'Mechanic' | 'Service' | 'Vehicle';
+            title: string;
+            subtitle: string;
+            badgeText?: string;
+        }> = [];
+
+        const addedKeys = new Set<string>();
+
+        for (const booking of bookings) {
+            if (suggestions.length >= 8) break;
+
+            // 1. Customer Match
+            const custName = booking.customerName || '';
+            const custPhone = booking.customerPhone || '';
+            if (custName.toLowerCase().includes(query) || custPhone.toLowerCase().includes(query)) {
+                const key = `customer-${custName.toLowerCase()}`;
+                if (!addedKeys.has(key)) {
+                    addedKeys.add(key);
+                    suggestions.push({
+                        id: key,
+                        category: 'Customer',
+                        title: custName,
+                        subtitle: custPhone ? `Phone: ${custPhone}` : `Booking #${booking.id?.slice(-6) || ''}`,
+                        badgeText: 'Customer'
+                    });
+                }
+            }
+
+            // 2. Service Match
+            const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
+            for (const s of svcs) {
+                if (suggestions.length >= 8) break;
+                const sName = s.name || '';
+                const sCat = s.category || '';
+                if (sName.toLowerCase().includes(query) || sCat.toLowerCase().includes(query)) {
+                    const key = `service-${sName.toLowerCase()}`;
+                    if (!addedKeys.has(key)) {
+                        addedKeys.add(key);
+                        suggestions.push({
+                            id: key,
+                            category: 'Service',
+                            title: sName,
+                            subtitle: sCat ? `Category: ${sCat}` : 'Service',
+                            badgeText: 'Service'
+                        });
+                    }
+                }
+            }
+
+            // 3. Mechanic or Driver Match
+            const mechName = booking.mechanic?.name || booking.driverName || booking.agentName || '';
+            if (mechName && mechName.toLowerCase().includes(query)) {
+                const key = `mech-${mechName.toLowerCase()}`;
+                if (!addedKeys.has(key)) {
+                    addedKeys.add(key);
+                    suggestions.push({
+                        id: key,
+                        category: 'Mechanic',
+                        title: mechName,
+                        subtitle: activeAdminTab === 'Driver for Hire' ? 'Assigned Driver' : activeAdminTab === 'Liaison' ? 'Assigned Liaison' : 'Assigned Mechanic',
+                        badgeText: activeAdminTab === 'Driver for Hire' ? 'Driver' : 'Mechanic'
+                    });
+                }
+            }
+
+            // 4. Vehicle Match
+            const vMake = booking.vehicle?.make || '';
+            const vModel = booking.vehicle?.model || '';
+            const vPlate = booking.vehicle?.plateNumber || '';
+            const vCombined = `${vMake} ${vModel}`.trim();
+            if (
+                (vCombined && vCombined.toLowerCase().includes(query)) ||
+                (vPlate && vPlate.toLowerCase().includes(query))
+            ) {
+                const key = `vehicle-${(vPlate || vCombined).toLowerCase()}`;
+                if (!addedKeys.has(key)) {
+                    addedKeys.add(key);
+                    suggestions.push({
+                        id: key,
+                        category: 'Vehicle',
+                        title: vCombined || 'Vehicle',
+                        subtitle: vPlate ? `Plate: ${vPlate}` : (booking.vehicle?.year ? `Year: ${booking.vehicle.year}` : 'Vehicle Details'),
+                        badgeText: 'Vehicle'
+                    });
+                }
+            }
+        }
+
+        return suggestions;
+    }, [bookings, searchQuery, activeAdminTab]);
 
     const activeFiltersCount = [
         selectedMechanicId !== 'all',
         selectedCategory !== 'all',
         selectedStatus !== 'all',
         paymentFilter !== 'all',
-        dateFilter.start !== '' || dateFilter.end !== ''
+        datePreset !== 'all' || dateFilter.start !== '' || dateFilter.end !== ''
     ].filter(Boolean).length;
 
     const clearAllFilters = () => {
@@ -1778,11 +2582,12 @@ const AdminBookingsScreen: React.FC = () => {
         setDateFilter({ start: '', end: '' });
         setDatePreset('all');
         setSearchQuery('');
+        setKpiFilter('all');
     };
 
     return (
         <div className="text-admin-text-primary flex flex-col h-full overflow-hidden">
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 relative z-30">
                 {/* Header Title, Tabs, & Actions Inline Layout */}
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5 pb-5 border-b border-white/10">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
@@ -1810,6 +2615,7 @@ const AdminBookingsScreen: React.FC = () => {
                                             setSelectedStatus('all');
                                             setSelectedMechanicId('all');
                                             setSearchQuery('');
+                                            setKpiFilter('all');
                                         }}
                                         className={`px-3.5 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all duration-200 active:scale-95 cursor-pointer ${isActive ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-[1.02]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                                     >
@@ -1847,167 +2653,794 @@ const AdminBookingsScreen: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Enhanced KPI Cards */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                    <EnhancedKPICard
-                        title="Total Bookings"
-                        value={bookingStats.total}
-                        icon={<Calendar className="w-5 h-5 text-white" />}
-                        gradient="bg-gradient-to-br from-blue-600 to-blue-800"
-                        trend={bookingStats.totalTrend}
-                        subtitle="Last 30 days"
-                    />
-                    <EnhancedKPICard
-                        title="Total Revenue"
-                        value={`₱${bookingStats.totalRevenue.toLocaleString()}`}
-                        icon={<DollarSign className="w-5 h-5 text-white" />}
-                        gradient="bg-gradient-to-br from-green-600 to-green-800"
-                        trend={bookingStats.revenueTrend}
-                        subtitle={`Avg: ₱${Math.round(bookingStats.avgBookingValue).toLocaleString()}`}
-                    />
-                    <EnhancedKPICard
-                        title="Completed"
-                        value={bookingStats.completed}
-                        icon={<CheckCircle className="w-5 h-5 text-white" />}
-                        gradient="bg-gradient-to-br from-emerald-600 to-emerald-800"
-                        trend={bookingStats.completedTrend}
-                        subtitle={`Pending: ₱${bookingStats.pendingRevenue.toLocaleString()}`}
-                    />
-                    <EnhancedKPICard
-                        title="Today's Bookings"
-                        value={bookingStats.todayBookings}
-                        icon={<Clock className="w-5 h-5 text-white" />}
-                        gradient="bg-gradient-to-br from-rose-600 to-rose-800"
-                        subtitle={`Active: ${bookingStats.upcoming}`}
-                    />
+                {/* Enhanced Interactive Domain-Tailored KPI Cards */}
+                <div className="space-y-2 mb-4">
+                    {/* Active Filter Quick Reset Banner */}
+                    {kpiFilter !== 'all' && (
+                        <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/30 text-xs font-bold text-primary animate-fadeIn">
+                            <div className="flex items-center gap-2">
+                                <Filter size={13} className="animate-pulse" />
+                                <span>
+                                    Filtered by KPI: <span className="uppercase font-black text-white ml-1 underline decoration-primary">{kpiFilter}</span>
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => setKpiFilter('all')}
+                                className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-primary text-black hover:bg-orange-400 transition cursor-pointer"
+                            >
+                                <X size={12} /> Clear Filter
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+                        {(() => {
+                            // 1. SERVICES TAB (Mechanics, Maintenance, Auto Repairs)
+                            if (activeAdminTab === 'Services') {
+                                return (
+                                    <>
+                                        <EnhancedKPICard
+                                            title="Total Jobs"
+                                            value={bookingStats.total}
+                                            icon={<Wrench className="w-5 h-5 text-blue-400" />}
+                                            gradient="bg-gradient-to-br from-blue-600/30 to-blue-900/40"
+                                            glowBorder="ring-blue-500 border-blue-500 shadow-blue-500/25"
+                                            trend={bookingStats.totalTrend}
+                                            subtitle={`${bookingStats.total} job${bookingStats.total === 1 ? '' : 's'} recorded`}
+                                            badge="Repair Jobs"
+                                            detail="All vehicle repair and maintenance jobs booked by customers."
+                                            isActive={kpiFilter === 'total'}
+                                            onClick={() => setKpiFilter(prev => prev === 'total' ? 'all' : 'total')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Money Collected"
+                                            value={`₱${bookingStats.totalRevenue.toLocaleString()}`}
+                                            icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
+                                            gradient="bg-gradient-to-br from-emerald-600/30 to-emerald-900/40"
+                                            glowBorder="ring-emerald-500 border-emerald-500 shadow-emerald-500/25"
+                                            trend={bookingStats.revenueTrend}
+                                            subtitle={bookingStats.pendingRevenue > 0 ? `₱${bookingStats.pendingRevenue.toLocaleString()} pending collect` : 'All accounts settled'}
+                                            badge="Revenue"
+                                            detail="Total money successfully paid and collected from finished services."
+                                            isActive={kpiFilter === 'revenue'}
+                                            onClick={() => setKpiFilter(prev => prev === 'revenue' ? 'all' : 'revenue')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Jobs Done"
+                                            value={bookingStats.completed}
+                                            icon={<CheckCircle className="w-5 h-5 text-teal-400" />}
+                                            gradient="bg-gradient-to-br from-teal-600/30 to-teal-900/40"
+                                            glowBorder="ring-teal-500 border-teal-500 shadow-teal-500/25"
+                                            trend={bookingStats.completedTrend}
+                                            subtitle={`${bookingStats.completionRate}% completion rate`}
+                                            badge="Finished"
+                                            detail="Completed repairs that are verified and handed over to customer."
+                                            isActive={kpiFilter === 'completed'}
+                                            onClick={() => setKpiFilter(prev => prev === 'completed' ? 'all' : 'completed')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Active Repairs"
+                                            value={bookingStats.upcoming}
+                                            icon={<Activity className="w-5 h-5 text-amber-400" />}
+                                            gradient="bg-gradient-to-br from-amber-600/30 to-orange-900/40"
+                                            glowBorder="ring-amber-500 border-amber-500 shadow-amber-500/25"
+                                            subtitle={`${bookingStats.todayBookings} scheduled for today`}
+                                            badge="In-Shop"
+                                            detail="Vehicles currently being serviced, in progress, or mechanics en route."
+                                            isActive={kpiFilter === 'active'}
+                                            onClick={() => setKpiFilter(prev => prev === 'active' ? 'all' : 'active')}
+                                        />
+                                    </>
+                                );
+                            }
+
+                            // 2. CAR RENTAL TAB (Vehicles, Fleets, Handovers)
+                            if (activeAdminTab === 'Car Rental') {
+                                return (
+                                    <>
+                                        <EnhancedKPICard
+                                            title="Total Rentals"
+                                            value={bookingStats.total}
+                                            icon={<Car className="w-5 h-5 text-blue-400" />}
+                                            gradient="bg-gradient-to-br from-blue-600/30 to-indigo-900/40"
+                                            glowBorder="ring-blue-500 border-blue-500 shadow-blue-500/25"
+                                            trend={bookingStats.totalTrend}
+                                            subtitle={`${bookingStats.total} car booking${bookingStats.total === 1 ? '' : 's'}`}
+                                            badge="Fleet Bookings"
+                                            detail="Total car rental bookings submitted by clients."
+                                            isActive={kpiFilter === 'total'}
+                                            onClick={() => setKpiFilter(prev => prev === 'total' ? 'all' : 'total')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Rental Revenue"
+                                            value={`₱${bookingStats.totalRevenue.toLocaleString()}`}
+                                            icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
+                                            gradient="bg-gradient-to-br from-emerald-600/30 to-emerald-900/40"
+                                            glowBorder="ring-emerald-500 border-emerald-500 shadow-emerald-500/25"
+                                            trend={bookingStats.revenueTrend}
+                                            subtitle={bookingStats.pendingRevenue > 0 ? `₱${bookingStats.pendingRevenue.toLocaleString()} pending balance` : 'All rentals fully paid'}
+                                            badge="Collected"
+                                            detail="Collected rental earnings including initial deposits and settled balances."
+                                            isActive={kpiFilter === 'revenue'}
+                                            onClick={() => setKpiFilter(prev => prev === 'revenue' ? 'all' : 'revenue')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Returned Safe"
+                                            value={bookingStats.completed}
+                                            icon={<ShieldCheck className="w-5 h-5 text-emerald-400" />}
+                                            gradient="bg-gradient-to-br from-emerald-600/30 to-teal-900/40"
+                                            glowBorder="ring-emerald-500 border-emerald-500 shadow-emerald-500/25"
+                                            trend={bookingStats.completedTrend}
+                                            subtitle={`${bookingStats.completionRate}% return rate`}
+                                            badge="Turned Over"
+                                            detail="Rentals successfully returned, inspected, and completed."
+                                            isActive={kpiFilter === 'completed'}
+                                            onClick={() => setKpiFilter(prev => prev === 'completed' ? 'all' : 'completed')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Cars On The Road"
+                                            value={bookingStats.upcoming}
+                                            icon={<Navigation className="w-5 h-5 text-orange-400" />}
+                                            gradient="bg-gradient-to-br from-orange-600/30 to-rose-900/40"
+                                            glowBorder="ring-orange-500 border-orange-500 shadow-orange-500/25"
+                                            subtitle={`${bookingStats.todayBookings} pick-up${bookingStats.todayBookings === 1 ? '' : 's'} today`}
+                                            badge="On Trip"
+                                            detail="Rental cars currently out with clients or approved for release."
+                                            isActive={kpiFilter === 'active'}
+                                            onClick={() => setKpiFilter(prev => prev === 'active' ? 'all' : 'active')}
+                                        />
+                                    </>
+                                );
+                            }
+
+                            // 3. DRIVER FOR HIRE TAB (Chauffeurs, Trips, Pickups)
+                            if (activeAdminTab === 'Driver for Hire') {
+                                return (
+                                    <>
+                                        <EnhancedKPICard
+                                            title="Total Trips"
+                                            value={bookingStats.total}
+                                            icon={<UserCheck className="w-5 h-5 text-blue-400" />}
+                                            gradient="bg-gradient-to-br from-blue-600/30 to-cyan-900/40"
+                                            glowBorder="ring-blue-500 border-blue-500 shadow-blue-500/25"
+                                            trend={bookingStats.totalTrend}
+                                            subtitle={`${bookingStats.total} trip${bookingStats.total === 1 ? '' : 's'} requested`}
+                                            badge="Chauffeur"
+                                            detail="All driver-for-hire booking requests received from customers."
+                                            isActive={kpiFilter === 'total'}
+                                            onClick={() => setKpiFilter(prev => prev === 'total' ? 'all' : 'total')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Trip Earnings"
+                                            value={`₱${bookingStats.totalRevenue.toLocaleString()}`}
+                                            icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
+                                            gradient="bg-gradient-to-br from-emerald-600/30 to-emerald-900/40"
+                                            glowBorder="ring-emerald-500 border-emerald-500 shadow-emerald-500/25"
+                                            trend={bookingStats.revenueTrend}
+                                            subtitle={bookingStats.pendingRevenue > 0 ? `₱${bookingStats.pendingRevenue.toLocaleString()} unpaid trips` : 'All trips paid'}
+                                            badge="Revenue"
+                                            detail="Total revenue earned and collected from chauffeur & driver hires."
+                                            isActive={kpiFilter === 'revenue'}
+                                            onClick={() => setKpiFilter(prev => prev === 'revenue' ? 'all' : 'revenue')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Trips Completed"
+                                            value={bookingStats.completed}
+                                            icon={<CheckCircle className="w-5 h-5 text-teal-400" />}
+                                            gradient="bg-gradient-to-br from-teal-600/30 to-teal-900/40"
+                                            glowBorder="ring-teal-500 border-teal-500 shadow-teal-500/25"
+                                            trend={bookingStats.completedTrend}
+                                            subtitle={`${bookingStats.completionRate}% safe arrival rate`}
+                                            badge="Safe Drop-off"
+                                            detail="Trips where passengers were safely transported and drop-off completed."
+                                            isActive={kpiFilter === 'completed'}
+                                            onClick={() => setKpiFilter(prev => prev === 'completed' ? 'all' : 'completed')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Drivers On Duty"
+                                            value={bookingStats.upcoming}
+                                            icon={<Clock className="w-5 h-5 text-amber-400" />}
+                                            gradient="bg-gradient-to-br from-amber-600/30 to-orange-900/40"
+                                            glowBorder="ring-amber-500 border-amber-500 shadow-amber-500/25"
+                                            subtitle={`${bookingStats.todayBookings} scheduled for today`}
+                                            badge="Dispatched"
+                                            detail="Drivers currently assigned to client, traveling, or on duty."
+                                            isActive={kpiFilter === 'active'}
+                                            onClick={() => setKpiFilter(prev => prev === 'active' ? 'all' : 'active')}
+                                        />
+                                    </>
+                                );
+                            }
+
+                            // 4. LIAISON TAB (LTO, Registrations, Government Processing)
+                            if (activeAdminTab === 'Liaison') {
+                                return (
+                                    <>
+                                        <EnhancedKPICard
+                                            title="Total Filings"
+                                            value={bookingStats.total}
+                                            icon={<FileText className="w-5 h-5 text-blue-400" />}
+                                            gradient="bg-gradient-to-br from-blue-600/30 to-indigo-900/40"
+                                            glowBorder="ring-blue-500 border-blue-500 shadow-blue-500/25"
+                                            trend={bookingStats.totalTrend}
+                                            subtitle={`${bookingStats.total} document task${bookingStats.total === 1 ? '' : 's'}`}
+                                            badge="LTO & Docs"
+                                            detail="Total document assistance, vehicle registration, and liaison requests."
+                                            isActive={kpiFilter === 'total'}
+                                            onClick={() => setKpiFilter(prev => prev === 'total' ? 'all' : 'total')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Filing Fees Collected"
+                                            value={`₱${bookingStats.totalRevenue.toLocaleString()}`}
+                                            icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
+                                            gradient="bg-gradient-to-br from-emerald-600/30 to-emerald-900/40"
+                                            glowBorder="ring-emerald-500 border-emerald-500 shadow-emerald-500/25"
+                                            trend={bookingStats.revenueTrend}
+                                            subtitle={bookingStats.pendingRevenue > 0 ? `₱${bookingStats.pendingRevenue.toLocaleString()} pending fees` : 'All filing fees paid'}
+                                            badge="Collected"
+                                            detail="Processing fees paid by customers for vehicle documentation."
+                                            isActive={kpiFilter === 'revenue'}
+                                            onClick={() => setKpiFilter(prev => prev === 'revenue' ? 'all' : 'revenue')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="Papers Released"
+                                            value={bookingStats.completed}
+                                            icon={<CheckCircle className="w-5 h-5 text-emerald-400" />}
+                                            gradient="bg-gradient-to-br from-emerald-600/30 to-teal-900/40"
+                                            glowBorder="ring-emerald-500 border-emerald-500 shadow-emerald-500/25"
+                                            trend={bookingStats.completedTrend}
+                                            subtitle={`${bookingStats.completionRate}% release success`}
+                                            badge="Finished"
+                                            detail="Processed official LTO certificates and documents delivered to owner."
+                                            isActive={kpiFilter === 'completed'}
+                                            onClick={() => setKpiFilter(prev => prev === 'completed' ? 'all' : 'completed')}
+                                        />
+                                        <EnhancedKPICard
+                                            title="At LTO / In Process"
+                                            value={bookingStats.upcoming}
+                                            icon={<Activity className="w-5 h-5 text-amber-400" />}
+                                            gradient="bg-gradient-to-br from-amber-600/30 to-rose-900/40"
+                                            glowBorder="ring-amber-500 border-amber-500 shadow-amber-500/25"
+                                            subtitle={`${bookingStats.todayBookings} new filings today`}
+                                            badge="Processing"
+                                            detail="Documents currently under verification or being filed at the government agency."
+                                            isActive={kpiFilter === 'active'}
+                                            onClick={() => setKpiFilter(prev => prev === 'active' ? 'all' : 'active')}
+                                        />
+                                    </>
+                                );
+                            }
+
+                            // 5. TOWING TAB (Roadside Assistance, Emergencies, Wreckers)
+                            return (
+                                <>
+                                    <EnhancedKPICard
+                                        title="Total Tow Calls"
+                                        value={bookingStats.total}
+                                        icon={<Truck className="w-5 h-5 text-blue-400" />}
+                                        gradient="bg-gradient-to-br from-blue-600/30 to-cyan-900/40"
+                                        glowBorder="ring-blue-500 border-blue-500 shadow-blue-500/25"
+                                        trend={bookingStats.totalTrend}
+                                        subtitle={`${bookingStats.total} rescue call${bookingStats.total === 1 ? '' : 's'}`}
+                                        badge="Emergency"
+                                        detail="All emergency towing and roadside assistance calls logged."
+                                        isActive={kpiFilter === 'total'}
+                                        onClick={() => setKpiFilter(prev => prev === 'total' ? 'all' : 'total')}
+                                    />
+                                    <EnhancedKPICard
+                                        title="Rescue Revenue"
+                                        value={`₱${bookingStats.totalRevenue.toLocaleString()}`}
+                                        icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
+                                        gradient="bg-gradient-to-br from-emerald-600/30 to-emerald-900/40"
+                                        glowBorder="ring-emerald-500 border-emerald-500 shadow-emerald-500/25"
+                                        trend={bookingStats.revenueTrend}
+                                        subtitle={bookingStats.pendingRevenue > 0 ? `₱${bookingStats.pendingRevenue.toLocaleString()} pending collection` : 'All towings paid'}
+                                        badge="Collected"
+                                        detail="Collected fees for roadside towing and vehicle recoveries."
+                                        isActive={kpiFilter === 'revenue'}
+                                        onClick={() => setKpiFilter(prev => prev === 'revenue' ? 'all' : 'revenue')}
+                                    />
+                                    <EnhancedKPICard
+                                        title="Rescues Completed"
+                                        value={bookingStats.completed}
+                                        icon={<ShieldCheck className="w-5 h-5 text-teal-400" />}
+                                        gradient="bg-gradient-to-br from-teal-600/30 to-teal-900/40"
+                                        glowBorder="ring-teal-500 border-teal-500 shadow-teal-500/25"
+                                        trend={bookingStats.completedTrend}
+                                        subtitle={`${bookingStats.completionRate}% rescue rate`}
+                                        badge="Delivered"
+                                        detail="Vehicles safely towed and delivered to destination or garage."
+                                        isActive={kpiFilter === 'completed'}
+                                        onClick={() => setKpiFilter(prev => prev === 'completed' ? 'all' : 'completed')}
+                                    />
+                                    <EnhancedKPICard
+                                        title="Trucks Dispatched"
+                                        value={bookingStats.upcoming}
+                                        icon={<Zap className="w-5 h-5 text-red-400" />}
+                                        gradient="bg-gradient-to-br from-rose-600/30 to-red-900/40"
+                                        glowBorder="ring-red-500 border-red-500 shadow-red-500/25"
+                                        subtitle={`${bookingStats.todayBookings} call${bookingStats.todayBookings === 1 ? '' : 's'} today`}
+                                        badge="Urgent Live"
+                                        detail="Tow trucks and wrecker units actively dispatched or pending on the road."
+                                        isActive={kpiFilter === 'active'}
+                                        onClick={() => setKpiFilter(prev => prev === 'active' ? 'all' : 'active')}
+                                    />
+                                </>
+                            );
+                        })()}
+                    </div>
                 </div>
 
                 {/* Filters Section */}
-                {/* Filters Section */}
-                <div className="relative group mb-4">
-                    <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-rose-600 rounded-xl blur opacity-5 group-hover:opacity-10 transition duration-1000"></div>
-                    <div className="relative bg-[#121212]/80 backdrop-blur-2xl border border-white/10 p-3.5 rounded-xl space-y-3">
+                <div className="relative z-40 group mb-4">
+                    <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-primary to-rose-600 rounded-2xl blur opacity-10 group-hover:opacity-15 transition duration-1000"></div>
+                    <div className="relative bg-[#121212]/90 backdrop-blur-2xl border border-white/10 p-3 rounded-2xl shadow-xl space-y-2.5">
 
-                        {/* Filter Controls */}
-                        <div className="flex flex-col lg:flex-row gap-3">
-                            <div className="flex-1 relative">
-                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-                                <input
-                                    id="adminSearchQuery"
-                                    name="adminSearchQuery"
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder={
-                                        activeAdminTab === 'Services' ? "Search Customer or Service..." :
-                                        activeAdminTab === 'Car Rental' ? "Search Customer or Car..." :
-                                        activeAdminTab === 'Driver for Hire' ? "Search Customer..." :
-                                        activeAdminTab === 'Liaison' ? "Search Customer or Liaison Service..." :
-                                        "Search Customer or Towing Location..."
-                                    }
-                                    className="h-9 w-full bg-white/5 border border-white/10 rounded-lg pl-10 pr-3 text-white text-xs font-bold placeholder-gray-600 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all hover:bg-white/10 hover:border-white/20"
-                                />
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                {activeAdminTab === 'Services' && (
-                                    <select
-                                        id="selectedMechanicId"
-                                        name="selectedMechanicId"
-                                        value={selectedMechanicId}
-                                        onChange={(e) => setSelectedMechanicId(e.target.value)}
-                                        className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white text-xs font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
-                                    >
-                                        <option value="all">All Mechanics</option>
-                                        {mechanics.filter(m => m.status === 'Active').map(mechanic => (
-                                            <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>
-                                        ))}
-                                    </select>
-                                )}
-                                <select
-                                    id="selectedStatus"
-                                    name="selectedStatus"
-                                    value={selectedStatus}
-                                    onChange={(e) => setSelectedStatus(e.target.value as any)}
-                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white text-xs font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
-                                >
-                                    {bookingStatuses.map(status => (
-                                        <option key={status} value={status}>
-                                            {status === 'all' ? 'All Statuses' : status}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    id="paymentFilter"
-                                    name="paymentFilter"
-                                    value={paymentFilter}
-                                    onChange={(e) => setPaymentFilter(e.target.value as any)}
-                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white text-xs font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
-                                >
-                                    <option value="all">All Payments</option>
-                                    <option value="paid">Paid Only</option>
-                                    <option value="unpaid">Unpaid Only</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Date Filters & Presets */}
-                        <div className="flex flex-wrap gap-2.5 items-center pt-2.5 border-t border-white/10">
-                            <div className="flex flex-wrap gap-2 items-center">
-                                <span className="text-xs font-bold text-gray-500 mr-2">Quick Range:</span>
-                                {['all', 'today', 'week', 'month'].map(preset => (
-                                    <Tooltip key={preset} content={`Filter by ${preset === 'all' ? 'all dates' : preset}`}>
+                        {/* Top Controls Row: Search + Quick Range + Dropdowns + Clear */}
+                        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
+                            
+                            {/* Modern Search Widget with Auto-Dropdown Results */}
+                            <div className="flex-1 relative z-50" data-search-widget>
+                                <div className="relative flex items-center">
+                                    <Search className="absolute left-3.5 text-gray-400 group-focus-within:text-primary transition-colors pointer-events-none" size={15} />
+                                    <input
+                                        id="adminSearchQuery"
+                                        name="adminSearchQuery"
+                                        type="text"
+                                        value={searchQuery}
+                                        onFocus={() => setIsSearchFocused(true)}
+                                        onChange={(e) => {
+                                            setSearchQuery(e.target.value);
+                                            setIsSearchFocused(true);
+                                        }}
+                                        placeholder={
+                                            activeAdminTab === 'Services' ? "Search Customer, Mechanic, Service, Vehicle..." :
+                                            activeAdminTab === 'Car Rental' ? "Search Customer, Car, Plate, Ref..." :
+                                            activeAdminTab === 'Driver for Hire' ? "Search Customer, Driver, Destination..." :
+                                            activeAdminTab === 'Liaison' ? "Search Customer, Liaison Agent, Plate..." :
+                                            "Search Customer, Towing Location, Truck..."
+                                        }
+                                        className="h-10 w-full bg-white/[0.04] border border-white/10 rounded-xl pl-10 pr-9 text-white text-xs font-semibold placeholder-gray-500 focus:border-primary/80 focus:bg-white/[0.07] focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                    />
+                                    {searchQuery && (
                                         <button
-                                            onClick={() => handleDatePreset(preset)}
-                                            className={`h-9 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${datePreset === preset
-                                                ? 'bg-primary text-white shadow-lg'
-                                                : 'bg-white/5 border border-white/10 text-gray-500 hover:text-white hover:bg-white/10 hover:border-white/20'
-                                                }`}
+                                            type="button"
+                                            onClick={() => {
+                                                setSearchQuery('');
+                                                setIsSearchFocused(false);
+                                            }}
+                                            className="absolute right-3 text-gray-500 hover:text-white p-0.5 rounded-full hover:bg-white/10 transition-colors"
+                                            title="Clear search"
                                         >
-                                            {preset === 'all' ? 'All' : preset}
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Auto-Suggest Dropdown Results Menu */}
+                                {isSearchFocused && searchQuery.trim().length > 0 && (
+                                    <div className="absolute left-0 right-0 top-full mt-1.5 z-[100] bg-[#161618] border border-white/15 rounded-xl shadow-2xl backdrop-blur-2xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
+                                        <div className="px-3 py-2 border-b border-white/5 flex items-center justify-between text-[11px] font-bold text-gray-400">
+                                            <span className="flex items-center gap-1.5">
+                                                <Sparkles size={12} className="text-primary" /> Live Results ({searchSuggestions.length})
+                                            </span>
+                                            <span className="text-[10px] text-gray-500">Press Esc or click to select</span>
+                                        </div>
+                                        <div className="max-h-64 overflow-y-auto divide-y divide-white/5 custom-scrollbar">
+                                            {searchSuggestions.length > 0 ? (
+                                                searchSuggestions.map(item => (
+                                                    <button
+                                                        key={item.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSearchQuery(item.title);
+                                                            setIsSearchFocused(false);
+                                                        }}
+                                                        className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-center justify-between gap-3 transition-colors cursor-pointer group"
+                                                    >
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                                                item.category === 'Customer' ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20' :
+                                                                item.category === 'Mechanic' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
+                                                                item.category === 'Service' ? 'bg-primary/15 text-primary border border-primary/20' :
+                                                                'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                                                            }`}>
+                                                                {item.category === 'Customer' && <Users size={13} />}
+                                                                {item.category === 'Mechanic' && <UserCheck size={13} />}
+                                                                {item.category === 'Service' && <Wrench size={13} />}
+                                                                {item.category === 'Vehicle' && <Car size={13} />}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="text-xs font-bold text-white group-hover:text-primary transition-colors truncate">
+                                                                    {item.title}
+                                                                </p>
+                                                                <p className="text-[10px] text-gray-400 truncate">
+                                                                    {item.subtitle}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-gray-400 group-hover:border-primary/40 group-hover:text-primary flex-shrink-0">
+                                                            {item.badgeText}
+                                                        </span>
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className="px-4 py-5 text-center text-gray-500 text-xs">
+                                                    No direct matches found for "{searchQuery}"
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Dropdown Filters Group */}
+                            <div className="flex flex-wrap items-center gap-2 relative z-50">
+                                
+                                {/* 1. Quick Range Filter Dropdown (Inline right after Search) */}
+                                <div className="relative" data-filter-dropdown>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveOpenFilter(activeOpenFilter === 'range' ? null : 'range');
+                                        }}
+                                        className={`h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+                                            datePreset !== 'all' || dateFilter.start || dateFilter.end
+                                                ? 'bg-primary/15 border-primary/40 text-primary shadow-lg shadow-primary/10'
+                                                : 'bg-white/[0.04] border-white/10 text-gray-300 hover:bg-white/[0.08] hover:border-white/20'
+                                        }`}
+                                    >
+                                        {datePreset === 'today' ? <Clock size={14} className="text-primary" /> :
+                                         datePreset === 'week' ? <CalendarDays size={14} className="text-primary" /> :
+                                         datePreset === 'month' ? <CalendarRange size={14} className="text-primary" /> :
+                                         datePreset === 'custom' ? <Filter size={14} className="text-primary" /> :
+                                         <Calendar size={14} className="text-gray-400" />}
+                                        
+                                        <span>
+                                            {datePreset === 'all' ? 'All Dates' :
+                                             datePreset === 'today' ? 'Today' :
+                                             datePreset === 'week' ? 'This Week' :
+                                             datePreset === 'month' ? 'This Month' : 'Custom Range'}
+                                        </span>
+                                        <ChevronDown size={13} className={`text-gray-400 transition-transform duration-200 ${activeOpenFilter === 'range' ? 'rotate-180 text-primary' : ''}`} />
+                                    </button>
+
+                                        {activeOpenFilter === 'range' && (
+                                        <div className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 min-w-[280px] w-max max-w-xs z-[100] bg-[#161618] border border-white/20 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] p-2 backdrop-blur-2xl ring-1 ring-white/10 animate-in fade-in slide-in-from-top-1 duration-150">
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2.5 py-1.5 border-b border-white/5 mb-1 flex items-center justify-between">
+                                                <span>Quick Date Range</span>
+                                                <Calendar size={12} className="text-primary" />
+                                            </div>
+                                            {[
+                                                { id: 'all', label: 'All Dates', icon: Calendar, desc: 'Show all bookings without date restrictions' },
+                                                { id: 'today', label: 'Today', icon: Clock, desc: 'Bookings scheduled for today only' },
+                                                { id: 'week', label: 'This Week', icon: CalendarDays, desc: 'Bookings scheduled within this calendar week' },
+                                                { id: 'month', label: 'This Month', icon: CalendarRange, desc: 'Bookings scheduled within this calendar month' },
+                                                { id: 'custom', label: 'Custom Range...', icon: Filter, desc: 'Manually pick custom start & end date' }
+                                            ].map(opt => {
+                                                const IconComponent = opt.icon;
+                                                const isSelected = datePreset === opt.id;
+                                                return (
+                                                    <button
+                                                        key={opt.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (opt.id === 'custom') {
+                                                                setDatePreset('custom');
+                                                            } else {
+                                                                handleDatePreset(opt.id);
+                                                            }
+                                                            setActiveOpenFilter(null);
+                                                        }}
+                                                        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between gap-3 text-xs font-bold transition-all cursor-pointer ${
+                                                            isSelected ? 'bg-primary/20 text-primary border border-primary/40 shadow-sm' : 'text-gray-300 hover:bg-white/10 hover:text-white border border-transparent'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-start gap-2.5 min-w-0">
+                                                            <div className={`p-1.5 rounded-lg flex-shrink-0 mt-0.5 ${isSelected ? 'bg-primary text-black' : 'bg-white/5 text-gray-400'}`}>
+                                                                <IconComponent size={13} />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="font-bold text-xs leading-snug">{opt.label}</p>
+                                                                <p className="text-[10px] text-gray-400 font-normal leading-tight mt-0.5">{opt.desc}</p>
+                                                            </div>
+                                                        </div>
+                                                        {isSelected && <Check size={14} className="text-primary flex-shrink-0" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 2. Mechanic Filter Dropdown (Services tab) */}
+                                {activeAdminTab === 'Services' && (
+                                    <div className="relative" data-filter-dropdown>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveOpenFilter(activeOpenFilter === 'mechanic' ? null : 'mechanic');
+                                            }}
+                                            className={`h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+                                                selectedMechanicId !== 'all'
+                                                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-lg shadow-amber-500/10'
+                                                    : 'bg-white/[0.04] border-white/10 text-gray-300 hover:bg-white/[0.08] hover:border-white/20'
+                                            }`}
+                                        >
+                                            <Users size={14} className={selectedMechanicId !== 'all' ? 'text-amber-400' : 'text-gray-400'} />
+                                            <span className="max-w-[150px] truncate">
+                                                {selectedMechanicId === 'all'
+                                                    ? 'All Mechanics'
+                                                    : (mechanics.find(m => m.id === selectedMechanicId)?.name || 'Mechanic')}
+                                            </span>
+                                            <ChevronDown size={13} className={`text-gray-400 transition-transform duration-200 ${activeOpenFilter === 'mechanic' ? 'rotate-180 text-amber-400' : ''}`} />
+                                        </button>
+
+                                        {activeOpenFilter === 'mechanic' && (
+                                            <div className="absolute left-0 lg:left-auto lg:right-0 top-full mt-2 min-w-[300px] w-max max-w-sm z-[100] bg-[#161618] border border-white/20 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] p-2 backdrop-blur-2xl ring-1 ring-white/10 animate-in fade-in slide-in-from-top-1 duration-150">
+                                                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2.5 py-1.5 border-b border-white/5 mb-1 flex items-center justify-between">
+                                                    <span>Assignee / Mechanic</span>
+                                                    <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                                        {mechanics.filter(m => m.status === 'Active').length} Active
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedMechanicId('all');
+                                                        setActiveOpenFilter(null);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2.5 text-xs font-bold transition-all cursor-pointer ${
+                                                        selectedMechanicId === 'all' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-gray-300 hover:bg-white/10 hover:text-white border border-transparent'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="w-6 h-6 rounded-lg bg-white/10 text-gray-300 flex items-center justify-center flex-shrink-0 font-black text-[11px]">
+                                                            <Users size={13} />
+                                                        </div>
+                                                        <span>All Mechanics</span>
+                                                    </div>
+                                                    {selectedMechanicId === 'all' && <Check size={14} className="text-amber-400" />}
+                                                </button>
+                                                <div className="my-1 border-t border-white/5" />
+                                                <div className="max-h-72 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                                                    {mechanics.filter(m => m.status === 'Active').map(mechanic => {
+                                                        const isSelected = selectedMechanicId === mechanic.id;
+                                                        return (
+                                                            <button
+                                                                key={mechanic.id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedMechanicId(mechanic.id);
+                                                                    setActiveOpenFilter(null);
+                                                                }}
+                                                                className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-3 text-xs font-bold transition-all cursor-pointer ${
+                                                                    isSelected ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-sm' : 'text-gray-300 hover:bg-white/10 hover:text-white border border-transparent'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 font-black text-[11px] flex items-center justify-center flex-shrink-0 border border-amber-500/30">
+                                                                        {mechanic.name.charAt(0)}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="font-bold text-xs text-white leading-snug whitespace-normal break-words">{mechanic.name}</p>
+                                                                        <p className="text-[10px] text-gray-400 font-normal leading-tight flex items-center gap-1.5 mt-0.5">
+                                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                                                                            <span>{mechanic.specialty || 'General Mechanic'}</span>
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                {isSelected && <Check size={14} className="text-amber-400 flex-shrink-0" />}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* 3. Status Filter Dropdown */}
+                                <div className="relative" data-filter-dropdown>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveOpenFilter(activeOpenFilter === 'status' ? null : 'status');
+                                        }}
+                                        className={`h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+                                            selectedStatus !== 'all'
+                                                ? 'bg-blue-500/15 border-blue-500/40 text-blue-400 shadow-lg shadow-blue-500/10'
+                                                : 'bg-white/[0.04] border-white/10 text-gray-300 hover:bg-white/[0.08] hover:border-white/20'
+                                        }`}
+                                    >
+                                        <Activity size={14} className={selectedStatus !== 'all' ? 'text-blue-400' : 'text-gray-400'} />
+                                        <span className="max-w-[140px] truncate">
+                                            {selectedStatus === 'all' ? 'All Statuses' : selectedStatus}
+                                        </span>
+                                        <ChevronDown size={13} className={`text-gray-400 transition-transform duration-200 ${activeOpenFilter === 'status' ? 'rotate-180 text-blue-400' : ''}`} />
+                                    </button>
+
+                                    {activeOpenFilter === 'status' && (
+                                        <div className="absolute right-0 top-full mt-2 min-w-[280px] w-max max-w-sm z-[100] bg-[#161618] border border-white/20 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] p-2 backdrop-blur-2xl ring-1 ring-white/10 animate-in fade-in slide-in-from-top-1 duration-150">
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2.5 py-1.5 border-b border-white/5 mb-1 flex items-center justify-between">
+                                                <span>Booking Status</span>
+                                                <Activity size={12} className="text-blue-400" />
+                                            </div>
+                                            <div className="max-h-72 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                                                {bookingStatuses.map(status => {
+                                                    const isSelected = selectedStatus === status;
+                                                    const dotColor = 
+                                                        status === 'all' ? 'bg-gray-400' :
+                                                        status === 'Completed' || status === 'Approved' ? 'bg-emerald-400' :
+                                                        status === 'Cancelled' ? 'bg-rose-400' :
+                                                        status === 'In Progress' || status === 'En Route' || status === 'Dispatched' || status === 'LTO Processing' ? 'bg-blue-400' :
+                                                        'bg-amber-400';
+                                                    
+                                                    return (
+                                                        <button
+                                                            key={status}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedStatus(status as any);
+                                                                setActiveOpenFilter(null);
+                                                            }}
+                                                            className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-3 text-xs font-bold transition-all cursor-pointer ${
+                                                                isSelected ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-sm' : 'text-gray-300 hover:bg-white/10 hover:text-white border border-transparent'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                <span className={`w-2.5 h-2.5 rounded-full ${dotColor} flex-shrink-0 ring-2 ring-white/10`} />
+                                                                <span className="whitespace-normal leading-snug">{status === 'all' ? 'All Statuses' : status}</span>
+                                                            </div>
+                                                            {isSelected && <Check size={14} className="text-blue-400 flex-shrink-0" />}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 4. Payment Filter Dropdown */}
+                                <div className="relative" data-filter-dropdown>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveOpenFilter(activeOpenFilter === 'payment' ? null : 'payment');
+                                        }}
+                                        className={`h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+                                            paymentFilter !== 'all'
+                                                ? paymentFilter === 'paid'
+                                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 shadow-lg shadow-emerald-500/10'
+                                                    : 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-lg shadow-amber-500/10'
+                                                : 'bg-white/[0.04] border-white/10 text-gray-300 hover:bg-white/[0.08] hover:border-white/20'
+                                        }`}
+                                    >
+                                        <DollarSign size={14} className={
+                                            paymentFilter === 'paid' ? 'text-emerald-400' :
+                                            paymentFilter === 'unpaid' ? 'text-amber-400' :
+                                            'text-gray-400'
+                                        } />
+                                        <span>
+                                            {paymentFilter === 'all' ? 'All Payments' :
+                                             paymentFilter === 'paid' ? 'Paid Only' : 'Unpaid Only'}
+                                        </span>
+                                        <ChevronDown size={13} className={`text-gray-400 transition-transform duration-200 ${activeOpenFilter === 'payment' ? 'rotate-180 text-primary' : ''}`} />
+                                    </button>
+
+                                    {activeOpenFilter === 'payment' && (
+                                        <div className="absolute right-0 top-full mt-2 min-w-[260px] w-max max-w-xs z-[100] bg-[#161618] border border-white/20 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] p-2 backdrop-blur-2xl ring-1 ring-white/10 animate-in fade-in slide-in-from-top-1 duration-150">
+                                            <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2.5 py-1.5 border-b border-white/5 mb-1 flex items-center justify-between">
+                                                <span>Payment Filter</span>
+                                                <DollarSign size={12} className="text-emerald-400" />
+                                            </div>
+                                            {[
+                                                { id: 'all', label: 'All Payments', desc: 'Show all paid and unpaid bookings', icon: DollarSign, color: 'text-gray-400' },
+                                                { id: 'paid', label: 'Paid Only', desc: 'Bookings with 100% completed payment', icon: CheckCircle, color: 'text-emerald-400' },
+                                                { id: 'unpaid', label: 'Unpaid Only', desc: 'Bookings with outstanding balance', icon: Clock, color: 'text-amber-400' }
+                                            ].map(opt => {
+                                                const isSelected = paymentFilter === opt.id;
+                                                const IconComponent = opt.icon;
+                                                return (
+                                                    <button
+                                                        key={opt.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPaymentFilter(opt.id as any);
+                                                            setActiveOpenFilter(null);
+                                                        }}
+                                                        className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-3 text-xs font-bold transition-all cursor-pointer ${
+                                                            isSelected ? 'bg-white/15 text-white border border-white/25 shadow-sm' : 'text-gray-300 hover:bg-white/10 hover:text-white border border-transparent'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-start gap-2.5 min-w-0">
+                                                            <div className={`p-1.5 rounded-lg flex-shrink-0 mt-0.5 ${isSelected ? 'bg-white text-black' : 'bg-white/5 ' + opt.color}`}>
+                                                                <IconComponent size={13} />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="font-bold text-xs leading-snug">{opt.label}</p>
+                                                                <p className="text-[10px] text-gray-400 font-normal leading-tight mt-0.5">{opt.desc}</p>
+                                                            </div>
+                                                        </div>
+                                                        {isSelected && <Check size={14} className="text-primary flex-shrink-0" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+
+                                {/* Clear Filters Quick Action */}
+                                {activeFiltersCount > 0 && (
+                                    <Tooltip content="Reset all active filters and search">
+                                        <button
+                                            type="button"
+                                            onClick={clearAllFilters}
+                                            className="h-10 px-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl font-bold text-xs hover:bg-red-500 hover:text-white transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow-sm"
+                                        >
+                                            <X size={13} />
+                                            <span>Clear ({activeFiltersCount})</span>
                                         </button>
                                     </Tooltip>
-                                ))}
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <input
-                                    id="dateFilterStart"
-                                    name="dateFilterStart"
-                                    type="date"
-                                    value={dateFilter.start}
-                                    onChange={e => { setDateFilter(prev => ({ ...prev, start: e.target.value })); setDatePreset('custom'); }}
-                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
-                                />
-                                <span className="text-gray-600">-</span>
-                                <input
-                                    id="dateFilterEnd"
-                                    name="dateFilterEnd"
-                                    type="date"
-                                    value={dateFilter.end}
-                                    min={dateFilter.start}
-                                    onChange={e => { setDateFilter(prev => ({ ...prev, end: e.target.value })); setDatePreset('custom'); }}
-                                    className="h-9 bg-white/5 border border-white/10 rounded-lg px-3 text-white font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer"
-                                />
-                            </div>
-
-                            <div className={`transition-all duration-300 ease-in-out overflow-hidden flex items-center ${activeFiltersCount > 0 ? 'max-w-[180px] opacity-100' : 'max-w-0 opacity-0 pointer-events-none'}`}>
-                                <Tooltip content="Remove all applied filters">
-                                    <button
-                                        onClick={clearAllFilters}
-                                        className="h-9 px-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg font-bold text-xs hover:bg-red-500 hover:text-white transition-all whitespace-nowrap cursor-pointer"
-                                    >
-                                        Clear Filters ({activeFiltersCount})
-                                    </button>
-                                </Tooltip>
+                                )}
                             </div>
                         </div>
+
+                        {/* Custom Date Range Picker Row (Revealed when datePreset === 'custom' or custom dates entered) */}
+                        {(datePreset === 'custom' || dateFilter.start || dateFilter.end) && (
+                            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-white/5 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-bold text-gray-400 flex items-center gap-1.5">
+                                        <Calendar size={13} className="text-primary" /> Start Date:
+                                    </span>
+                                    <input
+                                        id="dateFilterStart"
+                                        name="dateFilterStart"
+                                        type="date"
+                                        value={dateFilter.start}
+                                        onChange={e => { setDateFilter(prev => ({ ...prev, start: e.target.value })); setDatePreset('custom'); }}
+                                        className="h-8 bg-white/5 border border-white/10 rounded-lg px-2.5 text-white font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs transition-all hover:bg-white/10 cursor-pointer"
+                                    />
+                                </div>
+                                <span className="text-gray-500 font-black">-</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-bold text-gray-400">End Date:</span>
+                                    <input
+                                        id="dateFilterEnd"
+                                        name="dateFilterEnd"
+                                        type="date"
+                                        value={dateFilter.end}
+                                        min={dateFilter.start}
+                                        onChange={e => { setDateFilter(prev => ({ ...prev, end: e.target.value })); setDatePreset('custom'); }}
+                                        className="h-8 bg-white/5 border border-white/10 rounded-lg px-2.5 text-white font-bold outline-none focus:border-primary focus:ring-1 focus:ring-primary text-xs transition-all hover:bg-white/10 cursor-pointer"
+                                    />
+                                </div>
+                                {(dateFilter.start || dateFilter.end) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setDateFilter({ start: '', end: '' });
+                                            setDatePreset('all');
+                                        }}
+                                        className="text-[10px] font-bold text-gray-400 hover:text-white underline ml-1"
+                                    >
+                                        Reset Date Range
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
 
             </div>
             
             {/* Enhanced Table */}
-            <div className="flex-1 overflow-auto space-y-6">
+            <div className="flex-1 overflow-auto space-y-6 relative z-10">
                 {/* Desktop View */}
                 <div className="hidden md:block bg-[#121212]/60 backdrop-blur-2xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl overflow-x-auto relative custom-scrollbar">
                     <table className="w-full text-left border-collapse min-w-[1200px]">
@@ -2275,7 +3708,9 @@ const AdminBookingsScreen: React.FC = () => {
                                             <td className="py-2 px-3 text-right">
                                                 {(() => {
                                                     const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
-                                                    const total = booking.totalAmount ?? svcs.reduce((s, svc) => s + svc.price, 0);
+                                                    const originalServicesFee = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0) || (Number(booking.totalAmount) || 0);
+                                                    const addCosts = (booking.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+                                                    const total = originalServicesFee + addCosts;
                                                     const isGcash = booking.paymentMethod === 'GCash';
                                                     const hasReceipt = !!booking.gcashReceiptUrl;
                                                     const isVerified = booking.isVerified;
@@ -2430,55 +3865,145 @@ const AdminBookingsScreen: React.FC = () => {
                                                                             {(() => {
                                                                                 const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
                                                                                 const originalServicesFee = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0) || (Number(booking.totalAmount) || 0);
-                                                                                const total = booking.totalAmount ?? originalServicesFee;
-                                                                                const paidDownpayment = Number(booking.paidAmount) || (booking.isVerified ? originalServicesFee * 0.5 : 0);
                                                                                 const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-                                                                                const grandTotal = total + additionalCostsTotal;
-                                                                                const serviceBalance = Math.max(0, grandTotal - paidDownpayment);
+                                                                                const grandTotal = originalServicesFee + additionalCostsTotal;
+                                                                                
+                                                                                // Downpayment is always 50% of original services or recorded downpaymentAmount
+                                                                                const initialDeposit = (booking.downpaymentAmount != null && Number(booking.downpaymentAmount) > 0)
+                                                                                    ? Number(booking.downpaymentAmount)
+                                                                                    : (booking.isVerified ? originalServicesFee * 0.5 : (Number(booking.paidAmount) || 0));
+
+                                                                                // Remaining / Final payment amount
+                                                                                const computedFinalAmount = Math.max(0, grandTotal - initialDeposit);
                                                                                 const isFullySettled = Boolean(booking.isPaid);
 
                                                                                 return (
                                                                                     <div className="bg-white/[0.03] p-2.5 rounded-xl border border-white/10 shadow-inner flex flex-col gap-2.5">
-                                                                                        {/* Real-time 3-Column Metric Strip */}
+                                                                                        {/* Tier 1: Financial Summary Banner (Service, Additionals, Total) */}
                                                                                         <div className="grid grid-cols-3 gap-1.5 bg-black/40 p-2 rounded-lg border border-white/5">
-                                                                                            {/* 1. Total of Services */}
+                                                                                            {/* 1. Services Fee */}
                                                                                             <div className="flex flex-col min-w-0">
-                                                                                                <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider truncate">Total Services</span>
-                                                                                                <span className="text-xs font-black text-white mt-0.5 truncate" title={`₱${grandTotal.toLocaleString()}`}>
-                                                                                                    {grandTotal > 0 ? `₱${grandTotal.toLocaleString()}` : 'For Quote'}
+                                                                                                <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider truncate">Service Fee</span>
+                                                                                                <span className="text-xs font-black text-white mt-0.5 truncate" title={`₱${originalServicesFee.toLocaleString()}`}>
+                                                                                                    {originalServicesFee > 0 ? `₱${originalServicesFee.toLocaleString()}` : 'For Quote'}
                                                                                                 </span>
                                                                                                 <span className="text-[7px] text-gray-400 font-bold mt-0.5">
-                                                                                                    {svcs.length > 1 ? `${svcs.length} Items` : 'Standard'}
+                                                                                                    {svcs.length > 1 ? `${svcs.length} Services` : 'Base Fee'}
                                                                                                 </span>
                                                                                             </div>
 
-                                                                                            {/* 2. Initial DP Details */}
+                                                                                            {/* 2. Additional Costs */}
                                                                                             <div className="flex flex-col min-w-0 border-l border-white/10 pl-2">
-                                                                                                <div className="flex items-center gap-1">
-                                                                                                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider truncate">Initial DP</span>
-                                                                                                </div>
-                                                                                                <span className="text-xs font-black text-primary mt-0.5 truncate" title={`₱${paidDownpayment.toLocaleString()}`}>
-                                                                                                    {paidDownpayment > 0 ? `₱${paidDownpayment.toLocaleString()}` : (originalServicesFee > 0 ? `₱${(originalServicesFee * 0.5).toLocaleString()}` : '—')}
+                                                                                                <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider truncate">Additional</span>
+                                                                                                <span className={`text-xs font-black mt-0.5 truncate ${additionalCostsTotal > 0 ? 'text-[#FF7903]' : 'text-gray-400'}`} title={`+₱${additionalCostsTotal.toLocaleString()}`}>
+                                                                                                    {additionalCostsTotal > 0 ? `+₱${additionalCostsTotal.toLocaleString()}` : '₱0'}
                                                                                                 </span>
-                                                                                                <span className={`text-[7px] font-black uppercase tracking-wider mt-0.5 ${booking.isVerified || paidDownpayment > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                                                                                    {booking.isVerified || paidDownpayment > 0 ? '● Paid (50%)' : '○ Pending'}
+                                                                                                <span className="text-[7px] text-gray-400 font-bold mt-0.5">
+                                                                                                    {booking.additionalCosts?.length ? `${booking.additionalCosts.length} item(s)` : 'No Extra'}
                                                                                                 </span>
                                                                                             </div>
 
-                                                                                            {/* 3. Complete Payment Details */}
+                                                                                            {/* 3. Grand Total Fee */}
                                                                                             <div className="flex flex-col min-w-0 border-l border-white/10 pl-2">
-                                                                                                <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider truncate">Complete Settle</span>
-                                                                                                <span className={`text-xs font-black mt-0.5 truncate ${isFullySettled ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                                                                                    {isFullySettled ? `₱${grandTotal.toLocaleString()}` : (serviceBalance > 0 ? `₱${serviceBalance.toLocaleString()}` : 'For Quote')}
+                                                                                                <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider truncate">Total Fee</span>
+                                                                                                <span className="text-xs font-black text-green-400 mt-0.5 truncate" title={`₱${grandTotal.toLocaleString()}`}>
+                                                                                                    {grandTotal > 0 ? `₱${grandTotal.toLocaleString()}` : 'For Quote'}
                                                                                                 </span>
                                                                                                 <span className={`text-[7px] font-black uppercase tracking-wider mt-0.5 ${isFullySettled ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                                                                                    {isFullySettled ? '● Settled 100%' : '○ Balance Due'}
+                                                                                                    {isFullySettled ? '● Fully Settled' : '○ Balance Due'}
                                                                                                 </span>
                                                                                             </div>
                                                                                         </div>
 
+                                                                                        {/* Tier 2: 2-Column Payment Installments (1st Deposit vs Final Payment) */}
+                                                                                        <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                                                                            {/* 1st Payment (50% Deposit) */}
+                                                                                            <div className="bg-black/30 p-2 rounded-lg border border-white/5 flex flex-col gap-1.5">
+                                                                                                <div className="flex items-center justify-between">
+                                                                                                    <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider">1st Payment (50%)</span>
+                                                                                                    {(booking.isVerified || initialDeposit > 0) && (
+                                                                                                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[7px] font-black uppercase px-1 py-0.2 rounded">
+                                                                                                            PAID
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <div className="text-[12px] font-black text-emerald-400 font-mono">
+                                                                                                    {initialDeposit > 0 ? `₱${initialDeposit.toLocaleString()}` : (originalServicesFee > 0 ? `₱${(originalServicesFee * 0.5).toLocaleString()}` : '—')}
+                                                                                                </div>
+
+                                                                                                {(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) ? (
+                                                                                                    <div
+                                                                                                        className="rounded-md border border-white/10 overflow-hidden bg-black/40 h-14 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl)}
+                                                                                                        title="Click to view receipt"
+                                                                                                    >
+                                                                                                        <img
+                                                                                                            src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
+                                                                                                            alt="1st Payment Receipt"
+                                                                                                            className="w-full h-full object-contain"
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                ) : (booking.downpaymentRef || booking.hitpayReference || booking.paymentMethod?.includes('HitPay') || booking.isVerified) ? (
+                                                                                                    <div className="rounded-md border border-emerald-500/20 h-14 flex flex-col items-center justify-center text-center p-1 bg-emerald-500/[0.04]">
+                                                                                                        <span className="text-[9px] font-bold text-emerald-400">HitPay Online</span>
+                                                                                                        <span className="text-[7px] text-gray-400 font-mono mt-0.5 truncate max-w-[90%]">
+                                                                                                            {booking.downpaymentRef || booking.hitpayReference || 'Verified Gateway'}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                ) : (
+                                                                                                    <div className="rounded-md border border-white/5 border-dashed h-14 flex flex-col items-center justify-center text-center p-1 bg-black/20">
+                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting DP</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+
+                                                                                            {/* Final Payment (Settled or Due) */}
+                                                                                            <div className="bg-black/30 p-2 rounded-lg border border-white/5 flex flex-col gap-1.5">
+                                                                                                <div className="flex items-center justify-between">
+                                                                                                    <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Final Payment</span>
+                                                                                                    {isFullySettled ? (
+                                                                                                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[7px] font-black uppercase px-1 py-0.2 rounded">
+                                                                                                            PAID
+                                                                                                        </span>
+                                                                                                    ) : (
+                                                                                                        <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[7px] font-black uppercase px-1 py-0.2 rounded">
+                                                                                                            DUE
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <div className={`text-[12px] font-black font-mono ${isFullySettled ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                                                                                    {computedFinalAmount > 0 ? `₱${computedFinalAmount.toLocaleString()}` : (isFullySettled ? '₱0' : 'For Quotation')}
+                                                                                                </div>
+
+                                                                                                {booking.gcashBalanceReceiptUrl ? (
+                                                                                                    <div
+                                                                                                        className="rounded-md border border-white/10 overflow-hidden bg-black/40 h-14 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashBalanceReceiptUrl)}
+                                                                                                        title="Click to view balance receipt"
+                                                                                                    >
+                                                                                                        <img
+                                                                                                            src={booking.gcashBalanceReceiptUrl}
+                                                                                                            alt="Final Payment Receipt"
+                                                                                                            className="w-full h-full object-contain"
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                ) : (booking.balancePaymentRef || (booking.isPaid && booking.paymentMethod?.includes('HitPay'))) ? (
+                                                                                                    <div className="rounded-md border border-emerald-500/20 h-14 flex flex-col items-center justify-center text-center p-1 bg-emerald-500/[0.04]">
+                                                                                                        <span className="text-[9px] font-bold text-emerald-400">HitPay Settled</span>
+                                                                                                        <span className="text-[7px] text-gray-400 font-mono mt-0.5 truncate max-w-[90%]">
+                                                                                                            {booking.balancePaymentRef || 'Full Online Settle'}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                ) : (
+                                                                                                    <div className="rounded-md border border-white/5 border-dashed h-14 flex flex-col items-center justify-center text-center p-1 bg-black/20">
+                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting Settle</span>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+
                                                                                         {/* Action Toolbar */}
-                                                                                        <div className="flex items-center justify-between pt-1 px-0.5">
+                                                                                        <div className="flex items-center justify-between pt-1 px-0.5 border-t border-white/5">
                                                                                             <div className="flex items-center gap-1.5">
                                                                                                 <span className="text-[9px] font-bold text-gray-400">Status:</span>
                                                                                                 <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${isFullySettled ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : booking.isVerified ? 'bg-primary/10 text-primary border-primary/20' : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'}`}>
@@ -2508,89 +4033,6 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                                             <CheckCircle size={12} />
                                                                                                         </div>
                                                                                                     </Tooltip>
-                                                                                                )}
-                                                                                            </div>
-                                                                                        </div>
-
-                                                                                        {/* 2-Column Compact Payment Records */}
-                                                                                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
-                                                                                            {/* 1st Payment (Initial DP) */}
-                                                                                            <div className="bg-black/30 p-2 rounded-lg border border-white/5 flex flex-col gap-1.5">
-                                                                                                <div className="flex items-center justify-between">
-                                                                                                    <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider">1st Payment</span>
-                                                                                                    {booking.isVerified && (
-                                                                                                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[7px] font-black uppercase px-1 py-0.2 rounded">
-                                                                                                            PAID
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                </div>
-                                                                                                <div className="text-[11px] font-black text-primary">
-                                                                                                    {paidDownpayment > 0 ? `₱${paidDownpayment.toLocaleString()}` : (originalServicesFee > 0 ? `₱${(originalServicesFee * 0.5).toLocaleString()}` : '—')}
-                                                                                                </div>
-
-                                                                                                {(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl) ? (
-                                                                                                    <div
-                                                                                                        className="rounded-md border border-white/10 overflow-hidden bg-black/40 h-16 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
-                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl)}
-                                                                                                        title="Click to view receipt"
-                                                                                                    >
-                                                                                                        <img
-                                                                                                            src={booking.gcashDownpaymentReceiptUrl || booking.gcashReceiptUrl}
-                                                                                                            alt="1st Payment Receipt"
-                                                                                                            className="w-full h-full object-contain"
-                                                                                                        />
-                                                                                                    </div>
-                                                                                                ) : (booking.downpaymentRef || booking.hitpayReference || booking.paymentMethod?.includes('HitPay') || booking.isVerified) ? (
-                                                                                                    <div className="rounded-md border border-emerald-500/20 h-16 flex flex-col items-center justify-center text-center p-1 bg-emerald-500/[0.04]">
-                                                                                                        <span className="text-[9px] font-bold text-emerald-400">HitPay Online</span>
-                                                                                                        <span className="text-[7px] text-gray-400 font-mono mt-0.5 truncate max-w-[90%]">
-                                                                                                            {booking.downpaymentRef || booking.hitpayReference || 'Verified Gateway'}
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                ) : (
-                                                                                                    <div className="rounded-md border border-white/5 border-dashed h-16 flex flex-col items-center justify-center text-center p-1 bg-black/20">
-                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting DP</span>
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-
-                                                                                            {/* Final Payment (Complete Payment) */}
-                                                                                            <div className="bg-black/30 p-2 rounded-lg border border-white/5 flex flex-col gap-1.5">
-                                                                                                <div className="flex items-center justify-between">
-                                                                                                    <span className="text-[8px] font-black text-gray-400 uppercase tracking-wider">Final Payment</span>
-                                                                                                    {booking.isPaid && (
-                                                                                                        <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[7px] font-black uppercase px-1 py-0.2 rounded">
-                                                                                                            PAID
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                </div>
-                                                                                                <div className="text-[11px] font-black text-primary">
-                                                                                                    {isFullySettled ? (grandTotal > 0 ? `₱${grandTotal.toLocaleString()}` : 'Settled') : (serviceBalance > 0 ? `₱${serviceBalance.toLocaleString()}` : 'For Quotation')}
-                                                                                                </div>
-
-                                                                                                {booking.gcashBalanceReceiptUrl ? (
-                                                                                                    <div
-                                                                                                        className="rounded-md border border-white/10 overflow-hidden bg-black/40 h-16 flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
-                                                                                                        onClick={() => setPreviewImageUrl(booking.gcashBalanceReceiptUrl)}
-                                                                                                        title="Click to view balance receipt"
-                                                                                                    >
-                                                                                                        <img
-                                                                                                            src={booking.gcashBalanceReceiptUrl}
-                                                                                                            alt="Final Payment Receipt"
-                                                                                                            className="w-full h-full object-contain"
-                                                                                                        />
-                                                                                                    </div>
-                                                                                                ) : (booking.balancePaymentRef || (booking.isPaid && booking.paymentMethod?.includes('HitPay'))) ? (
-                                                                                                    <div className="rounded-md border border-emerald-500/20 h-16 flex flex-col items-center justify-center text-center p-1 bg-emerald-500/[0.04]">
-                                                                                                        <span className="text-[9px] font-bold text-emerald-400">HitPay Settled</span>
-                                                                                                        <span className="text-[7px] text-gray-400 font-mono mt-0.5 truncate max-w-[90%]">
-                                                                                                            {booking.balancePaymentRef || 'Full Online Settle'}
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                ) : (
-                                                                                                    <div className="rounded-md border border-white/5 border-dashed h-16 flex flex-col items-center justify-center text-center p-1 bg-black/20">
-                                                                                                        <span className="text-[8px] font-bold text-gray-600">Awaiting Settle</span>
-                                                                                                    </div>
                                                                                                 )}
                                                                                             </div>
                                                                                         </div>
@@ -2625,79 +4067,177 @@ const AdminBookingsScreen: React.FC = () => {
                                                                     Service Details
                                                                 </h4>
                                                                 <div className="space-y-3 flex-1 flex flex-col">
-                                                                    {activeAdminTab === 'Services' && (
-                                                                        <>
-                                                                            <div className="flex gap-3 items-start">
-                                                                                <img 
-                                                                                    src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)} 
-                                                                                    alt={booking.service?.name || 'Service'} 
-                                                                                    className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0"
-                                                                                    onError={(e) => {
-                                                                                        (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category);
-                                                                                    }}
-                                                                                />
-                                                                                <div className="min-w-0 flex-1">
-                                                                                    <p className="text-primary font-black text-sm leading-tight truncate">{booking.service?.name || 'Unknown Service'}</p>
-                                                                                    <p className="text-[10px] text-gray-500 mt-1 leading-normal line-clamp-2">{booking.service?.description || 'No description.'}</p>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className="grid grid-cols-2 gap-2">
-                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
-                                                                                    <Clock size={14} className="text-primary shrink-0" />
-                                                                                    <div>
-                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Duration</p>
-                                                                                        <p className="text-[11px] font-black text-white mt-0.5">{booking.service?.duration || 'N/A'}</p>
+                                                                    {activeAdminTab === 'Services' && (() => {
+                                                                        const svcs = booking.services && booking.services.length > 0 ? booking.services : (booking.service ? [booking.service] : []);
+                                                                        const durParts = svcs.map(s => s.estimatedTime || (s.duration ? `${s.duration} mins` : null)).filter(Boolean);
+                                                                        const durationText = durParts.length > 0 ? durParts.join(' + ') : (booking.service?.estimatedTime || (booking.service?.duration ? `${booking.service.duration} mins` : '45 - 60 mins'));
+                                                                        const categoryText = booking.service?.category || svcs[0]?.category || 'Auto Care';
+                                                                        const isLiveActive = booking.status === 'In Progress' || booking.status === 'En Route';
+
+                                                                        return (
+                                                                            <>
+                                                                                {/* Service Hero Banner */}
+                                                                                <div className="flex gap-3 items-start bg-white/[0.03] p-2.5 rounded-xl border border-white/5">
+                                                                                    <div className="relative shrink-0">
+                                                                                        <img 
+                                                                                            src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)} 
+                                                                                            alt={booking.service?.name || 'Service'} 
+                                                                                            className="w-12 h-12 rounded-xl object-cover border border-white/10 shadow-md"
+                                                                                            onError={(e) => {
+                                                                                                (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category);
+                                                                                            }}
+                                                                                        />
+                                                                                        <span className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-black/80 border border-primary/40 rounded text-[7px] font-black text-primary uppercase font-mono">
+                                                                                            {categoryText}
+                                                                                        </span>
                                                                                     </div>
-                                                                                </div>
-                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
-                                                                                    <Calendar size={14} className="text-primary shrink-0" />
-                                                                                    <div>
-                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Scheduled</p>
-                                                                                        <p className="text-[11px] font-black text-white mt-0.5">{booking.date}</p>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className="pt-2 border-t border-white/5 mt-auto">
-                                                                                <h4 className="text-[9px] font-black tracking-widest text-gray-600 mb-2 ml-1">Assigned Mechanic</h4>
-                                                                                {booking.mechanic ? (
-                                                                                    <div className="flex items-center gap-2.5 bg-white/5 p-2.5 rounded-lg border border-white/5">
-                                                                                        {booking.mechanic.imageUrl ? (
-                                                                                            <img
-                                                                                                src={getProfileImage(booking.mechanic.imageUrl, 'mechanic')}
-                                                                                                alt={booking.mechanic.name}
-                                                                                                className="w-8 h-8 rounded-xl object-cover border border-white/10 shrink-0"
-                                                                                            />
-                                                                                        ) : (
-                                                                                            <div className="w-8 h-8 bg-primary/20 rounded-xl flex items-center justify-center text-sm font-black text-primary shrink-0">
-                                                                                                {booking.mechanic.name.charAt(0)}
-                                                                                            </div>
-                                                                                        )}
-                                                                                        <div>
-                                                                                            <p className="font-black text-white text-xs">{booking.mechanic.name}</p>
-                                                                                            <p className="text-[9px] text-gray-500 font-bold">Elite Professional</p>
+                                                                                    <div className="min-w-0 flex-1">
+                                                                                        <div className="flex items-center justify-between gap-1">
+                                                                                            <p className="text-primary font-black text-xs leading-tight truncate" title={booking.service?.name}>
+                                                                                                {booking.service?.name || 'Automotive Service'}
+                                                                                            </p>
+                                                                                            {isLiveActive && (
+                                                                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-primary/20 text-primary border border-primary/30 rounded text-[7.5px] font-black uppercase tracking-wider shrink-0 animate-pulse">
+                                                                                                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+                                                                                                    Live
+                                                                                                </span>
+                                                                                            )}
                                                                                         </div>
-                                                                                        <Tooltip content="Reassign mechanic">
+                                                                                        <p className="text-[9.5px] text-gray-400 mt-1 leading-normal line-clamp-2" title={booking.service?.description}>
+                                                                                            {booking.service?.description || 'Professional diagnostic and repair maintenance for your vehicle.'}
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Service Metrics Row: Duration, Scheduled Slot & Status */}
+                                                                                <div className="grid grid-cols-2 gap-2">
+                                                                                    {/* Duration HUD */}
+                                                                                    <div className="bg-white/5 p-2 rounded-xl border border-white/5 flex items-center gap-2 hover:border-primary/20 transition-all">
+                                                                                        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                                                                            <Clock size={13} />
+                                                                                        </div>
+                                                                                        <div className="min-w-0">
+                                                                                            <p className="text-[8px] font-black text-gray-500 tracking-widest uppercase">Est. Duration</p>
+                                                                                            <p className="text-[11px] font-black text-white mt-0.5 font-mono truncate" title={durationText}>
+                                                                                                {durationText}
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    {/* Scheduled Slot HUD */}
+                                                                                    <div className="bg-white/5 p-2 rounded-xl border border-white/5 flex items-center gap-2 hover:border-primary/20 transition-all">
+                                                                                        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                                                                            <Calendar size={13} />
+                                                                                        </div>
+                                                                                        <div className="min-w-0">
+                                                                                            <p className="text-[8px] font-black text-gray-500 tracking-widest uppercase">Appointment</p>
+                                                                                            <p className="text-[11px] font-black text-white mt-0.5 font-mono truncate" title={`${booking.date} at ${formatTimeToAmPm(booking.time)}`}>
+                                                                                                {booking.date}
+                                                                                            </p>
+                                                                                            <p className="text-[8px] font-bold text-primary font-mono truncate">
+                                                                                                {formatTimeToAmPm(booking.time)}
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Assigned Mechanic Real-Time HUD */}
+                                                                                <div className="pt-2 border-t border-white/5 mt-auto">
+                                                                                    <div className="flex items-center justify-between mb-1.5 ml-0.5">
+                                                                                        <h4 className="text-[9px] font-black tracking-widest text-gray-500 uppercase">Assigned Mechanic</h4>
+                                                                                        {booking.mechanic && (
+                                                                                            <span className="inline-flex items-center gap-1 text-[8px] font-black text-emerald-400 font-mono">
+                                                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                                                                                On Duty
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    {booking.mechanic ? (() => {
+                                                                                        const rawRating = Number(booking.mechanic.rating ?? 5.0);
+                                                                                        const roundedRating = isNaN(rawRating) ? '5.0' : (rawRating % 1 === 0 ? rawRating.toFixed(0) : rawRating.toFixed(1));
+                                                                                        const reviewsCount = booking.mechanic.reviews || booking.mechanic.reviewsCount || 0;
+                                                                                        const primarySpec = (booking.mechanic.specializations && booking.mechanic.specializations[0]) || (booking.mechanic.specialties && booking.mechanic.specialties[0]) || 'Master Technician';
+
+                                                                                        return (
+                                                                                            <div className="bg-white/5 p-2.5 rounded-xl border border-white/5 hover:border-white/10 transition-colors space-y-2">
+                                                                                                <div className="flex items-center gap-2.5">
+                                                                                                    <div className="relative shrink-0">
+                                                                                                        {booking.mechanic.imageUrl ? (
+                                                                                                            <img
+                                                                                                                src={getProfileImage(booking.mechanic.imageUrl, 'mechanic')}
+                                                                                                                alt={booking.mechanic.name}
+                                                                                                                className="w-9 h-9 rounded-xl object-cover border border-white/10 shadow-sm"
+                                                                                                            />
+                                                                                                        ) : (
+                                                                                                            <div className="w-9 h-9 bg-primary/20 rounded-xl flex items-center justify-center text-xs font-black text-primary">
+                                                                                                                {booking.mechanic.name.charAt(0)}
+                                                                                                            </div>
+                                                                                                        )}
+                                                                                                        <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#151515]" />
+                                                                                                    </div>
+                                                                                                    <div className="flex-1 min-w-0">
+                                                                                                        <div className="flex items-center justify-between gap-1">
+                                                                                                            <p className="font-black text-white text-xs truncate leading-tight">{booking.mechanic.name}</p>
+                                                                                                            <span className="text-[7.5px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded shrink-0">
+                                                                                                                Active
+                                                                                                            </span>
+                                                                                                        </div>
+                                                                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                                                                            <span className="text-yellow-400 font-black text-[10px] flex items-center gap-0.5 font-mono">
+                                                                                                                ⭐ {roundedRating}
+                                                                                                            </span>
+                                                                                                            <span className="text-[8px] text-gray-400 font-bold font-mono">
+                                                                                                                ({reviewsCount} {reviewsCount === 1 ? 'review' : 'reviews'})
+                                                                                                            </span>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                    <div className="flex items-center gap-1 shrink-0">
+                                                                                                        {booking.mechanic.phone && (
+                                                                                                            <Tooltip content={`Call ${booking.mechanic.name} (${booking.mechanic.phone})`}>
+                                                                                                                <a
+                                                                                                                    href={`tel:${booking.mechanic.phone}`}
+                                                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                                                    className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 transition-all"
+                                                                                                                >
+                                                                                                                    <Phone size={11} />
+                                                                                                                </a>
+                                                                                                            </Tooltip>
+                                                                                                        )}
+                                                                                                        <Tooltip content="Reassign mechanic">
+                                                                                                            <button
+                                                                                                                onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
+                                                                                                                className="p-1.5 rounded-lg bg-white/5 text-gray-400 hover:text-primary hover:bg-white/10 border border-white/5 transition-colors"
+                                                                                                            >
+                                                                                                                <Edit size={11} />
+                                                                                                            </button>
+                                                                                                        </Tooltip>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                {/* Secondary Metadata Chips */}
+                                                                                                <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-white/5 text-[8px] font-mono">
+                                                                                                    <span className="text-gray-400 truncate max-w-[130px] font-bold" title={primarySpec}>
+                                                                                                        🔧 {primarySpec}
+                                                                                                    </span>
+                                                                                                    <span className="text-primary font-black uppercase tracking-wider shrink-0">
+                                                                                                        Elite Verified
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })() : (
+                                                                                        <Tooltip content="Assign a mechanic to this booking">
                                                                                             <button
                                                                                                 onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
-                                                                                                className="ml-auto p-1.5 text-gray-500 hover:text-primary transition-colors"
+                                                                                                className="w-full py-2 bg-primary text-white font-black tracking-widest text-[9px] rounded-lg hover:bg-orange-600 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-primary/20"
                                                                                             >
-                                                                                                <Edit size={14} />
+                                                                                                <Users size={12} /> Assign Mechanic
                                                                                             </button>
                                                                                         </Tooltip>
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <Tooltip content="Assign a mechanic to this booking">
-                                                                                        <button
-                                                                                            onClick={(e) => { e.stopPropagation(); setAssigningBooking(booking); }}
-                                                                                            className="w-full py-2 bg-primary text-white font-black tracking-widest text-[9px] rounded-lg hover:bg-orange-600 transition-all flex items-center justify-center gap-1.5"
-                                                                                        >
-                                                                                            <Users size={12} /> Assign Mechanic
-                                                                                        </button>
-                                                                                    </Tooltip>
-                                                                                )}
-                                                                            </div>
-                                                                        </>
-                                                                    )}
+                                                                                    )}
+                                                                                </div>
+                                                                            </>
+                                                                        );
+                                                                    })()}
 
                                                                     {activeAdminTab === 'Liaison' && (
                                                                         <>
@@ -3046,46 +4586,132 @@ const AdminBookingsScreen: React.FC = () => {
                                                                         </>
                                                                     )}
 
-                                                                    {activeAdminTab !== 'Liaison' && activeAdminTab !== 'Driver for Hire' && (
-                                                                        <div className="pt-2 border-t border-white/5 space-y-2 mt-auto">
-                                                                            <h4 className="text-[9px] font-black  tracking-widest text-gray-600 ml-1">Update Status</h4>
-                                                                            <div className="flex gap-2">
-                                                                                <div className="flex-1 relative group/select">
-                                                                                    <select id={`booking-status-${booking.id}`} name={`booking-status-${booking.id}`}
-                                                                                        value={booking.status}
-                                                                                        onChange={(e) => handleStatusChange(booking, e.target.value)}
-                                                                                        onClick={e => e.stopPropagation()}
-                                                                                        className="w-full bg-white/5 border border-white/10 py-2.5 px-3 rounded-lg text-[10px] font-black  tracking-widest text-white hover:border-primary transition-all outline-none appearance-none cursor-pointer"
-                                                                                    >
-                                                                                        {(() => {
-                                                                                            let options = ['Pending', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled'];
-                                                                                            if (activeAdminTab === 'Liaison') {
-                                                                                                options = ['Booking Received', 'Processing', 'Assigned', 'Completed', 'Cancelled'];
-                                                                                            } else if (activeAdminTab === 'Car Rental') {
-                                                                                                options = ['Received', 'Pending', 'Approved', 'Completed', 'Cancelled'];
-                                                                                            } else if (activeAdminTab === 'Driver for Hire') {
-                                                                                                options = ['Pending Admin Review', 'For Verification', 'Awaiting Driver Availability', 'Driver Assigned', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
-                                                                                            } else if (activeAdminTab === 'Towing') {
-                                                                                                options = ['Pending', 'In Progress', 'Completed', 'Cancelled'];
-                                                                                            }
-                                                                                            return options.map(s => <option key={s} value={s} className="bg-[#121212]">{s}</option>);
-                                                                                        })()}
-                                                                                    </select>
-                                                                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none group-hover/select:text-primary transition-colors" size={14} />
-                                                                                </div>
-                                                                                {booking.status !== 'Cancelled' && (
-                                                                                    <Tooltip content="Cancel this booking">
-                                                                                        <button
-                                                                                            onClick={(e) => { e.stopPropagation(); setCancellingBooking(booking); }}
-                                                                                            className="px-4 py-2.5 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-500/20 font-black  tracking-widest text-[9px]"
-                                                                                        >
-                                                                                            Cancel
-                                                                                        </button>
-                                                                                    </Tooltip>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
+                                                                     {activeAdminTab !== 'Liaison' && activeAdminTab !== 'Driver for Hire' && (
+                                                                         <div className="pt-2 border-t border-white/5 space-y-2 mt-auto">
+                                                                             <div className="flex items-center justify-between ml-0.5">
+                                                                                 <h4 className="text-[9px] font-black tracking-widest text-gray-500 uppercase">Update Status</h4>
+                                                                                 <span className="text-[8px] font-mono text-gray-500 font-bold">Instant Sync</span>
+                                                                             </div>
+                                                                             <div className="flex gap-2 items-center">
+                                                                                 {/* Modern Custom Dropdown */}
+                                                                                 <div className="flex-1 relative">
+                                                                                     {(() => {
+                                                                                         let options = ['Pending', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled'];
+                                                                                         if (activeAdminTab === 'Car Rental') {
+                                                                                             options = ['Received', 'Pending', 'Approved', 'Completed', 'Cancelled'];
+                                                                                         } else if (activeAdminTab === 'Towing') {
+                                                                                             options = ['Pending', 'In Progress', 'Completed', 'Cancelled'];
+                                                                                         }
+
+                                                                                         const getStatusMeta = (status: string) => {
+                                                                                             switch (status) {
+                                                                                                 case 'Pending':
+                                                                                                 case 'Received':
+                                                                                                     return { icon: Clock, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/30' };
+                                                                                                 case 'Mechanic Assigned':
+                                                                                                 case 'Approved':
+                                                                                                     return { icon: Users, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/30' };
+                                                                                                 case 'En Route':
+                                                                                                     return { icon: Navigation, color: 'text-cyan-400', bg: 'bg-cyan-400/10', border: 'border-cyan-400/30' };
+                                                                                                 case 'In Progress':
+                                                                                                     return { icon: Wrench, color: 'text-[#FF7903]', bg: 'bg-[#FF7903]/10', border: 'border-[#FF7903]/30' };
+                                                                                                 case 'Completed':
+                                                                                                     return { icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/30' };
+                                                                                                 case 'Cancelled':
+                                                                                                     return { icon: XCircle, color: 'text-red-400', bg: 'bg-red-400/10', border: 'border-red-400/30' };
+                                                                                                 default:
+                                                                                                     return { icon: Sparkles, color: 'text-gray-300', bg: 'bg-white/10', border: 'border-white/10' };
+                                                                                             }
+                                                                                         };
+
+                                                                                         const currentMeta = getStatusMeta(booking.status);
+                                                                                         const CurrentIcon = currentMeta.icon;
+                                                                                         const isOpen = openStatusDropdownId === booking.id;
+
+                                                                                         return (
+                                                                                             <div className="relative">
+                                                                                                 <button
+                                                                                                     type="button"
+                                                                                                     onClick={(e) => {
+                                                                                                         e.stopPropagation();
+                                                                                                         setOpenStatusDropdownId(isOpen ? null : booking.id);
+                                                                                                     }}
+                                                                                                     className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[10px] font-black tracking-wider transition-all duration-200 border ${currentMeta.bg} ${currentMeta.border} hover:border-[#FF7903]/60 shadow-sm active:scale-[0.99]`}
+                                                                                                 >
+                                                                                                     <div className="flex items-center gap-2 min-w-0">
+                                                                                                         <CurrentIcon size={13} className={`${currentMeta.color} shrink-0 animate-pulse`} />
+                                                                                                         <span className="text-white truncate font-black">{booking.status}</span>
+                                                                                                     </div>
+                                                                                                     <ChevronDown
+                                                                                                         size={13}
+                                                                                                         className={`text-gray-400 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180 text-primary' : ''}`}
+                                                                                                     />
+                                                                                                 </button>
+
+                                                                                                 {/* Smooth Popover Menu */}
+                                                                                                 {isOpen && (
+                                                                                                     <div
+                                                                                                         onClick={(e) => e.stopPropagation()}
+                                                                                                         className="absolute z-50 bottom-full mb-1.5 left-0 right-0 bg-[#161616] border border-white/15 rounded-xl shadow-2xl p-1.5 backdrop-blur-xl animate-fadeIn space-y-1"
+                                                                                                     >
+                                                                                                         <div className="px-2 py-1 text-[8px] font-black tracking-widest text-gray-400 uppercase border-b border-white/5 flex items-center justify-between">
+                                                                                                             <span>Select New Status</span>
+                                                                                                             <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                                                                                                         </div>
+                                                                                                         <div className="max-h-52 overflow-y-auto space-y-0.5 custom-scrollbar pr-0.5">
+                                                                                                             {options.map((opt) => {
+                                                                                                                 const optMeta = getStatusMeta(opt);
+                                                                                                                 const OptIcon = optMeta.icon;
+                                                                                                                 const isSelected = booking.status === opt;
+
+                                                                                                                 return (
+                                                                                                                     <button
+                                                                                                                         key={opt}
+                                                                                                                         type="button"
+                                                                                                                         onClick={(e) => {
+                                                                                                                             e.stopPropagation();
+                                                                                                                             setOpenStatusDropdownId(null);
+                                                                                                                             handleStatusChange(booking, opt);
+                                                                                                                         }}
+                                                                                                                         className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[10px] font-black transition-all group/item text-left ${
+                                                                                                                             isSelected
+                                                                                                                                 ? `${optMeta.bg} text-white border ${optMeta.border}`
+                                                                                                                                 : 'text-gray-300 hover:text-white hover:bg-white/5 border border-transparent'
+                                                                                                                         }`}
+                                                                                                                     >
+                                                                                                                         <div className="flex items-center gap-2 min-w-0">
+                                                                                                                             <div className={`p-1 rounded-md ${optMeta.bg} ${optMeta.color} shrink-0`}>
+                                                                                                                                 <OptIcon size={12} />
+                                                                                                                             </div>
+                                                                                                                             <span className="truncate">{opt}</span>
+                                                                                                                         </div>
+                                                                                                                         {isSelected && (
+                                                                                                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400 shrink-0" />
+                                                                                                                         )}
+                                                                                                                     </button>
+                                                                                                                 );
+                                                                                                             })}
+                                                                                                         </div>
+                                                                                                     </div>
+                                                                                                 )}
+                                                                                             </div>
+                                                                                         );
+                                                                                     })()}
+                                                                                 </div>
+
+                                                                                 {booking.status !== 'Cancelled' && (
+                                                                                     <Tooltip content="Cancel this booking">
+                                                                                         <button
+                                                                                             onClick={(e) => { e.stopPropagation(); setCancellingBooking(booking); }}
+                                                                                             className="px-3.5 py-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all border border-red-500/20 font-black tracking-widest text-[9px] shrink-0 active:scale-95"
+                                                                                         >
+                                                                                             Cancel
+                                                                                         </button>
+                                                                                     </Tooltip>
+                                                                                 )}
+                                                                             </div>
+                                                                         </div>
+                                                                     )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -3203,42 +4829,128 @@ const AdminBookingsScreen: React.FC = () => {
                                                             /* Progress Tracking Timeline for all other tabs */
                                                             <div className="flex flex-col h-full">
                                                                 <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full overflow-hidden flex flex-col">
-                                                                    <h4 className="text-[11px] font-black  tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
-                                                                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                                                            <Clock size={14} />
-                                                                        </div>
-                                                                        Progress Tracking
-                                                                    </h4>
-                                                                    <div className="flex-1 space-y-2 relative pl-3">
-                                                                        <div className="absolute left-[19px] top-2 bottom-6 w-0.5 bg-gradient-to-b from-primary via-primary/20 to-transparent"></div>
+                                                                    {/* Header */}
+                                                                    <div className="flex items-center justify-between mb-3">
+                                                                        <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 uppercase flex items-center gap-2 font-mono">
+                                                                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                                                                <Clock size={14} />
+                                                                            </div>
+                                                                            Progress Tracking
+                                                                        </h4>
+                                                                        {booking.status && (
+                                                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border tracking-wider ${
+                                                                                booking.status === 'Completed'
+                                                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                                                    : booking.status === 'Cancelled'
+                                                                                    ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                                                    : 'bg-primary/10 text-primary border-primary/20 animate-pulse'
+                                                                            }`}>
+                                                                                {booking.status === 'Completed' ? 'Finished' : 'Live'}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Vertical Timeline Rail */}
+                                                                    <div className="flex-1 overflow-y-auto pr-0.5">
                                                                         {(() => {
                                                                             const timelineData = getTimelineData(booking.status, booking.statusHistory);
-                                                                            return timelineData.length > 0 ? (
-                                                                                timelineData.map((s, i) => (
-                                                                                    <div key={i} className="flex gap-3 relative group/step">
-                                                                                        <div className={`w-5 h-5 rounded flex items-center justify-center text-[8px] font-black z-10 transition-all duration-300 ${i === timelineData.length - 1 ? 'bg-primary text-white shadow-lg' : 'bg-[#202020] text-gray-600 border border-white/5'}`}>
-                                                                                            {i + 1}
+                                                                            if (timelineData.length === 0) {
+                                                                                return (
+                                                                                    <div className="flex flex-col items-center justify-center h-full text-center space-y-2 py-6">
+                                                                                        <div className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                                                                                            <Clock size={16} className="text-gray-600" />
                                                                                         </div>
-                                                                                        <div className="pt-0.5">
-                                                                                            <p className={`text-xs font-black  tracking-widest transition-colors ${i === timelineData.length - 1 ? 'text-white' : 'text-gray-600'}`}>{s.status}</p>
-                                                                                            <div className="flex items-center gap-1 mt-0.5">
-                                                                                                <Clock size={8} className="text-gray-700" />
-                                                                                                <p className="text-[8px] text-gray-700 font-black  tracking-widest">{new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                                                                            </div>
-                                                                                        </div>
+                                                                                        <p className="text-[10px] text-gray-500 font-bold tracking-wider">No timeline history recorded.</p>
                                                                                     </div>
-                                                                                ))
-                                                                            ) : (
-                                                                                <div className="flex flex-col items-center justify-center h-full text-center space-y-2 py-6">
-                                                                                    <Clock size={18} className="text-gray-700" />
-                                                                                    <p className="text-[10px] text-gray-600 font-bold tracking-wider">No timeline history recorded.</p>
+                                                                                );
+                                                                            }
+
+                                                                            return (
+                                                                                <div className="space-y-2 relative pl-0.5">
+                                                                                    {timelineData.map((s, i) => {
+                                                                                        const isLast = i === timelineData.length - 1;
+                                                                                        const isCompleted = booking.status === 'Completed';
+                                                                                        const isCurrent = isLast && !isCompleted;
+
+                                                                                        return (
+                                                                                            <div key={i} className="flex items-start gap-2.5 relative group">
+                                                                                                {/* Connecting Vertical Track */}
+                                                                                                {!isLast && (
+                                                                                                    <div 
+                                                                                                        className="absolute left-[11px] top-[22px] w-[2px] bg-gradient-to-b from-primary/80 via-primary/30 to-white/10 pointer-events-none"
+                                                                                                        style={{ height: 'calc(100% + 2px)' }}
+                                                                                                    />
+                                                                                                )}
+
+                                                                                                {/* Node Indicator */}
+                                                                                                <div className="relative z-10 shrink-0 mt-0.5">
+                                                                                                    {isCompleted ? (
+                                                                                                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 border border-emerald-400/30">
+                                                                                                            <CheckCircle size={12} className="stroke-[2.5]" />
+                                                                                                        </div>
+                                                                                                    ) : isCurrent ? (
+                                                                                                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-primary to-orange-600 text-white flex items-center justify-center shadow-md shadow-primary/30 ring-2 ring-primary/20 border border-orange-400/40">
+                                                                                                            <div className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                                                                                                        </div>
+                                                                                                    ) : (
+                                                                                                        <div className="w-6 h-6 rounded-lg bg-[#1e1e22] text-gray-400 flex items-center justify-center border border-white/10 text-[10px] font-black font-mono shadow-inner group-hover:border-white/20 transition-colors">
+                                                                                                            {i + 1}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                </div>
+
+                                                                                                {/* Step Content Card */}
+                                                                                                <div className={`flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border transition-all ${
+                                                                                                    isCurrent
+                                                                                                        ? 'bg-primary/[0.07] border-primary/25 shadow-sm shadow-primary/5'
+                                                                                                        : isCompleted && isLast
+                                                                                                        ? 'bg-emerald-500/[0.06] border-emerald-500/20'
+                                                                                                        : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.04]'
+                                                                                                }`}>
+                                                                                                    <div className="flex items-center justify-between gap-1.5">
+                                                                                                        <p className={`text-xs font-black tracking-tight truncate ${
+                                                                                                            isCurrent
+                                                                                                                ? 'text-primary drop-shadow-[0_0_6px_rgba(255,121,3,0.3)]'
+                                                                                                                : isCompleted && isLast
+                                                                                                                ? 'text-emerald-400'
+                                                                                                                : 'text-white'
+                                                                                                        }`}>
+                                                                                                            {s.status}
+                                                                                                        </p>
+                                                                                                        {isCurrent && (
+                                                                                                            <span className="text-[7.5px] font-black uppercase px-1 py-0.2 bg-primary/20 text-primary border border-primary/30 rounded tracking-wider shrink-0">
+                                                                                                                Active
+                                                                                                            </span>
+                                                                                                        )}
+                                                                                                        {isCompleted && isLast && (
+                                                                                                            <span className="text-[7.5px] font-black uppercase px-1 py-0.2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded tracking-wider shrink-0">
+                                                                                                                Finished
+                                                                                                            </span>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                                                                                        <Clock size={9} className={isCurrent ? 'text-primary/70' : 'text-gray-500'} />
+                                                                                                        <p className={`text-[9.5px] font-mono font-bold tracking-wide ${
+                                                                                                            isCurrent ? 'text-primary/90' : 'text-gray-400'
+                                                                                                        }`}>
+                                                                                                            {new Date(s.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                                                                                        </p>
+                                                                                                        <span className="text-[8px] text-gray-600 font-mono">•</span>
+                                                                                                        <span className="text-[8.5px] text-gray-500 font-mono">
+                                                                                                            {new Date(s.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
                                                                                 </div>
                                                                             );
-                                                                        })()}
+                                                                            })()}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
-                                                            </div>
-                                                        )}
+                                                            )}
 
                                                         {/* LIVE MAP OR ADDRESS/PICKUP DETAILS CARD */}
                                                         {activeAdminTab === 'Liaison' ? (
@@ -3325,15 +5037,35 @@ const AdminBookingsScreen: React.FC = () => {
                                                         ) : (
                                                             /* LIVE MAP CARD for all other tabs */
                                                             <div className="flex flex-col h-full">
-                                                                <div className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/30 transition-all h-full overflow-hidden flex flex-col">
-                                                                    <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
-                                                                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                                                            <Search size={14} />
+                                                                <div 
+                                                                    onClick={() => setViewingMapBooking(booking)}
+                                                                    className="bg-[#151515] p-4 rounded-2xl border border-white/10 shadow-2xl hover:border-primary/50 hover:shadow-primary/10 transition-all h-full overflow-hidden flex flex-col cursor-pointer group/mapcard relative"
+                                                                    title="Click to expand real-time live map and transaction details"
+                                                                >
+                                                                    <div className="flex items-center justify-between mb-3">
+                                                                        <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 flex items-center gap-2 group-hover/mapcard:text-white transition-colors">
+                                                                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover/mapcard:scale-110 group-hover/mapcard:bg-primary group-hover/mapcard:text-black transition-all">
+                                                                                <Navigation size={13} />
+                                                                            </div>
+                                                                            Real-time Location
+                                                                        </h4>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black uppercase tracking-wider">
+                                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                                                                Live
+                                                                            </span>
+                                                                            <span className="p-1 rounded-lg bg-white/5 group-hover/mapcard:bg-primary group-hover/mapcard:text-black text-gray-400 transition-all">
+                                                                                <Maximize2 size={12} />
+                                                                            </span>
                                                                         </div>
-                                                                        Real-time Location
-                                                                    </h4>
-                                                                    <div className="flex-1 min-h-[160px]">
+                                                                    </div>
+                                                                    <div className="flex-1 min-h-[160px] relative pointer-events-none rounded-xl overflow-hidden border border-white/5">
                                                                         <LiveMapCard booking={booking} />
+                                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover/mapcard:opacity-100 transition-opacity flex items-end justify-center p-2.5 z-10 pointer-events-none">
+                                                                            <span className="px-3 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/20 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5 shadow-xl">
+                                                                                <Maximize2 size={11} className="text-primary" /> Click to View Live Details
+                                                                            </span>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -3370,7 +5102,9 @@ const AdminBookingsScreen: React.FC = () => {
                             const isExpanded = expandedBookingId === booking.id;
                             const svcs = booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
                             const names = svcs.map(s => s.name).join(', ') || 'Unknown Service';
-                            const total = booking.totalAmount ?? svcs.reduce((s, svc) => s + svc.price, 0);
+                            const originalServicesFee = svcs.reduce((sum, svc) => sum + (Number(svc.price) || 0), 0) || (Number(booking.totalAmount) || 0);
+                            const addCosts = (booking.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+                            const total = originalServicesFee + addCosts;
 
                             return (
                                 <div
@@ -3631,6 +5365,40 @@ const AdminBookingsScreen: React.FC = () => {
                                                     })()}
                                                 </div>
                                             </div>
+
+                                            {/* MOBILE REAL-TIME LOCATION CARD */}
+                                            {activeAdminTab !== 'Liaison' && (
+                                                <div 
+                                                    onClick={() => setViewingMapBooking(booking)}
+                                                    className="bg-[#151515] p-3.5 rounded-xl border border-white/10 shadow-2xl hover:border-primary/50 transition-all cursor-pointer group/mobilemap relative overflow-hidden"
+                                                >
+                                                    <div className="flex items-center justify-between mb-2.5">
+                                                        <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 flex items-center gap-2 group-hover/mobilemap:text-white transition-colors">
+                                                            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                                                <Navigation size={12} />
+                                                            </div>
+                                                            Real-time Location
+                                                        </h4>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-black uppercase tracking-wider">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                                                Live
+                                                            </span>
+                                                            <span className="p-1 rounded-md bg-white/5 text-primary">
+                                                                <Maximize2 size={11} />
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="h-36 rounded-lg overflow-hidden relative border border-white/5 pointer-events-none">
+                                                        <LiveMapCard booking={booking} />
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end justify-center p-2 z-10">
+                                                            <span className="px-2.5 py-1 rounded bg-black/80 backdrop-blur-md border border-white/10 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1">
+                                                                <Maximize2 size={10} className="text-primary" /> Tap to Open Live Tracking
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

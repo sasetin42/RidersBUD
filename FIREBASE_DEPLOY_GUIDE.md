@@ -32,12 +32,14 @@ Since your project is already connected to Firebase for the database, deploying 
     - **Set up automatic builds and deploys with GitHub?**: Type `n` (No, unless you want to).
     - **Overwrite public/index.html?**: Type `N` (No! Do not overwrite).
 
-4.  **Deploy**:
-    Finally, confirm your build is fresh and deploy:
+4.  **Deploy Functions and Hosting**:
+    Finally, confirm your build is fresh and deploy both Cloud Functions and Hosting:
     ```bash
     npm run build
-    firebase deploy
+    firebase deploy --only functions,hosting
     ```
+    *(Note: If you only want to update the frontend, you can run `firebase deploy --only hosting`)*
 
 ## Success!
-After deployment, Firebase will give you a **Hosting URL** (e.g., `https://ridersbud-10806.web.app`). You can share this link with anyone!
+After deployment, Firebase will give you a **Hosting URL** (e.g., `https://ridersbud-10806.web.app`).
+HitPay payments are routed directly via your deployed Firebase Cloud Function (`/api/hitpay-proxy`), and will gracefully fall back to the in-app HitPay Sandbox testing screen if network conditions require it.

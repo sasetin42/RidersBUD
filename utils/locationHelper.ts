@@ -73,7 +73,7 @@ export async function isGeolocationPermissionDenied(): Promise<boolean> {
         return permissionQueryPromise;
     }
 
-    return cachedPermissionState === 'denied';
+    return (cachedPermissionState as PermissionState) === 'denied';
 }
 
 /**

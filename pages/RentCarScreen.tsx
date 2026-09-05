@@ -748,7 +748,11 @@ const RentCarScreen: React.FC = () => {
             name: user.name || 'Customer'
         });
 
-        window.location.href = url;
+        if (url.startsWith('/')) {
+            navigate(url);
+        } else {
+            window.location.href = url;
+        }
         return;
     };
 

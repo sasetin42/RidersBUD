@@ -1,16 +1,19 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ReactNode } from 'react';
 import AdminSidebar from './AdminSidebar';
 import AdminHeader from './AdminHeader';
 
-const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // Default state: sidebar is expanded on desktop (>= 1024px), collapsed/hidden otherwise.
+interface AdminLayoutProps {
+    children: ReactNode;
+}
+
+const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-    // Persistent desktop collapse state
+    // Persistent desktop collapse state (default: true / collapsed)
     const [isCollapsed, setIsCollapsed] = useState(() => {
         const saved = localStorage.getItem('admin_sidebar_collapsed');
-        return saved ? JSON.parse(saved) : false;
+        return saved !== null ? JSON.parse(saved) : true;
     });
 
     useEffect(() => {

@@ -57,20 +57,39 @@ self.addEventListener('fetch', (event) => {
   // Handle navigation/HTML requests by falling back to index.html when offline
   if (request.mode === 'navigate' || (request.headers.get('accept') && request.headers.get('accept').includes('text/html'))) {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy));
+      (async () => {
+        try {
+          const networkResponse = await fetch(request);
+          if (networkResponse && (networkResponse.ok || networkResponse.status === 304)) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy)).catch(() => {});
+            return networkResponse;
           }
-          return response;
-        })
-        .catch(async () => {
-          const cache = await caches.open(CACHE_NAME);
-          const cached = (await cache.match('/')) || (await cache.match('/index.html'));
-          if (cached) return cached;
-          return fetch('/');
-        })
+        } catch {
+          // Network failed or offline - fall back to cached shell
+        }
+
+        const cache = await caches.open(CACHE_NAME);
+        const cached = (await cache.match('/index.html')) || (await cache.match('/'));
+        if (cached) return cached;
+
+        try {
+          const shellResponse = await fetch('/index.html');
+          if (shellResponse && shellResponse.ok) {
+            const copy = shellResponse.clone();
+            cache.put('/index.html', copy).catch(() => {});
+            return shellResponse;
+          }
+        } catch {
+          // Last resort fallback
+        }
+
+        // Return a basic clean HTML offline shell rather than Response.error() to avoid FetchEvent error logs
+        return new Response(
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>RidersBUD</title></head><body><div id="root"></div></body></html>',
+          { headers: { 'Content-Type': 'text/html' } }
+        );
+      })()
     );
     return;
   }

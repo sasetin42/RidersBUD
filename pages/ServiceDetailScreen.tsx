@@ -295,7 +295,10 @@ const ServiceDetailScreen: React.FC = () => {
                         Cancel
                     </button>
                     <button
-                        onClick={() => navigate(`/customer-portal/booking/${service.id}`)}
+                        onClick={() => {
+                            sessionStorage.removeItem('ridersbud_booking_state');
+                            navigate(`/customer-portal/booking/${service.id}`);
+                        }}
                         className="flex-[2] h-12 bg-primary hover:bg-orange-600 text-white font-bold rounded-xl shadow-lg shadow-primary/25 transition-all flex items-center justify-center gap-2 group text-sm"
                     >
                         Book Now

@@ -15,6 +15,7 @@ import { Phone, MapPin, MessageSquare, User, Car } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
 import { CallButton } from '../../components/CallUI';
+import { calculateMechanicWalletLedger, getJobTotalAmount } from '../../utils/mechanicLedger';
 
 
 
@@ -202,17 +203,24 @@ const MechanicDashboardScreen: React.FC = () => {
 
 
 
+    const walletLedger = useMemo(() => {
+        if (!mechanic || !db) {
+            return {
+                lifetimeEarnings: 0,
+                availableBalance: 0,
+                lockedBalance: 0,
+                pendingPayoutsTotal: 0,
+                approvedPayoutsTotal: 0,
+                paidPayoutsTotal: 0,
+                completedJobsCount: 0
+            };
+        }
+        const currentMechanicDoc = db.mechanics.find(m => m.id === mechanic.id) || mechanic;
+        return calculateMechanicWalletLedger(mechanic.id, currentMechanicDoc, db.bookings || [], db.payouts || []);
+    }, [db, mechanic]);
+
     const analyticsData = useMemo(() => {
         if (!mechanic || !db) return null;
-
-        const getJobTotal = (job: any) => {
-            if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
-            if (job.price != null && Number(job.price) > 0) return Number(job.price);
-            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
-            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
-            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
-            return svcsSum + addCosts + (Number(job.laborFee) || 0);
-        };
 
         const todayStr = new Date().toLocaleDateString('en-CA');
 
@@ -227,8 +235,8 @@ const MechanicDashboardScreen: React.FC = () => {
             return jobDateStr === todayStr;
         });
 
-        const jobsCompletedToday = myJobsToday.filter(b => b.status === 'Completed' && b.isPaid !== false);
-        const earningsToday = jobsCompletedToday.reduce((sum, job) => sum + getJobTotal(job), 0);
+        const jobsCompletedToday = myJobsToday.filter(b => b.status === 'Completed' && b.isPaid !== false && b.paymentStatus !== 'failed');
+        const earningsToday = jobsCompletedToday.reduce((sum, job) => sum + getJobTotalAmount(job), 0);
 
         const timeTo24h = (timeStr: string | undefined) => {
             if (!timeStr) return '00:00';
@@ -257,27 +265,19 @@ const MechanicDashboardScreen: React.FC = () => {
             agendaJobs,
             agendaCount: agendaJobs.length
         };
-    }, [db, mechanic]);
+    }, [db, mechanic, isBookingApprovedForMechanicView]);
 
     const lifetimeStats = useMemo(() => {
         if (!mechanic || !db) return { averageJobValue: 0 };
-        const getJobTotal = (job: any) => {
-            if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
-            if (job.price != null && Number(job.price) > 0) return Number(job.price);
-            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
-            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
-            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
-            return svcsSum + addCosts + (Number(job.laborFee) || 0);
-        };
 
         const completedJobs = db.bookings.filter(b => 
             (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && 
             isBookingApprovedForMechanicView(b) && 
-            b.status === 'Completed' && b.isPaid !== false
+            b.status === 'Completed' && b.isPaid !== false && b.paymentStatus !== 'failed'
         );
         if (completedJobs.length === 0) return { averageJobValue: 0 };
 
-        const totalEarnings = completedJobs.reduce((sum, job) => sum + getJobTotal(job), 0);
+        const totalEarnings = completedJobs.reduce((sum, job) => sum + getJobTotalAmount(job), 0);
         const averageJobValue = totalEarnings / completedJobs.length;
 
         return { averageJobValue };
@@ -645,7 +645,7 @@ const MechanicDashboardScreen: React.FC = () => {
                                 />
                                 <StatCard
                                     title="Wallet"
-                                    value={`₱${(db.mechanics.find(m => m.id === mechanic.id)?.walletBalance ?? mechanic.walletBalance ?? 0).toLocaleString()}`}
+                                    value={`₱${walletLedger.availableBalance.toLocaleString()}`}
                                     icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>}
                                     color="text-primary"
                                     tooltip="Your current wallet balance"

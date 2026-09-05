@@ -494,6 +494,7 @@ export interface Mechanic {
     insurances?: { type: string; provider: string; policyNumber?: string }[];
     unavailableDates?: { startDate: string; endDate: string; reason?: string }[];
     payoutDetails?: PayoutDetails;
+    savedPayoutDestinations?: PayoutDetails[];
     documents?: string[];
     registrationDate?: string;
     verificationDocuments?: {
@@ -646,6 +647,7 @@ export interface PayoutRequest {
     date?: string;
     requestDate: string;
     processDate?: string;
+    submittedAt?: string;
     transactionId?: string;
     notes?: string;
     rejectionReason?: string;
@@ -659,11 +661,17 @@ export interface PayoutRequest {
 
 
 export interface PayoutDetails {
+    id?: string;
     method: 'Bank Transfer' | 'E-Wallet';
     accountName: string;
     accountNumber: string;
     bankName?: string;
+    bankCode?: string;
     walletName?: string;
+    qrCodeUrl?: string;
+    isVerified?: boolean;
+    isDefault?: boolean;
+    updatedAt?: string;
 }
 
 export interface RentalCar {

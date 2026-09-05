@@ -322,8 +322,12 @@ const ServicePaymentScreen: React.FC = () => {
                 purpose: purpose
             });
 
-            // Genuine redirect
-            window.location.href = url;
+            // Genuine redirect or in-app portal
+            if (url.startsWith('/')) {
+                navigate(url);
+            } else {
+                window.location.href = url;
+            }
             return;
         } catch (err) {
             setError(err instanceof Error ? err.message : "An unexpected error occurred.");

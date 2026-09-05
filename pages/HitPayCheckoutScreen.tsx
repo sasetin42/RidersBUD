@@ -243,11 +243,11 @@ export const HitPayCheckoutScreen: React.FC = () => {
                                 onClick={() => setActiveMethod('qrph')}
                                 className={`p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all ${
                                     activeMethod === 'qrph'
-                                        ? 'bg-purple-600/15 border-purple-500 text-white shadow-lg shadow-purple-600/20 scale-[1.02]'
+                                        ? 'bg-teal-600/15 border-teal-500 text-white shadow-lg shadow-teal-600/20 scale-[1.02]'
                                         : 'bg-[#191C26] border-white/5 text-gray-400 hover:border-white/20 hover:text-white'
                                 }`}
                             >
-                                <div className="w-9 h-9 rounded-xl bg-purple-600 flex items-center justify-center text-white font-bold shadow">
+                                <div className="w-9 h-9 rounded-xl bg-teal-600 flex items-center justify-center text-white font-bold shadow">
                                     <QrCode size={18} />
                                 </div>
                                 <span className="text-xs font-black tracking-tight">QR Ph</span>
@@ -401,7 +401,7 @@ export const HitPayCheckoutScreen: React.FC = () => {
                                         <h3 className="text-sm font-bold text-white">QR Ph National QR Standard</h3>
                                         <p className="text-[11px] text-gray-400">Scan with BDO, BPI, UnionBank, GCash, Maya & 40+ banks</p>
                                     </div>
-                                    <span className="bg-purple-500/20 text-purple-300 text-[9px] font-black uppercase px-2 py-0.5 rounded border border-purple-500/30">
+                                    <span className="bg-teal-500/20 text-teal-300 text-[9px] font-black uppercase px-2 py-0.5 rounded border border-teal-500/30">
                                         BSP Regulated
                                     </span>
                                 </div>
@@ -412,7 +412,7 @@ export const HitPayCheckoutScreen: React.FC = () => {
                                             <QrCode size={140} className="text-gray-900" />
                                         </div>
                                         <div className="flex items-center gap-1 text-[10px] font-bold text-gray-800 mt-2 uppercase tracking-wider">
-                                            <Sparkles size={12} className="text-purple-600" />
+                                            <Sparkles size={12} className="text-teal-600" />
                                             <span>Official Dynamic QR Ph</span>
                                         </div>
                                     </div>

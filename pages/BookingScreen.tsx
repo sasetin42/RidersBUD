@@ -6,7 +6,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import { Service, Mechanic, Booking, Vehicle, Settings } from '../types';
 import { getNotificationSettings, showNotification } from '../utils/notificationManager';
 import GCashPaymentModal from '../components/GCashPaymentModal';
-import { Clock, Star, CalendarRange, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, Info, CreditCard, Navigation } from 'lucide-react';
+import { Clock, Star, CalendarRange, Calendar, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, Info, CreditCard, Navigation, ArrowRight } from 'lucide-react';
 import CustomerHeader from '../components/CustomerHeader';
 import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
 import Tooltip from '../components/ui/Tooltip';
@@ -246,7 +246,6 @@ const getInitialState = (serviceIdFromUrl?: string, locationState?: any) => {
                 if (state.selectedEndDate) {
                     state.selectedEndDate = new Date(state.selectedEndDate);
                 }
-                //selectedMechanic and selectedTime don't need special parsing as they are plain objects/strings
             }
         }
     } catch (error) {
@@ -256,6 +255,11 @@ const getInitialState = (serviceIdFromUrl?: string, locationState?: any) => {
 
     if (locationState?.serviceLocation) {
         state.serviceLocation = locationState.serviceLocation;
+    }
+
+    // Always ensure fresh service entries or unverified sessions start strictly at Step 1
+    if (serviceIdFromUrl) {
+        state.step = 1;
     }
 
     return Object.keys(state).length > 0 ? state : null;
@@ -496,6 +500,7 @@ const BookingScreen: React.FC = () => {
     const [showGCashModal, setShowGCashModal] = useState(false);
     const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
     const [showPaymentBreakdownModal, setShowPaymentBreakdownModal] = useState(false);
+    const [showVehicleSelectorModal, setShowVehicleSelectorModal] = useState(false);
     const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
     const [temporaryBookingData, setTemporaryBookingData] = useState<any>(null);
     const [gcashReferenceNumber, setGcashReferenceNumber] = useState('');
@@ -683,7 +688,7 @@ const BookingScreen: React.FC = () => {
 
     // Instantiate and update Route Map
     useEffect(() => {
-        if (step !== 4 || !routeMapRef.current || typeof L === 'undefined') return;
+        if (step !== 3 || !routeMapRef.current || typeof L === 'undefined') return;
 
         // Clean up map instance if the container DOM element was unmounted and remounted
         if (routeMapInstanceRef.current) {
@@ -831,7 +836,7 @@ const BookingScreen: React.FC = () => {
     }, [step, startCoords, endCoords, leafletLoaded]);
 
     useEffect(() => {
-        if (step !== 4 && routeMapInstanceRef.current) {
+        if (step !== 3 && routeMapInstanceRef.current) {
             routeMapInstanceRef.current.remove();
             routeMapInstanceRef.current = null;
             routeStartMarkerRef.current = null;
@@ -873,19 +878,84 @@ const BookingScreen: React.FC = () => {
         }
     }, [waitingBookingId, db?.bookings, navigate]);
 
-    // Bypass Step 1 if service is pre-selected and vehicle is auto-selected
-    useEffect(() => {
-        if (step === 1 && selectedServiceIds.size > 0 && selectedVehiclePlate && !userHasGoneBack) {
-            setStep(2);
-        }
-    }, [step, selectedServiceIds.size, selectedVehiclePlate, userHasGoneBack]);
+    const { services, bookings, mechanics } = db || { services: [], bookings: [], mechanics: [] };
 
-    // Reset the manually-backed flag if they move forward past step 1 again
+    const selectedServices = useMemo(() => {
+        return services.filter(s => selectedServiceIds.has(s.id));
+    }, [services, selectedServiceIds]);
+    const isCarRental = selectedServices.some(s => s.isCarRental);
+    const isDriverHire = selectedServices.some(s => s.isDriverHire);
+    const isSpecialRentalOrDriver = isCarRental || isDriverHire;
+
+    // Enforce strict sequential step validation — NEVER allow skipping or bypassing steps
     useEffect(() => {
+        // Prerequisite for Step 2 and beyond: Date & Time must be chosen, plus valid service & vehicle
         if (step > 1) {
-            setUserHasGoneBack(false);
+            if (selectedServiceIds.size === 0 || !selectedVehiclePlate) {
+                setStep(1);
+                return;
+            }
+            if (!selectedDate || !selectedTime) {
+                setStep(1);
+                return;
+            }
+            if (isSpecialRentalOrDriver && (!selectedEndDate || !selectedEndTime)) {
+                setStep(1);
+                return;
+            }
         }
-    }, [step]);
+
+        // Prerequisite for Step 3 and beyond:
+        // For standard jobs, Service Location must be confirmed
+        // For car rental / driver hire, car / driver must be selected
+        if (step > 2) {
+            if (isSpecialRentalOrDriver) {
+                if (isCarRental && !selectedCar) {
+                    setStep(2);
+                    return;
+                }
+                if (isDriverHire && !selectedDriver) {
+                    setStep(2);
+                    return;
+                }
+            } else if (!serviceLocation) {
+                setStep(2);
+                return;
+            }
+        }
+
+        // Prerequisite for Step 4 (Confirmation / Summary):
+        // For standard jobs, Mechanic must be selected
+        // For car rental / driver hire, start and end locations must be provided
+        if (step > 3) {
+            if (isSpecialRentalOrDriver) {
+                if (!startLocation.trim() || !endLocation.trim()) {
+                    setStep(3);
+                    return;
+                }
+            } else if (!selectedMechanic) {
+                setStep(3);
+                return;
+            }
+        }
+    }, [
+        step,
+        selectedServiceIds.size,
+        selectedVehiclePlate,
+        selectedDate,
+        selectedTime,
+        selectedEndDate,
+        selectedEndTime,
+        serviceLocation,
+        selectedMechanic,
+        isSpecialRentalOrDriver,
+        isCarRental,
+        selectedCar,
+        isDriverHire,
+        selectedDriver,
+        startLocation,
+        endLocation
+    ]);
 
     useEffect(() => {
         const stateToSave = {
@@ -911,7 +981,7 @@ const BookingScreen: React.FC = () => {
     }, [step, selectedServiceIds, selectedVehiclePlate, selectedDate, selectedEndDate, selectedTime, selectedEndTime, selectedMechanic, serviceLocation, mechanicSearch, specializationFilter, sortOption, notes, selectedCar, selectedDriver, startLocation, endLocation]);
 
     useEffect(() => {
-        if (step === 3) {
+        if (step === 2) {
             setLocationStatus('fetching');
 
             const handleSuccess = (position: GeolocationPosition) => {
@@ -987,9 +1057,9 @@ const BookingScreen: React.FC = () => {
         }
     }, [step, isTrackingLive]);
 
-    // Map initialization: Run once when step === 3 and serviceLocation is available
+    // Map initialization: Run once when step === 2 and serviceLocation is available
     useEffect(() => {
-        if (step !== 3 || !serviceLocation || !mapRef.current || mapInstanceRef.current || typeof L === 'undefined') return;
+        if (step !== 2 || !serviceLocation || !mapRef.current || mapInstanceRef.current || typeof L === 'undefined') return;
 
         const { lat, lng } = serviceLocation;
 
@@ -1098,7 +1168,7 @@ const BookingScreen: React.FC = () => {
 
     // Live updater: smoothly follow GPS and update accuracy halo when tracking is active
     useEffect(() => {
-        if (step === 3 && mapInstanceRef.current && serviceLocation) {
+        if (step === 2 && mapInstanceRef.current && serviceLocation) {
             if (markerRef.current) {
                 markerRef.current.setLatLng([serviceLocation.lat, serviceLocation.lng]);
             }
@@ -1130,9 +1200,9 @@ const BookingScreen: React.FC = () => {
 
 
 
-    // Ensure map resizes correctly when step 3 renders or when location loads
+    // Ensure map resizes correctly when step 2 renders or when location loads
     useEffect(() => {
-        if (step === 3) {
+        if (step === 2) {
             const inv = () => { if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize(true); };
             // Fire repeatedly to handle late renders
             inv();
@@ -1144,9 +1214,9 @@ const BookingScreen: React.FC = () => {
     }, [step, locationStatus]);
 
 
-    // Initialize map for Step 5 (Confirmation)
+    // Initialize map for Step 4 (Confirmation)
     useEffect(() => {
-        if (step === 5 && serviceLocation && confirmationMapRef.current && !confirmationMapInstanceRef.current && typeof L !== 'undefined') {
+        if (step === 4 && serviceLocation && confirmationMapRef.current && !confirmationMapInstanceRef.current && typeof L !== 'undefined') {
             // Initialize map
             confirmationMapInstanceRef.current = L.map(confirmationMapRef.current, {
                 center: [serviceLocation.lat, serviceLocation.lng],
@@ -1214,27 +1284,17 @@ const BookingScreen: React.FC = () => {
         }
     };
 
-    const { services, bookings, mechanics } = db || { services: [], bookings: [], mechanics: [] };
-
-    const selectedServices = useMemo(() => {
-        return services.filter(s => selectedServiceIds.has(s.id));
-    }, [services, selectedServiceIds]);
-    const isCarRental = selectedServices.some(s => s.isCarRental);
-    const isDriverHire = selectedServices.some(s => s.isDriverHire);
-    const isSpecialRentalOrDriver = isCarRental || isDriverHire;
-
     const getHeaderTitle = () => {
         switch (step) {
-            case 1: return 'Select Service & Vehicle';
-            case 2: return 'Select a Date and Time';
-            case 3:
+            case 1: return 'Select a Date and Time';
+            case 2:
                 if (isSpecialRentalOrDriver) {
                     if (isCarRental && isDriverHire) return 'Select Car & Driver';
                     return isCarRental ? 'Select Car' : 'Select Driver';
                 }
                 return 'Confirm Service Location';
-            case 4: return isSpecialRentalOrDriver ? 'Enter Route Locations' : 'Select Mechanic';
-            case 5: return 'Confirm Booking';
+            case 3: return isSpecialRentalOrDriver ? 'Enter Route Locations' : 'Select Mechanic';
+            case 4: return 'Confirm Booking';
             default: return 'Book a Service';
         }
     };
@@ -1390,24 +1450,31 @@ const BookingScreen: React.FC = () => {
 
 
     const handleStep1Continue = () => {
-        if (selectedServiceIds.size === 0) setError('Please select at least one service.');
-        else if (!selectedVehiclePlate) setError('Please select a vehicle.');
-        else { setError(''); setStep(2); }
-    };
-
-    const handleStep2Continue = () => {
-        if (!selectedDate) { setError('Please select a start date.'); return; }
+        if (selectedServiceIds.size === 0) {
+            setError('Please select at least one service.');
+            return;
+        }
+        if (!selectedVehiclePlate) {
+            setError('Please select or register a vehicle.');
+            return;
+        }
+        if (!selectedDate) {
+            setError('Please select a start date.');
+            return;
+        }
         if (isSpecialRentalOrDriver) {
             if (!selectedTime) { setError('Please select a start time.'); return; }
             if (!selectedEndDate) { setError('Please select a return / end date.'); return; }
             if (selectedEndDate < selectedDate) { setError('End date must be on or after the start date.'); return; }
             if (!selectedEndTime) { setError('Please select a return / end time.'); return; }
+        } else {
+            if (!selectedTime) { setError('Please select an appointment time.'); return; }
         }
         setError('');
-        setStep(3);
+        setStep(2);
     };
 
-    const handleStep3Continue = () => {
+    const handleStep2Continue = () => {
         if (isSpecialRentalOrDriver) {
             if (isCarRental && !selectedCar) {
                 setError('Please select a car.');
@@ -1415,15 +1482,15 @@ const BookingScreen: React.FC = () => {
                 setError('Please select a driver.');
             } else {
                 setError('');
-                setStep(4);
+                setStep(3);
             }
         } else {
             if (!serviceLocation) setError('Please confirm your location.');
-            else { setError(''); setStep(4); }
+            else { setError(''); setStep(3); }
         }
     };
 
-    const handleStep4Continue = () => {
+    const handleStep3Continue = () => {
         if (isSpecialRentalOrDriver) {
             if (!startLocation.trim()) {
                 setError('Please enter a start location.');
@@ -1431,7 +1498,7 @@ const BookingScreen: React.FC = () => {
                 setError('Please enter an end location.');
             } else {
                 setError('');
-                setStep(5);
+                setStep(4);
             }
         }
     };
@@ -1439,7 +1506,7 @@ const BookingScreen: React.FC = () => {
     const handleSelectTimeSlot = (mechanic: Mechanic, time: string) => {
         setSelectedMechanic(mechanic);
         setSelectedTime(time);
-        setStep(5);
+        setStep(4);
     };
 
     // Create booking first (awaiting_payment), then open modal with real Firestore ID
@@ -1560,13 +1627,22 @@ const BookingScreen: React.FC = () => {
                     purpose: `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`
                 });
 
-                window.location.href = url;
+                if (url.startsWith('/')) {
+                    navigate(url);
+                } else {
+                    window.location.href = url;
+                }
                 return;
-            } catch (hitpayErr) {
-                console.warn('HitPay online session could not be established directly. Falling back to GCash Payment Modal:', hitpayErr);
-                setPendingBookingId(createdBooking.id);
-                setShowGCashModal(true);
-                return;
+            } catch (hitpayErr: any) {
+                // If manual GCash is explicitly enabled by the administrator, allow fallback as last resort
+                if (db?.settings?.gcashEnabled) {
+                    console.info('ℹ️ HitPay online gateway unavailable. Transitioning to enabled GCash Payment Modal.');
+                    setPendingBookingId(createdBooking.id);
+                    setShowGCashModal(true);
+                    return;
+                }
+                // Otherwise respect the admin configuration that GCash is deactivated
+                throw new Error(hitpayErr?.message || 'HitPay Payment Gateway is currently unreachable. Please verify your internet connection or contact support.');
             }
         } catch (err: any) {
             setShowPaymentBreakdownModal(false);
@@ -1606,211 +1682,7 @@ const BookingScreen: React.FC = () => {
         });
     };
 
-    const renderStep1 = () => (
-        <>
-            <div className="p-6 pb-32 space-y-6 flex-grow overflow-y-auto">
-                <div>
-                    <h3 className="text-sm font-bold text-gray-400  tracking-wider mb-3">Select Your Vehicle</h3>
-                    {user?.vehicles && user.vehicles.length > 0 ? (
-                        <div className="space-y-3">
-                            {user.vehicles.map(vehicle => {
-                                const isSelected = selectedVehiclePlate === vehicle.plateNumber;
-                                return (
-                                    <div
-                                        key={vehicle.plateNumber}
-                                        onClick={() => setSelectedVehiclePlate(vehicle.plateNumber)}
-                                        className={`relative bg-[#1E1E1E] rounded-xl p-4 cursor-pointer transition-all duration-200 border-2 group ${isSelected
-                                            ? 'border-primary shadow-lg shadow-primary/20'
-                                            : 'border-white/5 hover:border-primary/50'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            {/* Vehicle Icon */}
-                                            <div className={`w-14 h-14 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors overflow-hidden relative ${isSelected ? 'bg-primary/20' : 'bg-white/5 group-hover:bg-primary/10'
-                                                }`}>
-                                                {vehicle.imageUrls && vehicle.imageUrls.length > 0 ? (
-                                                    <img
-                                                        src={vehicle.imageUrls[0]}
-                                                        alt={`${vehicle.make} ${vehicle.model}`}
-                                                        className="w-full h-full object-cover"
-                                                        onError={(e) => {
-                                                            (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
-                                                        }}
-                                                    />
-                                                ) : (
-                                                    <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        className={`h-8 w-8 transition-colors ${isSelected ? 'text-primary' : 'text-gray-400 group-hover:text-primary'}`}
-                                                        fill="none"
-                                                        viewBox="0 0 24 24"
-                                                        stroke="currentColor"
-                                                        strokeWidth={1.5}
-                                                    >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                                                    </svg>
-                                                )}
-                                            </div>
-
-                                            {/* Vehicle Details */}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <h4 className="font-bold text-white truncate" style={{ fontSize: '15px' }}>
-                                                        {vehicle.year} {vehicle.make} {vehicle.model}
-                                                    </h4>
-                                                    {vehicle.isPrimary && (
-                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/20 text-primary border border-primary/30">
-                                                            PRIMARY
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-3 text-xs text-gray-400">
-                                                    <span className="flex items-center gap-1">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                                                        </svg>
-                                                        {vehicle.plateNumber}
-                                                    </span>
-                                                    {vehicle.color && (
-                                                        <span className="flex items-center gap-1">
-                                                            <div className="w-3 h-3 rounded-full border border-white/20" style={{ backgroundColor: vehicle.color.toLowerCase() }}></div>
-                                                            {vehicle.color}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Selection Indicator */}
-                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-200 ${isSelected
-                                                ? 'bg-primary scale-100'
-                                                : 'bg-white/10 border-2 border-white/20'
-                                                }`}>
-                                                {isSelected && (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                    </svg>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-
-                            {/* Add Vehicle Button */}
-                            <Tooltip content="Add a new vehicle to your garage">
-                                <button
-                                    onClick={() => navigate('/customer-portal/my-garage')}
-                                    className="w-full bg-white/5 border-2 border-dashed border-white/10 rounded-xl p-4 text-gray-400 hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all duration-200 flex items-center justify-center gap-2"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    <span className="font-semibold text-sm">Add Another Vehicle</span>
-                                </button>
-                            </Tooltip>
-                        </div>
-                    ) : (
-                        <div className="bg-[#1E1E1E] p-6 rounded-xl text-center flex flex-col items-center border-2 border-dashed border-white/10">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-primary mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                            </svg>
-                            <h3 className="text-lg font-bold text-white">Add a Vehicle to Your Garage</h3>
-                            <p className="text-sm text-gray-400 my-2">You need to have at least one vehicle registered before you can book a service.</p>
-                            <Tooltip content="Manage your vehicles">
-                                <button
-                                    onClick={() => navigate('/customer-portal/my-garage')}
-                                    className="mt-4 bg-primary text-white font-bold py-2.5 px-6 rounded-lg hover:bg-primary/90 transition-colors"
-                                >
-                                    Go to My Garage
-                                </button>
-                            </Tooltip>
-                        </div>
-                    )}
-                </div>
-
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-sm font-bold text-gray-400 tracking-wider">Select Services</h3>
-                        {serviceSearch && (
-                            <button 
-                                onClick={() => setServiceSearch('')}
-                                className="text-[10px] font-bold text-primary hover:text-orange-400 transition-colors"
-                            >
-                                CLEAR
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Service Search Input */}
-                    <div className="relative mb-4">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                            </svg>
-                        </span>
-                        <input
-                            type="text"
-                            id="service-search"
-                            name="serviceSearch"
-                            placeholder="Search services (e.g. Oil Change, Tires...)"
-                            value={serviceSearch}
-                            onChange={(e) => setServiceSearch(e.target.value)}
-                            autoComplete="off"
-                            className="w-full pl-10 pr-4 py-2.5 bg-[#1E1E1E] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 outline-none transition-all focus:border-primary/30 focus:bg-[#252525]"
-                        />
-                    </div>
-
-                    <div className="space-y-3">
-                        {services
-                            .filter(service => 
-                                service.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
-                                service.category.toLowerCase().includes(serviceSearch.toLowerCase())
-                            )
-                            .map(service => (
-                                <ServiceSelectionCard 
-                                    key={service.id} 
-                                    service={service} 
-                                    isSelected={selectedServiceIds.has(service.id)} 
-                                    onSelect={handleServiceSelect} 
-                                />
-                            ))
-                        }
-                        {services.filter(service => 
-                            service.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
-                            service.category.toLowerCase().includes(serviceSearch.toLowerCase())
-                        ).length === 0 && (
-                            <div className="py-8 text-center bg-[#1E1E1E] rounded-xl border border-dashed border-white/10">
-                                <p className="text-gray-500 text-sm">No services found matching "{serviceSearch}"</p>
-                                <button 
-                                    onClick={() => setServiceSearch('')}
-                                    className="mt-2 text-primary text-xs font-bold hover:underline"
-                                >
-                                    Show all services
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-            <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-                <div className="max-w-md mx-auto w-full">
-                    {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
-                    {selectedServiceIds.size > 0 && (
-                        <div className="flex justify-between items-center mb-3 mx-4 p-3 bg-white/5 rounded-xl border border-white/5">
-                            <span className="text-gray-400 text-xs font-bold">Total for {selectedServiceIds.size} service(s)</span>
-                            <span className="font-black text-lg text-primary">₱{totalPrice.toLocaleString()}</span>
-                        </div>
-                    )}
-                    <Tooltip content="Proceed to date selection" className="w-full">
-                        <button onClick={handleStep1Continue} disabled={selectedServiceIds.size === 0 || !selectedVehiclePlate} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition disabled:opacity-50 rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20">
-                            Continue
-                        </button>
-                    </Tooltip>
-                </div>
-            </div>
-        </>
-    );
-
-    const renderStep2 = () => {
+    const renderStep1 = () => {
         const todayStr = new Date().toISOString().split('T')[0];
         const startDateStr = selectedDate.toISOString().split('T')[0];
 
@@ -1818,7 +1690,6 @@ const BookingScreen: React.FC = () => {
             if (e.target.value) {
                 const newStart = new Date(e.target.value);
                 setSelectedDate(newStart);
-                // Reset end date if it's now before the new start
                 if (selectedEndDate && selectedEndDate < newStart) {
                     setSelectedEndDate(null);
                 }
@@ -1842,19 +1713,88 @@ const BookingScreen: React.FC = () => {
         };
 
         const selectedServicesList = services.filter(s => selectedServiceIds.has(s.id));
+        const currentVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
+
+        // Format date helpers for smooth visual display
+        const formatDateHuman = (d: Date) => {
+            return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        const formatTimeHuman = (timeStr: string) => {
+            if (!timeStr) return '--:--';
+            const [h, m] = timeStr.split(':').map(Number);
+            if (isNaN(h)) return timeStr;
+            const period = h >= 12 ? 'PM' : 'AM';
+            const displayH = h % 12 === 0 ? 12 : h % 12;
+            return `${displayH}:${m < 10 ? '0' + m : m} ${period}`;
+        };
+
+        const isDateToday = selectedDate.toDateString() === new Date().toDateString();
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const isDateTomorrow = selectedDate.toDateString() === tomorrow.toDateString();
 
         return (
             <>
-                <div className="px-6 py-4 pb-32 space-y-4 flex-grow overflow-y-auto">
-                    <div className="space-y-3">
+                <div className="px-4 sm:px-6 py-3 pb-32 space-y-3.5 flex-grow overflow-y-auto">
+                    {/* Compact Default Vehicle Banner with Quick Switcher */}
+                    {!isSpecialRentalOrDriver && (
+                        <div className="bg-[#18181B] border border-white/10 rounded-xl p-3 shadow-md flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                    {currentVehicle?.imageUrls && currentVehicle.imageUrls.length > 0 ? (
+                                        <img
+                                            src={currentVehicle.imageUrls[0]}
+                                            alt={`${currentVehicle.make} ${currentVehicle.model}`}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => { (e.target as HTMLImageElement).src = "/assets/car_mockup.png"; }}
+                                        />
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l4 4 4-4m-4-5v9" />
+                                        </svg>
+                                    )}
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[9px] font-black text-gray-400 tracking-wider uppercase">Default Vehicle</span>
+                                        {currentVehicle?.isPrimary && (
+                                            <span className="text-[8px] font-black bg-primary/20 text-primary px-1.5 py-0.2 rounded">Primary</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs sm:text-sm font-black text-white truncate">
+                                        {currentVehicle ? `${currentVehicle.year || ''} ${currentVehicle.make} ${currentVehicle.model}`.trim() : 'No vehicle selected'}
+                                    </p>
+                                    <p className="text-[10px] font-mono text-gray-400">
+                                        {currentVehicle?.plateNumber || 'No plate recorded'}
+                                    </p>
+                                </div>
+                            </div>
+                            {user?.vehicles && user.vehicles.length > 1 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowVehicleSelectorModal(true)}
+                                    className="px-2.5 py-1 text-[11px] font-bold bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/10 transition flex-shrink-0"
+                                >
+                                    Change
+                                </button>
+                            )}
+                        </div>
+                    )}
 
+                    {/* Modern Smooth Compact Date & Time Picker */}
+                    <div className="space-y-2.5">
                         {isSpecialRentalOrDriver ? (
-                            /* ── Rental / Driver for Hire: 2-row grid ── */
-                            <>
-                                {/* Row 1: Start Date + Start Time */}
-                                <div className="grid grid-cols-2 gap-4 mt-1">
+                            /* Rental / Driver for Hire: Start & Return Range Cards */
+                            <div className="grid grid-cols-2 gap-2.5">
+                                {/* Start Date & Time */}
+                                <div className="bg-[#18181B] border border-white/10 rounded-xl p-3 space-y-2 relative overflow-hidden">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                            <Calendar size={11} className="text-primary" /> Start Date & Time
+                                        </label>
+                                    </div>
                                     <div className="space-y-1.5">
-                                        <label htmlFor="booking-date" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Start Date</label>
                                         <div className="relative">
                                             <input
                                                 id="booking-date"
@@ -1863,14 +1803,10 @@ const BookingScreen: React.FC = () => {
                                                 min={todayStr}
                                                 value={selectedDate.toISOString().split('T')[0]}
                                                 onChange={handleDateChange}
-                                                autoComplete="off"
-                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-date-input date-picker-primary-icon"
+                                                className="w-full bg-[#202024] border border-white/10 rounded-lg px-2.5 py-2 text-white font-bold text-xs outline-none focus:border-primary/60 transition custom-date-input"
                                                 style={{ colorScheme: 'dark' }}
                                             />
                                         </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label htmlFor="booking-start-time" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Start Time</label>
                                         <div className="relative">
                                             <input
                                                 id="booking-start-time"
@@ -1878,18 +1814,21 @@ const BookingScreen: React.FC = () => {
                                                 type="time"
                                                 value={selectedTime}
                                                 onChange={handleTimeChange}
-                                                autoComplete="off"
-                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-time-input time-picker-primary-icon"
+                                                className="w-full bg-[#202024] border border-white/10 rounded-lg px-2.5 py-2 text-white font-bold text-xs outline-none focus:border-primary/60 transition custom-time-input"
                                                 style={{ colorScheme: 'dark' }}
                                             />
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Row 2: End Date + End Time */}
-                                <div className="grid grid-cols-2 gap-4">
+                                {/* Return Date & Time */}
+                                <div className="bg-[#18181B] border border-white/10 rounded-xl p-3 space-y-2 relative overflow-hidden">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                            <CalendarRange size={11} className="text-primary" /> Return Date & Time
+                                        </label>
+                                    </div>
                                     <div className="space-y-1.5">
-                                        <label htmlFor="booking-end-date" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Return Date</label>
                                         <div className="relative">
                                             <input
                                                 id="booking-end-date"
@@ -1898,14 +1837,10 @@ const BookingScreen: React.FC = () => {
                                                 min={startDateStr}
                                                 value={selectedEndDate ? selectedEndDate.toISOString().split('T')[0] : ''}
                                                 onChange={handleEndDateChange}
-                                                autoComplete="off"
-                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-date-input date-picker-primary-icon"
+                                                className="w-full bg-[#202024] border border-white/10 rounded-lg px-2.5 py-2 text-white font-bold text-xs outline-none focus:border-primary/60 transition custom-date-input"
                                                 style={{ colorScheme: 'dark' }}
                                             />
                                         </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label htmlFor="booking-end-time" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Return Time</label>
                                         <div className="relative">
                                             <input
                                                 id="booking-end-time"
@@ -1913,37 +1848,38 @@ const BookingScreen: React.FC = () => {
                                                 type="time"
                                                 value={selectedEndTime}
                                                 onChange={handleEndTimeChange}
-                                                autoComplete="off"
-                                                className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-primary/50 custom-time-input time-picker-primary-icon"
+                                                className="w-full bg-[#202024] border border-white/10 rounded-lg px-2.5 py-2 text-white font-bold text-xs outline-none focus:border-primary/60 transition custom-time-input"
                                                 style={{ colorScheme: 'dark' }}
                                             />
                                         </div>
                                     </div>
                                 </div>
-
-                                {/* Duration badge */}
-                                {selectedEndDate && (
-                                    <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-xl px-4 py-2.5">
-                                        <span className="text-primary text-lg">📅</span>
-                                        <div>
-                                            <p className="text-primary font-black text-sm">
-                                                {rentalDays} day{rentalDays !== 1 ? 's' : ''} selected
-                                            </p>
-                                            <p className="text-gray-500 text-[10px]">
-                                                {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {selectedTime}
-                                                {' → '}
-                                                {selectedEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {selectedEndTime}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </>
+                            </div>
                         ) : (
-                            /* ── Standard service: Date + Time ── */
-                            <div className="grid grid-cols-2 gap-4 mt-1">
-                                <div className="space-y-1.5">
-                                    <label htmlFor="booking-date" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Date</label>
-                                    <div className="relative">
+                            /* Standard Service Booking: Modern Compact Interactive Cards */
+                            <div className="grid grid-cols-2 gap-2.5">
+                                {/* Date Card */}
+                                <div className="bg-[#18181B] border border-white/10 hover:border-white/20 transition-all rounded-xl p-3 flex flex-col justify-between space-y-2 relative group shadow-sm">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                            <Calendar size={11} className="text-primary" /> Date
+                                        </span>
+                                    </div>
+
+                                    {/* Date Visual Display & Native Trigger */}
+                                    <div className="relative bg-[#202024] rounded-lg p-2 border border-white/5 group-hover:border-primary/30 transition-colors cursor-pointer">
+                                        <div className="flex items-center justify-between">
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-black text-white truncate">
+                                                    {formatDateHuman(selectedDate)}
+                                                </p>
+                                                <p className="text-[9px] text-gray-400 font-medium">
+                                                    {isDateToday ? 'Today' : isDateTomorrow ? 'Tomorrow' : 'Scheduled Date'}
+                                                </p>
+                                            </div>
+                                            <Calendar size={14} className="text-primary flex-shrink-0 ml-1.5" />
+                                        </div>
+                                        {/* Seamless Invisible Date Trigger Overlay */}
                                         <input
                                             id="booking-date"
                                             name="bookingDate"
@@ -1952,14 +1888,37 @@ const BookingScreen: React.FC = () => {
                                             value={selectedDate.toISOString().split('T')[0]}
                                             onChange={handleDateChange}
                                             autoComplete="off"
-                                            className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-white/20 custom-date-input date-picker-primary-icon"
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                             style={{ colorScheme: 'dark' }}
                                         />
                                     </div>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label htmlFor="booking-time" className="text-xs font-bold text-gray-500 tracking-widest uppercase">Time</label>
-                                    <div className="relative">
+
+                                {/* Time Card */}
+                                <div className="bg-[#18181B] border border-white/10 hover:border-white/20 transition-all rounded-xl p-3 flex flex-col justify-between space-y-2 relative group shadow-sm">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                            <Clock size={11} className="text-primary" /> Time
+                                        </span>
+                                        <span className="text-[8px] font-mono text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded font-black">
+                                            {formatTimeHuman(selectedTime)}
+                                        </span>
+                                    </div>
+
+                                    {/* Time Visual Display & Native Trigger */}
+                                    <div className="relative bg-[#202024] rounded-lg p-2 border border-white/5 group-hover:border-primary/30 transition-colors cursor-pointer">
+                                        <div className="flex items-center justify-between">
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-black text-white font-mono">
+                                                    {formatTimeHuman(selectedTime)}
+                                                </p>
+                                                <p className="text-[9px] text-gray-400 font-medium">
+                                                    24h: {selectedTime || '--:--'}
+                                                </p>
+                                            </div>
+                                            <Clock size={14} className="text-primary flex-shrink-0 ml-1.5" />
+                                        </div>
+                                        {/* Seamless Invisible Time Trigger Overlay */}
                                         <input
                                             id="booking-time"
                                             name="bookingTime"
@@ -1967,7 +1926,7 @@ const BookingScreen: React.FC = () => {
                                             value={selectedTime}
                                             onChange={handleTimeChange}
                                             autoComplete="off"
-                                            className="w-full bg-[#1E1E1E] border border-white/10 rounded-xl px-4 py-3 text-white font-bold outline-none transition-all focus:border-white/20 custom-time-input time-picker-primary-icon"
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                             style={{ colorScheme: 'dark' }}
                                         />
                                     </div>
@@ -1975,19 +1934,35 @@ const BookingScreen: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Selected Services Summary */}
-                        <div className="border border-white/5 bg-[#151515] rounded-xl p-4 mt-4 space-y-3">
-                            <div className="flex justify-between items-center border-b border-white/5 pb-3">
-                                <div>
-                                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">Services Summary</h4>
-                                    <p className="text-xs text-gray-500">{selectedServicesList.length} service(s) selected</p>
+                        {/* Rental duration badge if applicable */}
+                        {isSpecialRentalOrDriver && selectedEndDate && (
+                            <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-3 py-2 text-xs">
+                                <span className="text-primary font-black flex items-center gap-1.5">
+                                    <Sparkles size={12} /> {rentalDays} day{rentalDays !== 1 ? 's' : ''} duration
+                                </span>
+                                <span className="text-[10px] text-gray-400">
+                                    ₱{(totalPrice).toLocaleString()} total
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Enhanced Services Summary */}
+                        <div className="border border-white/10 bg-[#18181B] rounded-xl p-3.5 space-y-3 shadow-md">
+                            <div className="flex justify-between items-center border-b border-white/5 pb-2.5">
+                                <div className="flex items-center gap-2">
+                                    <h4 className="text-xs font-black text-white uppercase tracking-wider">Services Summary</h4>
+                                    <span className="text-[9px] font-bold bg-white/10 text-gray-300 px-1.5 py-0.5 rounded-full">
+                                        {selectedServicesList.length} item{selectedServicesList.length !== 1 ? 's' : ''}
+                                    </span>
                                 </div>
+                                <span className="text-xs font-black text-primary">₱{totalPrice.toLocaleString()}</span>
                             </div>
 
-                            <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                            {/* Compact Services List with Short Descriptions */}
+                            <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5 custom-scrollbar">
                                 {selectedServicesList.map(service => (
-                                    <div key={service.id} className="flex gap-3 bg-[#1A1A1E] border border-white/5 p-3 rounded-lg">
-                                        <div className="w-20 h-20 rounded-lg bg-[#222] border border-white/5 overflow-hidden flex-shrink-0 relative">
+                                    <div key={service.id} className="flex gap-2.5 bg-[#202024] border border-white/5 p-2.5 rounded-xl">
+                                        <div className="w-14 h-14 rounded-lg bg-[#28282E] border border-white/5 overflow-hidden flex-shrink-0 relative">
                                             {(() => {
                                                 const normalized = normalizeServiceImage(service.imageUrl, service.category);
                                                 return (
@@ -2000,69 +1975,73 @@ const BookingScreen: React.FC = () => {
                                                 );
                                             })()}
                                         </div>
-                                        <div className="flex-grow min-w-0">
-                                            <div className="flex justify-between items-start gap-2">
-                                                <h5 className="text-xs font-bold text-white truncate">{service.name}</h5>
-                                                <span className="text-xs font-black text-primary flex-shrink-0">₱{(service.price || 0).toLocaleString()}</span>
-                                            </div>
-                                            <p className="text-[10px] text-gray-500 truncate mt-0.5">{service.category}</p>
-                                            <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">{service.description}</p>
-                                            {service.estimatedTime && (
-                                                <div className="bg-primary/20 border border-primary/20 text-primary text-[9px] font-black rounded-lg inline-flex items-center gap-1.5 px-2.5 py-1 mt-1.5">
-                                                    <Clock size={10} />
-                                                    <span>Est: {service.estimatedTime}</span>
+                                        <div className="flex-grow min-w-0 flex flex-col justify-between py-0.5">
+                                            <div>
+                                                <div className="flex justify-between items-start gap-1.5">
+                                                    <h5 className="text-xs font-black text-white truncate leading-tight">{service.name}</h5>
+                                                    <span className="text-xs font-black text-primary flex-shrink-0">₱{(service.price || 0).toLocaleString()}</span>
                                                 </div>
-                                            )}
-                                            {service.features && service.features.length > 0 && (
-                                                <div className="flex flex-wrap gap-1 mt-2">
-                                                    {service.features.map((feat, idx) => (
-                                                        <span key={idx} className="px-1.5 py-0.5 rounded bg-white/5 text-[8px] text-gray-400 border border-white/5">
-                                                            {feat}
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <span className="text-[9px] font-bold text-gray-500 uppercase">{service.category}</span>
+                                                    {service.estimatedTime && (
+                                                        <span className="text-[9px] text-gray-400 font-medium flex items-center gap-0.5">
+                                                            • <Clock size={9} className="text-primary inline" /> {service.estimatedTime}
                                                         </span>
-                                                    ))}
+                                                    )}
                                                 </div>
+                                            </div>
+                                            {/* Shortened compact description */}
+                                            {service.description && (
+                                                <p className="text-[10px] text-gray-400 truncate leading-snug mt-1">
+                                                    {service.description}
+                                                </p>
                                             )}
                                         </div>
                                     </div>
                                 ))}
                             </div>
 
-                            <div className="flex justify-between items-center border-t border-white/5 pt-3">
-                                <span className="text-xs font-bold text-gray-400">
+                            {/* Total Price Bar */}
+                            <div className="flex justify-between items-center pt-2 border-t border-white/5 text-xs">
+                                <span className="font-bold text-gray-400">
                                     {isSpecialRentalOrDriver && rentalDays > 1 ? `Total (${rentalDays} days):` : 'Total Price:'}
                                 </span>
                                 <span className="text-base font-black text-primary">₱{totalPrice.toLocaleString()}</span>
                             </div>
                         </div>
 
-                        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex gap-3 items-start mt-4">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <p className="text-xs text-gray-300 leading-relaxed">
+                        {/* Booking Notice */}
+                        <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 flex gap-2.5 items-start">
+                            <div className="w-4 h-4 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <Info size={10} className="text-primary" />
+                            </div>
+                            <p className="text-[11px] text-gray-300 leading-relaxed">
                                 {isSpecialRentalOrDriver
-                                    ? 'Select your rental start and return dates. Pricing is calculated per day based on the duration selected.'
-                                    : 'Please note that the actual arrival time may vary slightly depending on traffic conditions and the mechanic\'s previous job status. We will keep you updated.'}
+                                    ? 'Select your rental start and return dates. Pricing is calculated per day based on duration.'
+                                    : 'Arrival times may vary slightly based on traffic conditions and previous job completion. We will keep you updated.'}
                             </p>
                         </div>
                     </div>
                 </div>
+
+                {/* Bottom Continue Action Bar */}
                 <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                     <div className="max-w-md mx-auto w-full">
                         {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
                         <Tooltip content={isSpecialRentalOrDriver ? "Proceed to vehicle / driver selection" : "Proceed to location confirmation"} className="w-full">
                             <button
-                                onClick={handleStep2Continue}
+                                onClick={handleStep1Continue}
                                 disabled={!selectedDate || !selectedTime || (isSpecialRentalOrDriver && (!selectedEndDate || !selectedEndTime))}
-                                className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition disabled:opacity-50 rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20"
+                                className="w-full bg-primary text-white font-black h-12 flex items-center justify-center gap-2 hover:bg-orange-600 transition disabled:opacity-50 rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20"
                             >
-                                Continue
+                                <span>Continue</span>
+                                <ArrowRight size={18} />
                             </button>
                         </Tooltip>
                     </div>
                 </div>
             </>
-        )
+        );
     };
 
     const renderStep3 = () => {
@@ -2358,7 +2337,7 @@ const BookingScreen: React.FC = () => {
                         )}
                         {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 rounded-lg border border-red-500/20">{error}</p>}
                         <button
-                            onClick={handleStep3Continue}
+                            onClick={handleStep2Continue}
                             className="w-full bg-primary text-white font-black h-12 flex items-center justify-center gap-2 hover:bg-orange-600 transition rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20 disabled:opacity-50"
                             disabled={
                                 (isCarRental && !selectedCar) ||
@@ -2550,7 +2529,7 @@ const BookingScreen: React.FC = () => {
                 <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent z-[500] pointer-events-none flex justify-center pb-[calc(1rem+env(safe-area-inset-bottom))]">
                     <div className="w-full max-w-md pointer-events-auto">
                         <Tooltip content="Confirm your service location" className="w-full">
-                            <button onClick={handleStep3Continue} disabled={locationStatus !== 'success'} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition disabled:opacity-50 gap-2 text-base uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/20">
+                            <button onClick={handleStep2Continue} disabled={locationStatus !== 'success'} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition disabled:opacity-50 gap-2 text-base uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/20">
                                 {locationStatus === 'success' ? (
                                     <>Confirm Location <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg></>
                                 ) : 'Determining Location...'}
@@ -2690,7 +2669,7 @@ const BookingScreen: React.FC = () => {
                     <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                         <div className="max-w-md mx-auto w-full">
                             {error && <p className="text-red-400 text-center text-xs mb-3 bg-red-500/10 py-2 mx-4 rounded-lg border border-red-500/20">{error}</p>}
-                            <button onClick={handleStep4Continue} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20">
+                            <button onClick={handleStep3Continue} className="w-full bg-primary text-white font-black h-12 flex items-center justify-center hover:bg-orange-600 transition rounded-2xl uppercase tracking-wider text-base shadow-lg shadow-primary/20">
                                 Continue to Summary
                             </button>
                         </div>
@@ -2711,7 +2690,7 @@ const BookingScreen: React.FC = () => {
 
         const handleSelectMechanic = (mechanic: Mechanic) => {
             setSelectedMechanic(mechanic);
-            setStep(5);
+            setStep(4);
         };
 
         return (
@@ -3213,10 +3192,10 @@ const BookingScreen: React.FC = () => {
                                     {selectedMechanic && (
                                         <div className="relative overflow-hidden bg-gradient-to-br from-[#1A1A22] to-[#121217] rounded-2xl p-4 border border-white/10 shadow-lg group hover:border-[#FE7803]/40 transition-all">
                                             <div className="flex items-center justify-between mb-2 pb-2 border-b border-white/5">
-                                                <p className="text-[10px] font-black text-gray-400 tracking-widest uppercase">Assigned Mechanic Specialist</p>
+                                                <p className="text-[10px] font-black text-gray-400 tracking-widest uppercase">Assigned Mechanic</p>
                                                 <span className="text-[9px] font-black text-emerald-400 uppercase bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
                                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                                    Ready on Schedule
+                                                    Ready
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-3.5">
@@ -3353,8 +3332,8 @@ const BookingScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary overflow-hidden">
-            {/* Main Header — hidden on step 3 for full-screen map */}
-            {step !== 3 && (
+            {/* Main Header — hidden on step 2 for full-screen map */}
+            {step !== 2 && (
                 <CustomerHeader
                     title={getHeaderTitle()}
                     showBackButton={true}
@@ -3366,11 +3345,84 @@ const BookingScreen: React.FC = () => {
             {/* Step Content */}
             <div className="flex-grow overflow-hidden flex flex-col min-h-0 relative">
                 {step === 1 && renderStep1()}
-                {step === 2 && renderStep2()}
-                {step === 3 && renderStep3()}
-                {step === 4 && renderStep4()}
-                {step === 5 && renderStep5()}
+                {step === 2 && renderStep3()}
+                {step === 3 && renderStep4()}
+                {step === 4 && renderStep5()}
             </div>
+
+            {/* Vehicle Selector Modal */}
+            {showVehicleSelectorModal && (
+                <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-[#18181B] border border-white/10 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+                        <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                            <div>
+                                <h3 className="text-base font-black text-white">Select Vehicle</h3>
+                                <p className="text-xs text-gray-400">Choose a vehicle from your registered garage</p>
+                            </div>
+                            <button
+                                onClick={() => setShowVehicleSelectorModal(false)}
+                                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                            {user?.vehicles && user.vehicles.length > 0 ? (
+                                user.vehicles.map(v => {
+                                    const isSelected = selectedVehiclePlate === v.plateNumber;
+                                    return (
+                                        <div
+                                            key={v.plateNumber}
+                                            onClick={() => {
+                                                setSelectedVehiclePlate(v.plateNumber);
+                                                setShowVehicleSelectorModal(false);
+                                            }}
+                                            className={`p-3 rounded-xl border-2 cursor-pointer transition flex items-center gap-3.5 ${
+                                                isSelected
+                                                    ? 'border-primary bg-primary/10'
+                                                    : 'border-white/5 bg-[#202024] hover:border-primary/40'
+                                            }`}
+                                        >
+                                            <div className="w-12 h-12 rounded-lg bg-black/40 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                {v.imageUrls && v.imageUrls.length > 0 ? (
+                                                    <img src={v.imageUrls[0]} alt={v.model} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-primary text-xl">🚗</span>
+                                                )}
+                                            </div>
+                                            <div className="flex-grow min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-sm font-bold text-white truncate">{v.year} {v.make} {v.model}</p>
+                                                    {v.isPrimary && (
+                                                        <span className="text-[9px] font-black bg-primary/20 text-primary px-1.5 py-0.5 rounded">Primary</span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs font-mono text-gray-400">{v.plateNumber} • {v.color}</p>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-primary bg-primary' : 'border-gray-600'}`}>
+                                                {isSelected && <div className="w-2 h-2 rounded-full bg-white"></div>}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <p className="text-xs text-gray-400 text-center py-4">No vehicles registered</p>
+                            )}
+                        </div>
+                        <div className="pt-2">
+                            <button
+                                onClick={() => {
+                                    setShowVehicleSelectorModal(false);
+                                    navigate('/customer-portal/garage');
+                                }}
+                                className="w-full py-2.5 bg-white/10 hover:bg-white/15 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
+                            >
+                                <span>+ Manage Garage</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* GCash Payment Modal */}
             {showGCashModal && pendingBookingId && (() => {

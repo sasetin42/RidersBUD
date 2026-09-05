@@ -36,11 +36,16 @@ export const sendEmail = async (
                         window.location.hostname === '127.0.0.1' || 
                         window.location.hostname.startsWith('192.168.') ||
                         window.location.hostname.startsWith('10.') ||
-                        window.location.port !== '';
+                        (window.location.port !== '' && window.location.port !== '80' && window.location.port !== '443');
 
-        const endpoint = isLocal
-            ? '/api/smtp-bridge'
-            : 'https://smtpjs.com/v3/smtpjs.aspx';
+        // Note: smtpjs.com has deprecated and blocked unauthenticated cross-origin browser relays (returning 403 Forbidden / CORS block).
+        // If not in local dev mode with the backend bridge, we skip client-side SMTP dispatch safely without throwing CORS errors.
+        if (!isLocal) {
+            console.info("ℹ️ Direct client-side SMTP dispatch is disabled in production static hosting to preserve browser security and prevent CORS errors. Use a secure backend function or webhook for production email notifications.");
+            return false;
+        }
+
+        const endpoint = '/api/smtp-bridge';
 
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -51,7 +56,6 @@ export const sendEmail = async (
         }).catch(() => null);
 
         if (!response) {
-            // Silently skip if client browser blocks cross-origin SMTP relay request
             return false;
         }
 

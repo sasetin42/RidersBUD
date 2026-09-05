@@ -3,45 +3,94 @@ import { Link } from 'react-router-dom';
 import { 
     Wallet, ArrowUpRight, DollarSign, History, 
     CheckCircle2, TrendingUp, Info, X, 
-    Check, CreditCard, Calendar, ChevronRight 
+    Check, CreditCard, Calendar, ChevronRight,
+    Smartphone, Landmark, QrCode, AlertCircle, Sparkles,
+    ShieldCheck, Clock, RefreshCw, Layers
 } from 'lucide-react';
 import Header from '../../components/Header';
 import NotificationBell from '../../components/NotificationBell';
 import Spinner from '../../components/Spinner';
-import { PayoutRequest, Booking } from '../../types';
+import { PayoutRequest, Booking, Mechanic, PayoutDetails } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useMechanicAuth } from '../../context/MechanicAuthContext';
+import { calculateMechanicWalletLedger, getJobTotalAmount } from '../../utils/mechanicLedger';
 
 interface PayoutRequestModalProps {
     isOpen: boolean;
     onClose: () => void;
-    balance: number;
+    availableBalance: number;
+    lockedBalance: number;
+    savedDestinations: PayoutDetails[];
     onSubmit: (amount: number, method: string, details: string) => Promise<void>;
 }
 
-const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({ isOpen, onClose, balance, onSubmit }) => {
+const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({ 
+    isOpen, 
+    onClose, 
+    availableBalance, 
+    lockedBalance,
+    savedDestinations,
+    onSubmit 
+}) => {
     const [amount, setAmount] = useState('');
-    const [method, setMethod] = useState<'GCash' | 'Bank Transfer'>('GCash');
-    const [details, setDetails] = useState('');
+    const [selectedDestId, setSelectedDestId] = useState<string>(() => {
+        const def = savedDestinations.find(d => d.isDefault) || savedDestinations[0];
+        return def?.id || 'manual';
+    });
+    const [manualMethod, setManualMethod] = useState<'GCash' | 'Bank Transfer'>('GCash');
+    const [manualDetails, setManualDetails] = useState('');
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
-    const { db } = useDatabase();
-    const { mechanic } = useMechanicAuth();
+    const [error, setError] = useState('');
+
+    const activeDestination = useMemo(() => {
+        if (selectedDestId === 'manual') return null;
+        return savedDestinations.find(d => d.id === selectedDestId) || null;
+    }, [selectedDestId, savedDestinations]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount < 100) {
+            setError('Minimum withdrawal is ₱100.');
+            return;
+        }
+        if (numAmount > availableBalance) {
+            setError(`Amount exceeds your available balance of ₱${availableBalance.toLocaleString()}.`);
+            return;
+        }
+
+        let methodString = '';
+        let detailsString = '';
+
+        if (activeDestination) {
+            const isBank = activeDestination.method === 'Bank Transfer';
+            methodString = isBank 
+                ? `${activeDestination.bankName || 'Bank'} (Bank)` 
+                : `${activeDestination.walletName || 'E-Wallet'} (E-Wallet)`;
+            detailsString = `${activeDestination.accountName} - ${activeDestination.accountNumber}${activeDestination.qrCodeUrl ? ' [Has QR]' : ''}`;
+        } else {
+            if (!manualDetails.trim()) {
+                setError('Please provide your account name and number.');
+                return;
+            }
+            methodString = manualMethod;
+            detailsString = manualDetails.trim();
+        }
+
         setLoading(true);
         try {
-            await onSubmit(parseFloat(amount), method, details);
+            await onSubmit(numAmount, methodString, detailsString);
             setSuccess(true);
             setTimeout(() => {
                 onClose();
                 setSuccess(false);
                 setAmount('');
-                setDetails('');
-            }, 2000);
-        } catch (error) {
-            console.error('Payout error:', error);
+                setManualDetails('');
+            }, 1800);
+        } catch (err: any) {
+            setError(err?.message || 'Failed to submit withdrawal request.');
         } finally {
             setLoading(false);
         }
@@ -52,52 +101,75 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({ isOpen, onClose
     return (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-lg bg-[#121212] rounded-t-[2.5rem] sm:rounded-[2.5rem] border-t sm:border border-white/10 shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300">
-                <div className="p-8 space-y-8">
-                    <div className="flex justify-between items-center">
+            <div className="relative w-full max-w-lg bg-[#141416] rounded-t-[2.5rem] sm:rounded-[2rem] border-t sm:border border-white/10 shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-300">
+                <div className="p-6 sm:p-7 space-y-6">
+                    {/* Header */}
+                    <div className="flex justify-between items-start">
                         <div>
-                            <h2 className="text-2xl font-black text-white tracking-tighter">Withdraw Funds</h2>
-                            <div className="mt-1 flex items-center gap-3">
-                                <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest">
-                                    Available: <span className="text-white">₱{balance.toLocaleString()}</span>
-                                </p>
-                                <div className="w-1 h-1 rounded-full bg-white/10" />
-                                <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest">
-                                    Processing: <span className="text-primary-light">₱{(db?.mechanics.find(m => m.id === mechanic?.id)?.lockedBalance || 0).toLocaleString()}</span>
-                                </p>
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="p-1.5 rounded-xl bg-primary/10 text-primary border border-primary/20">
+                                    <Wallet size={16} />
+                                </span>
+                                <h2 className="text-xl font-black text-white tracking-tight">Withdraw Funds</h2>
+                            </div>
+                            <div className="flex items-center gap-3 text-[10px] font-bold text-gray-400 mt-1">
+                                <span>Available: <strong className="text-emerald-400 font-extrabold">₱{availableBalance.toLocaleString()}</strong></span>
+                                <span className="w-1 h-1 rounded-full bg-white/20" />
+                                <span>Processing: <strong className="text-amber-400 font-extrabold">₱{lockedBalance.toLocaleString()}</strong></span>
                             </div>
                         </div>
-                        <button onClick={onClose} className="p-2 rounded-full bg-white/5 text-gray-500 hover:text-white transition-colors">
-                            <X size={20} />
+                        <button 
+                            type="button"
+                            onClick={onClose} 
+                            className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                            <X size={18} />
                         </button>
                     </div>
 
                     {success ? (
-                        <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
-                            <div className="w-20 h-20 rounded-full bg-green-500/10 flex items-center justify-center border border-green-500/20">
-                                <Check className="text-green-500" size={40} />
+                        <div className="py-10 flex flex-col items-center justify-center text-center space-y-3">
+                            <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/10">
+                                <Check size={32} strokeWidth={3} />
                             </div>
-                            <div>
-                                <h3 className="text-xl font-black text-white">Request Submitted!</h3>
-                                <p className="text-gray-500 text-sm mt-2">Your withdrawal is being processed by the admin.</p>
-                            </div>
+                            <h3 className="text-lg font-black text-white">Payout Request Submitted!</h3>
+                            <p className="text-gray-400 text-xs max-w-xs">
+                                Your withdrawal of <strong className="text-white">₱{parseFloat(amount || '0').toLocaleString()}</strong> is now pending admin processing.
+                            </p>
                         </div>
                     ) : (
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="space-y-3">
-                                <label htmlFor="withdrawal-amount" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Withdrawal Amount</label>
+                        <form onSubmit={handleSubmit} className="space-y-5">
+                            {error && (
+                                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2 text-red-400 text-xs font-bold">
+                                    <AlertCircle size={15} className="shrink-0" />
+                                    <span>{error}</span>
+                                </div>
+                            )}
+
+                            {/* Amount Input */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-gray-400">
+                                    <label htmlFor="withdrawal-amount">Withdrawal Amount</label>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setAmount(availableBalance.toString())}
+                                        className="text-primary hover:underline"
+                                    >
+                                        Withdraw Max
+                                    </button>
+                                </div>
                                 <div className="relative">
-                                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-white/20">₱</span>
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-black text-white/30">₱</span>
                                     <input
                                         id="withdrawal-amount"
                                         name="withdrawal-amount"
                                         type="number"
                                         value={amount}
-                                        onChange={(e) => setAmount(e.target.value)}
+                                        onChange={(e) => { setAmount(e.target.value); setError(''); }}
                                         placeholder="0.00"
-                                        className="w-full bg-[#1A1A1A] border border-white/5 rounded-3xl p-6 pl-12 text-2xl font-black text-white focus:outline-none focus:border-primary/50 transition-all"
+                                        className="w-full bg-[#1C1C1F] border border-white/10 rounded-2xl p-4 pl-10 text-xl font-black text-white focus:outline-none focus:border-primary/50 transition-all placeholder:text-gray-600"
                                         min="100"
-                                        max={balance}
+                                        max={availableBalance}
                                         required
                                     />
                                 </div>
@@ -106,58 +178,138 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({ isOpen, onClose
                                         <button
                                             key={val}
                                             type="button"
-                                            onClick={() => setAmount(val.toString())}
-                                            className="flex-1 py-2 rounded-xl bg-white/5 border border-white/5 text-[10px] font-black text-gray-500 hover:border-primary/30 hover:text-primary transition-all"
+                                            onClick={() => { setAmount(val.toString()); setError(''); }}
+                                            className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/5 text-[10px] font-bold text-gray-400 hover:border-primary/40 hover:text-primary transition-all"
                                         >
-                                            ₱{val}
+                                            ₱{val.toLocaleString()}
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Payment Method</label>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {(['GCash', 'Bank Transfer'] as const).map(m => (
+                            {/* Payout Destination Selector */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-gray-400">
+                                    <span>Payout Destination</span>
+                                    <Link to="/mechanic-portal/profile" className="text-primary hover:underline lowercase text-[10px] font-bold">
+                                        manage accounts
+                                    </Link>
+                                </div>
+
+                                {savedDestinations.length > 0 ? (
+                                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                                        {savedDestinations.map((dest) => {
+                                            const isSelected = selectedDestId === dest.id;
+                                            const isBank = dest.method === 'Bank Transfer';
+                                            const label = isBank ? (dest.bankName || 'Bank') : (dest.walletName || 'E-Wallet');
+
+                                            return (
+                                                <button
+                                                    key={dest.id}
+                                                    type="button"
+                                                    onClick={() => { setSelectedDestId(dest.id); setError(''); }}
+                                                    className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
+                                                        isSelected 
+                                                            ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary/30 text-white' 
+                                                            : 'bg-[#18181A] border-white/5 hover:border-white/10 text-gray-400'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                                            isSelected ? 'bg-primary text-white' : 'bg-white/5 text-gray-400'
+                                                        }`}>
+                                                            {isBank ? <Landmark size={15} /> : <Smartphone size={15} />}
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="text-xs font-black text-white truncate">{label}</p>
+                                                                {dest.isDefault && (
+                                                                    <span className="text-[8px] font-black px-1.5 py-0.2 rounded bg-primary/20 text-primary">PRIMARY</span>
+                                                                )}
+                                                                {dest.qrCodeUrl && (
+                                                                    <span className="text-[8px] font-bold text-amber-400 flex items-center gap-0.5">
+                                                                        <QrCode size={10} /> QR
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                                                                {dest.accountName} • {dest.accountNumber}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                                                        isSelected ? 'border-primary bg-primary text-white' : 'border-white/20'
+                                                    }`}>
+                                                        {isSelected && <Check size={10} strokeWidth={3} />}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
                                         <button
-                                            key={m}
                                             type="button"
-                                            onClick={() => setMethod(m)}
-                                            className={`py-4 rounded-2xl border transition-all flex flex-col items-center gap-2 ${method === m ? 'bg-primary/10 border-primary text-primary' : 'bg-white/5 border-white/5 text-gray-500 hover:border-white/10'}`}
+                                            onClick={() => { setSelectedDestId('manual'); setError(''); }}
+                                            className={`w-full p-2.5 rounded-xl border text-left text-xs font-bold transition-all flex items-center justify-between ${
+                                                selectedDestId === 'manual' 
+                                                    ? 'bg-primary/10 border-primary text-primary' 
+                                                    : 'bg-transparent border-dashed border-white/10 text-gray-400 hover:text-white'
+                                            }`}
                                         >
-                                            <CreditCard size={20} />
-                                            <span className="text-[10px] font-black uppercase tracking-widest">{m}</span>
+                                            <span>+ Enter Different Account</span>
+                                            {selectedDestId === 'manual' && <Check size={12} />}
                                         </button>
-                                    ))}
-                                </div>
+                                    </div>
+                                ) : (
+                                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl text-center">
+                                        <p className="text-xs text-gray-400 mb-1 font-bold">No saved payout accounts found.</p>
+                                        <Link to="/mechanic-portal/profile" className="text-xs text-primary font-black underline">
+                                            Add GCash / Bank in Profile
+                                        </Link>
+                                    </div>
+                                )}
+
+                                {/* Manual Input Fallback */}
+                                {selectedDestId === 'manual' && (
+                                    <div className="space-y-3 pt-2">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {(['GCash', 'Bank Transfer'] as const).map(m => (
+                                                <button
+                                                    key={m}
+                                                    type="button"
+                                                    onClick={() => setManualMethod(m)}
+                                                    className={`py-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                                        manualMethod === m 
+                                                            ? 'bg-primary/15 border-primary text-primary' 
+                                                            : 'bg-white/5 border-white/5 text-gray-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    {m === 'GCash' ? <Smartphone size={14} /> : <Landmark size={14} />}
+                                                    <span>{m}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <textarea
+                                            value={manualDetails}
+                                            onChange={(e) => setManualDetails(e.target.value)}
+                                            placeholder={manualMethod === 'GCash' ? "Account Name - 0917 123 4567" : "Bank Name: Account Name - 1234567890"}
+                                            className="w-full bg-[#1C1C1F] border border-white/10 rounded-xl p-3 text-xs font-medium text-white focus:outline-none focus:border-primary/50 transition-all min-h-[70px]"
+                                            required
+                                        />
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="space-y-3">
-                                <label htmlFor="withdrawal-gcash-info" className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">
-                                    {method === 'GCash' ? 'GCash Number & Name' : 'Account Number & Bank Name'}
-                                </label>
-                                <textarea
-                                    id="withdrawal-gcash-info"
-                                    name="withdrawal-gcash-info"
-                                    value={details}
-                                    onChange={(e) => setDetails(e.target.value)}
-                                    placeholder={method === 'GCash' ? "09XX XXX XXXX - John Doe" : "BDO: 1234567890 - John Doe"}
-                                    className="w-full bg-[#1A1A1A] border border-white/5 rounded-3xl p-6 text-sm font-medium text-white focus:outline-none focus:border-primary/50 transition-all min-h-[100px]"
-                                    required
-                                />
-                            </div>
-
+                            {/* Submit */}
                             <button
                                 type="submit"
-                                disabled={loading || !amount || parseFloat(amount) < 100}
-                                className="w-full bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:grayscale text-white font-black py-6 rounded-3xl shadow-xl shadow-primary/20 transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-sm"
+                                disabled={loading || !amount || parseFloat(amount) < 100 || parseFloat(amount) > availableBalance}
+                                className="w-full bg-primary hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black py-4 rounded-2xl shadow-lg shadow-primary/25 transition-all flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
                             >
                                 {loading ? (
-                                    <Spinner size="sm" color="text-black" />
+                                    <Spinner size="sm" color="text-white" />
                                 ) : (
                                     <>
-                                        <Check size={16} strokeWidth={3} />
-                                        Submit Request
+                                        <ShieldCheck size={16} />
+                                        <span>Confirm Withdrawal Request</span>
                                     </>
                                 )}
                             </button>
@@ -176,106 +328,173 @@ const MechanicEarningsScreen: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'earnings' | 'payouts'>('earnings');
     const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
 
+    // Live reactive mechanic profile
+    const currentMechanic = useMemo(() => {
+        if (!mechanic) return null;
+        return db?.mechanics.find(m => m.id === mechanic.id) || mechanic;
+    }, [db?.mechanics, mechanic]);
+
+    // Saved payout destinations
+    const savedDestinations: PayoutDetails[] = useMemo(() => {
+        if (!currentMechanic) return [];
+        const list = currentMechanic.savedPayoutDestinations || [];
+        if (list.length > 0) return list;
+        if (currentMechanic.payoutDetails) {
+            return [{ id: 'legacy-payout', ...currentMechanic.payoutDetails, isDefault: true }];
+        }
+        return [];
+    }, [currentMechanic]);
+
+    // Primary payout account label
+    const primaryAccount = useMemo(() => {
+        return savedDestinations.find(d => d.isDefault) || savedDestinations[0] || null;
+    }, [savedDestinations]);
+
+    // Helper: Standardize date to YYYY-MM-DD
+    const normalizeDateStr = (rawDate: any): string => {
+        if (!rawDate) return '';
+        if (typeof rawDate === 'string') {
+            if (rawDate.includes('T')) {
+                return rawDate.split('T')[0];
+            }
+            if (rawDate.includes('-')) {
+                return rawDate;
+            }
+        }
+        const d = new Date(rawDate);
+        if (isNaN(d.getTime())) return '';
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dt = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dt}`;
+    };
+
+    // Helper: Calculate total revenue of a job accurately
+    const getJobTotal = (job: any): number => {
+        if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
+        if (job.price != null && Number(job.price) > 0) return Number(job.price);
+        const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+        const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+        const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+        return svcsSum + addCosts + (Number(job.laborFee) || 0);
+    };
+
     const {
         earningsInPeriod,
         jobsInPeriodCount,
         avgJobValue,
         groupedJobHistory,
         weeklyData,
-        payouts
+        payouts,
+        availableBalance,
+        lockedBalance,
+        allTimeEarnings
     } = useMemo(() => {
         const defaultReturn = { 
             earningsInPeriod: 0, 
             jobsInPeriodCount: 0, 
             avgJobValue: 0, 
             groupedJobHistory: {} as Record<string, Booking[]>, 
-            weeklyData: [] as {label: string, value: number}[], 
-            payouts: [] as PayoutRequest[] 
+            weeklyData: [] as { label: string; dateStr: string; value: number }[], 
+            payouts: [] as PayoutRequest[],
+            availableBalance: 0,
+            lockedBalance: 0,
+            allTimeEarnings: 0
         };
 
-        if (!mechanic || !db) {
+        if (!currentMechanic || !db) {
             return defaultReturn;
         }
 
+        // All completed jobs for this mechanic/driver
         const myCompletedJobs = db.bookings
-            .filter(b => b.mechanic?.id === mechanic.id && b.status === 'Completed')
+            .filter(b => {
+                const isMatch = (b.mechanic?.id === currentMechanic.id) || (b.mechanicId === currentMechanic.id);
+                return isMatch && b.status === 'Completed';
+            })
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const now = new Date();
 
+        // Filter based on active period
         let filteredJobs = myCompletedJobs;
         if (filter === 'week') {
-            const oneWeekAgo = new Date(today);
-            oneWeekAgo.setDate(today.getDate() - 6);
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(now.getDate() - 6);
+            sevenDaysAgo.setHours(0, 0, 0, 0);
+
             filteredJobs = myCompletedJobs.filter(job => {
-                const jobDate = new Date(job.date.replace(/-/g, '/'));
-                jobDate.setHours(0, 0, 0, 0);
-                return jobDate >= oneWeekAgo;
+                const dStr = normalizeDateStr(job.date);
+                if (!dStr) return false;
+                const d = new Date(dStr + 'T00:00:00');
+                return d >= sevenDaysAgo;
             });
         } else if (filter === 'month') {
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth();
+
             filteredJobs = myCompletedJobs.filter(job => {
-                const jobDate = new Date(job.date.replace(/-/g, '/'));
-                return jobDate.getMonth() === today.getMonth() &&
-                       jobDate.getFullYear() === today.getFullYear();
+                const dStr = normalizeDateStr(job.date);
+                if (!dStr) return false;
+                const d = new Date(dStr + 'T00:00:00');
+                return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
             });
         }
 
-        const getJobTotal = (job: any) => {
-            if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
-            if (job.price != null && Number(job.price) > 0) return Number(job.price);
-            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
-            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
-            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
-            return svcsSum + addCosts + (Number(job.laborFee) || 0);
-        };
-
-        const paidJobsInPeriod = filteredJobs.filter(job => job.isPaid !== false);
+        // Net Profit computation (paid jobs)
+        const paidJobsInPeriod = filteredJobs.filter(job => job.isPaid !== false && job.paymentStatus !== 'failed');
         const earnings = paidJobsInPeriod.reduce((sum, job) => sum + getJobTotal(job), 0);
         const jobsCount = filteredJobs.length;
         const avgValue = paidJobsInPeriod.length > 0 ? earnings / paidJobsInPeriod.length : 0;
 
+        // Lifetime earnings
+        const allCompletedPaid = myCompletedJobs.filter(job => job.isPaid !== false);
+        const lifetimeSum = allCompletedPaid.reduce((sum, job) => sum + getJobTotal(job), 0);
+        const calcAllTime = (currentMechanic as any).totalEarnings || lifetimeSum;
+
+        // Rolling 7-day chart buckets (matching Sun-Sat or rolling 7 days)
         const last7Days = Array.from({ length: 7 }).map((_, i) => {
             const d = new Date();
-            d.setDate(d.getDate() - i);
+            d.setDate(d.getDate() - (6 - i));
             return d;
-        }).reverse();
+        });
 
-        let dailyEarnings = last7Days.map(day => {
-            const year = day.getFullYear();
-            const month = String(day.getMonth() + 1).padStart(2, '0');
-            const date = String(day.getDate()).padStart(2, '0');
-            const dayStr = `${year}-${month}-${date}`;
-            
+        const dailyEarnings = last7Days.map(day => {
+            const dayNormalized = normalizeDateStr(day);
             const earningsForDay = myCompletedJobs
                 .filter(job => {
-                    if (job.isPaid === false) return false;
-                    let jobDateStr = job.date;
-                    if (jobDateStr && jobDateStr.includes('T')) {
-                        jobDateStr = new Date(jobDateStr).toLocaleDateString('en-CA');
-                    }
-                    return jobDateStr === dayStr;
+                    if (job.isPaid === false || job.paymentStatus === 'failed') return false;
+                    return normalizeDateStr(job.date) === dayNormalized;
                 })
                 .reduce((sum, job) => sum + getJobTotal(job), 0);
+
             return {
                 label: day.toLocaleDateString('en-US', { weekday: 'short' }),
+                dateStr: dayNormalized,
                 value: earningsForDay
             };
         });
 
+        // Group job history by date
         const groupedHistory = filteredJobs.reduce((acc, job) => {
-            let date = job.date;
-            if (date && date.includes('T')) {
-                date = new Date(date).toLocaleDateString('en-CA');
-            }
-            if (!acc[date]) acc[date] = [];
-            acc[date].push(job);
+            const dateKey = normalizeDateStr(job.date) || 'Recent';
+            if (!acc[dateKey]) acc[dateKey] = [];
+            acc[dateKey].push(job);
             return acc;
         }, {} as Record<string, Booking[]>);
 
+        // Payout history
         const myPayouts = (db.payouts as PayoutRequest[])
-            .filter(p => p.mechanicId === mechanic.id)
+            .filter(p => p.mechanicId === currentMechanic.id)
             .sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
+
+        // Dynamic Wallet Balances from authoritative ledger helper
+        const walletLedger = calculateMechanicWalletLedger(
+            currentMechanic.id,
+            currentMechanic,
+            db.bookings || [],
+            db.payouts || []
+        );
 
         return {
             earningsInPeriod: earnings,
@@ -283,15 +502,18 @@ const MechanicEarningsScreen: React.FC = () => {
             avgJobValue: avgValue,
             groupedJobHistory: groupedHistory,
             weeklyData: dailyEarnings,
-            payouts: myPayouts
+            payouts: myPayouts,
+            availableBalance: walletLedger.availableBalance,
+            lockedBalance: walletLedger.lockedBalance,
+            allTimeEarnings: walletLedger.lifetimeEarnings || calcAllTime
         };
-    }, [db, mechanic, filter]);
+    }, [db, currentMechanic, filter]);
 
     const handlePayoutSubmit = async (amount: number, method: string, details: string) => {
-        if (!mechanic) return;
+        if (!currentMechanic) return;
         await addPayoutRequest({
-            mechanicId: mechanic.id,
-            mechanicName: mechanic.name,
+            mechanicId: currentMechanic.id,
+            mechanicName: currentMechanic.name,
             amount,
             paymentMethod: method,
             accountDetails: details,
@@ -300,9 +522,9 @@ const MechanicEarningsScreen: React.FC = () => {
         });
     };
 
-    if (loading || !db || !mechanic) {
+    if (loading || !db || !currentMechanic) {
         return (
-            <div className="flex flex-col h-full bg-secondary">
+            <div className="flex flex-col h-full bg-[#121212]">
                 <Header title="My Earnings" rightAction={<NotificationBell />} icon={<TrendingUp size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
@@ -312,172 +534,250 @@ const MechanicEarningsScreen: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#121212] text-white">
-            <div className="relative min-h-screen">
+        <div className="min-h-screen bg-[#0F0F11] text-white">
+            <div className="relative min-h-screen pb-28">
                 <Header title="My Earnings" rightAction={<NotificationBell />} icon={<TrendingUp size={22} />} />
 
-                {/* Chart Section */}
-                <div className="mt-8 bg-[#1A1A1A] p-6 rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden group mx-6">
-                    <div className="absolute top-0 right-0 p-8 opacity-5">
-                        <TrendingUp size={120} className="text-white" />
-                    </div>
-                    
-                    <div className="flex items-center justify-between mb-8 relative z-10">
-                        <div>
-                            <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] mb-1">Weekly Growth</p>
-                            <h3 className="text-xl font-black text-white tracking-tighter">Performance</h3>
-                        </div>
-                        <div className="p-3 rounded-2xl bg-white/5 text-primary">
-                            <TrendingUp size={20} />
-                        </div>
-                    </div>
-                    <BarChart data={weeklyData} />
-                </div>
+                {/* Top Section Container */}
+                <div className="px-4 sm:px-6 pt-4 space-y-4">
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 gap-4 mt-8 px-6">
-                    <StatCard 
-                        title="Net Profit"
-                        value={`₱${earningsInPeriod.toLocaleString()}`}
-                        icon={<DollarSign size={20} />}
-                        color="text-green-400"
-                    />
-                    <StatCard 
-                        title="Jobs Done"
-                        value={jobsInPeriodCount}
-                        icon={<CheckCircle2 size={20} />}
-                        color="text-blue-400"
-                    />
-                    <StatCard 
-                        title="Avg. Job"
-                        value={`₱${avgJobValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                        icon={<Info size={20} />}
-                        color="text-primary"
-                    />
-                    <StatCard 
-                        title="Withdrawals"
-                        value={payouts.filter(p => p.status === 'Paid').length}
-                        icon={<CreditCard size={20} />}
-                        color="text-purple-400"
-                    />
-                </div>
+                    {/* 1. Compact Balance & Quick-Withdraw HUD */}
+                    <div className="bg-gradient-to-br from-[#1A1A1E] via-[#161619] to-[#121214] p-5 rounded-3xl border border-white/10 shadow-xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+                            <Wallet size={100} className="text-white" />
+                        </div>
 
-                {/* Main Content Area */}
-                <div className="p-6 pb-32">
-                    {/* Period Tabs */}
-                    <div className="flex bg-[#1A1A1A] p-1.5 rounded-[2rem] border border-white/5 mb-8">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+                            <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Available Balance</span>
+                                    <span className="flex h-2 w-2 relative">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                    </span>
+                                </div>
+                                <div className="flex items-baseline gap-2">
+                                    <p className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                                        ₱{availableBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                    </p>
+                                    {lockedBalance > 0 && (
+                                        <span className="text-[11px] font-bold text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                                            ₱{lockedBalance.toLocaleString()} in transit
+                                        </span>
+                                    )}
+                                </div>
+                                {primaryAccount && (
+                                    <p className="text-[10px] font-bold text-gray-400 flex items-center gap-1 mt-1">
+                                        <span>Payout to:</span>
+                                        <span className="text-white font-black">{primaryAccount.method === 'Bank Transfer' ? primaryAccount.bankName : primaryAccount.walletName}</span>
+                                        <span className="text-gray-500">({primaryAccount.accountNumber})</span>
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPayoutModalOpen(true)}
+                                    disabled={availableBalance < 100}
+                                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary hover:bg-orange-600 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/25 transition-all"
+                                >
+                                    <ArrowUpRight size={16} />
+                                    <span>Withdraw Funds</span>
+                                </button>
+                                <Link
+                                    to="/mechanic-portal/profile"
+                                    title="Manage Payout Destinations"
+                                    className="p-3 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-2xl border border-white/5 transition-all"
+                                >
+                                    <CreditCard size={16} />
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 2. Compact Performance Bar Chart */}
+                    <div className="bg-[#161619] p-5 rounded-3xl border border-white/5 shadow-xl relative overflow-hidden">
+                        <div className="flex items-center justify-between mb-4 relative z-10">
+                            <div>
+                                <p className="text-[9px] font-black text-primary uppercase tracking-[0.25em]">Weekly Growth</p>
+                                <h3 className="text-lg font-black text-white tracking-tight">Performance</h3>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-gray-400 bg-white/5 px-2.5 py-1 rounded-xl border border-white/5">
+                                    Last 7 Days
+                                </span>
+                                <div className="p-2 rounded-xl bg-white/5 text-primary">
+                                    <TrendingUp size={16} />
+                                </div>
+                            </div>
+                        </div>
+                        <BarChart data={weeklyData} />
+                    </div>
+
+                    {/* 3. Compact 4-Grid Metrics */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <CompactStatCard 
+                            title="Net Profit"
+                            value={`₱${earningsInPeriod.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                            subtitle={filter === 'week' ? 'Past 7 Days' : filter === 'month' ? 'This Month' : 'All Time'}
+                            icon={<DollarSign size={16} />}
+                            color="text-emerald-400"
+                            badge="Paid"
+                        />
+                        <CompactStatCard 
+                            title="Jobs Done"
+                            value={jobsInPeriodCount}
+                            subtitle={`${filteredJobsCountText(jobsInPeriodCount)}`}
+                            icon={<CheckCircle2 size={16} />}
+                            color="text-blue-400"
+                        />
+                        <CompactStatCard 
+                            title="Avg. Job"
+                            value={`₱${avgJobValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                            subtitle="Per booking ticket"
+                            icon={<Info size={16} />}
+                            color="text-primary"
+                        />
+                        <CompactStatCard 
+                            title="Withdrawals"
+                            value={payouts.filter(p => p.status === 'Paid').length}
+                            subtitle={`${payouts.filter(p => p.status === 'Pending' || p.status === 'Approved').length} processing`}
+                            icon={<CreditCard size={16} />}
+                            color="text-purple-400"
+                        />
+                    </div>
+
+                    {/* 4. Period Filter Pills */}
+                    <div className="flex bg-[#161619] p-1 rounded-2xl border border-white/5">
                         {(['week', 'month', 'all'] as const).map((p) => (
                             <button
                                 key={p}
                                 onClick={() => setFilter(p)}
-                                className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                                     filter === p 
-                                        ? 'bg-white text-black shadow-lg scale-[1.02]' 
-                                        : 'text-gray-500 hover:text-white'
+                                        ? 'bg-white text-black shadow-md scale-[1.02]' 
+                                        : 'text-gray-400 hover:text-white'
                                 }`}
                             >
-                                {p}
+                                {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'All Time'}
                             </button>
                         ))}
                     </div>
 
-                    {/* Tab Switcher */}
-                    <div className="flex gap-4 mb-8">
+                    {/* 5. Tab Switcher (Job History vs Payouts) */}
+                    <div className="flex gap-2.5 pt-1">
                         <button 
                             onClick={() => setActiveTab('earnings')}
-                            className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-3xl font-black text-[10px] uppercase tracking-[0.2em] transition-all border ${
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.15em] transition-all border ${
                                 activeTab === 'earnings' 
-                                    ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' 
-                                    : 'bg-transparent border-white/5 text-gray-500 hover:border-white/20'
+                                    ? 'bg-primary border-primary text-white shadow-md shadow-primary/20' 
+                                    : 'bg-[#161619] border-white/5 text-gray-400 hover:text-white'
                             }`}
                         >
-                            <History size={16} />
-                            Job History
+                            <History size={15} />
+                            <span>Job History ({jobsInPeriodCount})</span>
                         </button>
                         <button 
                             onClick={() => setActiveTab('payouts')}
-                            className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-3xl font-black text-[10px] uppercase tracking-[0.2em] transition-all border ${
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.15em] transition-all border ${
                                 activeTab === 'payouts' 
-                                    ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' 
-                                    : 'bg-transparent border-white/5 text-gray-500 hover:border-white/20'
+                                    ? 'bg-primary border-primary text-white shadow-md shadow-primary/20' 
+                                    : 'bg-[#161619] border-white/5 text-gray-400 hover:text-white'
                             }`}
                         >
-                            <CreditCard size={16} />
-                            Payouts
+                            <CreditCard size={15} />
+                            <span>Payouts ({payouts.length})</span>
                         </button>
                     </div>
 
-                    {/* Tab Content */}
-                    <div className="space-y-6">
+                    {/* 6. List Content */}
+                    <div className="space-y-4 pt-1">
                         {activeTab === 'earnings' ? (
-                            <div className="space-y-8">
+                            <div className="space-y-5">
                                 {Object.keys(groupedJobHistory).length > 0 ? (
-                                    Object.entries(groupedJobHistory).map(([date, bookingsForDate]) => (
-                                        <div key={date} className="space-y-4">
-                                            <div className="flex items-center gap-4 px-2">
-                                                <div className="h-px flex-1 bg-white/5" />
-                                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] whitespace-nowrap">
-                                                    {new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-                                                </span>
+                                    Object.entries(groupedJobHistory).map(([dateStr, bookingsForDate]) => {
+                                        const dateJobs = bookingsForDate as Booking[];
+                                        return (
+                                            <div key={dateStr} className="space-y-2.5">
+                                                <div className="flex items-center gap-3 px-1">
+                                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] whitespace-nowrap">
+                                                        {formatGroupDate(dateStr)}
+                                                    </span>
+                                                    <div className="h-px flex-1 bg-white/5" />
+                                                    <span className="text-[9px] font-bold text-gray-500">
+                                                        ₱{dateJobs.reduce((sum, b) => sum + getJobTotal(b), 0).toLocaleString()}
+                                                    </span>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {dateJobs.map(booking => (
+                                                        <CompactEarningItemCard key={booking.id} booking={booking} />
+                                                    ))}
+                                                </div>
                                             </div>
-                                            <div className="space-y-3">
-                                                {(bookingsForDate as Booking[]).map(booking => (
-                                                    <EarningItemCard key={booking.id} booking={booking} />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 ) : (
-                                    <div className="flex flex-col items-center justify-center py-20 text-gray-700 space-y-4">
-                                        <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
-                                            <History size={32} className="opacity-20" />
+                                    <div className="flex flex-col items-center justify-center py-16 text-gray-500 space-y-3 bg-[#161619]/50 rounded-3xl border border-white/5">
+                                        <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5">
+                                            <History size={24} className="opacity-30" />
                                         </div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 text-center">No jobs found for this period</p>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">No completed jobs for this period</p>
                                     </div>
                                 )}
                             </div>
                         ) : (
-                            <div className="space-y-6">
+                            <div className="space-y-2.5">
                                 {payouts.length > 0 ? (
                                     payouts.map((payout) => (
-                                        <div key={payout.id} className="bg-[#1A1A1A] p-6 rounded-[2rem] border border-white/5 hover:bg-[#202020] transition-all">
-                                            <div className="flex justify-between items-start mb-4">
-                                                <div className="flex items-center gap-4">
-                                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
-                                                        payout.status === 'Paid' ? 'bg-green-500/10 border-green-500/20 text-green-500' :
-                                                        payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
+                                        <div key={payout.id} className="bg-[#161619] p-4 rounded-2xl border border-white/5 hover:border-white/10 transition-all">
+                                            <div className="flex justify-between items-start mb-2.5">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                                                        payout.status === 'Paid' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                        payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
                                                         'bg-primary/10 border-primary/20 text-primary'
                                                     }`}>
-                                                        <Wallet size={20} />
+                                                        <Wallet size={18} />
                                                     </div>
-                                                    <div>
-                                                        <p className="font-black text-white tracking-tight">₱{payout.amount.toLocaleString()}</p>
-                                                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">
+                                                    <div className="min-w-0">
+                                                        <p className="font-black text-white tracking-tight text-sm">
+                                                            ₱{payout.amount.toLocaleString()}
+                                                        </p>
+                                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
                                                             {new Date(payout.requestDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <div className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-[0.2em] border ${
-                                                    payout.status === 'Paid' ? 'bg-green-500/10 border-green-500/20 text-green-500' :
-                                                    payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
-                                                    'bg-primary/10 border-primary/20 text-primary'
+                                                <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                                                    payout.status === 'Paid' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                    payout.status === 'Approved' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                                    payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                                    'bg-amber-500/10 border-amber-500/20 text-amber-400'
                                                 }`}>
-                                                    {payout.status}
-                                                </div>
+                                                    {payout.status === 'Approved' ? 'Approved • Disbursing' : payout.status}
+                                                </span>
                                             </div>
-                                            <div className="pt-4 border-t border-white/5">
-                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                                                    {payout.paymentMethod}: <span className="text-white/60">{payout.accountDetails}</span>
-                                                </p>
+                                            <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] text-gray-400 font-bold">
+                                                <span className="truncate">{payout.paymentMethod}: {payout.accountDetails}</span>
+                                                {payout.status === 'Pending' && (
+                                                    <span className="text-amber-400 shrink-0 ml-2">Under review</span>
+                                                )}
+                                                {payout.status === 'Approved' && (
+                                                    <span className="text-blue-400 shrink-0 ml-2 font-semibold">Processing transfer</span>
+                                                )}
+                                                {payout.status === 'Paid' && payout.transactionId && (
+                                                    <span className="text-emerald-400 font-mono shrink-0 ml-2 truncate max-w-[120px]">Ref: {payout.transactionId}</span>
+                                                )}
                                             </div>
                                         </div>
                                     ))
                                 ) : (
-                                    <div className="flex flex-col items-center justify-center py-20 text-gray-700 space-y-4">
-                                        <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
-                                            <ArrowUpRight size={32} className="opacity-20" />
+                                    <div className="flex flex-col items-center justify-center py-16 text-gray-500 space-y-3 bg-[#161619]/50 rounded-3xl border border-white/5">
+                                        <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5">
+                                            <ArrowUpRight size={24} className="opacity-30" />
                                         </div>
-                                        <p className="text-[10px] font-black uppercase tracking-widest opacity-40 text-center">No withdrawal history</p>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">No withdrawal records found</p>
                                     </div>
                                 )}
                             </div>
@@ -485,10 +785,13 @@ const MechanicEarningsScreen: React.FC = () => {
                     </div>
                 </div>
 
+                {/* Enhanced Multi-Destination Payout Modal */}
                 <PayoutRequestModal
                     isOpen={isPayoutModalOpen}
                     onClose={() => setIsPayoutModalOpen(false)}
-                    balance={db.mechanics.find(m => m.id === mechanic.id)?.walletBalance || 0}
+                    availableBalance={availableBalance}
+                    lockedBalance={lockedBalance}
+                    savedDestinations={savedDestinations}
                     onSubmit={handlePayoutSubmit}
                 />
             </div>
@@ -496,101 +799,163 @@ const MechanicEarningsScreen: React.FC = () => {
     );
 };
 
-const StatCard: React.FC<{ title: string, value: string | number, icon: React.ReactNode, color: string }> = ({ title, value, icon, color }) => (
-    <div className="bg-[#1A1A1A] p-5 rounded-[2rem] border border-white/5 shadow-xl hover:bg-[#202020] transition-all">
-        <div className="flex items-center gap-3 mb-3">
-            <div className={`p-2 rounded-xl bg-white/5 ${color}`}>
-                {icon}
+const filteredJobsCountText = (count: number) => {
+    if (count === 1) return '1 completed job';
+    return `${count} completed jobs`;
+};
+
+const formatGroupDate = (dateStr: string): string => {
+    if (!dateStr || dateStr === 'Recent') return 'Recent Completed';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        if (!isNaN(d.getTime())) {
+            const today = new Date();
+            if (d.toDateString() === today.toDateString()) {
+                return 'Today';
+            }
+            const yesterday = new Date();
+            yesterday.setDate(today.getDate() - 1);
+            if (d.toDateString() === yesterday.toDateString()) {
+                return 'Yesterday';
+            }
+            return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        }
+    }
+    return dateStr;
+};
+
+const CompactStatCard: React.FC<{ 
+    title: string; 
+    value: string | number; 
+    subtitle?: string; 
+    icon: React.ReactNode; 
+    color: string;
+    badge?: string;
+}> = ({ title, value, subtitle, icon, color, badge }) => (
+    <div className="bg-[#161619] p-4 rounded-2xl border border-white/5 shadow-md hover:border-white/10 transition-all flex flex-col justify-between">
+        <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+                <div className={`p-1.5 rounded-xl bg-white/5 shrink-0 ${color}`}>
+                    {icon}
+                </div>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider truncate">{title}</p>
             </div>
-            <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">{title}</p>
+            {badge && (
+                <span className="text-[8px] font-black text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                    {badge}
+                </span>
+            )}
         </div>
-        <p className="text-xl font-black text-white tracking-tighter">{value}</p>
+        <div>
+            <p className="text-xl font-black text-white tracking-tight">{value}</p>
+            {subtitle && (
+                <p className="text-[8.5px] font-bold text-gray-500 mt-0.5 truncate">{subtitle}</p>
+            )}
+        </div>
     </div>
 );
 
-const EarningItemCard: React.FC<{ booking: Booking }> = ({ booking }) => {
-    const amount = booking.totalAmount || (booking.services || []).reduce((sum, s) => sum + s.price, 0);
+const CompactEarningItemCard: React.FC<{ booking: Booking }> = ({ booking }) => {
+    const amount = booking.totalAmount || (booking.services || []).reduce((sum, s) => sum + s.price, 0) || (booking.price || 0);
     const serviceImageUrl = booking.services?.[0]?.imageUrl || booking.service?.imageUrl || '';
+    const serviceName = booking.services?.[0]?.name || booking.service?.name || 'Service Booking';
+    const vehicleInfo = booking.vehicle 
+        ? `${booking.vehicle.brand || booking.vehicle.make || ''} ${booking.vehicle.model || ''}`.trim() 
+        : (booking.vehicleDetails || 'Vehicle Service');
     
     return (
         <Link 
             to={`/mechanic-portal/job/${booking.id}`}
-            className="bg-[#1A1A1A] p-4 rounded-2xl border border-white/5 flex justify-between items-center hover:bg-[#202020] hover:border-white/10 transition-all group shadow-lg cursor-pointer block"
+            className="bg-[#161619] p-3.5 rounded-2xl border border-white/5 flex justify-between items-center hover:bg-[#1A1A1E] hover:border-white/10 transition-all group shadow-sm cursor-pointer block"
         >
             <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 overflow-hidden transition-all shadow-inner shrink-0 group-hover:bg-primary/10 group-hover:border-primary/20">
+                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 overflow-hidden transition-all shrink-0 group-hover:border-primary/30">
                     {serviceImageUrl ? (
                         <img src={serviceImageUrl} alt="Service" className="w-full h-full object-cover" />
                     ) : (
-                        <DollarSign className="text-gray-500 group-hover:text-primary" size={16} />
+                        <DollarSign className="text-gray-400 group-hover:text-primary" size={16} />
                     )}
                 </div>
                 <div className="min-w-0">
-                    <p className="font-extrabold text-white text-xs tracking-tight truncate max-w-[150px] sm:max-w-none">
-                        {booking.services?.[0]?.name || booking.service?.name || 'Service Job'}
+                    <p className="font-black text-white text-xs tracking-tight truncate max-w-[150px] sm:max-w-xs">
+                        {serviceName}
                     </p>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                        <span className="text-[7.5px] text-gray-500 font-extrabold uppercase tracking-widest">
-                            {booking.vehicle?.brand} {booking.vehicle?.model}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[8px] text-gray-400 font-extrabold uppercase tracking-wider truncate">
+                            {vehicleInfo}
+                        </span>
+                        <span className="w-1 h-1 rounded-full bg-white/20" />
+                        <span className="text-[8px] text-gray-500 font-bold">
+                            {booking.customerName}
                         </span>
                     </div>
                 </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right">
-                    <p className="font-black text-sm text-white tracking-tighter leading-none mb-1.5">₱{amount.toLocaleString()}</p>
+                    <p className="font-black text-sm text-white tracking-tight leading-none mb-1">
+                        ₱{amount.toLocaleString()}
+                    </p>
                     <div className="flex items-center justify-end gap-1">
-                        <div className="w-1 h-1 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
-                        <span className="text-[7.5px] font-black text-green-500 uppercase tracking-widest">Completed</span>
+                        <div className="w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"></div>
+                        <span className="text-[7.5px] font-black text-emerald-400 uppercase tracking-wider">Completed</span>
                     </div>
                 </div>
-                <ChevronRight className="text-gray-600 group-hover:text-white transition-colors shrink-0" size={14} />
+                <ChevronRight className="text-gray-600 group-hover:text-white transition-colors" size={14} />
             </div>
         </Link>
     );
 };
 
-const BarChart: React.FC<{ data: { label: string, value: number }[] }> = ({ data }) => {
-    const max = Math.max(...data.map(d => d.value), 1000);
+const BarChart: React.FC<{ data: { label: string; dateStr: string; value: number }[] }> = ({ data }) => {
+    const maxVal = Math.max(...data.map(d => d.value), 500);
+
     return (
-        <div className="relative h-44 flex flex-col justify-end pt-4">
-            {/* Background Grid Lines */}
-            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5 py-1.5 z-0">
-                <div className="w-full border-t border-dashed border-white"></div>
-                <div className="w-full border-t border-dashed border-white"></div>
-                <div className="w-full border-t border-dashed border-white"></div>
-                <div className="w-full border-t border-dashed border-white"></div>
+        <div className="relative h-44 flex flex-col justify-end pt-3">
+            {/* Subtle Horizontal Grid lines */}
+            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-5 py-2 z-0">
+                <div className="w-full border-t border-dashed border-white" />
+                <div className="w-full border-t border-dashed border-white" />
+                <div className="w-full border-t border-dashed border-white" />
+                <div className="w-full border-t border-dashed border-white" />
             </div>
 
             {/* Bars */}
-            <div className="relative z-10 flex items-end justify-between h-36 gap-3">
-                {data.map((d, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-3.5 group h-full justify-end">
-                        {/* Bar Container with Full Height track */}
-                        <div className="relative w-full flex flex-col justify-end h-full min-h-[100px]">
-                            {/* Track line background */}
-                            <div className="absolute inset-x-0 bottom-0 top-0 bg-white/[0.04] rounded-[1.2rem] pointer-events-none" />
-                            
-                            {/* Value display */}
-                            {d.value === 0 ? (
-                                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/40 border border-white/5 text-[9px] font-black text-gray-500 px-2 py-0.5 rounded-lg z-20">
-                                    ₱0
-                                </div>
-                            ) : (
-                                <div 
-                                    className="w-full bg-gradient-to-t from-primary/80 to-primary rounded-t-xl transition-all duration-500 shadow-lg shadow-primary/10 relative animate-slideUp"
-                                    style={{ height: `${(d.value / max) * 100}%` }}
-                                >
-                                    {/* Tooltip Always Visible */}
-                                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 bg-[#1C1C1E] text-[9px] font-black text-white px-2.5 py-0.5 rounded-lg border border-white/10 whitespace-nowrap shadow-xl z-20">
-                                        ₱{d.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            <div className="relative z-10 flex items-end justify-between h-36 gap-2 sm:gap-3">
+                {data.map((d, i) => {
+                    const hasValue = d.value > 0;
+                    const heightPercent = hasValue ? Math.max(12, Math.min(100, (d.value / maxVal) * 100)) : 0;
+
+                    return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
+                            {/* Track Container */}
+                            <div className="relative w-full flex flex-col justify-end h-full min-h-[90px]">
+                                {/* Track background */}
+                                <div className="absolute inset-x-0 bottom-0 top-0 bg-white/[0.03] rounded-xl pointer-events-none" />
+                                
+                                {hasValue ? (
+                                    <div 
+                                        className="w-full bg-gradient-to-t from-primary to-orange-400 rounded-xl transition-all duration-500 shadow-md shadow-primary/20 relative"
+                                        style={{ height: `${heightPercent}%` }}
+                                    >
+                                        {/* Tooltip Badge */}
+                                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-[#1C1C1F] text-[9px] font-black text-white px-2 py-0.5 rounded-lg border border-white/10 whitespace-nowrap shadow-xl z-20">
+                                            ₱{d.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                ) : (
+                                    <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-black/40 text-[8.5px] font-black text-gray-500 px-1.5 py-0.5 rounded-md border border-white/5">
+                                        ₱0
+                                    </div>
+                                )}
+                            </div>
+                            <span className="text-[9.5px] font-black text-gray-400 group-hover:text-white transition-colors tracking-tight">
+                                {d.label}
+                            </span>
                         </div>
-                        <span className="text-[10px] font-extrabold text-gray-500 group-hover:text-white transition-colors tracking-wide">{d.label}</span>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
