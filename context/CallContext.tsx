@@ -621,7 +621,9 @@ const cleanupPeerConnection = useCallback(() => {
   // Suspend & Interruption Event Handling (Sleep Mode, Power Button Lock, Incoming Phone Calls)
   useEffect(() => {
     const handleSuspendEvent = async (event: SuspendEvent) => {
-      console.log('[CallContext] Received suspend event:', event);
+      if (callStatusRef.current !== 'idle') {
+        console.log('[CallContext] Received suspend event:', event);
+      }
 
       if (event === 'app_sleep' || event === 'power_button_locked') {
         // Device is sleeping or power button pressed (screen off)

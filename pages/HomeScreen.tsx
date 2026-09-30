@@ -25,6 +25,8 @@ import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import { geocodeAddressOrCity, resolveOrderTrackingLocations } from '../utils/locationHelper';
 import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db as firestore } from '../firebase';
 
 const BookingImage: React.FC<{ src?: string; alt?: string; type?: string }> = ({ src, alt, type }) => {
     const [error, setError] = useState(false);
@@ -68,6 +70,7 @@ const HomeScreen: React.FC = () => {
         loading, 
         cancelBooking, 
         deleteBooking,
+        updateBookingPayment,
         updateRentalBooking, 
         deleteRentalBooking,
         updateServiceRequest,
@@ -285,7 +288,66 @@ const HomeScreen: React.FC = () => {
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         }
-    }, [location.state, location.search, db?.rentalBookings, db?.liaisonBookings, db?.serviceRequests, updateRentalBooking, updateLiaisonBooking, updateServiceRequest, user?.id]);
+
+        // Standard Mechanic / Maintenance Booking Return
+        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && !isRentalReturn && !isLiaisonReturn && !isDriverReturn) {
+            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-BAL-${Date.now()}`;
+            const reqId = searchParams.get('payment_request_id') || '';
+
+            const booking = db?.bookings?.find(b => b.id === targetBookingId || b.id?.toLowerCase() === targetBookingId.toLowerCase());
+            if (booking && !booking.isPaid) {
+                const totalAmt = booking.totalAmount || booking.service?.price || 0;
+                const addCosts = (booking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
+                const fullTotal = totalAmt + addCosts;
+                const initialDp = booking.downpaymentAmount ? Number(booking.downpaymentAmount) : (totalAmt * 0.5);
+                const balanceAmt = Math.max(0, fullTotal - initialDp);
+
+                const servicePayload: any = {
+                    isPaid: true,
+                    isVerified: true,
+                    paidAmount: fullTotal,
+                    downpaymentAmount: initialDp,
+                    balanceAmount: balanceAmt,
+                    remainingBalance: 0,
+                    paymentStatus: 'paid',
+                    balancePaid: true,
+                    balancePaymentRef: hitpayRef,
+                    balancePaidAt: new Date().toISOString(),
+                    hitpayPaymentRequestId: reqId,
+                    hitpayReference: hitpayRef,
+                    hitpayStatus: 'completed',
+                    status: 'Completed'
+                };
+
+                const finishServiceReturn = () => {
+                    addNotification({
+                        recipientId: user?.id || 'all',
+                        recipientRole: 'customer',
+                        title: '✅ Service Balance Settled',
+                        message: `Remaining balance for #${targetBookingId.slice(-6).toUpperCase()} has been settled via HitPay online payment!`,
+                        type: 'info'
+                    });
+                    sessionStorage.removeItem('pendingHitPayServiceTx');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                };
+
+                if (updateBookingPayment) {
+                    updateBookingPayment(targetBookingId, balanceAmt, 'paid', servicePayload)
+                        .then(finishServiceReturn)
+                        .catch(async () => {
+                            try {
+                                await updateDoc(doc(firestore, 'bookings', targetBookingId), servicePayload);
+                            } catch (_) {}
+                            finishServiceReturn();
+                        });
+                } else {
+                    updateDoc(doc(firestore, 'bookings', targetBookingId), servicePayload)
+                        .then(finishServiceReturn)
+                        .catch(finishServiceReturn);
+                }
+            }
+        }
+    }, [location.state, location.search, db?.bookings, db?.rentalBookings, db?.liaisonBookings, db?.serviceRequests, updateBookingPayment, updateRentalBooking, updateLiaisonBooking, updateServiceRequest, user?.id]);
 
     const handleInitiateHitPayBalance = async (targetTx: any) => {
         if (!targetTx || !user) return;

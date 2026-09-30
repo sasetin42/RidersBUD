@@ -65,6 +65,7 @@ const saveMechanicSessionToStorage = (user: Mechanic | null, isBypassed: boolean
         localStorage.removeItem('ridersbud_mechanic_bypass');
         localStorage.removeItem('ridersbud_mechanic_user_data');
     }
+    window.dispatchEvent(new Event('mechanicAuthChange'));
 };
 
 const loadMechanicSessionFromStorage = (): { isBypassed: boolean; user: Mechanic | null } => {
@@ -218,12 +219,17 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     // Real-time listener for mechanic profile
     useEffect(() => {
         const activeUserId = firebaseUser?.uid || (isBypassed ? mechanic?.id : null);
-        if (!activeUserId) return;
+        if (!activeUserId) {
+            setLoading(false);
+            return;
+        }
 
+        let cancelled = false;
         setLoading(true);
         const mechanicDocRef = doc(firestore, 'mechanics', activeUserId);
         
         const unsubscribe = onSnapshot(mechanicDocRef, (docSnap) => {
+            if (cancelled) return;
             if (docSnap.exists()) {
                 const mechData = { id: docSnap.id, ...docSnap.data() } as Mechanic;
                 setMechanic(mechData);
@@ -243,12 +249,22 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
             }
             setLoading(false);
         }, (err) => {
+            if (cancelled) return;
             console.error("Mechanic Profile Listener Error:", err);
+            // Fall back to cached session if available rather than staying stuck
+            const cached = loadMechanicSessionFromStorage();
+            if (cached.user) {
+                setMechanic(cached.user);
+                setIsMechanicAuthenticated(true);
+            }
             setLoading(false);
         });
 
-        return () => { try { unsubscribe(); } catch (_) {} };
-    }, [firebaseUser, isBypassed, mechanic?.id]);
+        return () => {
+            cancelled = true;
+            try { unsubscribe(); } catch (_) {}
+        };
+    }, [firebaseUser?.uid, isBypassed, mechanic?.id]);
 
     // Live Location Tracking - High accuracy, immediate start, retry on failure
     useEffect(() => {
@@ -354,9 +370,18 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
 
             // Set offline status in Firestore upon login
             await setDoc(doc(firestore, 'mechanics', userCredential.user.uid), { isOnline: false }, { merge: true });
+            const loggedInMech = { ...mechData, id: userCredential.user.uid, isOnline: false };
             
+            // Clear any conflicting customer session
+            localStorage.removeItem('ridersbud_customer_session');
+            localStorage.removeItem('ridersbud_customer_bypass');
+            localStorage.removeItem('ridersbud_customer_user_data');
+
             setIsBypassed(false);
-            saveMechanicSessionToStorage(null, false);
+            setMechanic(loggedInMech);
+            setIsMechanicAuthenticated(true);
+            saveMechanicSessionToStorage(loggedInMech, false);
+            setLoading(false);
         } catch (error: any) {
             console.error("Login failed:", error);
             
@@ -380,10 +405,16 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                         await setDoc(doc(firestore, 'mechanics', mechData.id), { isOnline: false }, { merge: true });
                         const updatedData = { ...mechData, isOnline: false };
 
+                        // Clear any conflicting customer session
+                        localStorage.removeItem('ridersbud_customer_session');
+                        localStorage.removeItem('ridersbud_customer_bypass');
+                        localStorage.removeItem('ridersbud_customer_user_data');
+
                         setIsBypassed(true);
                         setMechanic(updatedData);
                         setIsMechanicAuthenticated(true);
                         saveMechanicSessionToStorage(updatedData, true);
+                        setLoading(false);
                         return;
                     }
                 }
@@ -440,12 +471,16 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                             }
                         }
                         
-                        // Check if account status is Inactive
-                        if (newMechanic.status === 'Inactive') {
-                            await signOut(auth);
-                            throw new Error("Your account is currently inactive. Please contact support.");
-                        }
-                        
+                        // Clear any conflicting customer session
+                        localStorage.removeItem('ridersbud_customer_session');
+                        localStorage.removeItem('ridersbud_customer_bypass');
+                        localStorage.removeItem('ridersbud_customer_user_data');
+
+                        setIsBypassed(false);
+                        setMechanic(newMechanic);
+                        setIsMechanicAuthenticated(true);
+                        saveMechanicSessionToStorage(newMechanic, false);
+                        setLoading(false);
                         return;
                     }
                 } catch (migrationError: any) {

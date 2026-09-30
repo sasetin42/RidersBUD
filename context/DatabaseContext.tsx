@@ -84,6 +84,7 @@ interface DatabaseContextType {
     purgeGoogleMapsApiNotifications: () => Promise<number>;
     addPayoutRequest: (request: { mechanicId: string; mechanicName: string; amount: number; paymentMethod: string; accountDetails: string; notes?: string }) => Promise<void>;
     updatePayoutStatus: (payoutId: string, status: 'Pending' | 'Approved' | 'Paid' | 'Rejected', mechanicId: string, amount: number, adminDetails?: { id: string; name: string; notes?: string; transactionId?: string }) => Promise<void>;
+    deletePayoutRequest: (payoutId: string) => Promise<void>;
     addReview: (bookingId: string, review: Omit<Review, 'id' | 'date'>) => Promise<void>;
     updateReview: (bookingId: string, review: Review) => Promise<void>;
     verifyBookingPayment: (bookingId: string) => Promise<void>;
@@ -455,7 +456,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                             } else {
                                 console.warn(`Error for ${label}: ${errCode} — continuing without data`);
                             }
-                        } else if (errMsg.includes('QUIC') || errMsg.includes('net::')) {
+                        } else if (errMsg.includes('QUIC') || errMsg.includes('net::') || errMsg.includes('ERR_CONNECTION_CLOSED')) {
                             // Network transport errors — self-healing, suppress noise
                         } else {
                             console.warn(`Snapshot error for ${label}:`, errCode || errMsg || err);
@@ -672,91 +673,86 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         });
                     }
 
-                    if (colName === 'appServices') {
-                        // Clean up duplicate services in Firestore if they exist using slugs
+                    if (colName === 'appServices' && Array.isArray(data)) {
+                        // Deduplicate in memory and only purge if exact duplicates exist
                         const seenSlugs = new Set<string>();
                         const cleanData: any[] = [];
-                        (data as any[]).forEach(service => {
+                        const duplicateIdsToDelete: string[] = [];
+
+                        data.forEach((service: any) => {
                             const serviceSlug = service.slug || service.name?.toLowerCase().replace(/\s+/g, '-');
                             if (seenSlugs.has(serviceSlug)) {
-                                console.info(`[DatabaseContext] Deleting duplicate appService: ${service.name} (${service.id})`);
-                                deleteDoc(doc(firestore, 'appServices', service.id)).catch(err =>
-                                    console.warn("Failed to delete duplicate appService:", err)
-                                );
+                                duplicateIdsToDelete.push(service.id);
                             } else {
                                 seenSlugs.add(serviceSlug);
                                 cleanData.push(service);
                             }
                         });
 
-                        const defaultServices = [
-                            {
-                                name: 'Rent a Car',
-                                slug: 'rent-a-car',
-                                description: 'Browse and rent from our collection of well-maintained vehicles for your personal or business needs.',
-                                isActive: true,
-                                category: 'Special Services',
-                                imageUrl: '/images/services/rent_a_car.png',
-                                features: ['Well-maintained Vehicles', 'Affordable Rates', 'Flexible Terms'],
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString(),
-                                order: 1
-                            },
-                            {
-                                name: 'Driver for Hire',
-                                slug: 'driver-for-hire',
-                                description: 'Professional and reliable drivers for your special trips, errands, or emergencies.',
-                                isActive: true,
-                                category: 'Special Services',
-                                imageUrl: '/images/services/driver_for_hire.png',
-                                features: ['Professional Drivers', 'Flexible Hours', 'Safe Travel'],
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString(),
-                                order: 2
-                            },
-                            {
-                                name: 'Registration Assistance',
-                                slug: 'registration-assistance',
-                                description: 'Hassle-free LTO car registration, license renewal, and transfer of ownership services.',
-                                isActive: true,
-                                category: 'Special Services',
-                                imageUrl: '/images/services/registration_assistance.png',
-                                features: ['Fast Processing', 'No Long Lines', 'Document Verification'],
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString(),
-                                order: 3
-                            },
-                            {
-                                name: 'Towing',
-                                slug: 'towing',
-                                description: 'Reliable and fast towing service to get your vehicle to a safe location or partner shop.',
-                                isActive: true,
-                                category: 'Special Services',
-                                imageUrl: '/images/services/towing.png',
-                                features: ['24/7 Availability', 'Quick Response', 'Safe Vehicle Handling'],
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString(),
-                                order: 4
-                            }
-                        ];
+                        // Delete duplicate docs once without triggering infinite write loops
+                        if (duplicateIdsToDelete.length > 0) {
+                            duplicateIdsToDelete.forEach(id => {
+                                deleteDoc(doc(firestore, 'appServices', id)).catch(() => {});
+                            });
+                        }
 
-                        defaultServices.forEach(defaultService => {
-                            const existing = cleanData.find(s => s.slug === defaultService.slug || s.name?.toLowerCase() === defaultService.name.toLowerCase());
-                            if (!existing) {
-                                console.info(`[DatabaseContext] Seeding missing appService: ${defaultService.name}`);
-                                addDoc(collection(firestore, 'appServices'), defaultService).catch(err =>
-                                    console.warn(`Failed to seed appService ${defaultService.name}:`, err)
-                                );
-                            } else if (existing.category !== defaultService.category || existing.order !== defaultService.order) {
-                                console.info(`[DatabaseContext] Updating existing appService category/order: ${defaultService.name}`);
-                                updateDoc(doc(firestore, 'appServices', existing.id), {
-                                    category: defaultService.category,
-                                    order: defaultService.order
-                                }).catch(err =>
-                                    console.warn(`Failed to update appService ${defaultService.name}:`, err)
-                                );
-                            }
-                        });
+                        // Auto-seed defaults ONLY if collection is completely empty
+                        if (data.length === 0) {
+                            const defaultServices = [
+                                {
+                                    name: 'Rent a Car',
+                                    slug: 'rent-a-car',
+                                    description: 'Browse and rent from our collection of well-maintained vehicles for your personal or business needs.',
+                                    isActive: true,
+                                    category: 'Special Services',
+                                    imageUrl: '/images/services/rent_a_car.png',
+                                    features: ['Well-maintained Vehicles', 'Affordable Rates', 'Flexible Terms'],
+                                    createdAt: '2026-01-01T00:00:00.000Z',
+                                    updatedAt: '2026-01-01T00:00:00.000Z',
+                                    order: 1
+                                },
+                                {
+                                    name: 'Driver for Hire',
+                                    slug: 'driver-for-hire',
+                                    description: 'Professional and reliable drivers for your special trips, errands, or emergencies.',
+                                    isActive: true,
+                                    category: 'Special Services',
+                                    imageUrl: '/images/services/driver_for_hire.png',
+                                    features: ['Professional Drivers', 'Flexible Hours', 'Safe Travel'],
+                                    createdAt: '2026-01-01T00:00:00.000Z',
+                                    updatedAt: '2026-01-01T00:00:00.000Z',
+                                    order: 2
+                                },
+                                {
+                                    name: 'Registration Assistance',
+                                    slug: 'registration-assistance',
+                                    description: 'Hassle-free LTO car registration, license renewal, and transfer of ownership services.',
+                                    isActive: true,
+                                    category: 'Special Services',
+                                    imageUrl: '/images/services/registration_assistance.png',
+                                    features: ['Fast Processing', 'No Long Lines', 'Document Verification'],
+                                    createdAt: '2026-01-01T00:00:00.000Z',
+                                    updatedAt: '2026-01-01T00:00:00.000Z',
+                                    order: 3
+                                },
+                                {
+                                    name: 'Towing',
+                                    slug: 'towing',
+                                    description: 'Reliable and fast towing service to get your vehicle to a safe location or partner shop.',
+                                    isActive: true,
+                                    category: 'Special Services',
+                                    imageUrl: '/images/services/towing.png',
+                                    features: ['24/7 Availability', 'Quick Response', 'Safe Vehicle Handling'],
+                                    createdAt: '2026-01-01T00:00:00.000Z',
+                                    updatedAt: '2026-01-01T00:00:00.000Z',
+                                    order: 4
+                                }
+                            ];
+
+                            defaultServices.forEach(defaultService => {
+                                addDoc(collection(firestore, 'appServices'), defaultService).catch(() => {});
+                            });
+                        }
                     }
                 },
                 colName,
@@ -870,7 +866,17 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     markPublicCollectionLoaded();
                 },
                 (err) => {
-                    console.warn("Settings subscription error, using defaults:", err?.code || err?.message || err);
+                    const errCode = err?.code || '';
+                    const errMsg = err?.message || '';
+                    // Gracefully suppress connection drops and self-healing network channel resets
+                    if (errMsg.includes('404') || errCode === 'not-found' || errMsg.includes('QUIC') || errMsg.includes('net::') || errMsg.includes('ERR_CONNECTION_CLOSED')) {
+                        // Silent retry handled automatically by Firestore SDK
+                    } else {
+                        console.warn("Settings subscription error, using defaults:", errCode || errMsg || err);
+                    }
+                    // Guarantee local fallback is used
+                    const cached = getCachedSettings();
+                    setDb(prev => prev ? { ...prev, settings: cached } : null);
                     markPublicCollectionLoaded();
                 }
             );
@@ -1096,12 +1102,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         const authUnsub = onAuthStateChanged(auth, checkAndSubscribe);
 
-        // Listen for admin bypass auth events
+        // Listen for auth bypass events
         const handleAdminAuthChange = () => {
             checkAndSubscribe(auth.currentUser);
         };
         window.addEventListener('adminAuthChange', handleAdminAuthChange);
         window.addEventListener('customerAuthChange', handleAdminAuthChange);
+        window.addEventListener('mechanicAuthChange', handleAdminAuthChange);
         window.addEventListener('storage', handleAdminAuthChange);
 
         // Run initial check
@@ -1113,6 +1120,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             authUnsub();
             window.removeEventListener('adminAuthChange', handleAdminAuthChange);
             window.removeEventListener('customerAuthChange', handleAdminAuthChange);
+            window.removeEventListener('mechanicAuthChange', handleAdminAuthChange);
             window.removeEventListener('storage', handleAdminAuthChange);
             publicUnsubs.forEach(u => { try { u(); } catch (_) {} });
             privateUnsubs.forEach(u => { try { u(); } catch (_) {} });
@@ -3122,6 +3130,84 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
 
+    const deletePayoutRequest = async (payoutId: string) => {
+        const targetPayout = db?.payouts.find(p => p.id === payoutId);
+        if (!targetPayout) return;
+
+        const mechanicId = targetPayout.mechanicId;
+        const currentMechanic = db?.mechanics.find(m => m.id === mechanicId);
+
+        // Recalculate balances excluding this payout
+        const mechanicBookings = db?.bookings.filter(b => (b.mechanic?.id === mechanicId || b.mechanicId === mechanicId) && b.status === 'Completed') || [];
+        const lifetimeEarnings = (currentMechanic as any)?.totalEarnings ?? mechanicBookings.reduce((sum, job: any) => {
+            if (job.isPaid === false || job.paymentStatus === 'failed') return sum;
+            if (job.totalAmount != null && Number(job.totalAmount) > 0) return sum + Number(job.totalAmount);
+            if (job.price != null && Number(job.price) > 0) return sum + Number(job.price);
+            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+            return sum + svcsSum + addCosts + (Number(job.laborFee) || 0);
+        }, 0);
+
+        const remainingPayouts = (db?.payouts || []).filter(p => p.mechanicId === mechanicId && p.id !== payoutId);
+        const remainingPaid = remainingPayouts
+            .filter(p => p.status === 'Paid' || p.status === 'Completed')
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const remainingApproved = remainingPayouts
+            .filter(p => p.status === 'Approved')
+            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+        const newWalletBalance = Math.max(0, lifetimeEarnings - remainingPaid - remainingApproved);
+        const newLockedBalance = remainingApproved;
+
+        // Optimistic local update
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                payouts: (prev.payouts || []).filter(p => p.id !== payoutId),
+                mechanics: (prev.mechanics || []).map(m => {
+                    if (m.id === mechanicId) {
+                        return {
+                            ...m,
+                            walletBalance: newWalletBalance,
+                            lockedBalance: newLockedBalance
+                        };
+                    }
+                    return m;
+                })
+            };
+        });
+
+        // Live persistence in Firestore
+        try {
+            const batch = writeBatch(firestore);
+            batch.delete(doc(firestore, 'payouts', payoutId));
+            if (mechanicId) {
+                batch.update(doc(firestore, 'mechanics', mechanicId), {
+                    walletBalance: newWalletBalance,
+                    lockedBalance: newLockedBalance
+                });
+            }
+            await batch.commit();
+        } catch (err) {
+            console.warn('[Firestore] deletePayoutRequest failed, relying on optimistic state:', err);
+        }
+
+        // Notify mechanic
+        if (mechanicId) {
+            await sendNotification({
+                recipientId: `mechanic-${mechanicId}`,
+                title: 'Payout Request Removed',
+                message: `Payout request #${payoutId.slice(-6).toUpperCase()} for ₱${Number(targetPayout.amount).toLocaleString()} was deleted.`,
+                type: 'info',
+                date: new Date().toISOString(),
+                read: false,
+                link: '/mechanic-portal/earnings'
+            });
+        }
+    };
+
     const addSubscription = async (subscription: Omit<Subscription, 'id'>) => {
         await addDoc(collection(firestore, 'subscriptions'), subscription);
     };
@@ -3901,6 +3987,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             deleteAllOrders,
             addPayoutRequest,
             updatePayoutStatus,
+            deletePayoutRequest,
             addBanner,
             updateBanner,
             deleteBanner,

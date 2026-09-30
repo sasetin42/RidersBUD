@@ -5,7 +5,7 @@ import {
     CheckCircle2, TrendingUp, Info, X, 
     Check, CreditCard, Calendar, ChevronRight,
     Smartphone, Landmark, QrCode, AlertCircle, Sparkles,
-    ShieldCheck, Clock, RefreshCw, Layers
+    ShieldCheck, Clock, RefreshCw, Layers, Trash2, AlertTriangle
 } from 'lucide-react';
 import Header from '../../components/Header';
 import NotificationBell from '../../components/NotificationBell';
@@ -322,11 +322,13 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
 };
 
 const MechanicEarningsScreen: React.FC = () => {
-    const { db, loading, addPayoutRequest } = useDatabase();
+    const { db, loading, addPayoutRequest, deletePayoutRequest } = useDatabase();
     const { mechanic } = useMechanicAuth();
     const [filter, setFilter] = useState<'week' | 'month' | 'all'>('week');
     const [activeTab, setActiveTab] = useState<'earnings' | 'payouts'>('earnings');
     const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
+    const [payoutToDelete, setPayoutToDelete] = useState<PayoutRequest | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Live reactive mechanic profile
     const currentMechanic = useMemo(() => {
@@ -523,6 +525,20 @@ const MechanicEarningsScreen: React.FC = () => {
             status: 'Pending',
             requestDate: new Date().toISOString()
         });
+    };
+
+    const handleDeletePayout = async () => {
+        if (!payoutToDelete) return;
+        try {
+            setIsDeleting(true);
+            await deletePayoutRequest(payoutToDelete.id);
+            setPayoutToDelete(null);
+        } catch (err: any) {
+            console.error('Failed to cancel payout request:', err);
+            alert(err?.message || 'Failed to cancel payout request.');
+        } finally {
+            setIsDeleting(false);
+        }
     };
 
     if (loading || !db || !currentMechanic) {
@@ -752,14 +768,25 @@ const MechanicEarningsScreen: React.FC = () => {
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider border ${
-                                                    payout.status === 'Paid' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                                                    payout.status === 'Approved' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                                    payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                                                    'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                                                }`}>
-                                                    {payout.status === 'Approved' ? 'Approved • Disbursing' : payout.status}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                                                        payout.status === 'Paid' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                        payout.status === 'Approved' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                                        payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                                        'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                                    }`}>
+                                                        {payout.status === 'Approved' ? 'Approved • Disbursing' : payout.status}
+                                                    </span>
+                                                    {payout.status === 'Pending' && (
+                                                        <button
+                                                            onClick={() => setPayoutToDelete(payout)}
+                                                            className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                                                            title="Cancel and remove request"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] text-gray-400 font-bold">
                                                 <span className="truncate">{payout.paymentMethod}: {payout.accountDetails}</span>
@@ -797,6 +824,67 @@ const MechanicEarningsScreen: React.FC = () => {
                     savedDestinations={savedDestinations}
                     onSubmit={handlePayoutSubmit}
                 />
+
+                {/* Cancel / Delete Payout Confirmation Modal */}
+                {payoutToDelete && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-[#1C1C1F] border border-white/10 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl relative">
+                            <div className="flex items-center gap-3 text-red-400">
+                                <div className="p-3 bg-red-500/10 rounded-xl border border-red-500/20">
+                                    <AlertTriangle size={24} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-white text-base">Cancel Payout Request?</h4>
+                                    <p className="text-xs text-gray-400">This request will be permanently removed.</p>
+                                </div>
+                            </div>
+
+                            <div className="p-3.5 bg-black/40 rounded-xl border border-white/5 text-xs space-y-2">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-400">Amount:</span>
+                                    <span className="font-black text-white">₱{payoutToDelete.amount.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-400">Method:</span>
+                                    <span className="font-medium text-gray-300">{payoutToDelete.paymentMethod}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-400">Status:</span>
+                                    <span className="text-amber-400 font-bold">{payoutToDelete.status}</span>
+                                </div>
+                                <p className="text-[11px] text-emerald-400 pt-1 border-t border-white/5">
+                                    ✓ The locked amount (₱{payoutToDelete.amount.toLocaleString()}) will immediately return to your available wallet balance.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setPayoutToDelete(null)}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-50"
+                                >
+                                    Keep Request
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDeletePayout}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-3 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2 shadow-lg shadow-red-600/25 disabled:opacity-50"
+                                >
+                                    {isDeleting ? (
+                                        <Spinner size="sm" color="text-white" />
+                                    ) : (
+                                        <>
+                                            <Trash2 size={14} />
+                                            <span>Yes, Cancel</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

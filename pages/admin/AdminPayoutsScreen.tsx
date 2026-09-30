@@ -6,7 +6,7 @@ import Modal from '../../components/admin/Modal';
 import { useNotification } from '../../context/NotificationContext';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
 import { useAdminAuth } from '../../context/AdminAuthContext';
-import { DollarSign, Clock, CheckCircle, XCircle, Download, Eye, Search, Filter, Calendar, Settings, TrendingUp, CreditCard, ChevronDown, ArrowUpDown, History, Building2, Smartphone, MessageSquare } from 'lucide-react';
+import { DollarSign, Clock, CheckCircle, XCircle, Download, Eye, Search, Filter, Calendar, Settings, TrendingUp, CreditCard, ChevronDown, ArrowUpDown, History, Building2, Smartphone, MessageSquare, Trash2, AlertTriangle } from 'lucide-react';
 
 type SortableKeys = 'id' | 'mechanicName' | 'amount' | 'requestDate' | 'status';
 
@@ -14,13 +14,15 @@ const PayoutDetailsModal: React.FC<{
     request: PayoutRequest;
     onClose: () => void;
     onProcess: (payoutId: string, status: 'Approved' | 'Rejected' | 'Paid', details?: { notes?: string; transactionId?: string }) => void;
-}> = ({ request, onClose, onProcess }) => {
+    onDelete?: (payoutId: string) => void;
+}> = ({ request, onClose, onProcess, onDelete }) => {
     const { db } = useDatabase();
     const [processing, setProcessing] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [transactionId, setTransactionId] = useState('');
     const [showRejectionInput, setShowRejectionInput] = useState(false);
     const [showPaidInput, setShowPaidInput] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const mechanic = db?.mechanics?.find((m: any) => m.id === request.mechanicId || m.name === request.mechanicName);
     const profilePic = mechanic?.imageUrl || mechanic?.profilePicture || '/riders-logo.png';
@@ -42,6 +44,17 @@ const PayoutDetailsModal: React.FC<{
         });
         setProcessing(false);
         onClose();
+    };
+
+    const handleDelete = async () => {
+        if (!onDelete) return;
+        setProcessing(true);
+        try {
+            await onDelete(request.id);
+            onClose();
+        } finally {
+            setProcessing(false);
+        }
     };
 
     return (
@@ -240,6 +253,50 @@ const PayoutDetailsModal: React.FC<{
                         </button>
                     </div>
                 )}
+
+                {/* Delete Payout Record Option */}
+                {onDelete && (
+                    <div className="pt-4 border-t border-red-500/10">
+                        {!showDeleteConfirm ? (
+                            <button
+                                onClick={() => setShowDeleteConfirm(true)}
+                                disabled={processing}
+                                className="w-full bg-red-500/5 hover:bg-red-500/15 text-red-400 hover:text-red-300 font-bold text-[10px] py-2.5 px-4 rounded-xl transition-all border border-red-500/20 flex items-center justify-center gap-2"
+                            >
+                                <Trash2 size={13} />
+                                <span>Delete Payout Request Data</span>
+                            </button>
+                        ) : (
+                            <div className="bg-red-950/30 p-3 rounded-xl border border-red-500/30 space-y-2.5">
+                                <div className="flex items-center gap-2 text-red-300 text-xs font-bold">
+                                    <AlertTriangle size={15} className="shrink-0 text-red-400" />
+                                    <span>Permanently delete this payout record?</span>
+                                </div>
+                                <p className="text-[10px] text-gray-400 leading-relaxed">
+                                    This will completely delete this payout from Firestore in real-time and automatically restore the mechanic's wallet balance.
+                                </p>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDeleteConfirm(false)}
+                                        disabled={processing}
+                                        className="flex-1 py-2 px-3 bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg text-[10px] font-bold transition-all border border-white/10"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleDelete}
+                                        disabled={processing}
+                                        className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-black transition-all flex items-center justify-center gap-1.5 shadow-md shadow-red-900/40"
+                                    >
+                                        {processing ? <Spinner size="sm" /> : <><Trash2 size={12} /> Confirm Delete</>}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </Modal>
     );
@@ -306,13 +363,15 @@ const PayoutSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 };
 
 const AdminPayoutsScreen: React.FC = () => {
-    const { db, updatePayoutStatus, loading } = useDatabase();
+    const { db, updatePayoutStatus, deletePayoutRequest, loading } = useDatabase();
     const { addNotification } = useNotification();
     const { adminUser } = useAdminAuth();
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'Pending' | 'Approved' | 'Paid' | 'Rejected'>('all');
     const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
     const [viewingRequest, setViewingRequest] = useState<PayoutRequest | null>(null);
+    const [payoutToDelete, setPayoutToDelete] = useState<PayoutRequest | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'requestDate', direction: 'descending' });
 
@@ -434,6 +493,33 @@ const AdminPayoutsScreen: React.FC = () => {
                 message: (e as Error).message,
                 recipientId: 'admin'
             });
+        }
+    };
+
+    const handleDeleteRequest = async (payoutId: string) => {
+        const request = db?.payouts.find(p => p.id === payoutId);
+        setIsDeleting(true);
+        try {
+            await deletePayoutRequest(payoutId);
+            setPayoutToDelete(null);
+            if (viewingRequest?.id === payoutId) {
+                setViewingRequest(null);
+            }
+            addNotification({
+                type: 'success',
+                title: 'Payout Removed',
+                message: `Payout #${payoutId.slice(-6).toUpperCase()}${request ? ` for ${request.mechanicName}` : ''} has been completely deleted.`,
+                recipientId: 'admin'
+            });
+        } catch (e) {
+            addNotification({
+                type: 'error',
+                title: 'Deletion Failed',
+                message: (e as Error).message || 'Failed to delete payout request',
+                recipientId: 'admin'
+            });
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -671,13 +757,20 @@ const AdminPayoutsScreen: React.FC = () => {
                                             </span>
                                         </td>
                                         <td className="py-3 px-6 text-center">
-                                            <div className="flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
+                                            <div className="flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
                                                 <button
                                                     onClick={() => setViewingRequest(request)}
                                                     className="p-2 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded-xl border border-blue-500/20 transition-all"
                                                     title="View Details"
                                                 >
                                                     <Eye size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => setPayoutToDelete(request)}
+                                                    className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-xl border border-red-500/20 transition-all"
+                                                    title="Delete Payout"
+                                                >
+                                                    <Trash2 size={14} />
                                                 </button>
                                             </div>
                                         </td>
@@ -708,8 +801,59 @@ const AdminPayoutsScreen: React.FC = () => {
                     request={viewingRequest}
                     onClose={() => setViewingRequest(null)}
                     onProcess={handleProcessRequest}
+                    onDelete={handleDeleteRequest}
                 />
             )}
+
+            {/* Standalone Delete Confirmation Modal */}
+            {payoutToDelete && (
+                <Modal
+                    isOpen={true}
+                    onClose={() => !isDeleting && setPayoutToDelete(null)}
+                    title={
+                        <div className="flex items-center gap-2 text-red-400 text-sm font-black">
+                            <AlertTriangle size={18} />
+                            <span>Delete Payout Request</span>
+                        </div>
+                    }
+                    compact
+                >
+                    <div className="space-y-4">
+                        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 space-y-2">
+                            <p className="text-xs text-white font-bold">
+                                Are you sure you want to remove payout <span className="text-primary font-mono font-black">#{payoutToDelete.id.slice(-6).toUpperCase()}</span>?
+                            </p>
+                            <div className="flex justify-between items-center text-xs text-gray-300 pt-1">
+                                <span>Mechanic: <strong className="text-white">{payoutToDelete.mechanicName}</strong></span>
+                                <span className="font-mono text-primary font-black">₱{payoutToDelete.amount.toLocaleString()}</span>
+                            </div>
+                            <p className="text-[10px] text-gray-400 pt-1">
+                                Removing this record will permanently erase it from Firestore and update the mechanic's balance in real time.
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setPayoutToDelete(null)}
+                                disabled={isDeleting}
+                                className="flex-1 py-3 px-4 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-bold transition-all border border-white/10"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleDeleteRequest(payoutToDelete.id)}
+                                disabled={isDeleting}
+                                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-900/40"
+                            >
+                                {isDeleting ? <Spinner size="sm" /> : <><Trash2 size={14} /> Delete Record</>}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
             {isSettingsOpen && <PayoutSettingsModal onClose={() => setIsSettingsOpen(false)} />}
         </div>
     );

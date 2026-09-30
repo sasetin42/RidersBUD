@@ -1406,7 +1406,7 @@ const AppContent: React.FC = () => {
                     <Route
                         path="/mechanic-portal/*"
                         element={
-                            (mechLoading || authLoading) && (localStorage.getItem('ridersbud_mechanic_session') === 'true' || localStorage.getItem('ridersbud_customer_session') === 'true') ? (
+                            mechLoading && localStorage.getItem('ridersbud_mechanic_session') === 'true' ? (
                                 <AppLoadingScreen />
                             ) : isMechanicAuthenticated ? (
                                 <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
@@ -1448,7 +1448,7 @@ const AppContent: React.FC = () => {
                     <Route
                         path="/customer-portal/*"
                         element={
-                            (authLoading || mechLoading) && (localStorage.getItem('ridersbud_customer_session') === 'true' || localStorage.getItem('ridersbud_mechanic_session') === 'true') ? (
+                            authLoading && localStorage.getItem('ridersbud_customer_session') === 'true' ? (
                                 <AppLoadingScreen />
                             ) : (
                                 <div className={`max-w-md mx-auto bg-secondary text-white font-sans ${

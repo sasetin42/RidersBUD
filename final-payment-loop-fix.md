@@ -1,63 +1,46 @@
-# Final Payment Proceed & Looping Issue Fix Plan
+# Final Payment Balance Settlement & Reconciliation Plan
 
 ## Goal
-Fix the final payment balance settlement loop ("pabalik-balik") where payment does not proceed properly in `BookingDetailScreen.tsx`, `ServicePaymentScreen.tsx`, and `HomeScreen.tsx` for Car Rental, Driver for Hire, and Service bookings.
-
----
-
-## Root Causes Identified
-1. **Missing Collection-Specific Updater in `BookingDetailScreen.tsx`:**
-   - `updateRentalBooking` is not destructured from `useDatabase()`.
-   - When the user completes HitPay payment for a Car Rental, the return callback only called `updateBookingPayment` (targeting the `'bookings'` collection in Firestore).
-   - Because Car Rental bookings are stored in the `'rentalBookings'` collection, Firestore throws `No document to update`.
-   - As a result, `rentalBookings` is never updated with `isPaid: true` or `paymentStatus: 'paid'`.
-   - When the page re-renders, `!booking.isPaid` is still `true`, causing the mandatory "Settle Remaining Balance" modal to immediately reappear ("pabalik-balik").
-2. **Mismatched Metadata in Session Storage & Redirect URLs:**
-   - In `handleInitiateHitPayBalance` in `BookingDetailScreen.tsx`, `isRental` was hardcoded to `false` in `sessionStorage.setItem('pendingHitPayServiceTx', ...)`.
-   - The `returnUrl` omitted booking type tags (`isRental=true`), making downstream reconciliation fail if redirected through intermediate portals.
-3. **Hardcoded Mechanic Copy on Rental & Driver Modals:**
-   - The modal text hardcoded "Your mechanic Mechanic has finished work on your vehicle." Even for Car Rental and Driver for Hire, which caused confusion and improper badge/icon display.
-4. **`ServicePaymentScreen.tsx` Status Reset:**
-   - In `ServicePaymentScreen.tsx`, finalizing a fully settled rental set `status: 'Confirmed'` instead of `'Completed'` or retaining full closure.
+Completely fix the customer's second/final payment balance settlement across all service types (Mechanic/Standard Service, Car Rental, LTO Liaison, and Driver for Hire) in `BookingDetailScreen.tsx`, `HomeScreen.tsx`, `ServicePaymentScreen.tsx`, and `GCashPaymentModal.tsx`. Ensure payments proceed immediately, reconcile reliably from sessionStorage & Firestore, eliminate race conditions upon gateway return, and prevent looping modals ("pabalik-balik").
 
 ---
 
 ## Tasks
 
-- [ ] **Task 1: Add `updateRentalBooking` to `BookingDetailScreen.tsx` & Fix Callback Finalizer**
-  - Destructure `updateRentalBooking` from `useDatabase()`.
-  - In the `useEffect` handling HitPay gateway return query params (`status === 'completed' || status === 'success'`), check if `isRental || targetBookingId.startsWith('RNT-') || targetBookingId.startsWith('RN-')`.
-  - Call `await updateRentalBooking(targetBookingId, { isPaid: true, paymentStatus: 'paid', paidAmount: fullTotal, remainingBalance: 0, balancePaid: true, balancePaymentRef: hitpayRef, balancePaidAt: new Date().toISOString(), status: 'Completed' })`.
-  - Provide fallback direct Firestore `updateDoc(doc(firestore, 'rentalBookings', targetBookingId), ...)` to guarantee synchronization even if context cache is lagging.
-  - Clear URL search params via `window.history.replaceState` and display `showCompleteTransactionModal(true)`.
-  - → *Verify:* Returning from payment gateway marks the rental as fully paid and transitions the screen into completed receipt state without modal looping.
+- [ ] **Task 1: Overhaul Gateway Return Reconciler in `BookingDetailScreen.tsx`**
+  - Fix the race condition where `fetchedBooking` is initially null when returning from HitPay (`?status=completed`).
+  - Read cached transaction metadata from `sessionStorage.getItem('pendingHitPayServiceTx')` if `fetchedBooking` is hydrating.
+  - Implement robust direct Firestore fallback for all 4 booking types (`bookings`, `rentalBookings`, `liaisonBookings`, `serviceRequests`).
+  - Authoritatively commit `isPaid: true, balancePaid: true, remainingBalance: 0, paymentStatus: 'paid', status: 'Completed'`.
+  - Clean URL query parameters via `window.history.replaceState` and trigger `setShowCompleteTransactionModal(true)` to present the receipt celebration without looping back.
+  - → *Verify:* Returning from payment gateway marks the booking as fully paid and transitions the screen into completed receipt state without modal looping.
 
-- [ ] **Task 2: Fix `handleInitiateHitPayBalance` in `BookingDetailScreen.tsx`**
-  - Accurately set `isRental: isRental` in `pendingHitPayServiceTx` sessionStorage payload.
-  - Include `&isRental=true` in `returnUrl` when booking is a rental.
-  - Include rental vehicle name and customer ID in the HitPay request purpose and metadata.
-  - → *Verify:* Session storage and gateway return URL have accurate stream identifiers.
+- [ ] **Task 2: Support Standard Service Booking Returns in `HomeScreen.tsx`**
+  - Add standard booking balance settlement handling in the `useEffect` on `HomeScreen.tsx` (in addition to rental, liaison, driver).
+  - Update `bookings` collection in Firestore with `isPaid: true, balancePaid: true, remainingBalance: 0, status: 'Completed'`.
+  - Dispatch a success notification to the customer and dismiss any pending balance popups.
+  - → *Verify:* Settling mechanic/service balance from Home Screen updates Firestore and dismisses the settlement card immediately.
 
-- [ ] **Task 3: Dynamic Visuals & Messaging in Settle Remaining Balance Modal**
-  - Detect `isRental` vs `isDriverHire` vs maintenance booking in the modal.
-  - For Car Rental: Display `Rental Completed` badge with `<Car />` icon, and text: `"Your rental reservation for [Car Name] is completed. Payment of the remaining balance is required to finalize and release your rental booking."`
-  - For Driver for Hire: Display `Trip Completed` badge with `<Navigation />` icon, and text: `"Your driver [Driver Name] has completed the trip. Payment of the remaining balance is required to finalize your trip booking."`
-  - For Maintenance: Retain `Service Completed` with mechanic name.
-  - → *Verify:* Modal displays matching service title and vehicle details without "Your mechanic Mechanic".
+- [ ] **Task 3: Refine `GCashPaymentModal.tsx` & Balance Modal Dismissal**
+  - When customer uploads second/final payment receipt (`isSecondPayment`), set `gcashPaymentStatus: 'balance_receipt_uploaded'`.
+  - Trigger callback to immediately close the mandatory balance lock modal and persist dismissed/pending state.
+  - Ensure the modal displays "Balance Payment Under Verification" without repeatedly popping up.
+  - → *Verify:* Uploading final GCash receipt closes the modal and avoids any infinite loop.
 
-- [ ] **Task 4: Harden `ServicePaymentScreen.tsx` Rental Balance Finalization**
-  - When `isFullyPaid` is true for a rental booking, ensure status transitions to `'Completed'` (not reset to `'Confirmed'`).
-  - Update remaining balance to `0` and sync both Firestore and local database.
-  - → *Verify:* Settling via `ServicePaymentScreen` marks balance as 0 and status as Completed.
+- [ ] **Task 4: Harden `ServicePaymentScreen.tsx` Final Payment Transitions**
+  - Verify that when `isFullyPaid` is true, remaining balance is 0 and status transitions to `'Completed'` across all categories.
+  - Clear pending session transactions reliably.
+  - → *Verify:* Direct service payment flow routes cleanly to confirmation with 0 balance.
 
-- [ ] **Task 5: Full Build & Type Verification**
+- [ ] **Task 5: Type Check & Build Verification**
   - Run `npx tsc --noEmit` to verify type safety.
-  - Run `npm run build` to confirm production bundle builds cleanly.
-  - → *Verify:* Build exits 0 with zero runtime or compilation issues.
+  - Test development server responsiveness.
+  - → *Verify:* Zero TypeScript errors and clean compilation.
 
 ---
 
 ## Done When
-- [ ] User completing final payment for Car Rental, Driver for Hire, or Service has their booking authoritative state updated in Firestore (`isPaid: true`, `remainingBalance: 0`, `paymentStatus: 'paid'`).
-- [ ] The "Settle Remaining Balance" modal closes and DOES NOT loop back ("hindi na pabalik-balik").
-- [ ] A celebration confirmation / completed transaction modal is shown with updated balance details.
+- [ ] Final payment via HitPay online immediately marks booking `isPaid: true, remainingBalance: 0, balancePaid: true, status: 'Completed'` across standard services, rentals, liaison, and driver requests.
+- [ ] The "Settle Remaining Balance" modal never loops back ("hindi na pabalik-balik").
+- [ ] GCash manual receipt upload for final balance puts the booking in "Under Verification" and dismisses the blocking modal.
+- [ ] TypeScript check (`npx tsc --noEmit`) passes with 0 errors.

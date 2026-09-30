@@ -224,7 +224,8 @@ const ServicePaymentScreen: React.FC = () => {
                                 isPaid: isFullyPaid,
                                 isVerified: true,
                                 paymentMethod: 'HitPay (Online)',
-                                status: 'Confirmed',
+                                status: isFullyPaid ? 'Completed' : 'Confirmed',
+                                remainingBalance: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
                                 ...(isFullyPaid ? {
                                     balancePaymentRef: hitpayRef,
                                     balancePaidAt: new Date().toISOString(),

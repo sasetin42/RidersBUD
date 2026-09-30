@@ -172,7 +172,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 setLoading(false);
             }, (err) => {
                 if (cancelled) return;
-                console.error("Auth Profile Listener Error:", err);
+                const errMsg = err?.message || String(err);
+                if (!errMsg.includes('net::') && !errMsg.includes('ERR_CONNECTION_CLOSED')) {
+                    console.warn("Auth Profile Listener Error:", err);
+                }
+                // Fall back to cached session if available rather than staying stuck or logging out on transient drop
+                const cached = loadCustomerSessionFromStorage();
+                if (cached.user) {
+                    setUser(cached.user);
+                    setIsAuthenticated(true);
+                }
                 setLoading(false);
             });
         };

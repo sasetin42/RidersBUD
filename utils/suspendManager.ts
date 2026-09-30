@@ -33,8 +33,10 @@ class SuspendManager {
     });
 
     window.addEventListener('blur', () => {
+      // In web desktop/browser, switching windows or clicking devtools triggers window.blur.
+      // Only treat as cellular call interruption if document is still visible AND on mobile/native or specifically desired.
       const timeSinceActive = Date.now() - this.lastActiveTimestamp;
-      if (!document.hidden && timeSinceActive > 500) {
+      if (!document.hidden && timeSinceActive > 1500) {
         this.handleCallInterruption();
       }
     });

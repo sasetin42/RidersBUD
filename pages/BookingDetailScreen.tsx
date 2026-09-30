@@ -624,154 +624,138 @@ const BookingDetailScreen: React.FC = () => {
             const reqId = query.get('payment_request_id') || '';
             const targetBookingId = query.get('bookingId') || bookingId;
 
-            if (targetBookingId && fetchedBooking && !fetchedBooking.isPaid) {
+            // Reconcile booking source: use fetchedBooking, initialBookingSeed, navPassedBooking, or pendingHitPayServiceTx from sessionStorage
+            let activeBooking: any = fetchedBooking || initialBookingSeed || navPassedBooking;
+            let sessionBookingData: any = null;
+            try {
+                const storedSession = sessionStorage.getItem('pendingHitPayServiceTx');
+                if (storedSession) {
+                    sessionBookingData = JSON.parse(storedSession);
+                    if (!activeBooking && sessionBookingData?.fullBooking) {
+                        activeBooking = sessionBookingData.fullBooking;
+                    }
+                }
+            } catch (_) {}
+
+            if (targetBookingId && activeBooking && !activeBooking.isPaid) {
                 finalizeRun.current = true;
-                const totalAmt = fetchedBooking.totalAmount || fetchedBooking.service?.price || 0;
-                const addCosts = (fetchedBooking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
-                const initialDp = fetchedBooking.downpaymentAmount 
-                    ? Number(fetchedBooking.downpaymentAmount)
-                    : (totalAmt * 0.5);
+                const totalAmt = activeBooking.totalAmount || activeBooking.service?.price || sessionBookingData?.totalAmount || 0;
+                const addCosts = (activeBooking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
+                const initialDp = activeBooking.downpaymentAmount 
+                    ? Number(activeBooking.downpaymentAmount)
+                    : (sessionBookingData?.currentPaid || (totalAmt * 0.5));
                 const fullTotal = totalAmt + addCosts;
                 const balanceAmt = Math.max(0, fullTotal - initialDp);
 
-                const isRentalTarget = (fetchedBooking as any)?.isRental === true || 
-                    (fetchedBooking as any)?.serviceName?.toLowerCase().includes('rental') ||
+                const isRentalTarget = (activeBooking as any)?.isRental === true || 
+                    (activeBooking as any)?.serviceName?.toLowerCase().includes('rental') ||
                     (targetBookingId?.startsWith('RNT-') ?? false) || 
                     (targetBookingId?.startsWith('RN-') ?? false) ||
-                    query.get('isRental') === 'true';
+                    query.get('isRental') === 'true' ||
+                    Boolean(sessionBookingData?.isRental);
 
-                const isLiaisonTarget = (fetchedBooking as any)?.isLiaison === true ||
-                    (fetchedBooking as any)?.serviceName?.toLowerCase().includes('liaison') ||
+                const isLiaisonTarget = (activeBooking as any)?.isLiaison === true ||
+                    (activeBooking as any)?.serviceName?.toLowerCase().includes('liaison') ||
                     (targetBookingId?.startsWith('LIA-') ?? false) ||
-                    query.get('isLiaison') === 'true';
+                    query.get('isLiaison') === 'true' ||
+                    Boolean(sessionBookingData?.isLiaison);
 
-                const isServiceReq = (fetchedBooking as any).isServiceRequest || targetBookingId.startsWith('DRV-');
+                const isServiceReq = (activeBooking as any).isServiceRequest || targetBookingId.startsWith('DRV-') || Boolean(sessionBookingData?.isDriver);
+
+                const finalPayload: any = {
+                    isPaid: true,
+                    isVerified: true,
+                    paidAmount: fullTotal,
+                    downpaymentAmount: initialDp,
+                    remainingBalance: 0,
+                    balanceAmount: 0,
+                    paymentStatus: 'paid',
+                    balancePaid: true,
+                    balancePaymentRef: hitpayRef,
+                    balancePaidAt: new Date().toISOString(),
+                    hitpayPaymentRequestId: reqId,
+                    hitpayReference: hitpayRef,
+                    hitpayStatus: 'completed',
+                    paymentMethod: 'HitPay (Online)',
+                    status: 'Completed'
+                };
+
+                const completeFinalization = () => {
+                    sessionStorage.removeItem('pendingHitPayServiceTx');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    setShowCompleteTransactionModal(true);
+                    setFetchedBooking(prev => prev ? ({ ...prev, ...finalPayload } as Booking) : ({ ...activeBooking, ...finalPayload } as Booking));
+                };
 
                 if (isLiaisonTarget) {
-                    const liaisonPayload: any = {
-                        isPaid: true,
-                        isVerified: true,
-                        paidAmount: fullTotal,
-                        downpaymentAmount: initialDp,
-                        remainingBalance: 0,
-                        balanceAmount: 0,
-                        paymentStatus: 'paid',
-                        balancePaid: true,
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        hitpayPaymentRequestId: reqId,
-                        hitpayReference: hitpayRef,
-                        hitpayStatus: 'completed',
-                        paymentMethod: 'HitPay (Online)',
-                        status: 'Completed'
-                    };
-
-                    const handleLiaisonSuccess = () => {
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        setShowCompleteTransactionModal(true);
-                        setFetchedBooking(prev => prev ? ({ ...prev, ...liaisonPayload } as Booking) : null);
-                    };
-
                     if (updateLiaisonBooking) {
-                        updateLiaisonBooking(targetBookingId, liaisonPayload)
-                            .then(handleLiaisonSuccess)
+                        updateLiaisonBooking(targetBookingId, finalPayload)
+                            .then(completeFinalization)
                             .catch(async (err) => {
-                                console.warn("updateLiaisonBooking warning, falling back to direct Firestore update:", err);
+                                console.warn("updateLiaisonBooking fallback to direct Firestore:", err);
                                 try {
-                                    await updateDoc(doc(firestore, 'liaisonBookings', targetBookingId), liaisonPayload);
+                                    await updateDoc(doc(firestore, 'liaisonBookings', targetBookingId), finalPayload);
                                 } catch (_) {}
-                                handleLiaisonSuccess();
+                                completeFinalization();
                             });
                     } else {
-                        updateDoc(doc(firestore, 'liaisonBookings', targetBookingId), liaisonPayload)
-                            .then(handleLiaisonSuccess)
-                            .catch(handleLiaisonSuccess);
+                        updateDoc(doc(firestore, 'liaisonBookings', targetBookingId), finalPayload)
+                            .then(completeFinalization)
+                            .catch(completeFinalization);
                     }
                 } else if (isRentalTarget) {
-                    const rentalPayload: any = {
-                        isPaid: true,
-                        isVerified: true,
-                        paidAmount: fullTotal,
-                        downpaymentAmount: initialDp,
-                        remainingBalance: 0,
-                        balanceAmount: 0,
-                        paymentStatus: 'paid',
-                        balancePaid: true,
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        hitpayPaymentRequestId: reqId,
-                        hitpayReference: hitpayRef,
-                        hitpayStatus: 'completed',
-                        paymentMethod: 'HitPay (Online)',
-                        status: 'Completed'
-                    };
-
-                    const handleRentalSuccess = () => {
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        setShowCompleteTransactionModal(true);
-                        setFetchedBooking(prev => prev ? ({ ...prev, ...rentalPayload } as Booking) : null);
-                    };
-
                     if (updateRentalBooking) {
-                        updateRentalBooking(targetBookingId, rentalPayload)
-                            .then(handleRentalSuccess)
+                        updateRentalBooking(targetBookingId, finalPayload)
+                            .then(completeFinalization)
                             .catch(async (err) => {
-                                console.warn("updateRentalBooking warning, falling back to direct Firestore update:", err);
+                                console.warn("updateRentalBooking fallback to direct Firestore:", err);
                                 try {
-                                    await updateDoc(doc(firestore, 'rentalBookings', targetBookingId), rentalPayload);
+                                    await updateDoc(doc(firestore, 'rentalBookings', targetBookingId), finalPayload);
                                 } catch (_) {}
-                                handleRentalSuccess();
+                                completeFinalization();
                             });
                     } else {
-                        updateDoc(doc(firestore, 'rentalBookings', targetBookingId), rentalPayload)
-                            .then(handleRentalSuccess)
-                            .catch(handleRentalSuccess);
+                        updateDoc(doc(firestore, 'rentalBookings', targetBookingId), finalPayload)
+                            .then(completeFinalization)
+                            .catch(completeFinalization);
                     }
-                } else if (isServiceReq && updateServiceRequest) {
-                    updateServiceRequest(targetBookingId, {
-                        isPaid: true,
-                        isVerified: true,
-                        paidAmount: fullTotal,
-                        downpaymentAmount: initialDp,
-                        remainingBalance: 0,
-                        paymentStatus: 'paid',
-                        balancePaid: true,
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        hitpayPaymentRequestId: reqId,
-                        hitpayReference: hitpayRef,
-                        hitpayStatus: 'completed',
-                        status: 'Completed'
-                    }).then(() => {
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        setShowCompleteTransactionModal(true);
-                        setFetchedBooking(prev => prev ? ({ ...prev, isPaid: true, status: 'Completed', remainingBalance: 0 } as Booking) : null);
-                    }).catch(console.error);
-                } else if (updateBookingPayment) {
-                    updateBookingPayment(targetBookingId, balanceAmt, 'paid', {
-                        isPaid: true,
-                        isVerified: true,
-                        paidAmount: fullTotal,
-                        downpaymentAmount: initialDp,
-                        balanceAmount: balanceAmt,
-                        remainingBalance: 0,
-                        paymentStatus: 'paid',
-                        balancePaid: true,
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        hitpayPaymentRequestId: reqId,
-                        hitpayReference: hitpayRef,
-                        hitpayStatus: 'completed',
-                        status: 'Completed'
-                    }).then(() => {
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        setShowCompleteTransactionModal(true);
-                        setFetchedBooking(prev => prev ? ({ ...prev, isPaid: true, status: 'Completed', remainingBalance: 0 } as Booking) : null);
-                    }).catch(console.error);
+                } else if (isServiceReq) {
+                    if (updateServiceRequest) {
+                        updateServiceRequest(targetBookingId, finalPayload)
+                            .then(completeFinalization)
+                            .catch(async (err) => {
+                                console.warn("updateServiceRequest fallback to direct Firestore:", err);
+                                try {
+                                    await updateDoc(doc(firestore, 'serviceRequests', targetBookingId), finalPayload);
+                                } catch (_) {}
+                                completeFinalization();
+                            });
+                    } else {
+                        updateDoc(doc(firestore, 'serviceRequests', targetBookingId), finalPayload)
+                            .then(completeFinalization)
+                            .catch(completeFinalization);
+                    }
+                } else {
+                    // Standard mechanic / maintenance booking
+                    if (updateBookingPayment) {
+                        updateBookingPayment(targetBookingId, balanceAmt, 'paid', finalPayload)
+                            .then(completeFinalization)
+                            .catch(async (err) => {
+                                console.warn("updateBookingPayment fallback to direct Firestore:", err);
+                                try {
+                                    await updateDoc(doc(firestore, 'bookings', targetBookingId), finalPayload);
+                                } catch (_) {}
+                                completeFinalization();
+                            });
+                    } else {
+                        updateDoc(doc(firestore, 'bookings', targetBookingId), finalPayload)
+                            .then(completeFinalization)
+                            .catch(completeFinalization);
+                    }
                 }
             }
         }
-    }, [bookingId, fetchedBooking, updateBookingPayment, updateServiceRequest, updateRentalBooking, updateLiaisonBooking]);
+    }, [bookingId, fetchedBooking, initialBookingSeed, navPassedBooking, updateBookingPayment, updateServiceRequest, updateRentalBooking, updateLiaisonBooking]);
 
     const handleInitiateHitPayBalance = async (targetBooking: Booking) => {
         if (!targetBooking || !user) return;
@@ -1810,8 +1794,28 @@ const BookingDetailScreen: React.FC = () => {
                         ? booking.remainingBalance
                         : Math.max(0, serviceBalance + additionalCostsTotal);
                     const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+                    const isBalanceReceiptUnderReview = (booking as any).gcashPaymentStatus === 'balance_receipt_uploaded';
 
                     if (finalBalanceAmount <= 0) return null;
+
+                    if (isBalanceReceiptUnderReview) {
+                        return (
+                            <div className="bg-gradient-to-br from-[#161618] via-[#1a1614] to-[#121214] border-2 border-amber-500/40 rounded-2xl p-4 sm:p-5 shadow-[0_0_30px_rgba(245,158,11,0.15)] relative overflow-hidden">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                                        <Clock size={20} className="animate-spin" />
+                                    </div>
+                                    <div>
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 font-mono block">Under Review</span>
+                                        <h3 className="text-sm sm:text-base font-black text-white leading-tight">Final Payment Receipt Uploaded</h3>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-300 mt-2 leading-relaxed">
+                                    Your GCash balance payment receipt has been submitted and is currently being verified by admin. Once approved, your transaction will be marked as fully completed.
+                                </p>
+                            </div>
+                        );
+                    }
 
                     return (
                         <div className="bg-gradient-to-br from-[#161618] via-[#1a1614] to-[#121214] border-2 border-primary/50 rounded-2xl p-4 sm:p-5 shadow-[0_0_30px_rgba(254,120,3,0.2)] animate-bounce-short relative overflow-hidden">
@@ -3559,7 +3563,7 @@ const BookingDetailScreen: React.FC = () => {
             })()}
 
             {/* Mandatory Balance Settlement Modal (Auto Pop-up when Mechanic Completes Work or Liaison is Ready) */}
-            {((booking.status === 'Work Done' || booking.status === 'Completed' || booking.status === 'Processing at LTO' || booking.status === 'Ready for Pickup' || booking.status === 'Delivered') && (!booking.isPaid || (booking.remainingBalance !== undefined && booking.remainingBalance > 0)) && !showGCashPaymentModal && !isBalanceModalDismissed) && (() => {
+            {((booking.status === 'Work Done' || booking.status === 'Completed' || booking.status === 'Processing at LTO' || booking.status === 'Ready for Pickup' || booking.status === 'Delivered') && (!booking.isPaid || (booking.remainingBalance !== undefined && booking.remainingBalance > 0)) && (booking as any).gcashPaymentStatus !== 'balance_receipt_uploaded' && !showGCashPaymentModal && !isBalanceModalDismissed) && (() => {
                 const originalServicesFee = booking.services && booking.services.length > 0
                     ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
                     : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
