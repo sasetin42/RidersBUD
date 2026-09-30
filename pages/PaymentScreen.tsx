@@ -10,6 +10,7 @@ import { Card } from '../components/ui';
 
 import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
+import HitPayInAppModal from '../components/HitPayInAppModal';
 import { getPartImage } from '../utils/fallbackImages';
 
 const PaymentScreen: React.FC = () => {
@@ -41,6 +42,7 @@ const PaymentScreen: React.FC = () => {
     const [error, setError] = useState('');
     const [showGCashModal, setShowGCashModal] = useState(false);
     const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
+    const [inAppModalUrl, setInAppModalUrl] = useState<string | null>(null);
 
     // Enhanced Checkout Fields
     const [deliveryDetails, setDeliveryDetails] = useState({
@@ -685,6 +687,32 @@ const PaymentScreen: React.FC = () => {
                         // Redirect to order history so they can pay/view later if they close
                         clearCart();
                         navigate('/customer-portal/order-history');
+                    }}
+                />
+            )}
+
+            {/* In-App HitPay Secure Sheet for Parts Orders */}
+            {inAppModalUrl && (
+                <HitPayInAppModal
+                    isOpen={Boolean(inAppModalUrl)}
+                    checkoutUrl={inAppModalUrl}
+                    title="Order Payment"
+                    amount={total}
+                    onClose={() => setInAppModalUrl(null)}
+                    onSuccess={async (details) => {
+                        setInAppModalUrl(null);
+                        if (pendingOrderId && updateOrderStatus) {
+                            try {
+                                await updateOrderStatus(pendingOrderId, 'Processing');
+                            } catch (e) {
+                                console.warn('Order status update notice:', e);
+                            }
+                        }
+                        setIsSuccess(true);
+                    }}
+                    onCancel={() => {
+                        setInAppModalUrl(null);
+                        setIsProcessing(false);
                     }}
                 />
             )}

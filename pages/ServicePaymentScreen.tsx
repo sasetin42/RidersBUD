@@ -9,6 +9,7 @@ import { Booking } from '../types';
 
 import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
+import HitPayInAppModal from '../components/HitPayInAppModal';
 
 const ServicePaymentScreen: React.FC = () => {
     const location = useLocation();
@@ -141,6 +142,7 @@ const ServicePaymentScreen: React.FC = () => {
     }, [total, paid, isDeposit]);
 
     const [showGCashModal, setShowGCashModal] = useState(false);
+    const [inAppModalUrl, setInAppModalUrl] = useState<string | null>(null);
     const [selectedMethod, setSelectedMethod] = useState('');
     const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '' });
     const [cardErrors, setCardErrors] = useState<{ [key: string]: string }>({});
@@ -148,6 +150,138 @@ const ServicePaymentScreen: React.FC = () => {
     const [error, setError] = useState('');
 
     const finalizeRun = React.useRef(false);
+
+    const processBookingPaymentSuccess = async (successData: {
+        targetBookingId: string;
+        amount: number;
+        totalAmount: number;
+        currentPaid: number;
+        fullBooking: any;
+        isRentalBooking: boolean;
+        isLiaisonBooking: boolean;
+        isDriverBooking: boolean;
+        isServiceReqBooking: boolean;
+        hitpayRef: string;
+        requestId: string;
+    }) => {
+        try {
+            setIsProcessing(true);
+            const { targetBookingId, amount, totalAmount, currentPaid, fullBooking, isRentalBooking, isLiaisonBooking, isServiceReqBooking, hitpayRef, requestId } = successData;
+            const newPaidAmount = currentPaid + amount;
+            const isFullyPaid = newPaidAmount >= (totalAmount - 0.5);
+            const newPaymentStatus = isFullyPaid ? 'paid' : 'partial';
+
+            if (isRentalBooking && updateRentalBooking) {
+                await updateRentalBooking(targetBookingId, {
+                    paidAmount: newPaidAmount,
+                    paymentStatus: newPaymentStatus,
+                    isPaid: isFullyPaid,
+                    isVerified: true,
+                    paymentMethod: 'HitPay (Online)',
+                    status: isFullyPaid ? 'Completed' : 'Confirmed',
+                    remainingBalance: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
+                    balanceAmount: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
+                    ...(isFullyPaid ? {
+                        balancePaymentRef: hitpayRef,
+                        balancePaidAt: new Date().toISOString(),
+                        balancePaid: true
+                    } : {
+                        downpaymentRef: hitpayRef,
+                        downpaymentPaidAt: new Date().toISOString(),
+                        downpaymentAmount: amount
+                    })
+                });
+            } else if (isLiaisonBooking && updateLiaisonBooking) {
+                await updateLiaisonBooking(targetBookingId, {
+                    paidAmount: newPaidAmount,
+                    paymentStatus: newPaymentStatus,
+                    paymentMethod: 'Online (HitPay)',
+                    isPaid: isFullyPaid,
+                    status: isFullyPaid ? 'Completed' : 'Booking Received',
+                    ...(isFullyPaid ? {
+                        balancePaymentRef: hitpayRef,
+                        balancePaidAt: new Date().toISOString(),
+                        remainingBalance: 0
+                    } : {
+                        downpaymentRef: hitpayRef,
+                        downpaymentPaidAt: new Date().toISOString(),
+                        downpaymentAmount: amount,
+                        remainingBalance: Math.max(0, totalAmount - newPaidAmount)
+                    })
+                });
+            } else if (isServiceReqBooking && updateServiceRequest) {
+                await updateServiceRequest(targetBookingId, {
+                    paidAmount: newPaidAmount,
+                    paymentStatus: newPaymentStatus,
+                    isPaid: isFullyPaid,
+                    isVerified: true,
+                    paymentMethod: 'HitPay (Online)',
+                    status: isFullyPaid ? 'Completed' : 'Confirmed',
+                    remainingBalance: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
+                    ...(isFullyPaid ? {
+                        balancePaymentRef: hitpayRef,
+                        balancePaidAt: new Date().toISOString(),
+                        balancePaid: true
+                    } : {
+                        downpaymentRef: hitpayRef,
+                        downpaymentPaidAt: new Date().toISOString(),
+                        downpaymentAmount: amount
+                    })
+                });
+            } else if (updateBookingPayment) {
+                await updateBookingPayment(targetBookingId, amount, newPaymentStatus, {
+                    paidAmount: newPaidAmount,
+                    remainingBalance: Math.max(0, totalAmount - newPaidAmount),
+                    isPaid: isFullyPaid,
+                    isVerified: true,
+                    paymentMethod: 'HitPay (Online)',
+                    hitpayPaymentRequestId: requestId,
+                    hitpayReference: hitpayRef,
+                    hitpayStatus: 'completed',
+                    ...(isFullyPaid ? {
+                        balancePaymentRef: hitpayRef,
+                        balancePaidAt: new Date().toISOString(),
+                        balancePaid: true,
+                        status: fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')
+                    } : {
+                        downpaymentRef: hitpayRef,
+                        downpaymentPaidAt: new Date().toISOString(),
+                        downpaymentAmount: amount,
+                        status: fullBooking?.status === 'Pending' ? 'Upcoming' : (fullBooking?.status || 'Upcoming')
+                    })
+                });
+            }
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+
+            const updatedBooking = { 
+                ...fullBooking, 
+                totalAmount: totalAmount,
+                paidAmount: newPaidAmount, 
+                paymentStatus: newPaymentStatus, 
+                isPaid: isFullyPaid,
+                isVerified: true,
+                paymentMethod: 'HitPay (Online)',
+                isRental: isRentalBooking,
+                isLiaison: isLiaisonBooking,
+                status: isRentalBooking ? (isFullyPaid ? 'Completed' : 'Confirmed') : (isFullyPaid && fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')),
+                ...(isFullyPaid ? {
+                    balancePaymentRef: hitpayRef,
+                    balancePaidAt: new Date().toISOString(),
+                    balancePaid: true,
+                    remainingBalance: 0
+                } : {
+                    downpaymentRef: hitpayRef,
+                    downpaymentPaidAt: new Date().toISOString(),
+                    downpaymentAmount: amount,
+                    remainingBalance: Math.max(0, totalAmount - newPaidAmount)
+                })
+            };
+            navigate('/customer-portal/service-payment-confirmation', { state: { booking: updatedBooking }, replace: true });
+        } catch (err) {
+            setError("Failed to verify payment status.");
+            setIsProcessing(false);
+        }
+    };
 
     React.useEffect(() => {
         const queryParams = new URLSearchParams(window.location.search);
@@ -165,132 +299,26 @@ const ServicePaymentScreen: React.FC = () => {
                 const currentPaid = sessionData?.currentPaid !== undefined ? sessionData.currentPaid : paid;
                 const fullBooking = sessionData?.fullBooking || booking;
                 const isRental = sessionData?.isRental || isRentalParam || fullBooking?.isRental;
+                const isRentalBooking = fullBooking?.isRental || isRental;
+                const isDriverBooking = fullBooking?.isDriver || fullBooking?.isDriverHire || isDriverParam || sessionData?.isDriver;
+                const isLiaisonBooking = fullBooking?.isLiaison || isLiaisonParam || sessionData?.isLiaison;
+                const isServiceReqBooking = fullBooking?.isServiceRequest || sessionData?.isServiceRequest || isDriverBooking;
+                const hitpayRef = queryParams.get('reference') || queryParams.get('payment_request_id') || `HITPAY-${Date.now()}`;
+                const requestId = queryParams.get('payment_request_id') || '';
 
-                const finalizePayment = async () => {
-                    try {
-                        setIsProcessing(true);
-                        const newPaidAmount = currentPaid + amount;
-                        const isFullyPaid = newPaidAmount >= (totalAmount - 0.5);
-                        const newPaymentStatus = isFullyPaid ? 'paid' : 'partial';
-                        const isRentalBooking = fullBooking?.isRental || isRental;
-                        const isDriverBooking = fullBooking?.isDriver || fullBooking?.isDriverHire || isDriverParam || sessionData?.isDriver;
-                        const isLiaisonBooking = fullBooking?.isLiaison || isLiaisonParam || sessionData?.isLiaison;
-                        const isServiceReqBooking = fullBooking?.isServiceRequest || sessionData?.isServiceRequest || isDriverBooking;
-                        const hitpayRef = queryParams.get('reference') || queryParams.get('payment_request_id') || `HITPAY-${Date.now()}`;
-                        const requestId = queryParams.get('payment_request_id') || '';
-
-                        if (isRentalBooking && updateRentalBooking) {
-                            await updateRentalBooking(targetBookingId, {
-                                paidAmount: newPaidAmount,
-                                paymentStatus: newPaymentStatus,
-                                isPaid: isFullyPaid,
-                                isVerified: true,
-                                paymentMethod: 'HitPay (Online)',
-                                status: isFullyPaid ? 'Completed' : 'Confirmed',
-                                remainingBalance: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
-                                balanceAmount: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
-                                ...(isFullyPaid ? {
-                                    balancePaymentRef: hitpayRef,
-                                    balancePaidAt: new Date().toISOString(),
-                                    balancePaid: true
-                                } : {
-                                    downpaymentRef: hitpayRef,
-                                    downpaymentPaidAt: new Date().toISOString(),
-                                    downpaymentAmount: amount
-                                })
-                            });
-                        } else if (isLiaisonBooking && updateLiaisonBooking) {
-                            await updateLiaisonBooking(targetBookingId, {
-                                paidAmount: newPaidAmount,
-                                paymentStatus: newPaymentStatus,
-                                paymentMethod: 'Online (HitPay)',
-                                isPaid: isFullyPaid,
-                                status: isFullyPaid ? 'Completed' : 'Booking Received',
-                                ...(isFullyPaid ? {
-                                    balancePaymentRef: hitpayRef,
-                                    balancePaidAt: new Date().toISOString(),
-                                    remainingBalance: 0
-                                } : {
-                                    downpaymentRef: hitpayRef,
-                                    downpaymentPaidAt: new Date().toISOString(),
-                                    downpaymentAmount: amount,
-                                    remainingBalance: Math.max(0, totalAmount - newPaidAmount)
-                                })
-                            });
-                        } else if (isServiceReqBooking && updateServiceRequest) {
-                            await updateServiceRequest(targetBookingId, {
-                                paidAmount: newPaidAmount,
-                                paymentStatus: newPaymentStatus,
-                                isPaid: isFullyPaid,
-                                isVerified: true,
-                                paymentMethod: 'HitPay (Online)',
-                                status: isFullyPaid ? 'Completed' : 'Confirmed',
-                                remainingBalance: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
-                                ...(isFullyPaid ? {
-                                    balancePaymentRef: hitpayRef,
-                                    balancePaidAt: new Date().toISOString(),
-                                    balancePaid: true
-                                } : {
-                                    downpaymentRef: hitpayRef,
-                                    downpaymentPaidAt: new Date().toISOString(),
-                                    downpaymentAmount: amount
-                                })
-                            });
-                        } else if (updateBookingPayment) {
-                            await updateBookingPayment(targetBookingId, amount, newPaymentStatus, {
-                                paidAmount: newPaidAmount,
-                                remainingBalance: Math.max(0, totalAmount - newPaidAmount),
-                                isPaid: isFullyPaid,
-                                isVerified: true,
-                                paymentMethod: 'HitPay (Online)',
-                                hitpayPaymentRequestId: requestId,
-                                hitpayReference: hitpayRef,
-                                hitpayStatus: 'completed',
-                                ...(isFullyPaid ? {
-                                    balancePaymentRef: hitpayRef,
-                                    balancePaidAt: new Date().toISOString(),
-                                    balancePaid: true,
-                                    status: fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')
-                                } : {
-                                    downpaymentRef: hitpayRef,
-                                    downpaymentPaidAt: new Date().toISOString(),
-                                    downpaymentAmount: amount,
-                                    status: fullBooking?.status === 'Pending' ? 'Upcoming' : (fullBooking?.status || 'Upcoming')
-                                })
-                            });
-                        }
-                        sessionStorage.removeItem('pendingHitPayServiceTx');
-
-                        const updatedBooking = { 
-                            ...fullBooking, 
-                            totalAmount: totalAmount,
-                            paidAmount: newPaidAmount, 
-                            paymentStatus: newPaymentStatus, 
-                            isPaid: isFullyPaid,
-                            isVerified: true,
-                            paymentMethod: 'HitPay (Online)',
-                            isRental: isRentalBooking,
-                            isLiaison: isLiaisonBooking,
-                            status: isRentalBooking ? (isFullyPaid ? 'Completed' : 'Confirmed') : (isFullyPaid && fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')),
-                            ...(isFullyPaid ? {
-                                balancePaymentRef: hitpayRef,
-                                balancePaidAt: new Date().toISOString(),
-                                balancePaid: true,
-                                remainingBalance: 0
-                            } : {
-                                downpaymentRef: hitpayRef,
-                                downpaymentPaidAt: new Date().toISOString(),
-                                downpaymentAmount: amount,
-                                remainingBalance: Math.max(0, totalAmount - newPaidAmount)
-                            })
-                        };
-                        navigate('/customer-portal/service-payment-confirmation', { state: { booking: updatedBooking }, replace: true });
-                    } catch (err) {
-                        setError("Failed to verify payment status.");
-                        setIsProcessing(false);
-                    }
-                };
-                finalizePayment();
+                processBookingPaymentSuccess({
+                    targetBookingId,
+                    amount,
+                    totalAmount,
+                    currentPaid,
+                    fullBooking,
+                    isRentalBooking,
+                    isLiaisonBooking,
+                    isDriverBooking,
+                    isServiceReqBooking,
+                    hitpayRef,
+                    requestId
+                });
                 return;
             }
         } else if ((status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') && !isProcessing) {
@@ -628,6 +656,41 @@ const ServicePaymentScreen: React.FC = () => {
                         navigate('/customer-portal/service-payment-confirmation', { state: { booking: updatedBooking }, replace: true });
                     }}
                     onClose={() => setShowGCashModal(false)}
+                />
+            )}
+
+            {/* In-App HitPay Payment Sheet */}
+            {inAppModalUrl && booking && (
+                <HitPayInAppModal
+                    isOpen={Boolean(inAppModalUrl)}
+                    checkoutUrl={inAppModalUrl}
+                    title={isDeposit ? "Pay Deposit (50%)" : "Pay Remaining Balance"}
+                    amount={amountToPay}
+                    onClose={() => setInAppModalUrl(null)}
+                    onSuccess={(details) => {
+                        setInAppModalUrl(null);
+                        const isRental = booking?.isRental || isRentalParam;
+                        const isDriver = booking?.isDriver || (booking as any)?.isDriverHire || isDriverParam;
+                        const isLiaison = booking?.isLiaison || isLiaisonParam;
+                        const isServiceReq = booking?.isServiceRequest || isDriver;
+
+                        processBookingPaymentSuccess({
+                            targetBookingId: booking.id,
+                            amount: amountToPay,
+                            totalAmount: total,
+                            currentPaid: paid,
+                            fullBooking: booking,
+                            isRentalBooking: Boolean(isRental),
+                            isLiaisonBooking: Boolean(isLiaison),
+                            isDriverBooking: Boolean(isDriver),
+                            isServiceReqBooking: Boolean(isServiceReq),
+                            hitpayRef: details.reference || `HITPAY-${Date.now()}`,
+                            requestId: details.paymentRequestId || ''
+                        });
+                    }}
+                    onCancel={() => {
+                        setInAppModalUrl(null);
+                    }}
                 />
             )}
         </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db as firebaseDb } from './firebase';
 import BottomNav from './components/BottomNav';
@@ -25,6 +25,7 @@ import AppLoadingScreen from './components/AppLoadingScreen';
 import ScrollToTop from './components/ScrollToTop';
 import { Shield } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { Geolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
 import { isGeolocationPermissionDenied, safeGetCurrentPosition, safeWatchPosition, safeClearWatch, initPermissionMonitor, onPermissionChange } from './utils/locationHelper';
@@ -224,6 +225,7 @@ const AppServiceSlugGuard: React.FC<{ children: React.ReactNode }> = ({ children
 
 const AppContent: React.FC = () => {
     const location = useLocation();
+    const navigate = useNavigate();
     const [isOnline, setIsOnline] = useState(navigator.onLine);
 
     useEffect(() => {
@@ -236,11 +238,50 @@ const AppContent: React.FC = () => {
         // Prime the geolocation permission cache early so all subsequent checks are synchronous
         initPermissionMonitor();
 
+        // Listen for native deep linking (appUrlOpen from external browser/GCash app redirects)
+        let appUrlListener: any = null;
+        if (Capacitor.isNativePlatform()) {
+            CapApp.addListener('appUrlOpen', (event) => {
+                try {
+                    console.log('[Capacitor] App opened via deep link:', event.url);
+                    const rawUrl = event.url;
+                    // Handle ridersbud:// or custom scheme or web domain
+                    let parsedUrl: URL;
+                    if (rawUrl.startsWith('ridersbud://') || rawUrl.startsWith('com.sasetin42.ridersbud://')) {
+                        // Transform custom scheme into relative path
+                        const cleanPath = rawUrl.replace(/^[a-zA-Z0-9.-]+:\/\//, '/');
+                        parsedUrl = new URL(cleanPath, 'https://ridersbud-10806.web.app');
+                    } else {
+                        parsedUrl = new URL(rawUrl);
+                    }
+
+                    const pathname = parsedUrl.pathname || '/';
+                    const search = parsedUrl.search || '';
+                    const fullTarget = `${pathname}${search}`;
+
+                    // If it contains payment status params, route accordingly
+                    const status = parsedUrl.searchParams.get('status') || parsedUrl.searchParams.get('hitpay');
+                    if (status) {
+                        navigate(fullTarget, { replace: true });
+                    } else if (pathname && pathname !== '/') {
+                        navigate(fullTarget);
+                    }
+                } catch (deepLinkErr) {
+                    console.warn('[Capacitor] Failed to parse deep link URL:', deepLinkErr);
+                }
+            }).then(handle => {
+                appUrlListener = handle;
+            }).catch(console.warn);
+        }
+
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
+            if (appUrlListener && typeof appUrlListener.remove === 'function') {
+                appUrlListener.remove();
+            }
         };
-    }, []);
+    }, [navigate]);
 
     // Prevent browser from restoring scroll position on navigation
     useLayoutEffect(() => {

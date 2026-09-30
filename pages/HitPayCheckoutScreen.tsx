@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { HitPayService } from '../services/HitPayService';
 import { useDatabase } from '../context/DatabaseContext';
+import HitPayInAppModal from '../components/HitPayInAppModal';
 
 type PaymentMethodType = 'gcash' | 'qrph' | 'card' | 'maya';
 
@@ -74,6 +75,7 @@ export const HitPayCheckoutScreen: React.FC = () => {
         method?: string;
         paidAt?: string;
     } | null>(null);
+    const [inAppModalUrl, setInAppModalUrl] = useState<string | null>(null);
 
     // Dynamic Payment Methods list adhering to branding
     const paymentMethods: PaymentMethodOption[] = useMemo(() => [
@@ -264,18 +266,18 @@ export const HitPayCheckoutScreen: React.FC = () => {
             setCheckoutState('redirecting');
             setStatusMessage('Opening HitPay checkout...');
 
-            // If an external HitPay checkout URL was generated (live or sandbox hosted), redirect directly
+            // If an external HitPay checkout URL was generated (live or sandbox hosted), open inside our in-app secure modal
             if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-                window.location.href = url;
+                setInAppModalUrl(url);
+                setCheckoutState('idle');
                 return;
             }
 
             // If proxy returned an in-app fallback portal route
             if (url && url.startsWith('/')) {
-                // In simulator fallback mode, show brief transition then open
-                setTimeout(() => {
-                    navigate(url, { replace: true });
-                }, 500);
+                // If it's a fallback portal URL, open directly in-app
+                setInAppModalUrl(`${window.location.origin}${url}`);
+                setCheckoutState('idle');
                 return;
             }
 
@@ -703,6 +705,32 @@ export const HitPayCheckoutScreen: React.FC = () => {
                 </div>
 
             </div>
+
+            {/* In-App HitPay Secure Sheet */}
+            {inAppModalUrl && (
+                <HitPayInAppModal
+                    isOpen={Boolean(inAppModalUrl)}
+                    checkoutUrl={inAppModalUrl}
+                    title="HitPay Online Checkout"
+                    amount={amount}
+                    onClose={() => setInAppModalUrl(null)}
+                    onSuccess={(details) => {
+                        setInAppModalUrl(null);
+                        setVerifiedTx({
+                            paymentRequestId: details.paymentRequestId || `req_${Date.now()}`,
+                            reference: details.reference || referenceNumber,
+                            amount,
+                            method: selectedMethod,
+                            paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        });
+                        setCheckoutState('completed');
+                    }}
+                    onCancel={() => {
+                        setInAppModalUrl(null);
+                        setCheckoutState('cancelled');
+                    }}
+                />
+            )}
         </div>
     );
 };
