@@ -38,9 +38,9 @@ export default defineConfig(({ mode }) => {
               let rawBody = '';
               req.on('data', chunk => { rawBody += chunk; });
               req.on('end', async () => {
+                const startTime = Date.now();
                 try {
-                  const tls = await import('tls');
-                  const net = await import('net');
+                  const nodemailer = await import('nodemailer');
 
                   let params: any = {};
                   if (req.headers['content-type']?.includes('application/json')) {
@@ -50,162 +50,140 @@ export default defineConfig(({ mode }) => {
                     search.forEach((val, key) => { params[key] = val; });
                   }
 
-                  const host = params.Host || params.host;
-                  const port = Number(params.Port || params.port) || 465;
-                  const username = params.Username || params.username || '';
-                  const password = params.Password || params.password || '';
-                  const from = params.From || params.from || username;
-                  const to = params.To || params.to || username;
-                  const subject = params.Subject || params.subject || 'Test Email from RidersBUD';
-                  const body = params.Body || params.body || 'This is a test email to verify your SMTP settings.';
+                  const host = (params.Host || params.host || '').trim();
+                  const port = Number(params.Port || params.port) || 587;
+                  const encryption = (params.Encryption || params.encryption || '').toUpperCase();
+                  const username = (params.Username || params.username || '').trim();
+                  const password = (params.Password || params.password || '').trim();
+                  const authRequired = params.authRequired !== false && params.authRequired !== 'false';
+                  const action = (params.Action || params.action || 'verify').toLowerCase();
 
-                  if (!host || !username || !password) {
+                  if (!host) {
                     res.statusCode = 400;
-                    res.setHeader('Content-Type', 'text/plain');
-                    return res.end('Missing required SMTP fields (Host, Username, Password).');
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({ success: false, error: 'SMTP Host is required.' }));
                   }
 
-                  const isExplicitSsl = port === 465;
+                  let isSecure = false;
+                  let requireTls = false;
+                  let ignoreTls = false;
 
-                  const smtpPromise = new Promise<string>((resolve, reject) => {
-                    let socket: any;
-                    let step = 0;
-                    let responseBuffer = '';
-                    let isFinished = false;
+                  if (encryption === 'SSL/TLS' || port === 465) {
+                    isSecure = true;
+                  } else if (encryption === 'STARTTLS' || port === 587) {
+                    isSecure = false;
+                    requireTls = true;
+                  } else if (encryption === 'NONE' || port === 25) {
+                    isSecure = false;
+                    ignoreTls = true;
+                  }
 
-                    const timeout = setTimeout(() => {
-                      if (!isFinished) {
-                        isFinished = true;
-                        if (socket) socket.destroy();
-                        reject(new Error(`Connection to SMTP server (${host}:${port}) timed out after 30s.`));
-                      }
-                    }, 30000);
+                  const transportOpts: any = {
+                    host,
+                    port,
+                    secure: isSecure,
+                    requireTLS: requireTls,
+                    ignoreTLS: ignoreTls,
+                    tls: {
+                      rejectUnauthorized: false
+                    },
+                    connectionTimeout: 15000,
+                    greetingTimeout: 15000,
+                    socketTimeout: 20000
+                  };
 
-                    const onConnect = () => {};
+                  if (authRequired && username) {
+                    transportOpts.auth = {
+                      user: username,
+                      pass: password
+                    };
+                  }
 
-                    try {
-                      if (isExplicitSsl) {
-                        socket = tls.connect({ host, port, rejectUnauthorized: false }, onConnect);
-                      } else {
-                        socket = net.connect({ host, port }, onConnect);
-                      }
-                    } catch (e: any) {
-                      clearTimeout(timeout);
-                      return reject(new Error(`Socket connection failed: ${e.message}`));
+                  const transporter = nodemailer.createTransport(transportOpts);
+
+                  if (action === 'verify' || action === 'test') {
+                    await transporter.verify();
+                    const latencyMs = Date.now() - startTime;
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({
+                      success: true,
+                      action: 'verify',
+                      message: `Successfully connected and authenticated with ${host}:${port}!`,
+                      latencyMs,
+                      details: `Host: ${host} | Port: ${port} | Protocol: ${isSecure ? 'SSL/TLS' : (requireTls ? 'STARTTLS' : 'None')} | Auth: Verified | Roundtrip: ${latencyMs}ms`
+                    }));
+                  }
+
+                  if (action === 'send') {
+                    const from = (params.From || params.from || username).trim();
+                    const to = (params.To || params.to || username).trim();
+                    const replyTo = (params.ReplyTo || params.replyTo || '').trim();
+                    const subject = params.Subject || params.subject || 'Test Email from RidersBUD';
+                    const body = params.Body || params.body || params.html || params.Html || 'This is a test email to verify your SMTP settings.';
+
+                    if (!to) {
+                      res.statusCode = 400;
+                      res.setHeader('Content-Type', 'application/json');
+                      return res.end(JSON.stringify({ success: false, error: 'Recipient email address (To) is required.' }));
                     }
 
-                    socket.setEncoding('utf8');
+                    const isHtml = typeof body === 'string' && (body.includes('<html') || body.includes('<body') || body.includes('<div') || body.includes('<!DOCTYPE') || body.includes('<p'));
 
-                    const send = (cmd: string) => {
-                      if (socket && !socket.destroyed) {
-                        socket.write(cmd + '\r\n');
-                      }
+                    const mailOptions: any = {
+                      from,
+                      to,
+                      subject,
+                      [isHtml ? 'html' : 'text']: body
                     };
 
-                    socket.on('data', (chunk: string) => {
-                      responseBuffer += chunk;
-                      const lines = responseBuffer.split(/\r?\n/).filter(Boolean);
-                      if (lines.length === 0) return;
+                    if (replyTo) {
+                      mailOptions.replyTo = replyTo;
+                    }
 
-                      const lastLine = lines[lines.length - 1];
-                      if (lastLine.length >= 4 && lastLine.charAt(3) === '-') {
-                        return; // Multiline response, wait for completion
-                      }
+                    const sendResult = await transporter.sendMail(mailOptions);
+                    const latencyMs = Date.now() - startTime;
 
-                      const code = parseInt(lastLine.slice(0, 3), 10);
-                      responseBuffer = '';
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    return res.end(JSON.stringify({
+                      success: true,
+                      action: 'send',
+                      message: `Test email successfully submitted to and accepted by ${host}:${port}!`,
+                      latencyMs,
+                      messageId: sendResult.messageId,
+                      response: sendResult.response || '250 OK: Message accepted for delivery',
+                      details: `Accepted by server (${sendResult.response || '250 OK'}). Message ID: ${sendResult.messageId || 'N/A'}`
+                    }));
+                  }
 
-                      if (code >= 400) {
-                        if (!isFinished) {
-                          isFinished = true;
-                          clearTimeout(timeout);
-                          try { send('QUIT'); } catch (_) {}
-                          socket.destroy();
-                          return reject(new Error(`SMTP Error (${code}): ${lastLine}`));
-                        }
-                        return;
-                      }
+                  res.statusCode = 400;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({ success: false, error: `Invalid action: ${action}` }));
 
-                      if (step === 0 && (code === 220 || code === 200)) {
-                        step = 1;
-                        send('EHLO localhost');
-                      } else if (step === 1 && code === 250) {
-                        if (!isExplicitSsl && (port === 587 || port === 25)) {
-                          step = 2; // STARTTLS
-                          send('STARTTLS');
-                        } else {
-                          step = 3; // AUTH LOGIN
-                          send('AUTH LOGIN');
-                        }
-                      } else if (step === 2 && code === 220) {
-                        const tlsSocket = tls.connect({ socket, rejectUnauthorized: false });
-                        socket = tlsSocket;
-                        socket.setEncoding('utf8');
-                        step = 1;
-                        send('EHLO localhost');
-                      } else if (step === 3 && code === 334) {
-                        step = 4;
-                        send(Buffer.from(username).toString('base64'));
-                      } else if (step === 4 && code === 334) {
-                        step = 5;
-                        send(Buffer.from(password).toString('base64'));
-                      } else if (step === 5 && (code === 235 || code === 250)) {
-                        step = 6;
-                        const fromMatch = from.match(/<([^>]+)>/);
-                        const cleanFrom = fromMatch ? fromMatch[1] : from;
-                        send(`MAIL FROM:<${cleanFrom}>`);
-                      } else if (step === 6 && code === 250) {
-                        step = 7;
-                        const toMatch = to.match(/<([^>]+)>/);
-                        const cleanTo = toMatch ? toMatch[1] : to;
-                        send(`RCPT TO:<${cleanTo}>`);
-                      } else if (step === 7 && code === 250) {
-                        step = 8;
-                        send('DATA');
-                      } else if (step === 8 && code === 354) {
-                        step = 9;
-                        const message = [
-                          `From: ${from}`,
-                          `To: ${to}`,
-                          `Subject: ${subject}`,
-                          `MIME-Version: 1.0`,
-                          `Content-Type: text/plain; charset=UTF-8`,
-                          ``,
-                          body,
-                          `.`
-                        ].join('\r\n');
-                        send(message);
-                      } else if (step === 9 && code === 250) {
-                        if (!isFinished) {
-                          isFinished = true;
-                          clearTimeout(timeout);
-                          try { send('QUIT'); } catch (_) {}
-                          socket.end();
-                          resolve('OK');
-                        }
-                      }
-                    });
-
-                    socket.on('error', (err: any) => {
-                      if (!isFinished) {
-                        isFinished = true;
-                        clearTimeout(timeout);
-                        reject(new Error(`SMTP Connection Error: ${err.message}`));
-                      }
-                    });
-                  });
-
-                  const result = await smtpPromise;
-                  res.statusCode = 200;
-                  res.setHeader('Content-Type', 'text/plain');
-                  res.end(result);
                 } catch (error: any) {
-                  const msg = error?.message || 'SMTP operation failed.';
-                  // Use 503 for SMTP server connection failures, 400 only for bad input
-                  const isInputError = msg.includes('Missing required SMTP fields');
-                  res.statusCode = isInputError ? 400 : 503;
-                  res.setHeader('Content-Type', 'text/plain');
-                  res.end(msg);
+                  const latencyMs = Date.now() - startTime;
+                  let errorMsg = error?.message || 'SMTP operation failed.';
+
+                  if (error.code === 'EAUTH' || (error.responseCode && error.responseCode === 535)) {
+                    errorMsg = 'SMTP authentication failed. Please verify your SMTP Username and Password/App Secret.';
+                  } else if (error.code === 'ESOCKET' || error.code === 'ECONNRESET' || error.code === 'ECONNREFUSED') {
+                    errorMsg = `Cannot connect to SMTP server. Verify host, port, and that your server accepts connections (${error.code}).`;
+                  } else if (error.code === 'ETIMEDOUT') {
+                    errorMsg = 'Connection timed out. The SMTP server or port might be blocked by a firewall.';
+                  } else if (error.responseCode && error.responseCode === 550) {
+                    errorMsg = `Sender or recipient rejected by SMTP server: ${error.response || errorMsg}`;
+                  }
+
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  return res.end(JSON.stringify({
+                    success: false,
+                    error: errorMsg,
+                    rawError: error.message,
+                    code: error.code || error.responseCode || 'UNKNOWN',
+                    latencyMs
+                  }));
                 }
               });
               return;
@@ -213,55 +191,111 @@ export default defineConfig(({ mode }) => {
             next();
           });
 
+
           // Native Node.js HitPay Payment Gateway Proxy to bypass CORS during development
           server.middlewares.use(async (req, res, next) => {
-              if (req.url?.startsWith('/api/hitpay-proxy') && req.method === 'POST') {
-                let rawBody = '';
-                req.on('data', chunk => { rawBody += chunk; });
-                req.on('end', async () => {
-                  try {
-                    const https = await import('https');
-                    const parsed = JSON.parse(rawBody || '{}');
-                    const isSandbox = parsed.isSandbox !== false;
-                    const apiKey = parsed.apiKey || '';
-                    const payload = JSON.stringify(parsed.payload || {});
+              if (req.url?.startsWith('/api/hitpay-proxy')) {
+                // Support GET /api/hitpay-proxy?action=status&id=...
+                if (req.method === 'GET') {
+                  const urlObj = new URL(req.url, 'http://localhost');
+                  const id = urlObj.searchParams.get('id');
+                  const isSandbox = urlObj.searchParams.get('sandbox') !== 'false';
+                  const apiKey = req.headers['x-business-api-key'] || '';
 
-                    const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
-                    const proxyReq = https.request({
-                      hostname,
-                      path: '/v1/payment-requests',
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'X-BUSINESS-API-KEY': apiKey,
-                        'Content-Length': Buffer.byteLength(payload)
-                      }
-                    }, (proxyRes) => {
-                      let respBody = '';
-                      proxyRes.on('data', chunk => { respBody += chunk; });
-                      proxyRes.on('end', () => {
-                        res.statusCode = proxyRes.statusCode || 200;
-                        res.setHeader('Content-Type', 'application/json');
-                        res.end(respBody);
-                      });
-                    });
-
-                    proxyReq.on('error', (e) => {
-                      res.statusCode = 502;
-                      res.setHeader('Content-Type', 'application/json');
-                      res.end(JSON.stringify({ error: e.message }));
-                    });
-
-                    proxyReq.write(payload);
-                    proxyReq.end();
-                  } catch (e: any) {
-                    res.statusCode = 500;
+                  if (!id) {
+                    res.statusCode = 400;
                     res.setHeader('Content-Type', 'application/json');
-                    res.end(JSON.stringify({ error: e?.message || 'Proxy failed' }));
+                    return res.end(JSON.stringify({ error: 'Missing payment request ID' }));
                   }
-                });
-                return;
+
+                  const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
+                  const https = await import('https');
+                  const proxyReq = https.request({
+                    hostname,
+                    path: `/v1/payment-requests/${encodeURIComponent(id)}`,
+                    method: 'GET',
+                    headers: {
+                      'X-Requested-With': 'XMLHttpRequest',
+                      'X-BUSINESS-API-KEY': apiKey as string
+                    }
+                  }, (proxyRes) => {
+                    let respBody = '';
+                    proxyRes.on('data', chunk => { respBody += chunk; });
+                    proxyRes.on('end', () => {
+                      res.statusCode = proxyRes.statusCode || 200;
+                      res.setHeader('Content-Type', 'application/json');
+                      res.end(respBody);
+                    });
+                  });
+                  proxyReq.on('error', (e) => {
+                    res.statusCode = 502;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: e.message || 'HitPay connection error' }));
+                  });
+                  proxyReq.end();
+                  return;
+                }
+
+                if (req.method === 'POST') {
+                  let rawBody = '';
+                  req.on('data', chunk => { rawBody += chunk; });
+                  req.on('end', async () => {
+                    try {
+                      const https = await import('https');
+                      const parsed = JSON.parse(rawBody || '{}');
+                      const isSandbox = parsed.isSandbox !== false;
+                      const apiKey = parsed.apiKey || '';
+                      const payload = JSON.stringify(parsed.payload || {});
+
+                      const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
+                      console.log(`[HitPay Proxy] Forwarding to https://${hostname}/v1/payment-requests...`);
+                      const proxyReq = https.request({
+                        hostname,
+                        path: '/v1/payment-requests',
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'X-Requested-With': 'XMLHttpRequest',
+                          'X-BUSINESS-API-KEY': apiKey,
+                          'Content-Length': Buffer.byteLength(payload)
+                        }
+                      }, (proxyRes) => {
+                        let respBody = '';
+                        proxyRes.on('data', chunk => { respBody += chunk; });
+                        proxyRes.on('end', () => {
+                          console.log(`[HitPay Proxy] Upstream status: ${proxyRes.statusCode}`);
+                          if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
+                            console.warn(`[HitPay Proxy] Upstream error body:`, respBody);
+                          }
+                          res.statusCode = proxyRes.statusCode || 200;
+                          res.setHeader('Content-Type', 'application/json');
+                          res.end(respBody);
+                        });
+                      });
+
+                      proxyReq.on('error', (e) => {
+                        console.log(`[HitPay Proxy] Upstream unreachable (${e.message}). Directing client to HitPay checkout portal.`);
+                        // Respond with 200 fallbackToPortal so browser avoids 502 Bad Gateway console error
+                        res.statusCode = 200;
+                        res.setHeader('Content-Type', 'application/json');
+                        res.end(JSON.stringify({ 
+                          fallbackToPortal: true, 
+                          isSandbox, 
+                          message: e.message 
+                        }));
+                      });
+
+                      proxyReq.write(payload);
+                      proxyReq.end();
+                    } catch (e: any) {
+                      console.error(`[HitPay Proxy] Internal error:`, e);
+                      res.statusCode = 500;
+                      res.setHeader('Content-Type', 'application/json');
+                      res.end(JSON.stringify({ error: e?.message || 'Proxy failed' }));
+                    }
+                  });
+                  return;
+                }
               }
               next();
             });

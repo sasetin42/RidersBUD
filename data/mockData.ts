@@ -273,13 +273,12 @@ export const seedParts: Part[] = [
         price: 1750.00,
         salesPrice: 1599.00,
         imageUrls: [
-            '/placeholder.svg',
-            '/placeholder.svg',
-            '/placeholder.svg'
+            'https://images.unsplash.com/photo-1486006920555-c77dce18193b?q=80&w=800&auto=format&fit=crop',
+            'https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?q=80&w=800&auto=format&fit=crop'
         ],
         category: 'Engine',
         sku: 'SYN-5W30-5QT',
-        brand: 'RidersBUD Pro',
+        brand: 'Mobil 1',
         stock: 50
     },
     {
@@ -288,8 +287,7 @@ export const seedParts: Part[] = [
         description: 'Front set of premium ceramic brake pads for superior stopping power, low dust, and quiet operation.',
         price: 2999.00,
         imageUrls: [
-            '/placeholder.svg',
-            '/placeholder.svg'
+            'https://images.unsplash.com/photo-1506015391300-4802dc7bbde2?q=80&w=800&auto=format&fit=crop'
         ],
         category: 'Brakes',
         sku: 'CER-PAD-F78',
@@ -302,7 +300,7 @@ export const seedParts: Part[] = [
         description: 'High-performance pleated paper engine air filter. Improves airflow and engine efficiency.',
         price: 999.00,
         imageUrls: [
-            '/placeholder.svg'
+            'https://images.unsplash.com/photo-1517524008697-84bbe3c3fd98?q=80&w=800&auto=format&fit=crop'
         ],
         category: 'Engine',
         sku: 'AIR-FIL-H21',
@@ -316,8 +314,7 @@ export const seedParts: Part[] = [
         price: 1250.00,
         salesPrice: 1099.00,
         imageUrls: [
-            '/placeholder.svg',
-            '/placeholder.svg',
+            'https://images.unsplash.com/photo-1508974239320-0a029497e820?q=80&w=800&auto=format&fit=crop'
         ],
         category: 'Exterior',
         sku: 'WPR-BLD-22',
@@ -951,7 +948,7 @@ export const seedCustomers: Customer[] = [
                 vin: 'NS1NVRA000777', mileage: 55000, insuranceProvider: 'Standard Insurance', insurancePolicyNumber: 'POL-STD-555444'
             }
         ],
-        picture: '/placeholder.svg',
+        picture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
         lat: 14.5510,
         lng: 121.0232,
         status: 'Active',
@@ -963,12 +960,12 @@ export const seedCustomers: Customer[] = [
             make: 'Honda', model: 'Civic', year: 2022, plateNumber: 'XYZ 789', imageUrls: ['https://placehold.co/400x300/1A1A1D/FE7803?text='], isPrimary: true,
             vin: 'HN1AZ01Z000112233', mileage: 25000, insuranceProvider: 'State Farm', insurancePolicyNumber: 'POL-SF-445566'
         }],
-        picture: '/placeholder.svg',
+        picture: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
         lat: 14.6042, lng: 121.0485,
         status: 'Active',
         registrationDate: '2023-06-20',
     },
-    { id: 'c3', name: 'Maria Santos', email: 'maria.s@example.com', password: 'password', phone: '555-333-4444', vehicles: [], picture: '/placeholder.svg', lat: 14.6521, lng: 121.0333, status: 'Active', registrationDate: '2023-11-10' },
+    { id: 'c3', name: 'Maria Santos', email: 'maria.s@example.com', password: 'password', phone: '555-333-4444', vehicles: [], picture: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80', lat: 14.6521, lng: 121.0333, status: 'Active', registrationDate: '2023-11-10' },
 ];
 
 export const seedOrders: Order[] = [

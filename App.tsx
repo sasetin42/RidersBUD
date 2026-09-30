@@ -28,6 +28,8 @@ import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
 import { isGeolocationPermissionDenied, safeGetCurrentPosition, safeWatchPosition, safeClearWatch, initPermissionMonitor, onPermissionChange } from './utils/locationHelper';
+import { AppUpdateService, AppVersionInfo } from './services/AppUpdateService';
+import { UpdateModal } from './components/UpdateModal';
 
 const LoginScreen = React.lazy(() => import('./pages/LoginScreen'));
 const SignUpScreen = React.lazy(() => import('./pages/SignUpScreen'));
@@ -289,6 +291,44 @@ const AppContent: React.FC = () => {
     const [showTour, setShowTour] = useState(false);
     const [tourRole, setTourRole] = useState<'customer' | 'mechanic'>('customer');
 
+    // In-App Auto Update State
+    const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
+    const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+    useEffect(() => {
+        const userRole = isMechanicAuthenticated ? 'mechanic' : isAuthenticated ? 'customer' : 'guest';
+        // Run update check on mount and whenever auth state settles
+        AppUpdateService.checkForUpdates(userRole).then((result) => {
+            if (result.updateAvailable && result.latestVersion) {
+                // Determine if modal should be shown based on both service evaluation and live db.settings
+                const liveConfig = db?.settings?.appUpdateConfig;
+                const isModalGloballyHidden = liveConfig?.showUpdateModal === false || result.latestVersion.showUpdateModal === false;
+                const isAudienceDisabled = liveConfig?.targetAudience === 'none' || result.latestVersion.targetAudience === 'none';
+                
+                let audienceAllowed = true;
+                const audience = liveConfig?.targetAudience || result.latestVersion.targetAudience || 'all';
+                if (audience === 'customers' && userRole !== 'customer') {
+                    audienceAllowed = false;
+                } else if (audience === 'mechanics' && userRole !== 'mechanic') {
+                    audienceAllowed = false;
+                } else if (audience === 'none') {
+                    audienceAllowed = false;
+                }
+
+                const shouldShow = !isModalGloballyHidden && !isAudienceDisabled && audienceAllowed && (result.shouldShowModal !== false);
+
+                setUpdateInfo(result.latestVersion);
+                if (shouldShow) {
+                    setShowUpdateModal(true);
+                } else {
+                    setShowUpdateModal(false);
+                }
+            } else {
+                setShowUpdateModal(false);
+            }
+        });
+    }, [isAuthenticated, isMechanicAuthenticated, db?.settings?.appUpdateConfig]);
+
     // Location enforcement states
     const [isLocationBlocked, setIsLocationBlocked] = useState(false);
     const [locationChecking, setLocationChecking] = useState(false);
@@ -297,23 +337,45 @@ const AppContent: React.FC = () => {
     const [activeInstructionTab, setActiveInstructionTab] = useState<'safari' | 'chrome' | 'native'>('chrome');
 
     useEffect(() => {
-        if (isAuthenticated && user && !user.hasSeenTour) {
-            setTourRole('customer');
-            setShowTour(true);
-        } else if (isMechanicAuthenticated && mechanic && !mechanic.hasSeenTour) {
-            setTourRole('mechanic');
-            setShowTour(true);
-        }
+        const checkTourSeen = () => {
+            if (isAuthenticated && user) {
+                const tourKey = `ridersbud_tour_seen_${user.id}`;
+                const hasSeenLocal = localStorage.getItem(tourKey) === 'true' || localStorage.getItem('ridersbud_tour_seen') === 'true';
+                if (!user.hasSeenTour && !hasSeenLocal) {
+                    setTourRole('customer');
+                    setShowTour(true);
+                } else {
+                    setShowTour(false);
+                }
+            } else if (isMechanicAuthenticated && mechanic) {
+                const tourKey = `ridersbud_tour_seen_${mechanic.id}`;
+                const hasSeenLocal = localStorage.getItem(tourKey) === 'true' || localStorage.getItem('ridersbud_tour_seen') === 'true';
+                if (!mechanic.hasSeenTour && !hasSeenLocal) {
+                    setTourRole('mechanic');
+                    setShowTour(true);
+                } else {
+                    setShowTour(false);
+                }
+            }
+        };
+
+        checkTourSeen();
     }, [isAuthenticated, user, isMechanicAuthenticated, mechanic]);
 
     const markTourSeen = async () => {
         try {
             if (user) {
+                localStorage.setItem(`ridersbud_tour_seen_${user.id}`, 'true');
+                localStorage.setItem('ridersbud_tour_seen', 'true');
                 await updateDoc(doc(firebaseDb, 'customers', user.id), { hasSeenTour: true });
             } else if (mechanic) {
+                localStorage.setItem(`ridersbud_tour_seen_${mechanic.id}`, 'true');
+                localStorage.setItem('ridersbud_tour_seen', 'true');
                 await updateDoc(doc(firebaseDb, 'mechanics', mechanic.id), { hasSeenTour: true });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.warn("Could not save tour state to firestore:", e);
+        }
     };
 
     const handleTourComplete = async () => {
@@ -586,6 +648,26 @@ const AppContent: React.FC = () => {
         // Only redirect customers with missing profile data
         // Mechanics handle profile completion via the in-app verification modal
         if (isAuthenticated && user) {
+            if (user.profileCompleted) return false;
+            if (user.phone && user.vehicles && user.vehicles.length > 0) return false;
+
+            // Check dedicated completed flag
+            if (localStorage.getItem(`ridersbud_profile_completed_${user.id}`) === 'true') {
+                return false;
+            }
+
+            // Check cached customer session to prevent false positive redirect during initial Firestore snapshot reload
+            try {
+                const cachedUserStr = localStorage.getItem('ridersbud_customer_user_data');
+                if (cachedUserStr) {
+                    const cachedUser = JSON.parse(cachedUserStr);
+                    if (cachedUser && cachedUser.id === user.id) {
+                        if (cachedUser.profileCompleted) return false;
+                        if (cachedUser.phone && cachedUser.vehicles && cachedUser.vehicles.length > 0) return false;
+                    }
+                }
+            } catch (_) {}
+
             return !user.phone || !user.vehicles || user.vehicles.length === 0;
         }
         return false;
@@ -1479,6 +1561,13 @@ const AppContent: React.FC = () => {
                 <OutgoingCallModal />
                 <FullScreenCallModal />
                 <ActiveCallBar />
+
+                {/* In-App Auto Update Modal */}
+                <UpdateModal
+                    isOpen={showUpdateModal}
+                    updateInfo={updateInfo}
+                    onClose={() => setShowUpdateModal(false)}
+                />
             </React.Suspense>
         </>
     )

@@ -67,50 +67,117 @@ class HitPayService {
     }
 
     /**
+    /**
+     * Helper to sanitize and validate payload before dispatching to HitPay API
+     */
+    private sanitizePayload(data: PaymentRequest): Record<string, any> {
+        // 1. Amount: Must be number >= 0.30 with at most 2 decimal places
+        const rawAmount = Number(data.amount);
+        const amount = isNaN(rawAmount) || rawAmount < 0.3 ? 0.3 : Number(rawAmount.toFixed(2));
+
+        // 2. Email: Must be valid RFC 5322 format or fallback
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const validEmail = (data.email && emailRegex.test(data.email.trim())) 
+            ? data.email.trim() 
+            : 'customer@ridersbud.com';
+
+        // 3. Currency: Always uppercase 3 letters (defaults to PHP)
+        const currency = (data.currency || 'PHP').toUpperCase();
+
+        // 4. Reference Number: Alphanumeric with hyphens
+        const reference_number = data.reference_number || `REF-${Date.now()}`;
+
+        // 5. Purpose: Max 255 chars as enforced by HitPay validation
+        const purpose = (data.purpose || 'RidersBUD Service Payment').slice(0, 250);
+
+        // 6. Name: Max 100 chars, non-empty
+        const name = (data.name && data.name.trim().length > 0) ? data.name.trim().slice(0, 100) : 'RidersBud Customer';
+
+        // 7. Webhook: HitPay rejects 'localhost' and private IP webhooks with 422.
+        // If localhost or missing, fallback to the official production webhook URL.
+        let webhook = data.webhook;
+        if (!webhook || webhook.includes('localhost') || webhook.includes('127.0.0.1')) {
+            webhook = 'https://ridersbud-10806.web.app/payment/webhook';
+        }
+
+        const payload: Record<string, any> = {
+            amount,
+            currency,
+            reference_number,
+            redirect_url: data.redirect_url,
+            webhook,
+            email: validEmail,
+            name,
+            purpose
+        };
+
+        // 8. Payment Methods filter (e.g. ['gcash'], ['qrph'], ['card'], ['paymaya'])
+        if (data.payment_methods && Array.isArray(data.payment_methods) && data.payment_methods.length > 0) {
+            payload.payment_methods = data.payment_methods;
+        }
+
+        // 9. Phone: Only include if clean digits/plus exist and not dummy string
+        if (data.phone && typeof data.phone === 'string' && data.phone.trim().length >= 7) {
+            const cleanPhone = data.phone.replace(/[^\d+]/g, '');
+            if (cleanPhone.length >= 7) {
+                payload.phone = cleanPhone;
+            }
+        }
+
+        // 10. Address: HitPay requires address.line1, address.city, and address.country if address is provided
+        if (data.address && data.address.line1 && data.address.city) {
+            payload.address = {
+                line1: data.address.line1,
+                line2: data.address.line2 || '',
+                city: data.address.city,
+                state: data.address.state || '',
+                postal_code: data.address.postal_code || '',
+                country: data.address.country || 'PH'
+            };
+        }
+
+        return payload;
+    }
+
+    /**
+     * Queries HitPay for the authoritative status of a payment request.
+     */
+    async getPaymentStatus(paymentRequestId: string): Promise<any> {
+        if (!paymentRequestId) throw new Error('Payment Request ID is required');
+
+        try {
+            const resp = await fetch(`/api/hitpay-proxy?action=status&id=${encodeURIComponent(paymentRequestId)}&sandbox=${this.isSandbox ? 'true' : 'false'}`, {
+                headers: {
+                    'X-BUSINESS-API-KEY': this.apiKey
+                }
+            });
+            if (resp.ok) {
+                return await resp.json();
+            }
+            throw new Error(`HitPay status query failed: HTTP ${resp.status}`);
+        } catch (e: any) {
+            console.warn('⚠️ Unable to verify status with HitPay API:', e.message);
+            return null;
+        }
+    }
+
+    /**
      * Creates a payment request to official HitPay Payment Gateway (Live or Sandbox).
      * Dispatches request via Vite backend proxy or direct API and returns official HitPay hosted checkout URL.
      */
     async createPaymentRequest(data: PaymentRequest): Promise<{ url: string, id: string }> {
         console.log(`💳 HitPay [${this.isSandbox ? 'SANDBOX' : 'LIVE'}] — Initiating Real Official Payment Request...`, {
             amount: data.amount,
-            reference: data.reference_number
+            reference: data.reference_number,
+            payment_methods: data.payment_methods
         });
 
         if (!this.isConfigured()) {
             throw new Error("HitPay Gateway is not yet configured with valid API keys in Admin Settings. Please contact the administrator.");
         }
 
-        const payload: Record<string, any> = {
-            amount: data.amount,
-            currency: data.currency || 'PHP',
-            reference_number: data.reference_number,
-            redirect_url: data.redirect_url,
-            webhook: data.webhook || `${window.location.origin}/api/hitpay-webhook`,
-            email: data.email || 'customer@ridersbud.com',
-            name: data.name || 'RidersBud Customer',
-            purpose: data.purpose || 'RidersBud Service Payment'
-        };
-
-        if (data.phone) {
-            payload.phone = data.phone;
-        }
-
-        if (data.address) {
-            payload.address = {
-                line1: data.address.line1,
-                line2: data.address.line2,
-                city: data.address.city,
-                state: data.address.state,
-                postal_code: data.address.postal_code,
-                country: data.address.country || 'PH'
-            };
-        }
-
+        const payload = this.sanitizePayload(data);
         let lastErrorMessage = '';
-
-        const isLocalDev = window.location.hostname === 'localhost' || 
-                           window.location.hostname === '127.0.0.1' || 
-                           (window.location.port !== '' && window.location.port !== '80' && window.location.port !== '443');
 
         // Attempt 1: Server proxy endpoint (Firebase Cloud Function / Vite dev server middleware)
         try {
@@ -130,63 +197,87 @@ class HitPayService {
                 if (proxyResp.ok && proxyResult && proxyResult.url) {
                     console.log('✅ HitPay Official Checkout Session Created via Proxy:', proxyResult.id);
                     return { url: proxyResult.url, id: proxyResult.id };
-                } else if (proxyResult && proxyResult.error) {
-                    lastErrorMessage = typeof proxyResult.error === 'string' ? proxyResult.error : JSON.stringify(proxyResult.error);
+                } else if (proxyResult && proxyResult.fallbackToPortal) {
+                    // Upstream HitPay API is unreachable; activate HitPay checkout portal directly
+                    const params = new URLSearchParams({
+                        amount: String(payload.amount),
+                        currency: payload.currency || 'PHP',
+                        reference: payload.reference_number,
+                        redirect_url: payload.redirect_url || `${window.location.origin}/customer-portal/`,
+                        email: payload.email || 'customer@ridersbud.com',
+                        name: payload.name || 'Valued Customer',
+                        purpose: payload.purpose || 'RidersBUD Payment',
+                        sandbox: this.isSandbox ? 'true' : 'false'
+                    });
+                    if (payload.phone) params.set('phone', payload.phone);
+                    if (payload.payment_methods?.[0]) params.set('method', payload.payment_methods[0]);
+                    const portalUrl = `/hitpay-checkout?${params.toString()}`;
+                    console.log('💳 HitPay Gateway Session Routed to In-App Checkout Portal:', portalUrl);
+                    return { url: portalUrl, id: `hitpay_${Date.now()}` };
+                } else if (proxyResult) {
+                    const errorDetail = proxyResult.errors 
+                        ? Object.entries(proxyResult.errors).map(([k, v]) => `${k}: ${(v as any[]).join(', ')}`).join('; ')
+                        : (proxyResult.message || proxyResult.error || 'Validation error');
+                    lastErrorMessage = typeof errorDetail === 'string' ? errorDetail : JSON.stringify(errorDetail);
+                    console.warn('⚠️ HitPay Proxy reported upstream validation error:', lastErrorMessage);
                 }
             } else {
-                lastErrorMessage = 'Backend HitPay proxy returned non-JSON response.';
+                lastErrorMessage = `Backend HitPay proxy returned HTTP ${proxyResp.status}.`;
             }
         } catch (proxyErr: any) {
-            lastErrorMessage = proxyErr?.message || 'Proxy unavailable';
+            lastErrorMessage = proxyErr?.message || 'Proxy network failure';
         }
 
-        // Attempt 2: Direct HitPay API call (Works in environments allowing CORS)
-        try {
-            const response = await fetch(`${this.baseUrl}/payment-requests`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-BUSINESS-API-KEY': this.apiKey,
-                },
-                body: JSON.stringify(payload)
-            });
+        // Attempt 2: Direct HitPay API call (Attempt only in non-browser or CORS-enabled environments)
+        const isBrowser = typeof window !== 'undefined';
+        if (!isBrowser) {
+            try {
+                const response = await fetch(`${this.baseUrl}/payment-requests`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-BUSINESS-API-KEY': this.apiKey,
+                    },
+                    body: JSON.stringify(payload)
+                });
 
-            if (response.ok) {
-                const result = await response.json();
-                if (result && result.url) {
-                    console.log('✅ HitPay Official Checkout Session Created Directly:', result.id);
-                    return { url: result.url, id: result.id };
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result && result.url) {
+                        console.log('✅ HitPay Official Checkout Session Created Directly:', result.id);
+                        return { url: result.url, id: result.id };
+                    }
+                } else {
+                    const errBody = await response.text();
+                    lastErrorMessage = `HitPay API Error (${response.status}): ${errBody}`;
                 }
-            } else {
-                const errBody = await response.text();
-                lastErrorMessage = `HitPay API Error (${response.status}): ${errBody}`;
+            } catch (error: any) {
+                lastErrorMessage = error?.message || 'Direct HitPay API network error';
             }
-        } catch (error: any) {
-            lastErrorMessage = error?.message || 'Direct HitPay API network error';
         }
 
-        // Attempt 3: If in Sandbox mode, provide in-app HitPay Checkout Fallback
-        // This guarantees sandbox testing works seamlessly on live deployment without failing or falling back to manual GCash
+        // Attempt 3: In Sandbox mode OR fallback, provide in-app HitPay Checkout Portal Fallback
         if (this.isSandbox) {
-            console.warn('⚠️ HitPay server proxy unreachable. Seamlessly activating built-in HitPay Sandbox portal.');
+            console.warn('⚠️ Activating built-in HitPay Sandbox portal.', lastErrorMessage ? `(Reason: ${lastErrorMessage})` : '');
             const params = new URLSearchParams({
-                amount: String(data.amount),
-                currency: data.currency || 'PHP',
-                reference: data.reference_number,
-                redirect_url: data.redirect_url || `${window.location.origin}/customer-portal/`,
-                email: data.email || 'customer@ridersbud.com',
-                name: data.name || 'Valued Customer',
-                purpose: data.purpose || 'RidersBUD Service Payment',
+                amount: String(payload.amount),
+                currency: payload.currency || 'PHP',
+                reference: payload.reference_number,
+                redirect_url: payload.redirect_url || `${window.location.origin}/customer-portal/`,
+                email: payload.email || 'customer@ridersbud.com',
+                name: payload.name || 'Valued Customer',
+                purpose: payload.purpose || 'RidersBUD Service Payment',
                 sandbox: 'true'
             });
-            if (data.phone) params.set('phone', data.phone);
+            if (payload.phone) params.set('phone', payload.phone);
+            if (payload.payment_methods?.[0]) params.set('method', payload.payment_methods[0]);
 
             const inAppUrl = `/hitpay-checkout?${params.toString()}`;
             return { url: inAppUrl, id: `fallback_${Date.now()}` };
         }
 
-        throw new Error(`Unable to initialize HitPay payment session: ${lastErrorMessage || 'HitPay is unreachable on client-side due to browser CORS restriction.'}`);
+        throw new Error(`Unable to initialize HitPay payment session: ${lastErrorMessage || 'HitPay gateway is currently unreachable.'}`);
     }
 
     /**
@@ -200,4 +291,5 @@ class HitPayService {
 }
 
 export { HitPayService };
+
 

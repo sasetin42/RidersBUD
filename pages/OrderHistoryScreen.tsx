@@ -7,9 +7,12 @@ import { Order, OrderStatus } from '../types';
 import { 
     Package, Truck, CheckCircle, Clock, ChevronDown, 
     ChevronUp, MapPin, CreditCard, Repeat, Search, 
-    Filter, AlertCircle, ShoppingBag, DollarSign, MessageCircle 
+    Filter, AlertCircle, ShoppingBag, DollarSign, MessageCircle,
+    Navigation
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import LiveRouteMapModal from '../components/LiveRouteMapModal';
+import { geocodeAddressOrCity, resolveOrderTrackingLocations } from '../utils/locationHelper';
 
 const StatusBadge: React.FC<{ status: OrderStatus }> = ({ status }) => {
     const styles = {
@@ -34,7 +37,12 @@ const StatusBadge: React.FC<{ status: OrderStatus }> = ({ status }) => {
     );
 };
 
-const OrderCard: React.FC<{ order: Order; isExpanded: boolean; onToggle: () => void; }> = ({ order, isExpanded, onToggle }) => {
+const OrderCard: React.FC<{ 
+    order: Order; 
+    isExpanded: boolean; 
+    onToggle: () => void;
+    onTrack: (order: Order) => void;
+}> = ({ order, isExpanded, onToggle, onTrack }) => {
     const navigate = useNavigate();
 
     const handleBuyAgain = (e: React.MouseEvent) => {
@@ -45,6 +53,11 @@ const OrderCard: React.FC<{ order: Order; isExpanded: boolean; onToggle: () => v
     const handleContactSupport = (e: React.MouseEvent) => {
         e.stopPropagation();
         navigate('/customer-portal/support-chat');
+    };
+
+    const handleTrackOrder = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onTrack(order);
     };
 
     // Calculate dynamic delivery progress index
@@ -74,7 +87,19 @@ const OrderCard: React.FC<{ order: Order; isExpanded: boolean; onToggle: () => v
                             </span>
                         </div>
                     </div>
-                    <StatusBadge status={order.status} />
+                    <div className="flex items-center gap-2">
+                        {order.status !== 'Cancelled' && (
+                            <button
+                                onClick={handleTrackOrder}
+                                className="px-2.5 py-1 rounded-full bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-sm shadow-primary/10"
+                                title="Open Live Delivery Tracking Map"
+                            >
+                                <Navigation size={11} className="text-primary animate-pulse" />
+                                Track
+                            </button>
+                        )}
+                        <StatusBadge status={order.status} />
+                    </div>
                 </div>
 
                 {/* Progress bar visual tracking line (only for non-cancelled orders) */}
@@ -230,6 +255,7 @@ const OrderHistoryScreen: React.FC = () => {
     const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<'All' | 'Active' | 'Delivered' | 'Cancelled'>('All');
+    const [activeOrderForTracking, setActiveOrderForTracking] = useState<Order | null>(null);
 
     React.useEffect(() => {
         const queryParams = new URLSearchParams(location.search);
@@ -383,6 +409,7 @@ const OrderHistoryScreen: React.FC = () => {
                                         order={order}
                                         isExpanded={expandedOrderId === order.id}
                                         onToggle={() => handleToggle(order.id)}
+                                        onTrack={(ord) => setActiveOrderForTracking(ord)}
                                     />
                                 ))
                             ) : (
@@ -395,6 +422,56 @@ const OrderHistoryScreen: React.FC = () => {
                     </>
                 )}
             </main>
+
+            {/* Realtime Delivery Live Map Modal */}
+            {activeOrderForTracking && (() => {
+                const { store, customer } = resolveOrderTrackingLocations(activeOrderForTracking, user, db?.settings);
+                const orderRef = activeOrderForTracking.id ? `ORD-${activeOrderForTracking.id.slice(-6).toUpperCase()}` : 'ORDER';
+
+                return (
+                    <LiveRouteMapModal
+                        isOpen={true}
+                        onClose={() => setActiveOrderForTracking(null)}
+                        trackingType="order"
+                        customerLocation={{
+                            lat: customer.lat,
+                            lng: customer.lng,
+                            address: customer.address
+                        }}
+                        mechanicLocation={{
+                            lat: store.lat,
+                            lng: store.lng,
+                            address: store.address
+                        }}
+                        deliveryRider={{
+                            name: 'Carlos Mendoza',
+                            phone: '+63 917 555 8921',
+                            vehicle: 'Honda Click 150i (Store Courier)',
+                            imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=250',
+                            plateNumber: 'RB-8821-EX'
+                        }}
+                        customerName={customer.name}
+                        customerPhone={customer.phone || user?.phone || '+63 917 123 4567'}
+                        customerAddress={customer.address}
+                        destinationAddress={customer.address}
+                        originAddress={store.address}
+                        title={`Store Delivery Route — #${orderRef}`}
+                        status={activeOrderForTracking.status || 'Processing'}
+                        eta="18 mins"
+                        etaNote="Dispatched from RidersBUD Parts & Tools Store Hub"
+                        orderNumber={`#${orderRef}`}
+                        onCallCustomer={() => {
+                            if (customer.phone) window.open(`tel:${customer.phone}`);
+                            else navigate('/customer-portal/support-chat');
+                        }}
+                        onChatCustomer={() => {
+                            setActiveOrderForTracking(null);
+                            navigate('/customer-portal/support-chat');
+                        }}
+                        appLogoUrl={db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/ridersbud_logo.png'}
+                    />
+                );
+            })()}
         </div>
     );
 };

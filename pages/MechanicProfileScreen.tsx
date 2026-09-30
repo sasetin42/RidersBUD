@@ -158,11 +158,7 @@ const MechanicProfileScreen: React.FC = () => {
         }
     };
 
-    if (loading || !db) {
-        return <SkeletonLoader />;
-    }
-
-    const mechanic = db.mechanics.find(m => m.id === mechanicId);
+    const mechanic = db?.mechanics?.find(m => m.id === mechanicId);
 
     const filteredReviews = useMemo(() => {
         if (!mechanic?.reviewsList) return [];
@@ -185,8 +181,6 @@ const MechanicProfileScreen: React.FC = () => {
 
     const totalPages = Math.ceil(filteredReviews.length / 3);
 
-
-
     const handleBookMechanic = (mechanicToBook: Mechanic) => {
         // Using Diagnostic (Service ID 3) as the default service for direct mechanic booking
         navigate('/booking/3', { state: { 
@@ -195,6 +189,9 @@ const MechanicProfileScreen: React.FC = () => {
         }});
     };
 
+    if (loading || !db) {
+        return <SkeletonLoader />;
+    }
 
     if (!mechanic) {
         return (

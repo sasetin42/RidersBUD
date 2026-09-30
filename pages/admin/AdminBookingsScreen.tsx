@@ -6,7 +6,7 @@ import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import Modal from '../../components/admin/Modal';
 import { useNotification } from '../../context/NotificationContext';
-import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink, X, Wrench, MapPin, Phone, Navigation, Truck, Sparkles, ChevronRight, Car, UserCheck, FileText, AlertTriangle, Activity, TrendingUp, Zap, Filter, CalendarDays, CalendarRange, Check, Tag, Maximize2, Route, Compass, MessageSquare } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, DollarSign, Users, Download, Eye, Edit, Trash2, ArrowUpDown, ChevronDown, Search, ShieldCheck, ExternalLink, X, Wrench, MapPin, Phone, Navigation, Truck, Sparkles, ChevronRight, Car, UserCheck, FileText, AlertTriangle, Activity, TrendingUp, Zap, Filter, CalendarDays, CalendarRange, Check, Tag, Maximize2, Route, Compass, MessageSquare, SlidersHorizontal, Fuel, Gauge, KeyRound, ArrowRight } from 'lucide-react';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
 import MapComponent, { MapMarker, MapPolyline } from '../../components/MapComponent';
 import CustomerMechanicChatModal from '../../components/customer/CustomerMechanicChatModal';
@@ -14,8 +14,9 @@ import { ref, onValue } from 'firebase/database';
 import { rtdb, db as firestoreDB } from '../../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getFallbackImageForCategory } from '../../utils/fallbackImages';
-import { getProfileImage } from '../../utils/imageConstants';
+import { getProfileImage, getCustomerAvatar, MOCKUPS } from '../../utils/imageConstants';
 import Tooltip from '../../components/ui/Tooltip';
+import { RIDERSBUD_STORE_LOCATION } from '../../utils/locationHelper';
 
 declare const L: any;
 
@@ -692,9 +693,19 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
     const { db } = useDatabase();
     const [customerLiveLocation, setCustomerLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [mechanicLiveLocation, setMechanicLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
-    const [activeViewMode, setActiveViewMode] = useState<'both' | 'mechanic' | 'customer'>('both');
     const [time, setTime] = useState<number>(0);
     const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+
+    // Detect if this booking is for Car Rental
+    const isRentalBooking = useMemo(() => {
+        return !!(booking.isRental || 
+                 booking.services?.[0]?.category === 'Car Rental' || 
+                 booking.service?.category === 'Car Rental' ||
+                 (booking as any).carObj);
+    }, [booking]);
+
+    // By default, BOTH TAB is active for all services (Car Rental, Driver for Hire, Towing, Liaison, Mechanic)
+    const [activeViewMode, setActiveViewMode] = useState<'both' | 'mechanic' | 'customer'>('both');
 
     const customerObj = useMemo(() => {
         return db.customers.find(c => c.name === booking.customerName || c.id === booking.customerId);
@@ -715,6 +726,13 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
         return (booking as any).driverObj || (db.hireDrivers || []).find(d => d.name === booking.driverName || d.id === (booking as any).driverId);
     }, [db.hireDrivers, booking.driverName, (booking as any).driverId, (booking as any).driverObj]);
 
+    // Rental car object resolution
+    const rentalCarObj = useMemo(() => {
+        if ((booking as any).carObj) return (booking as any).carObj;
+        const carId = (booking as any).carId || booking.services?.[0]?.id;
+        return (db.rentalCars || []).find(c => c.id === carId);
+    }, [booking, db.rentalCars]);
+
     // Live movement tick for simulated active routes
     useEffect(() => {
         const interval = setInterval(() => {
@@ -722,6 +740,19 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
         }, 1000);
         return () => clearInterval(interval);
     }, []);
+
+    // Ensure markers re-render immediately once Leaflet is ready
+    const [leafletReady, setLeafletReady] = useState(typeof window !== 'undefined' && !!(window as any).L);
+    useEffect(() => {
+        if (leafletReady) return;
+        const interval = setInterval(() => {
+            if (typeof window !== 'undefined' && (window as any).L) {
+                setLeafletReady(true);
+                clearInterval(interval);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [leafletReady]);
 
     // Subscribe to real-time Firebase RTDB tracking
     useEffect(() => {
@@ -742,7 +773,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
             console.warn("Realtime customer tracking blocked or unavailable:", error);
         });
 
-        const unsubMechanic = onValue(mechanicRef, (snapshot) => {
+        const unsubMechanic = !isRentalBooking ? onValue(mechanicRef, (snapshot) => {
             const val = snapshot.val();
             if (val) {
                 const lat = Number(val.lat);
@@ -753,34 +784,94 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
             }
         }, (error) => {
             console.warn("Realtime mechanic tracking blocked or unavailable:", error);
-        });
+        }) : () => {};
 
         return () => {
             unsubCustomer();
             unsubMechanic();
         };
-    }, [booking.id]);
+    }, [booking.id, isRentalBooking]);
 
-    // Base customer coordinate
-    const baseLat = booking.location ? Number((booking.location as any).latitude || booking.location.lat) : 14.291457;
-    const baseLng = booking.location ? Number((booking.location as any).longitude || booking.location.lng) : 121.001210;
+    // Resolve HQ Origin Coordinates (From Settings with Fallback to Carmona Central Hub)
+    const hqLat = Number(db?.settings?.storeLatitude ?? RIDERSBUD_STORE_LOCATION.lat);
+    const hqLng = Number(db?.settings?.storeLongitude ?? RIDERSBUD_STORE_LOCATION.lng);
+    const hqName = db?.settings?.storeName || RIDERSBUD_STORE_LOCATION.name;
+    const hqAddress = db?.settings?.address || db?.settings?.storeAddress || RIDERSBUD_STORE_LOCATION.address;
+
+    // Detect specialized HQ-origin services
+    const isLiaisonService = useMemo(() => {
+        return !!(booking.services?.[0]?.category === 'Liaison' || 
+                 booking.service?.category === 'Liaison' ||
+                 (booking as any).liaisonType ||
+                 booking.services?.[0]?.name?.toLowerCase().includes('liaison'));
+    }, [booking]);
+
+    const isTowingService = useMemo(() => {
+        return !!(booking.services?.[0]?.category === 'Towing' || 
+                 booking.service?.category === 'Towing' ||
+                 booking.services?.[0]?.name?.toLowerCase().includes('towing') ||
+                 booking.service?.name?.toLowerCase().includes('towing') ||
+                 (booking as any).isTowing);
+    }, [booking]);
+
+    const isHqOriginService = useMemo(() => {
+        return isRentalBooking || isDriverService || isLiaisonService || isTowingService;
+    }, [isRentalBooking, isDriverService, isLiaisonService, isTowingService]);
+
+    // Base customer coordinate with exhaustive fallback discovery
+    const rawCustLat = booking.location 
+        ? Number((booking.location as any).latitude ?? (booking.location as any).lat) 
+        : (booking as any).details?.startCoords?.[0] != null 
+            ? Number((booking as any).details.startCoords[0])
+            : (booking as any).pickupLocationCoords?.lat != null
+                ? Number((booking as any).pickupLocationCoords.lat)
+                : customerObj?.lat != null
+                    ? Number(customerObj.lat)
+                    : NaN;
+
+    const rawCustLng = booking.location 
+        ? Number((booking.location as any).longitude ?? (booking.location as any).lng) 
+        : (booking as any).details?.startCoords?.[1] != null 
+            ? Number((booking as any).details.startCoords[1])
+            : (booking as any).pickupLocationCoords?.lng != null
+                ? Number((booking as any).pickupLocationCoords.lng)
+                : customerObj?.lng != null
+                    ? Number(customerObj.lng)
+                    : NaN;
+
+    const baseLat = (!isNaN(rawCustLat) && rawCustLat !== 0) ? rawCustLat : 14.291457;
+    const baseLng = (!isNaN(rawCustLng) && rawCustLng !== 0) ? rawCustLng : 121.001210;
 
     const currentCustomerCoord = customerLiveLocation || (!isNaN(baseLat) && !isNaN(baseLng) ? { lat: baseLat, lng: baseLng } : null);
     
-    // Mechanic coordinates
+    // Origin coordinates: Live mechanic/driver if actively transmitting or assigned, otherwise default HQ Location
     const currentMechanicCoord = useMemo(() => {
         if (mechanicLiveLocation) return mechanicLiveLocation;
         if (mechanicObj?.lat && mechanicObj?.lng) return { lat: Number(mechanicObj.lat), lng: Number(mechanicObj.lng) };
         if (booking.mechanic?.lat && booking.mechanic?.lng) return { lat: Number(booking.mechanic.lat), lng: Number(booking.mechanic.lng) };
+        if (driverObj?.lat && driverObj?.lng) return { lat: Number(driverObj.lat), lng: Number(driverObj.lng) };
+
+        // For specialized services originating from HQ (Car Rental, Towing, Liaison, Driver for Hire), adopt default HQ
+        if (isHqOriginService) {
+            return { lat: hqLat, lng: hqLng };
+        }
+
         if (!isNaN(baseLat) && !isNaN(baseLng)) {
-            // Simulated position with animated pulse
+            // Simulated position with animated pulse for other on-site mechanic services
             return {
                 lat: baseLat + 0.0035 + Math.sin(time / 5000) * 0.0006,
                 lng: baseLng + 0.0035 + Math.cos(time / 5000) * 0.0006
             };
         }
-        return null;
-    }, [mechanicLiveLocation, mechanicObj, booking.mechanic, baseLat, baseLng, time]);
+        return { lat: hqLat, lng: hqLng };
+    }, [mechanicLiveLocation, mechanicObj, booking.mechanic, driverObj, isHqOriginService, hqLat, hqLng, baseLat, baseLng, time]);
+
+    // Determine if the origin is currently displaying the HQ Central Hub
+    const isDisplayingHq = useMemo(() => {
+        if (!currentMechanicCoord) return false;
+        const isLiveAssigned = Boolean(mechanicLiveLocation || mechanicObj?.lat || booking.mechanic?.lat || driverObj?.lat);
+        return !isLiveAssigned && isHqOriginService;
+    }, [currentMechanicCoord, mechanicLiveLocation, mechanicObj, booking.mechanic, driverObj, isHqOriginService]);
 
     // Road route state between customer & mechanic/driver
     const [routeGeometry, setRouteGeometry] = useState<[number, number][]>([]);
@@ -794,6 +885,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
             setRouteGeometry([]);
             setRoadDistanceKm(null);
             setRoadDurationMins(null);
+            setIsRoutingActive(false);
             return;
         }
 
@@ -829,15 +921,12 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                     const pts: [number, number][] = (primary.geometry?.coordinates || []).map((c: any) => [c[1], c[0]]);
                     if (pts.length > 0) {
                         setRouteGeometry(pts);
-                        const dist = parseFloat((primary.distance / 1000).toFixed(1));
-                        const dur = Math.max(2, Math.round(primary.duration / 60));
-                        setRoadDistanceKm(dist);
-                        setRoadDurationMins(dur);
+                        setRoadDistanceKm(parseFloat((primary.distance / 1000).toFixed(1)));
+                        setRoadDurationMins(Math.max(1, Math.round(primary.duration / 60)));
                         setIsRoutingActive(true);
                         return;
                     }
                 }
-                // Fallback to straight line
                 setRouteGeometry(straightCoords);
                 setRoadDistanceKm(approxKm);
                 setRoadDurationMins(fallbackMins);
@@ -916,22 +1005,26 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
 
         const customerPic = customerObj?.picture || (booking as any).customerPhoto || '';
         const mechanicPic = mechanicObj?.imageUrl || booking.mechanic?.imageUrl || driverObj?.imageUrl || '';
+        const mapAppLogo = db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png';
+        const clientInitial = (booking.customerName || 'C').charAt(0).toUpperCase();
 
-        // Customer icon
+        // Customer icon with guaranteed fallback
         const customerIcon = L.divIcon({
             html: `
                 <div class="rb-map-pin-wrapper">
-                    <div class="rb-pin-circle" style="border: 3px solid #3B82F6; background: #121212; box-shadow: 0 4px 16px rgba(59, 130, 246, 0.6); width: 42px; height: 42px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <div class="rb-pin-circle" style="border: 3.5px solid #3B82F6; background: #0f172a; box-shadow: 0 4px 18px rgba(59, 130, 246, 0.65); width: 44px; height: 44px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
                         ${customerPic ? `
-                            <img src="${customerPic}" alt="Customer" style="width:100%;height:100%;object-fit:cover;" />
+                            <img src="${customerPic}" alt="Customer" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-weight:900;font-size:14px;color:#3B82F6;\\'>${clientInitial}</span>';" style="width:100%;height:100%;object-fit:cover;" />
+                        ` : isRentalBooking ? `
+                            <span style="font-size:18px;">🚗</span>
                         ` : `
-                            <div style="font-weight:900;font-size:12px;color:#3B82F6;">
-                                ${(booking.customerName || 'C').charAt(0)}
+                            <div style="font-weight:900;font-size:14px;color:#3B82F6;">
+                                ${clientInitial}
                             </div>
                         `}
                     </div>
                     <div class="rb-pin-stem" style="background: #3B82F6; width: 3px; height: 18px; margin: 0 auto;"></div>
-                    <div class="rb-pin-dot" style="background: #3B82F6; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #3B82F6;"></div>
+                    <div class="rb-pin-dot" style="background: #3B82F6; width: 7px; height: 7px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 10px #3B82F6;"></div>
                 </div>
             `,
             className: 'rb-leaflet-icon',
@@ -940,21 +1033,21 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
             popupAnchor: [0, -74]
         });
 
-        // Specialist icon (Mechanic / Driver)
+        // Specialist icon (Mechanic / Driver) with guaranteed fallback
         const specialistIcon = L.divIcon({
             html: `
                 <div class="rb-map-pin-wrapper">
-                    <div class="rb-pin-circle" style="border: 3px solid #FE7803; background: #121212; box-shadow: 0 4px 16px rgba(254, 120, 3, 0.6); width: 42px; height: 42px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <div class="rb-pin-circle" style="border: 3.5px solid #FE7803; background: #18181b; box-shadow: 0 4px 18px rgba(254, 120, 3, 0.65); width: 44px; height: 44px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
                         ${mechanicPic ? `
-                            <img src="${mechanicPic}" alt="Specialist" style="width:100%;height:100%;object-fit:cover;" />
+                            <img src="${mechanicPic}" alt="Specialist" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-weight:900;font-size:14px;color:#FE7803;\\'>${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0).toUpperCase()}</span>';" style="width:100%;height:100%;object-fit:cover;" />
                         ` : `
-                            <div style="font-weight:900;font-size:12px;color:#FE7803;">
-                                ${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0)}
+                            <div style="font-weight:900;font-size:14px;color:#FE7803;">
+                                ${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0).toUpperCase()}
                             </div>
                         `}
                     </div>
                     <div class="rb-pin-stem" style="background: #FE7803; width: 3px; height: 18px; margin: 0 auto;"></div>
-                    <div class="rb-pin-dot" style="background: #FE7803; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #FE7803;"></div>
+                    <div class="rb-pin-dot" style="background: #FE7803; width: 7px; height: 7px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #FE7803;"></div>
                 </div>
             `,
             className: 'rb-leaflet-icon',
@@ -963,29 +1056,122 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
             popupAnchor: [0, -74]
         });
 
-        // Both pins are always shown by default in 'both' view, or if viewing specific person
-        // If 'both' is selected (default), both pins are immediately displayed
+        // Show customer / rental location pin
         if (currentCustomerCoord && (activeViewMode === 'both' || activeViewMode === 'customer')) {
+            let activeCustomerIcon = customerIcon;
+            let popupHtml = `
+                <div class="p-2 text-center font-bold text-xs min-w-[190px]">
+                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-wider mb-1">
+                        <span>📍 Customer Location</span>
+                    </div>
+                    <div class="text-white font-black text-sm mt-1">${booking.customerName}</div>
+                    <div class="text-gray-300 text-xs mt-1 leading-snug">${(booking as any).pickupLocation || booking.location?.address || 'Service Destination'}</div>
+                </div>
+            `;
+
+            if (isRentalBooking) {
+                const rentalAddress = (booking as any).pickupLocation || booking.location?.address || 'Confirmed Service Location';
+                const carLabel = (booking as any).carObj ? `${(booking as any).carObj.make} ${(booking as any).carObj.model}` : (booking.vehicle ? `${booking.vehicle.make} ${booking.vehicle.model}` : 'Rental Vehicle');
+
+                activeCustomerIcon = L.divIcon({
+                    html: `
+                        <div class="rb-map-pin-wrapper">
+                            <div class="rb-pin-circle" style="border: 3.5px solid #3B82F6; background: #0f172a; box-shadow: 0 4px 22px rgba(59, 130, 246, 0.75); width: 48px; height: 48px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                                ${customerPic ? `
+                                    <img src="${customerPic}" alt="Client" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:20px;\\'>🚗</span>';" style="width:100%;height:100%;object-fit:cover;" />
+                                ` : `
+                                    <span style="font-size:20px;">🚗</span>
+                                `}
+                            </div>
+                            <div class="rb-pin-stem" style="background: #3B82F6; width: 3.5px; height: 20px; margin: 0 auto;"></div>
+                            <div class="rb-pin-dot" style="background: #3B82F6; width: 7px; height: 7px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 10px #3B82F6;"></div>
+                        </div>
+                    `,
+                    className: 'rb-leaflet-icon',
+                    iconSize: [48, 74],
+                    iconAnchor: [24, 74],
+                    popupAnchor: [0, -78]
+                });
+
+                popupHtml = `
+                    <div class="p-2 text-center font-bold text-xs min-w-[210px]">
+                        <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-wider mb-1">
+                            <span>📍 Client Pick-up Location</span>
+                        </div>
+                        <div class="text-white font-black text-sm mt-1">${carLabel}</div>
+                        <div class="text-gray-200 text-xs mt-1 font-semibold leading-relaxed">${rentalAddress}</div>
+                        <div class="mt-2 pt-1 border-t border-white/10 flex items-center justify-between text-[10px]">
+                            <span class="text-gray-400">Client:</span>
+                            <span class="text-blue-400 font-mono font-bold">${booking.customerName}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
             markers.push({
                 id: 'customerPin',
                 position: [currentCustomerCoord.lat, currentCustomerCoord.lng],
-                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-blue-400">Customer Location</span><br/>${booking.customerName}<br/><span class="text-gray-400 text-[10px]">${booking.location?.address || 'Service Destination'}</span></div>`,
-                icon: customerIcon
+                popupContent: popupHtml,
+                icon: activeCustomerIcon
             });
         }
 
+        // Show Specialist / Origin / HQ Pin for all services including Car Rental
         if (currentMechanicCoord && (activeViewMode === 'both' || activeViewMode === 'mechanic')) {
-            const label = isDriverService ? (booking.driverName || 'Assigned Driver') : (booking.mechanic?.name || 'Assigned Mechanic');
+            const originTitle = isDisplayingHq 
+                ? 'RidersBUD Central HQ' 
+                : isDriverService 
+                    ? 'Driver (Live)' 
+                    : isTowingService 
+                        ? 'Towing Unit' 
+                        : isLiaisonService 
+                            ? 'Liaison Officer' 
+                            : 'Mechanic (Live)';
+
+            const originSubtitle = isDisplayingHq 
+                ? hqName 
+                : isDriverService 
+                    ? (booking.driverName || 'Assigned Driver') 
+                    : (booking.mechanic?.name || 'Assigned Specialist');
+
+            const originAddressText = isDisplayingHq ? hqAddress : 'Live Dispatched Specialist';
+
+            // Distinctive HQ / Specialist marker icon with guaranteed fallback
+            const originMarkerIcon = isDisplayingHq ? L.divIcon({
+                html: `
+                    <div class="rb-map-pin-wrapper">
+                        <div class="rb-pin-circle" style="border: 3.5px solid #FE7803; background: #18181b; box-shadow: 0 4px 22px rgba(254, 120, 3, 0.75); width: 48px; height: 48px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                            <img src="${mapAppLogo}" alt="RidersBUD HQ" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:20px;\\'>🏬</span>';" style="width:28px;height:28px;object-fit:contain;" />
+                        </div>
+                        <div class="rb-pin-stem" style="background: #FE7803; width: 3.5px; height: 20px; margin: 0 auto;"></div>
+                        <div class="rb-pin-dot" style="background: #FE7803; width: 7px; height: 7px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 10px #FE7803;"></div>
+                    </div>
+                `,
+                className: 'rb-leaflet-icon',
+                iconSize: [48, 74],
+                iconAnchor: [24, 74],
+                popupAnchor: [0, -78]
+            }) : specialistIcon;
+
             markers.push({
                 id: 'specialistPin',
                 position: [currentMechanicCoord.lat, currentMechanicCoord.lng],
-                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-primary">${isDriverService ? 'Driver' : 'Mechanic'} (Live)</span><br/>${label}</div>`,
-                icon: specialistIcon
+                popupContent: `
+                    <div class="p-2 text-center font-bold text-xs min-w-[200px]">
+                        <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#FE7803]/20 text-[#FE7803] text-[10px] font-black uppercase tracking-wider mb-1">
+                            <span>${isDisplayingHq ? '🏬 Dispatch Origin' : '⚡ Live Active Unit'}</span>
+                        </div>
+                        <div class="text-white font-black text-sm mt-1">${originTitle}</div>
+                        <div class="text-gray-300 text-xs mt-0.5 font-semibold">${originSubtitle}</div>
+                        <div class="text-gray-400 text-[10px] mt-1 border-t border-white/10 pt-1 leading-snug">${originAddressText}</div>
+                    </div>
+                `,
+                icon: originMarkerIcon
             });
         }
 
         return markers;
-    }, [currentCustomerCoord, currentMechanicCoord, activeViewMode, customerObj, mechanicObj, driverObj, booking, isDriverService]);
+    }, [currentCustomerCoord, currentMechanicCoord, activeViewMode, customerObj, mechanicObj, driverObj, booking, isDriverService, isRentalBooking, isDisplayingHq, isTowingService, isLiaisonService, hqName, hqAddress, db?.settings, leafletReady]);
 
     // Center point based on view mode
     const mapCenter: [number, number] = useMemo(() => {
@@ -1003,7 +1189,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
         return [14.291457, 121.001210];
     }, [activeViewMode, currentCustomerCoord, currentMechanicCoord]);
 
-    // Zoom level based on view mode: Zoom in close (16) on single person, 14 for both route overview
+    // Zoom level based on view mode
     const mapZoom = useMemo(() => {
         if (activeViewMode === 'customer' || activeViewMode === 'mechanic') {
             return 16;
@@ -1011,7 +1197,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
         return 14;
     }, [activeViewMode]);
 
-    // Map bounds to instantly and cleanly fit both Customer and Specialist on modal open, plus route points
+    // Map bounds
     const mapBounds = useMemo(() => {
         if (typeof L === 'undefined') return undefined;
         if (activeViewMode === 'both') {
@@ -1073,7 +1259,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header Bar */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-[#16161a] flex-shrink-0">
+                <div className="px-5 py-3.5 border-b border-white/10 bg-[#16161a] flex items-center justify-between flex-shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-primary to-orange-500 p-0.5 flex items-center justify-center shadow-lg shadow-primary/20">
                             <div className="w-full h-full bg-[#121214] rounded-[14px] flex items-center justify-center text-primary">
@@ -1083,11 +1269,17 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                         <div>
                             <div className="flex items-center gap-2">
                                 <h3 className="text-base sm:text-lg font-black text-white tracking-tight leading-none">
-                                    Real-time Location & Live Tracking
+                                    {isRentalBooking ? 'Client Live Location & Vehicle Rental' : isLiaisonService ? 'Liaison Real-time Location & Client Tracking' : 'Real-time Location & Live Tracking'}
                                 </h3>
-                                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-black uppercase tracking-wider flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                                    Live GPS
+                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-1 ${
+                                    isRentalBooking 
+                                        ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' 
+                                        : isLiaisonService
+                                        ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30'
+                                        : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                }`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${isRentalBooking ? 'bg-blue-400' : isLiaisonService ? 'bg-cyan-400' : 'bg-emerald-400'} animate-ping`}></span>
+                                    {isRentalBooking ? 'Client GPS Active' : isLiaisonService ? 'Live GPS Active' : 'Live GPS'}
                                 </span>
                             </div>
                             <p className="text-[11px] text-gray-400 font-semibold mt-1">
@@ -1113,12 +1305,14 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                     <div className="lg:col-span-7 flex flex-col min-h-[350px] lg:min-h-[520px] relative border-b lg:border-b-0 lg:border-r border-white/10 bg-[#0d0d0f]">
                         {/* Floating Live Telemetry Badge & Tab Switcher Inline (Top Left of Map) */}
                         <div className="absolute top-3 left-3 right-3 z-[400] flex flex-wrap items-center gap-2 pointer-events-none">
-                            {/* Estimated Travel Badge */}
+                            {/* Estimated Travel / Route Telemetry Badge */}
                             <div className="bg-[#141418]/95 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-3">
                                 <div className="flex items-center gap-2">
                                     <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
                                     <div>
-                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider leading-none">Estimated Travel</p>
+                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider leading-none">
+                                            {isDisplayingHq ? 'HQ Dispatch Route' : 'Estimated Travel'}
+                                        </p>
                                         <p className="text-xs font-black text-white leading-tight mt-0.5">{distanceKm} km • ~{estimatedMins} mins</p>
                                     </div>
                                 </div>
@@ -1148,7 +1342,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                                         activeViewMode === 'mechanic' ? 'bg-primary text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
                                     }`}
                                 >
-                                    {isDriverService ? 'Driver' : 'Mechanic'}
+                                    {isDisplayingHq ? 'HQ Hub' : isDriverService ? 'Driver' : isTowingService ? 'Towing' : isLiaisonService ? 'Liaison' : 'Mechanic'}
                                 </button>
                                 <button
                                     onClick={() => setActiveViewMode('customer')}
@@ -1156,7 +1350,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                                         activeViewMode === 'customer' ? 'bg-primary text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
                                     }`}
                                 >
-                                    Customer
+                                    Client
                                 </button>
                             </div>
                         </div>
@@ -1189,7 +1383,7 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 p-0.5 flex items-center justify-center overflow-hidden flex-shrink-0">
                                     <img
-                                        src={booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)}
+                                        src={(booking as any).carImage || rentalCarObj?.imageUrl || booking.service?.imageUrl || getFallbackImageForCategory(booking.service?.category)}
                                         alt={serviceName}
                                         className="w-full h-full object-cover rounded-lg"
                                         onError={(e) => { (e.target as HTMLImageElement).src = getFallbackImageForCategory(booking.service?.category); }}
@@ -1200,7 +1394,9 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                                     <p className="text-[11px] text-primary font-bold mt-0.5 flex items-center gap-1.5">
                                         <span>₱{totalFee.toLocaleString()} Total Value</span>
                                         <span className="text-gray-600">•</span>
-                                        <span className="text-gray-400 font-normal">{booking.service?.estimatedTime || '1-2 hrs est.'}</span>
+                                        <span className="text-gray-400 font-normal">
+                                            {isRentalBooking ? ((booking as any).vehicleDesc || 'Rental Agreement') : (booking.service?.estimatedTime || '1-2 hrs est.')}
+                                        </span>
                                     </p>
                                 </div>
                             </div>
@@ -1209,32 +1405,56 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                         {/* 2. Customer & Vehicle Details Card */}
                         <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
                             <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
-                                <Users size={12} className="text-blue-400" /> Customer & Vehicle
+                                <Users size={12} className="text-blue-400" /> Customer Information
                             </span>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2.5">
-                                    <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-400 font-black text-xs flex items-center justify-center border border-blue-500/30">
-                                        {booking.customerName.charAt(0)}
+                                    <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-400 font-black text-xs flex items-center justify-center border border-blue-500/30 overflow-hidden">
+                                        {customerObj?.picture ? (
+                                            <img 
+                                                src={customerObj.picture} 
+                                                alt="" 
+                                                className="w-full h-full object-cover" 
+                                                onError={(e) => {
+                                                    const img = e.currentTarget;
+                                                    if (img.src !== MOCKUPS.DEFAULT_AVATAR) {
+                                                        img.src = MOCKUPS.DEFAULT_AVATAR;
+                                                    }
+                                                }}
+                                            />
+                                        ) : (
+                                            booking.customerName.charAt(0).toUpperCase()
+                                        )}
                                     </div>
                                     <div>
                                         <p className="text-xs font-black text-white">{booking.customerName}</p>
                                         <p className="text-[10px] text-gray-400">{customerObj?.phone || (booking as any).customerPhone || 'No phone provided'}</p>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setIsChatOpen(true)}
-                                    className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/20 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
-                                    title="Open Chat with Customer"
-                                >
-                                    <MessageSquare size={12} />
-                                    <span>Chat</span>
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                    {(customerObj?.phone || (booking as any).customerPhone) && (
+                                        <a
+                                            href={`tel:${customerObj?.phone || (booking as any).customerPhone}`}
+                                            className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[10px] font-bold flex items-center gap-1 transition-all"
+                                        >
+                                            <Phone size={11} /> Call
+                                        </a>
+                                    )}
+                                    <button
+                                        onClick={() => setIsChatOpen(true)}
+                                        className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white border border-blue-500/20 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                                        title="Open Chat with Customer"
+                                    >
+                                        <MessageSquare size={12} />
+                                        <span>Chat</span>
+                                    </button>
+                                </div>
                             </div>
                             <div className="p-1.5 sm:p-2 rounded-xl bg-black/30 border border-white/5 flex items-center justify-between text-xs">
                                 <div className="flex items-center gap-2">
                                     <Car size={13} className="text-primary" />
                                     <span className="text-gray-300 font-bold text-[11px]">
-                                        {booking.vehicle ? `${booking.vehicle.year || ''} ${booking.vehicle.make || ''} ${booking.vehicle.model || ''}`.trim() : 'Standard Vehicle'}
+                                        {booking.vehicle ? `${booking.vehicle.year || ''} ${booking.vehicle.make || ''} ${booking.vehicle.model || ''}`.trim() : 'Selected Vehicle'}
                                     </span>
                                 </div>
                                 {booking.vehicle?.plateNumber && (
@@ -1243,37 +1463,145 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                                     </span>
                                 )}
                             </div>
-                        </div>
 
-                        {/* 3. Assigned Mechanic */}
-                        <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
-                            <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
-                                <UserCheck size={12} className="text-amber-400" /> Assigned Mechanic
-                            </span>
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-black text-xs flex items-center justify-center border border-amber-500/30 flex-shrink-0">
-                                        {(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0)}
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-xs font-black text-white truncate">
-                                            {isDriverService ? (booking.driverName || driverObj?.name || 'Unassigned Driver') : (booking.mechanic?.name || mechanicObj?.name || 'Unassigned Mechanic')}
-                                        </p>
-                                        <p className="text-[10px] text-gray-400 truncate">
-                                            {isDriverService ? 'Professional Driver' : (mechanicObj?.specialty || 'General Mechanic Specialist')}
-                                        </p>
-                                    </div>
+                            {/* Customer Realtime Location & GPS Details */}
+                            <div className="p-2 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                                        <MapPin size={11} className="text-blue-400" />
+                                        Customer Realtime Location
+                                    </span>
+                                    {currentCustomerCoord && (
+                                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">
+                                            {currentCustomerCoord.lat.toFixed(5)}, {currentCustomerCoord.lng.toFixed(5)}
+                                        </span>
+                                    )}
                                 </div>
-                                {(mechanicObj?.phone || (booking as any).driverPhone) && (
-                                    <a
-                                        href={`tel:${mechanicObj?.phone || (booking as any).driverPhone}`}
-                                        className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-white border border-amber-500/20 text-[10px] font-bold flex items-center gap-1 transition-all"
-                                    >
-                                        <Phone size={11} /> Call
-                                    </a>
-                                )}
+                                <p className="text-[11px] text-gray-200 font-semibold leading-snug">
+                                    {(booking as any).pickupLocation || (booking.location as any)?.address || (booking as any).details?.pickupLocation || customerObj?.address || 'Cavite Service Hub / Client Location'}
+                                </p>
                             </div>
                         </div>
+
+                        {/* 3. Assigned Specialist OR Selected Rental Vehicle */}
+                        {isRentalBooking ? (
+                            <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
+                                        <Car size={12} className="text-primary" /> Selected Rental Car
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-black uppercase tracking-wider border border-primary/20">
+                                        {(booking as any).deliveryOption || 'Self Pickup'}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-14 h-14 rounded-xl bg-black/40 border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                                        <img 
+                                            src={(booking as any).carImage || rentalCarObj?.imageUrl || 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&q=80&w=400'} 
+                                            alt={rentalCarObj?.model || 'Rental Car'} 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-black text-white truncate">
+                                            {rentalCarObj ? `${rentalCarObj.make} ${rentalCarObj.model} (${rentalCarObj.year})` : (booking.services?.[0]?.name || 'Rental Vehicle')}
+                                        </p>
+                                        <p className="text-[10px] font-mono text-primary font-bold mt-0.5">
+                                            Plate: {rentalCarObj?.plateNumber || booking.vehicle?.plateNumber || 'TBD'}
+                                        </p>
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                            <span className={`px-1.5 py-0.5 rounded font-black text-[9px] border ${
+                                                (booking as any).includeDriver
+                                                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                                    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                            }`}>
+                                                {(booking as any).includeDriver ? '★ With Driver' : '✓ Self Drive'}
+                                            </span>
+                                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] text-gray-300">
+                                                {rentalCarObj?.transmission || 'Automatic'}
+                                            </span>
+                                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] text-gray-300">
+                                                {rentalCarObj?.seats || 5} Seats
+                                            </span>
+                                            <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] text-gray-300">
+                                                {rentalCarObj?.type || 'SUV'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 space-y-1">
+                                    <div className="flex items-center justify-between text-[10px]">
+                                        <span className="text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                            <MapPin size={11} className="text-primary" /> Confirmed Service Location:
+                                        </span>
+                                        <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                                            Live Pin
+                                        </span>
+                                    </div>
+                                    <p className="text-xs font-black text-white leading-tight break-words" title={(booking as any).pickupLocation || booking.location?.address}>
+                                        {(booking as any).pickupLocation || booking.location?.address || 'Main Branch Office'}
+                                    </p>
+                                    {booking.location && (typeof (booking.location as any).latitude === 'number' || typeof (booking.location as any).lat === 'number') && (
+                                        <p className="text-[9px] font-mono text-gray-500">
+                                            GPS: {((booking.location as any).latitude ?? (booking.location as any).lat).toFixed(5)}, {((booking.location as any).longitude ?? (booking.location as any).lng).toFixed(5)}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        ) : isLiaisonService ? (
+                            <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
+                                <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
+                                    <UserCheck size={12} className="text-cyan-400" /> Liaison Officer & LTO Branch
+                                </span>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 font-black text-xs flex items-center justify-center border border-cyan-500/30 flex-shrink-0">
+                                            <FileText size={14} />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-black text-white truncate">
+                                                {(booking as any).agentName || (booking as any).liaisonName || 'Assigned Liaison Officer'}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 truncate">
+                                                Branch: {(booking as any).branchName || 'LTO District Office'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[9px] font-black uppercase tracking-wider shrink-0">
+                                        Active Duty
+                                    </span>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
+                                <span className="text-[10px] font-black text-gray-500 tracking-[0.2em] uppercase flex items-center gap-1.5">
+                                    <UserCheck size={12} className="text-amber-400" /> Assigned Mechanic
+                                </span>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-400 font-black text-xs flex items-center justify-center border border-amber-500/30 flex-shrink-0">
+                                            {(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0)}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-black text-white truncate">
+                                                {isDriverService ? (booking.driverName || driverObj?.name || 'Unassigned Driver') : (booking.mechanic?.name || mechanicObj?.name || 'Unassigned Mechanic')}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 truncate">
+                                                {isDriverService ? 'Professional Driver' : (mechanicObj?.specialty || 'General Mechanic Specialist')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {(mechanicObj?.phone || (booking as any).driverPhone) && (
+                                        <a
+                                            href={`tel:${mechanicObj?.phone || (booking as any).driverPhone}`}
+                                            className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-white border border-amber-500/20 text-[10px] font-bold flex items-center gap-1 transition-all"
+                                        >
+                                            <Phone size={11} /> Call
+                                        </a>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* 4. Complete Payment Breakdown */}
                         <div className="bg-[#1a1a1f] p-3 rounded-2xl border border-white/10 shadow-lg space-y-2">
@@ -1318,7 +1646,9 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
                 {/* Modal Footer */}
                 <div className="px-5 py-3 border-t border-white/10 bg-[#16161a] flex items-center justify-between flex-shrink-0">
                     <span className="text-[11px] text-gray-400 font-medium">
-                        Real-time location stream active • Auto-refreshes with driver updates
+                        {isRentalBooking 
+                            ? 'Client live GPS stream active • Visualizing client location & rental details' 
+                            : 'Real-time location stream active • Auto-refreshes with driver updates'}
                     </span>
                     <button
                         onClick={onClose}
@@ -1378,6 +1708,19 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
         return () => clearInterval(interval);
     }, []);
 
+    // Ensure Leaflet reactivity in LiveMapCard
+    const [leafletReady, setLeafletReady] = useState(typeof window !== 'undefined' && !!(window as any).L);
+    useEffect(() => {
+        if (leafletReady) return;
+        const interval = setInterval(() => {
+            if (typeof window !== 'undefined' && (window as any).L) {
+                setLeafletReady(true);
+                clearInterval(interval);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [leafletReady]);
+
     useEffect(() => {
         if (!booking.id) return;
         const customerRef = ref(rtdb, `tracking/${booking.id}/customerLocation`);
@@ -1411,18 +1754,77 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
         };
     }, [booking.id]);
 
-    // Base customer coordinate
-    const baseLat = booking.location ? Number((booking.location as any).latitude || booking.location.lat) : 14.291457;
-    const baseLng = booking.location ? Number((booking.location as any).longitude || booking.location.lng) : 121.001210;
+    // Detect if this booking is for Car Rental
+    const isRentalBooking = useMemo(() => {
+        return !!(booking.isRental || 
+                 booking.services?.[0]?.category === 'Car Rental' || 
+                 booking.service?.category === 'Car Rental' ||
+                 (booking as any).carObj);
+    }, [booking]);
+
+    // Resolve HQ Origin Coordinates (From Settings with Fallback to Carmona Central Hub)
+    const hqLat = Number(db?.settings?.storeLatitude ?? RIDERSBUD_STORE_LOCATION.lat);
+    const hqLng = Number(db?.settings?.storeLongitude ?? RIDERSBUD_STORE_LOCATION.lng);
+    const hqName = db?.settings?.storeName || RIDERSBUD_STORE_LOCATION.name;
+    const hqAddress = db?.settings?.address || db?.settings?.storeAddress || RIDERSBUD_STORE_LOCATION.address;
+
+    // Detect specialized HQ-origin services
+    const isLiaisonService = useMemo(() => {
+        return !!(booking.services?.[0]?.category === 'Liaison' || 
+                 booking.service?.category === 'Liaison' ||
+                 (booking as any).liaisonType ||
+                 booking.services?.[0]?.name?.toLowerCase().includes('liaison'));
+    }, [booking]);
+
+    const isTowingService = useMemo(() => {
+        return !!(booking.services?.[0]?.category === 'Towing' || 
+                 booking.service?.category === 'Towing' ||
+                 booking.services?.[0]?.name?.toLowerCase().includes('towing') ||
+                 booking.service?.name?.toLowerCase().includes('towing') ||
+                 (booking as any).isTowing);
+    }, [booking]);
+
+    const isHqOriginService = useMemo(() => {
+        return isRentalBooking || isDriverService || isLiaisonService || isTowingService;
+    }, [isRentalBooking, isDriverService, isLiaisonService, isTowingService]);
+
+    // Base customer coordinate with exhaustive fallback discovery
+    const rawCustLat = booking.location 
+        ? Number((booking.location as any).latitude ?? (booking.location as any).lat) 
+        : (booking as any).details?.startCoords?.[0] != null 
+            ? Number((booking as any).details.startCoords[0])
+            : (booking as any).pickupLocationCoords?.lat != null
+                ? Number((booking as any).pickupLocationCoords.lat)
+                : customerObj?.lat != null
+                    ? Number(customerObj.lat)
+                    : NaN;
+
+    const rawCustLng = booking.location 
+        ? Number((booking.location as any).longitude ?? (booking.location as any).lng) 
+        : (booking as any).details?.startCoords?.[1] != null 
+            ? Number((booking as any).details.startCoords[1])
+            : (booking as any).pickupLocationCoords?.lng != null
+                ? Number((booking as any).pickupLocationCoords.lng)
+                : customerObj?.lng != null
+                    ? Number(customerObj.lng)
+                    : NaN;
+
+    const baseLat = (!isNaN(rawCustLat) && rawCustLat !== 0) ? rawCustLat : 14.291457;
+    const baseLng = (!isNaN(rawCustLng) && rawCustLng !== 0) ? rawCustLng : 121.001210;
 
     const currentCustomerCoord = customerLiveLocation || (!isNaN(baseLat) && !isNaN(baseLng) ? { lat: baseLat, lng: baseLng } : null);
 
-    // Mechanic / Driver coordinate resolution
+    // Mechanic / Driver / HQ coordinate resolution
     const currentMechanicCoord = useMemo(() => {
         if (mechanicLiveLocation) return mechanicLiveLocation;
         if (mechanicObj?.lat && mechanicObj?.lng) return { lat: Number(mechanicObj.lat), lng: Number(mechanicObj.lng) };
         if (booking.mechanic?.lat && booking.mechanic?.lng) return { lat: Number(booking.mechanic.lat), lng: Number(booking.mechanic.lng) };
         if (driverObj?.lat && driverObj?.lng) return { lat: Number(driverObj.lat), lng: Number(driverObj.lng) };
+
+        // For specialized services originating from HQ (Car Rental, Towing, Liaison, Driver for Hire), adopt default HQ
+        if (isHqOriginService) {
+            return { lat: hqLat, lng: hqLng };
+        }
 
         // If booking is active or assigned, generate smooth real-time simulated coordinate
         if (!isNaN(baseLat) && !isNaN(baseLng)) {
@@ -1433,8 +1835,14 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
                 lng: baseLng + offset + (isCompleted ? 0 : Math.cos(time / 5000) * 0.0006)
             };
         }
-        return null;
-    }, [mechanicLiveLocation, mechanicObj, booking.mechanic, driverObj, baseLat, baseLng, booking.status, time]);
+        return { lat: hqLat, lng: hqLng };
+    }, [mechanicLiveLocation, mechanicObj, booking.mechanic, driverObj, isHqOriginService, hqLat, hqLng, baseLat, baseLng, booking.status, time]);
+
+    const isDisplayingHq = useMemo(() => {
+        if (!currentMechanicCoord) return false;
+        const isLiveAssigned = Boolean(mechanicLiveLocation || mechanicObj?.lat || booking.mechanic?.lat || driverObj?.lat);
+        return !isLiveAssigned && isHqOriginService;
+    }, [currentMechanicCoord, mechanicLiveLocation, mechanicObj, booking.mechanic, driverObj, isHqOriginService]);
 
     const mapMarkers = useMemo(() => {
         const markers: MapMarker[] = [];
@@ -1443,22 +1851,25 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
         const customerPic = customerObj?.picture || (booking as any).customerPhoto || '';
         const mechanicPic = mechanicObj?.imageUrl || booking.mechanic?.imageUrl || driverObj?.imageUrl || '';
         const specialistName = isDriverService ? (booking.driverName || driverObj?.name || 'Assigned Driver') : (booking.mechanic?.name || mechanicObj?.name || 'Assigned Mechanic');
+        const clientInitial = (booking.customerName || 'C').charAt(0).toUpperCase();
 
-        // High-definition Customer Pin
+        // Distinct High-definition Customer / Client Pin (Electric Blue)
         const customerIcon = L.divIcon({
             html: `
                 <div class="rb-map-pin-wrapper">
-                    <div class="rb-pin-circle" style="border: 3px solid #3B82F6; background: #121212; box-shadow: 0 4px 16px rgba(59, 130, 246, 0.6); width: 38px; height: 38px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                    <div class="rb-pin-circle" style="border: 3px solid #3B82F6; background: #0f172a; box-shadow: 0 4px 18px rgba(59, 130, 246, 0.7); width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
                         ${customerPic ? `
-                            <img src="${customerPic}" alt="Customer" style="width:100%;height:100%;object-fit:cover;" />
+                            <img src="${customerPic}" alt="Customer" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-weight:900;font-size:13px;color:#3B82F6;\\'>${clientInitial}</span>';" style="width:100%;height:100%;object-fit:cover;" />
+                        ` : isRentalBooking ? `
+                            <span style="font-size: 16px;">🚗</span>
                         ` : `
-                            <div style="font-weight:900;font-size:12px;color:#3B82F6;">
-                                ${(booking.customerName || 'C').charAt(0)}
+                            <div style="font-weight:900;font-size:13px;color:#3B82F6;">
+                                ${clientInitial}
                             </div>
                         `}
                     </div>
                     <div class="rb-pin-stem" style="background: #3B82F6; width: 3px; height: 16px; margin: 0 auto;"></div>
-                    <div class="rb-pin-dot" style="background: #3B82F6; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 8px #3B82F6;"></div>
+                    <div class="rb-pin-dot" style="background: #3B82F6; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 10px #3B82F6;"></div>
                 </div>
             `,
             className: 'rb-leaflet-icon',
@@ -1473,10 +1884,10 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
                 <div class="rb-map-pin-wrapper pulse-available">
                     <div class="rb-pin-circle" style="border: 3px solid #FE7803; background: #121212; box-shadow: 0 4px 16px rgba(254, 120, 3, 0.6); width: 38px; height: 38px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
                         ${mechanicPic ? `
-                            <img src="${mechanicPic}" alt="Specialist" style="width:100%;height:100%;object-fit:cover;" />
+                            <img src="${mechanicPic}" alt="Specialist" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-weight:900;font-size:12px;color:#FE7803;\\'>${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0).toUpperCase()}</span>';" style="width:100%;height:100%;object-fit:cover;" />
                         ` : `
                             <div style="font-weight:900;font-size:12px;color:#FE7803;">
-                                ${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0)}
+                                ${(isDriverService ? (booking.driverName || 'D') : (booking.mechanic?.name || 'M')).charAt(0).toUpperCase()}
                             </div>
                         `}
                     </div>
@@ -1521,28 +1932,83 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
             }
         }
 
-        // 1. Customer Marker
+        // 1. Customer / Rental Service Location Marker (Always Blue Client Pin)
         if (currentCustomerCoord) {
+            let popupHtml = `<div class="p-1 text-center font-bold text-xs"><span class="text-blue-400">Customer</span><br/>${booking.customerName}</div>`;
+
+            if (isRentalBooking) {
+                const rentalAddress = (booking as any).pickupLocation || booking.location?.address || 'Confirmed Service Location';
+                const carLabel = (booking as any).carObj ? `${(booking as any).carObj.make} ${(booking as any).carObj.model}` : (booking.vehicle ? `${booking.vehicle.make} ${booking.vehicle.model}` : 'Rental Vehicle');
+
+                popupHtml = `
+                    <div class="p-1.5 text-center font-bold text-xs min-w-[160px]">
+                        <div class="flex items-center justify-center gap-1 text-[10px] text-blue-400 uppercase font-black tracking-wider">
+                            <span>📍 Client Pick-up Location</span>
+                        </div>
+                        <div class="text-white font-extrabold mt-1 text-[11px]">${carLabel}</div>
+                        <div class="text-gray-300 text-[10px] mt-0.5 leading-tight">${rentalAddress}</div>
+                        <div class="mt-1 text-[9px] text-blue-400 font-mono">Client: ${booking.customerName}</div>
+                    </div>
+                `;
+            }
+
             markers.push({
                 id: 'customerLocation',
                 position: [currentCustomerCoord.lat, currentCustomerCoord.lng],
-                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-blue-400">Customer</span><br/>${booking.customerName}</div>`,
+                popupContent: popupHtml,
                 icon: customerIcon
             });
         }
 
-        // 2. Mechanic / Driver Marker
+        // 2. Mechanic / Driver / HQ Dispatch Marker (RidersBUD Orange)
         if (currentMechanicCoord) {
+            const originTitle = isDisplayingHq 
+                ? 'RidersBUD Central HQ' 
+                : isDriverService 
+                    ? 'Driver' 
+                    : isTowingService 
+                        ? 'Towing' 
+                        : isLiaisonService 
+                            ? 'Liaison' 
+                            : 'Mechanic';
+
+            const originSubtitle = isDisplayingHq 
+                ? hqName 
+                : specialistName;
+
+            const mapAppLogo = db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png';
+            const originMarkerIcon = isDisplayingHq ? L.divIcon({
+                html: `
+                    <div class="rb-map-pin-wrapper">
+                        <div class="rb-pin-circle" style="border: 3px solid #FE7803; background: #121212; box-shadow: 0 4px 18px rgba(254, 120, 3, 0.7); width: 42px; height: 42px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                            <img src="${mapAppLogo}" alt="RidersBUD HQ" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:18px;\\'>🏬</span>';" style="width:24px;height:24px;object-fit:contain;" />
+                        </div>
+                        <div class="rb-location-stem" style="background: #FE7803; width: 3px; height: 16px; margin: 0 auto;"></div>
+                        <div class="rb-location-dot" style="background: #FE7803; width: 6px; height: 6px; border-radius: 50%; margin: -2px auto 0; box-shadow: 0 0 10px #FE7803;"></div>
+                    </div>
+                `,
+                className: 'rb-leaflet-icon',
+                iconSize: [42, 66],
+                iconAnchor: [21, 66],
+                popupAnchor: [0, -68]
+            }) : specialistIcon;
+
             markers.push({
                 id: 'specialistLocation',
                 position: [currentMechanicCoord.lat, currentMechanicCoord.lng],
-                popupContent: `<div class="p-1 text-center font-bold text-xs"><span class="text-primary">${isDriverService ? 'Driver' : 'Mechanic'}</span><br/>${specialistName}</div>`,
-                icon: specialistIcon
+                popupContent: `
+                    <div class="p-1.5 text-center font-bold text-xs min-w-[170px]">
+                        <span class="text-[#FE7803] font-black uppercase text-[9px] tracking-wider">${isDisplayingHq ? 'Dispatch Origin' : originTitle}</span><br/>
+                        <span class="text-white font-black text-xs">${originSubtitle}</span>
+                        ${isDisplayingHq ? `<div class="text-[9px] text-gray-400 mt-0.5">${hqAddress.split(',')[0]}</div>` : ''}
+                    </div>
+                `,
+                icon: originMarkerIcon
             });
         }
 
         return markers;
-    }, [booking, currentCustomerCoord, currentMechanicCoord, customerObj, mechanicObj, driverObj, isDriverService]);
+    }, [booking, currentCustomerCoord, currentMechanicCoord, customerObj, mechanicObj, driverObj, isDriverService, isRentalBooking, isDisplayingHq, isTowingService, isLiaisonService, hqName, hqAddress, db?.settings, leafletReady]);
 
     // Road route state for preview card
     const [cardRouteGeometry, setCardRouteGeometry] = useState<[number, number][]>([]);
@@ -1660,19 +2126,21 @@ const LiveMapCard: React.FC<LiveMapCardProps> = ({ booking }) => {
             return L.latLngBounds(pts);
         }
         return undefined;
-    }, [currentCustomerCoord, currentMechanicCoord, cardRouteGeometry]);
+    }, [currentCustomerCoord, currentMechanicCoord, cardRouteGeometry, leafletReady]);
 
     return (
         <div className="w-full h-full min-h-[160px] rounded-2xl bg-[#101010] relative overflow-hidden border border-white/5 group">
             {/* Top Telemetry Overlay Badge */}
-            {cardDistanceKm !== null && (
+            {cardDistanceKm !== null ? (
                 <div className="absolute top-2.5 left-2.5 z-[400] flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/15 text-[10px] font-bold text-white shadow-lg pointer-events-none">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
                     <span>{cardDistanceKm} km</span>
                     <span className="text-gray-400">•</span>
-                    <span className="text-primary font-black uppercase text-[9px] tracking-wider">Route Active</span>
+                    <span className="text-primary font-black uppercase text-[9px] tracking-wider">
+                        {isDisplayingHq ? 'HQ Route' : 'Route Active'}
+                    </span>
                 </div>
-            )}
+            ) : null}
             <MapComponent 
                 center={centerPoint} 
                 zoom={14} 
@@ -1700,8 +2168,10 @@ const formatTimeToAmPm = (timeStr: string): string => {
 
 const AdminBookingsScreen: React.FC = () => {
     const navigate = useNavigate();
-    const { db, updateBookingStatus, cancelBooking, updateBooking, updateBookingPayment, assignMechanicToBooking, verifyBookingPayment, loading, deleteAllBookings, deleteBooking, updateLiaisonBookingStatus } = useDatabase();
+    const { db, updateBookingStatus, cancelBooking, updateBooking, updateBookingPayment, assignMechanicToBooking, verifyBookingPayment, loading, deleteAllBookings, deleteBooking, updateLiaisonBooking, updateLiaisonBookingStatus, updateSettings, updateServiceRequestStatus, updateServiceRequest, updateRentalBooking } = useDatabase();
     const { addNotification } = useNotification();
+    const mechanics = useMemo(() => db?.mechanics || [], [db?.mechanics]);
+    const settings = db?.settings;
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [selectedMechanicId, setSelectedMechanicId] = useState<string>('all');
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -1711,6 +2181,7 @@ const AdminBookingsScreen: React.FC = () => {
     const [datePreset, setDatePreset] = useState<string>('all');
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'date', direction: 'descending' });
     const [activeAdminTab, setActiveAdminTab] = useState<'Services' | 'Car Rental' | 'Driver for Hire' | 'Liaison' | 'Towing'>('Services');
+    const [isServiceSettingsModalOpen, setIsServiceSettingsModalOpen] = useState<boolean>(false);
     const [kpiFilter, setKpiFilter] = useState<'all' | 'total' | 'revenue' | 'completed' | 'active' | 'today' | 'unpaid'>('all');
     const [cancellingBooking, setCancellingBooking] = useState<Booking | null>(null);
     const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
@@ -1768,10 +2239,20 @@ const AdminBookingsScreen: React.FC = () => {
             }
             await deleteAllBookings(collectionName);
             setShowDeleteAllConfirm(false);
-            alert(`All ${categoryName} have been successfully deleted from the database.`);
+            addNotification({
+                type: 'system',
+                title: 'Bookings Cleared',
+                message: `All ${categoryName} have been successfully deleted from the database.`,
+                recipientId: 'admin'
+            });
         } catch (err) {
             console.error("Failed to delete bookings", err);
-            alert("Failed to delete bookings. Please try again.");
+            addNotification({
+                type: 'system',
+                title: 'Delete Failed',
+                message: "Failed to delete bookings. Please try again.",
+                recipientId: 'admin'
+            });
         } finally {
             setIsDeletingAll(false);
         }
@@ -1780,12 +2261,6 @@ const AdminBookingsScreen: React.FC = () => {
     const toggleRow = (id: string) => {
         setExpandedBookingId(expandedBookingId === id ? null : id);
     };
-
-    if (loading || !db) {
-        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
-    }
-
-    const { mechanics, settings } = db;
 
     const bookings = React.useMemo(() => {
         if (!db) return [];
@@ -1804,12 +2279,23 @@ const AdminBookingsScreen: React.FC = () => {
             return (db.rentalBookings || []).map(b => {
                 const customer = db.customers?.find(c => c.id === b.customerId);
                 const car = db.rentalCars?.find(c => c.id === b.carId);
+                const rawLoc: any = b.location;
+                const bLat = rawLoc?.latitude ?? rawLoc?.lat;
+                const bLng = rawLoc?.longitude ?? rawLoc?.lng;
+                const resolvedAddress = rawLoc?.address || b.pickupLocation || customer?.address || 'Confirmed Service Location';
+                const custLocation = (typeof bLat === 'number' && typeof bLng === 'number')
+                    ? { latitude: bLat, longitude: bLng, address: resolvedAddress }
+                    : (customer?.lat && customer?.lng 
+                        ? { latitude: customer.lat, longitude: customer.lng, address: customer.address || 'Client Address' } 
+                        : null);
+
                 return {
                     id: b.id,
                     customerId: b.customerId,
                     customerName: customer?.name || b.customerName || 'Unknown Customer',
-                    customerEmail: customer?.email || 'No email',
-                    customerPhone: customer?.phone || 'No phone',
+                    customerEmail: customer?.email || b.customerEmail || 'No email',
+                    customerPhone: customer?.phone || b.customerPhone || 'No phone',
+                    customerPhoto: customer?.picture || '',
                     vehicle: {
                         make: car?.make || 'Car Rental',
                         model: car?.model || '',
@@ -1818,7 +2304,7 @@ const AdminBookingsScreen: React.FC = () => {
                     },
                     services: [{
                         id: b.carId,
-                        name: `Car Rental (${car?.make} ${car?.model})`,
+                        name: `Car Rental (${car?.make || 'Car'} ${car?.model || ''})`,
                         category: 'Car Rental',
                         price: b.totalPrice
                     }],
@@ -1842,10 +2328,19 @@ const AdminBookingsScreen: React.FC = () => {
                     gcashDeclineReason: b.gcashDeclineReason,
                     additionalCosts: b.additionalCosts,
                     createdAt: b.createdAt,
+                    startDate: b.startDate,
+                    endDate: b.endDate,
                     vehicleDesc: `${b.startDate} to ${b.endDate}`,
                     statusHistory: b.statusHistory || [],
                     notes: b.notes,
                     isRental: true,
+                    includeDriver: b.includeDriver ?? false,
+                    carObj: car,
+                    carImage: car?.imageUrl || (b as any).carImage || '',
+                    deliveryOption: (b as any).deliveryOption || (b.includeDriver ? 'With Professional Driver' : 'Self Drive'),
+                    pickupLocation: b.pickupLocation || rawLoc?.address || 'Branch Office',
+                    location: custLocation,
+                    rentalBooking: b,
                 };
             });
         } else if (activeAdminTab === 'Driver for Hire') {
@@ -1928,12 +2423,35 @@ const AdminBookingsScreen: React.FC = () => {
                     },
                     date: req.scheduledDate || req.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
                     time: req.details?.time || '08:00 AM',
-                    status: (req.status === 'Pending Admin Review' || req.status === 'Pending') ? 'Booking Confirmed' : req.status,
-                    isPaid: true, // HitPay online payment automated
-                    paymentMethod: 'Online (HitPay)',
-                    paymentStatus: 'paid',
-                    paidAmount: computedPrice,
+                    status: req.status || 'Pending Admin Review',
+                    purposeOfHire: req.purposeOfHire || req.details?.purposeOfHire || 'Personal Travel / Errands',
+                    // Dynamic payment breakdown matching Car Rental flow:
+                    isPaid: Boolean(req.isPaid || req.paymentStatus === 'paid'),
+                    paymentMethod: req.paymentMethod || 'Online (HitPay)',
+                    paymentStatus: req.paymentStatus || (req.isPaid ? 'paid' : ((req.paidAmount != null && Number(req.paidAmount) > 0) || (req.downpaymentAmount != null && Number(req.downpaymentAmount) > 0) ? 'partial' : 'pending')),
+                    paidAmount: (req.isPaid || req.paymentStatus === 'paid') 
+                        ? computedPrice 
+                        : (req.paidAmount != null ? Number(req.paidAmount) : (req.downpaymentAmount != null ? Number(req.downpaymentAmount) : Math.round(computedPrice * 0.5))),
+                    downpaymentAmount: req.downpaymentAmount != null ? Number(req.downpaymentAmount) : (req.paidAmount != null ? Number(req.paidAmount) : Math.round(computedPrice * 0.5)),
                     totalAmount: computedPrice,
+                    isVerified: req.isVerified ?? (Boolean(req.isPaid || req.paymentStatus === 'paid' || (req.paidAmount != null && Number(req.paidAmount) > 0))),
+                    downpaymentRef: req.downpaymentRef || req.hitpayReference || (req.details as any)?.downpaymentRef,
+                    downpaymentPaidAt: req.downpaymentPaidAt,
+                    balancePaymentRef: req.balancePaymentRef || (req.details as any)?.balancePaymentRef,
+                    balancePaidAt: req.balancePaidAt,
+                    balancePaid: req.balancePaid,
+                    hitpayReference: req.hitpayReference || (req.details as any)?.hitpayReference,
+                    hitpayPaymentRequestId: req.hitpayPaymentRequestId || (req.details as any)?.hitpayPaymentRequestId,
+                    hitpayStatus: req.hitpayStatus || (req.details as any)?.hitpayStatus,
+                    gcashReceiptUrl: req.gcashReceiptUrl || req.gcashDownpaymentReceiptUrl,
+                    gcashDownpaymentReceiptUrl: req.gcashDownpaymentReceiptUrl,
+                    gcashDownpaymentReference: req.gcashReference,
+                    gcashBalanceReceiptUrl: req.gcashBalanceReceiptUrl,
+                    gcashReference: req.gcashReference,
+                    gcashPaymentStatus: req.gcashPaymentStatus,
+                    gcashDeclineReason: req.gcashDeclineReason,
+                    additionalCosts: req.additionalCosts || [],
+                    isDriverHire: true,
                     driverName: driverName,
                     driverPhone: driverPhone,
                     driverId: req.details?.selectedDriverId || assignedDriver?.id,
@@ -1967,34 +2485,90 @@ const AdminBookingsScreen: React.FC = () => {
             });
         } else if (activeAdminTab === 'Liaison') {
             return (db.liaisonBookings || []).map(b => {
-                const customer = db.customers?.find(c => c.id === b.customerId);
+                const customer = db.customers?.find(c => c.id === b.customerId || c.name === b.customerName);
+                const rawLat = (b as any).location?.latitude ?? (b as any).location?.lat ?? (b as any).pickupLocationCoords?.lat ?? (b as any).pickupLocationCoords?.latitude ?? customer?.lat;
+                const rawLng = (b as any).location?.longitude ?? (b as any).location?.lng ?? (b as any).pickupLocationCoords?.lng ?? (b as any).pickupLocationCoords?.longitude ?? customer?.lng;
+                const custLat = rawLat != null && !isNaN(Number(rawLat)) && Number(rawLat) !== 0 ? Number(rawLat) : 14.291457;
+                const custLng = rawLng != null && !isNaN(Number(rawLng)) && Number(rawLng) !== 0 ? Number(rawLng) : 121.001210;
+                const addressStr = (b as any).pickupAddress || (b as any).location?.address || customer?.address || b.branchName || 'LTO Branch Service Area';
+                
+                // Realtime computed pricing (no 0 / no "For Quotation")
+                const totalAmt = Number(b.totalAmount) || Number(b.fees?.total) || (b.serviceType?.toLowerCase().includes('registration') ? 1500 : 2500);
+                const isFullyPaid = Boolean(b.isPaid || b.paymentStatus === 'Paid' || b.paymentStatus === 'paid');
+                const initialDeposit = (b as any).downpaymentAmount != null && Number((b as any).downpaymentAmount) > 0
+                    ? Number((b as any).downpaymentAmount)
+                    : (Number(b.paidAmount) || (b.fees?.serviceFee ? Math.round(b.fees.serviceFee * 0.5) : Math.round(totalAmt * 0.5)));
+                const currentPaidAmount = isFullyPaid ? totalAmt : initialDeposit;
+
                 return {
                     id: b.id,
                     customerId: b.customerId,
                     customerName: customer?.name || b.customerName || 'Unknown Customer',
-                    customerEmail: customer?.email || 'No email',
-                    customerPhone: customer?.phone || 'No phone',
+                    customerEmail: customer?.email || b.customerEmail || 'No email',
+                    customerPhone: customer?.phone || b.customerPhone || 'No phone',
+                    customerObj: customer,
                     vehicle: {
                         make: b.vehicleDetails?.brand || '',
                         model: b.vehicleDetails?.model || '',
                         year: b.vehicleDetails?.year || '',
                         plateNumber: b.vehicleDetails?.plateNumber || ''
                     },
+                    vehicleDetails: b.vehicleDetails,
+                    serviceType: b.serviceType,
                     services: [{
                         id: b.id,
-                        name: `LTO Liaison (${b.serviceType})`,
+                        name: `LTO Liaison (${b.serviceType || 'Registration Assistance'})`,
                         category: 'Liason Services',
-                        price: b.paymentStatus === 'Paid' ? 500 : 0
+                        price: totalAmt
                     }],
+                    service: {
+                        id: b.id,
+                        name: `LTO Liaison (${b.serviceType || 'Registration Assistance'})`,
+                        category: 'Liason Services',
+                        price: totalAmt
+                    },
                     date: b.appointmentDate,
                     time: b.appointmentTime,
                     status: b.status || 'Booking Received',
-                    isPaid: b.paymentStatus === 'Paid',
-                    totalAmount: b.paymentStatus === 'Paid' ? 500 : 0,
+                    // Live dynamic payment metrics matching other services:
+                    isPaid: isFullyPaid,
+                    paymentStatus: b.paymentStatus || (isFullyPaid ? 'paid' : 'partial'),
+                    paymentMethod: b.paymentMethod || 'Online (HitPay)',
+                    totalAmount: totalAmt,
+                    paidAmount: currentPaidAmount,
+                    downpaymentAmount: initialDeposit,
+                    isVerified: (b as any).isVerified ?? Boolean(isFullyPaid || (b as any).hitpayReference || (b as any).downpaymentRef || b.paidAmount || (b.fees && b.fees.total > 0)),
+                    downpaymentRef: (b as any).downpaymentRef || (b as any).hitpayReference,
+                    downpaymentPaidAt: (b as any).downpaymentPaidAt,
+                    balancePaymentRef: (b as any).balancePaymentRef,
+                    balancePaidAt: (b as any).balancePaidAt,
+                    balancePaid: (b as any).balancePaid,
+                    hitpayReference: (b as any).hitpayReference,
+                    hitpayPaymentRequestId: (b as any).hitpayPaymentRequestId,
+                    hitpayStatus: (b as any).hitpayStatus,
+                    gcashReceiptUrl: (b as any).gcashReceiptUrl,
+                    gcashDownpaymentReceiptUrl: (b as any).gcashDownpaymentReceiptUrl,
+                    gcashBalanceReceiptUrl: (b as any).gcashBalanceReceiptUrl,
+                    gcashReference: (b as any).gcashReference,
+                    fees: b.fees,
                     createdAt: b.createdAt || b.appointmentDate,
                     agentName: b.liaisonName || 'Unassigned',
                     branchName: b.branchName || '',
-                    documents: b.documents || []
+                    documents: b.documents || [],
+                    pickupOption: b.pickupOption,
+                    pickupAddress: addressStr,
+                    pickupLocation: addressStr,
+                    pickupLocationCoords: {
+                        lat: custLat,
+                        lng: custLng
+                    },
+                    location: {
+                        lat: custLat,
+                        lng: custLng,
+                        latitude: custLat,
+                        longitude: custLng,
+                        address: addressStr
+                    }
                 };
             });
         } else if (activeAdminTab === 'Towing') {
@@ -2002,32 +2576,90 @@ const AdminBookingsScreen: React.FC = () => {
                 (req.serviceName || '').toLowerCase().includes('towing')
             );
             return requests.map(req => {
-                const customer = db.customers?.find(c => c.id === req.customerId);
+                const customer = db.customers?.find(c => c.id === req.customerId || c.name === req.customerName);
+                const startCoords = req.details?.startCoords || (req.location?.latitude ? [req.location.latitude, req.location.longitude] : (req.location?.lat ? [req.location.lat, req.location.lng] : null));
+                const custLat = startCoords ? Number(startCoords[0]) : (customer?.lat != null ? Number(customer.lat) : 14.291457);
+                const custLng = startCoords ? Number(startCoords[1]) : (customer?.lng != null ? Number(customer.lng) : 121.001210);
+                const addressStr = req.details?.pickupLocation || (req.location as any)?.address || customer?.address || 'Roadside Assistance Pickup';
+                
+                // Realtime computed pricing (no 0 / no "For Quotation")
+                const totalAmt = Number(req.totalAmount) || Number((req as any).price) || Number(req.details?.totalAmount) || 3500;
+                const isFullyPaid = Boolean(req.isPaid || req.paymentStatus === 'paid' || req.paymentStatus === 'Paid');
+                const initialDeposit = req.downpaymentAmount != null && Number(req.downpaymentAmount) > 0
+                    ? Number(req.downpaymentAmount)
+                    : (Number(req.paidAmount) || Number(req.details?.downpaymentAmount) || Math.round(totalAmt * 0.5));
+                const currentPaidAmount = isFullyPaid ? totalAmt : initialDeposit;
+
                 return {
                     id: req.id,
                     customerId: req.customerId,
                     customerName: customer?.name || req.customerName || 'Unknown Customer',
-                    customerEmail: customer?.email || 'No email',
-                    customerPhone: customer?.phone || 'No phone',
-                    vehicle: {
+                    customerEmail: customer?.email || req.customerEmail || 'No email',
+                    customerPhone: customer?.phone || req.customerPhone || 'No phone',
+                    customerObj: customer,
+                    vehicle: req.vehicleDetails ? {
+                        make: req.vehicleDetails.brand || 'Towed Vehicle',
+                        model: req.vehicleDetails.model || '',
+                        year: req.vehicleDetails.year || '',
+                        plateNumber: req.vehicleDetails.plateNumber || ''
+                    } : {
                         make: 'Towing request',
                         model: '',
                         year: '',
                         plateNumber: ''
                     },
+                    vehicleDetails: req.vehicleDetails,
                     services: [{
                         id: req.id,
                         name: req.serviceName || 'Towing / Roadside Assistance',
                         category: 'Towing',
-                        price: 0
+                        price: totalAmt
                     }],
+                    service: {
+                        id: req.id,
+                        name: req.serviceName || 'Towing / Roadside Assistance',
+                        category: 'Towing',
+                        price: totalAmt
+                    },
                     date: req.scheduledDate || req.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-                    time: '08:00',
+                    time: req.details?.time || '08:00',
                     status: req.status || 'Pending',
-                    isPaid: false,
-                    totalAmount: 0,
+                    // Live dynamic payment metrics matching other services:
+                    isPaid: isFullyPaid,
+                    paymentStatus: req.paymentStatus || (isFullyPaid ? 'paid' : 'partial'),
+                    paymentMethod: req.paymentMethod || (req.details as any)?.paymentMethod || 'Online (HitPay)',
+                    totalAmount: totalAmt,
+                    paidAmount: currentPaidAmount,
+                    downpaymentAmount: initialDeposit,
+                    isVerified: req.isVerified ?? Boolean(isFullyPaid || req.hitpayReference || req.downpaymentRef || (req.details as any)?.hitpayReference || (req.details as any)?.downpaymentRef || currentPaidAmount > 0),
+                    downpaymentRef: req.downpaymentRef || req.hitpayReference || (req.details as any)?.downpaymentRef || (req.details as any)?.hitpayReference,
+                    downpaymentPaidAt: req.downpaymentPaidAt,
+                    balancePaymentRef: req.balancePaymentRef || (req.details as any)?.balancePaymentRef,
+                    balancePaidAt: req.balancePaidAt,
+                    balancePaid: req.balancePaid,
+                    hitpayReference: req.hitpayReference || (req.details as any)?.hitpayReference,
+                    hitpayPaymentRequestId: req.hitpayPaymentRequestId || (req.details as any)?.hitpayPaymentRequestId,
+                    hitpayStatus: req.hitpayStatus || (req.details as any)?.hitpayStatus,
+                    gcashReceiptUrl: req.gcashReceiptUrl || req.gcashDownpaymentReceiptUrl,
+                    gcashDownpaymentReceiptUrl: req.gcashDownpaymentReceiptUrl,
+                    gcashBalanceReceiptUrl: req.gcashBalanceReceiptUrl,
+                    gcashReference: req.gcashReference,
                     createdAt: req.createdAt,
-                    notes: req.notes
+                    notes: req.notes,
+                    details: req.details,
+                    pickupLocation: addressStr,
+                    destination: req.details?.destination ? {
+                        latitude: req.details?.destinationCoords?.[0] || 14.5995,
+                        longitude: req.details?.destinationCoords?.[1] || 120.9842,
+                        address: req.details.destination
+                    } : null,
+                    location: {
+                        lat: custLat,
+                        lng: custLng,
+                        latitude: custLat,
+                        longitude: custLng,
+                        address: addressStr
+                    }
                 };
             });
         }
@@ -2166,9 +2798,9 @@ const AdminBookingsScreen: React.FC = () => {
                 } else if (activeAdminTab === 'Liaison') {
                     await updateLiaisonBookingStatus(booking.id, newStatus);
                 } else if (activeAdminTab === 'Car Rental') {
-                    await updateDoc(doc(firestoreDB, 'rentalBookings', booking.id), { status: newStatus });
+                    await updateRentalBooking(booking.id, { status: newStatus });
                 } else {
-                    await updateDoc(doc(firestoreDB, 'serviceRequests', booking.id), { status: newStatus });
+                    await updateServiceRequestStatus(booking.id, newStatus);
                 }
                 addNotification({ type: 'success', title: 'Status Updated', message: `Booking #${booking.id.slice(-6)} is now ${newStatus}.`, recipientId: 'admin' });
             } catch (e) {
@@ -2185,7 +2817,7 @@ const AdminBookingsScreen: React.FC = () => {
                 } else if (activeAdminTab === 'Liaison') {
                     await updateLiaisonBookingStatus(cancellingBooking.id, 'Cancelled', reason);
                 } else if (activeAdminTab === 'Car Rental') {
-                    await updateDoc(doc(firestoreDB, 'rentalBookings', cancellingBooking.id), { status: 'Cancelled', cancelReason: reason });
+                    await updateRentalBooking(cancellingBooking.id, { status: 'Cancelled', cancelReason: reason });
                 } else {
                     await updateDoc(doc(firestoreDB, 'serviceRequests', cancellingBooking.id), { status: 'Cancelled', cancelReason: reason });
                 }
@@ -2208,7 +2840,31 @@ const AdminBookingsScreen: React.FC = () => {
         const remaining = Math.max(0, bookingTotal - (booking.paidAmount || 0));
 
         try {
-            await updateBookingPayment(bookingId, remaining, 'paid');
+            if (activeAdminTab === 'Driver for Hire' || activeAdminTab === 'Towing' || (booking as any).isDriverHire) {
+                await updateServiceRequest(bookingId, {
+                    paidAmount: bookingTotal,
+                    isPaid: true,
+                    paymentStatus: 'paid',
+                    balancePaid: true,
+                    balancePaidAt: new Date().toISOString()
+                });
+            } else if (activeAdminTab === 'Car Rental' || (booking as any).isRental) {
+                await updateRentalBooking(bookingId, {
+                    paidAmount: bookingTotal,
+                    isPaid: true,
+                    paymentStatus: 'paid' as any
+                });
+            } else if (activeAdminTab === 'Liaison') {
+                await updateLiaisonBooking(bookingId, {
+                    paidAmount: bookingTotal,
+                    isPaid: true,
+                    paymentStatus: 'Paid',
+                    balancePaid: true,
+                    balancePaidAt: new Date().toISOString()
+                } as any);
+            } else {
+                await updateBookingPayment(bookingId, remaining, 'paid');
+            }
             addNotification({ type: 'success', title: 'Payment Updated', message: `Booking #${bookingId.slice(-6)} marked as paid.`, recipientId: 'admin' });
         } catch (e) {
             addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'admin' });
@@ -2584,6 +3240,10 @@ const AdminBookingsScreen: React.FC = () => {
         setSearchQuery('');
         setKpiFilter('all');
     };
+
+    if (loading || !db) {
+        return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
+    }
 
     return (
         <div className="text-admin-text-primary flex flex-col h-full overflow-hidden">
@@ -3524,18 +4184,29 @@ const AdminBookingsScreen: React.FC = () => {
                                             </td>
                                             <td className="py-2 px-3">
                                                 {(() => {
-                                                    const customerObj = db.customers.find(c => c.name === booking.customerName || c.id === booking.customerId);
+                                                    const customerObj = db.customers.find(c => 
+                                                        (booking.customerId && c.id === booking.customerId) || 
+                                                        (c.name && booking.customerName && c.name.toLowerCase() === booking.customerName.toLowerCase()) ||
+                                                        (booking.customerPhone && c.phone === booking.customerPhone)
+                                                    );
+                                                    const avatarUrl = customerObj?.picture || (booking as any).customerPhoto;
                                                     return (
                                                         <div className="flex items-center gap-2.5 max-w-[160px]">
-                                                            {customerObj?.picture ? (
+                                                            {avatarUrl ? (
                                                                 <img 
-                                                                    src={customerObj.picture} 
+                                                                    src={avatarUrl} 
                                                                     alt={booking.customerName} 
                                                                     className="w-7 h-7 rounded-full object-cover border border-white/10 shrink-0" 
+                                                                    onError={(e) => {
+                                                                        const img = e.currentTarget;
+                                                                        if (img.src !== MOCKUPS.DEFAULT_AVATAR) {
+                                                                            img.src = MOCKUPS.DEFAULT_AVATAR;
+                                                                        }
+                                                                    }}
                                                                 />
                                                             ) : (
                                                                 <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-sky-600 flex items-center justify-center text-[10px] font-black text-white shrink-0">
-                                                                    {booking.customerName.charAt(0)}
+                                                                    {booking.customerName.charAt(0).toUpperCase()}
                                                                 </div>
                                                             )}
                                                             <div className="flex flex-col min-w-0">
@@ -3812,18 +4483,29 @@ const AdminBookingsScreen: React.FC = () => {
                                                                 </h4>
                                                                 <div className="space-y-4 flex-1 flex flex-col">
                                                                     {(() => {
-                                                                        const customerObj = db.customers.find(c => c.name === booking.customerName || c.id === booking.customerId);
+                                                                        const customerObj = db.customers.find(c => 
+                                                                            (booking.customerId && c.id === booking.customerId) || 
+                                                                            (c.name && booking.customerName && c.name.toLowerCase() === booking.customerName.toLowerCase()) ||
+                                                                            (booking.customerPhone && c.phone === booking.customerPhone)
+                                                                        );
+                                                                        const avatarUrl = customerObj?.picture || (booking as any).customerPhoto;
                                                                         return (
                                                                             <div className="flex items-center gap-3">
-                                                                                {customerObj?.picture ? (
+                                                                                {avatarUrl ? (
                                                                                     <img 
-                                                                                        src={customerObj.picture} 
+                                                                                        src={avatarUrl} 
                                                                                         alt={booking.customerName} 
                                                                                         className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0" 
+                                                                                        onError={(e) => {
+                                                                                            const img = e.currentTarget;
+                                                                                            if (img.src !== MOCKUPS.DEFAULT_AVATAR) {
+                                                                                                img.src = MOCKUPS.DEFAULT_AVATAR;
+                                                                                            }
+                                                                                        }}
                                                                                     />
                                                                                 ) : (
                                                                                     <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center text-lg font-black text-white shadow-lg shadow-primary/20 shrink-0">
-                                                                                        {booking.customerName.charAt(0)}
+                                                                                        {booking.customerName.charAt(0).toUpperCase()}
                                                                                     </div>
                                                                                 )}
                                                                                 <div className="min-w-0 flex-1">
@@ -4323,6 +5005,51 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                 })()}
                                                                             </div>
 
+                                                                            {/* LTO Vehicle Technical Specs Card */}
+                                                                            {(() => {
+                                                                                const vDetails = (booking as any).vehicleDetails || (booking as any).vehicle;
+                                                                                const plate = vDetails?.plateNumber || booking.plateNumber || 'N/A';
+                                                                                const orNo = vDetails?.currentOrNumber || 'Pending / N/A';
+                                                                                const crNo = vDetails?.currentCrNumber || 'Pending / N/A';
+                                                                                const engNo = vDetails?.engineNumber || 'N/A';
+                                                                                const chaNo = vDetails?.chassisNumber || 'N/A';
+                                                                                const brandModel = vDetails?.brand || vDetails?.make ? `${vDetails?.year || ''} ${vDetails?.brand || vDetails?.make || ''} ${vDetails?.model || ''}`.trim() : null;
+
+                                                                                return (
+                                                                                    <div className="bg-white/5 rounded-xl border border-white/10 p-3 space-y-2">
+                                                                                        <div className="flex items-center justify-between">
+                                                                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
+                                                                                                <Car size={12} className="text-primary" /> Vehicle LTO Technical Specs
+                                                                                            </span>
+                                                                                            <span className="font-mono text-[9px] bg-primary/10 text-primary px-2 py-0.5 rounded font-black border border-primary/20">
+                                                                                                {plate}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        {brandModel && (
+                                                                                            <p className="text-xs font-bold text-white leading-tight">{brandModel} {vDetails?.color ? `• ${vDetails.color}` : ''}</p>
+                                                                                        )}
+                                                                                        <div className="grid grid-cols-2 gap-1.5 text-[9px] font-mono pt-1">
+                                                                                            <div className="bg-black/30 p-1.5 rounded border border-white/5">
+                                                                                                <p className="text-[7.5px] font-sans text-gray-500 font-bold uppercase">Current OR #</p>
+                                                                                                <p className="text-gray-200 font-bold truncate">{orNo}</p>
+                                                                                            </div>
+                                                                                            <div className="bg-black/30 p-1.5 rounded border border-white/5">
+                                                                                                <p className="text-[7.5px] font-sans text-gray-500 font-bold uppercase">Current CR #</p>
+                                                                                                <p className="text-gray-200 font-bold truncate">{crNo}</p>
+                                                                                            </div>
+                                                                                            <div className="bg-black/30 p-1.5 rounded border border-white/5">
+                                                                                                <p className="text-[7.5px] font-sans text-gray-500 font-bold uppercase">Engine Number</p>
+                                                                                                <p className="text-gray-200 font-bold truncate">{engNo}</p>
+                                                                                            </div>
+                                                                                            <div className="bg-black/30 p-1.5 rounded border border-white/5">
+                                                                                                <p className="text-[7.5px] font-sans text-gray-500 font-bold uppercase">Chassis Number</p>
+                                                                                                <p className="text-gray-200 font-bold truncate">{chaNo}</p>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            })()}
+
                                                                             {/* Appointment & Pickup Info (Row layout) */}
                                                                             <div className="flex flex-col gap-2">
                                                                                 <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
@@ -4343,35 +5070,129 @@ const AdminBookingsScreen: React.FC = () => {
                                                                         </>
                                                                     )}
 
-                                                                    {activeAdminTab === 'Car Rental' && (
-                                                                        <>
-                                                                            <div className="flex gap-3 items-start">
-                                                                                <div className="w-12 h-12 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 shrink-0">
-                                                                                    <Calendar size={24} />
-                                                                                </div>
-                                                                                <div className="min-w-0 flex-1">
-                                                                                    <p className="text-primary font-black text-sm leading-tight truncate">{booking.services?.[0]?.name || 'Rental Vehicle'}</p>
-                                                                                    <p className="text-[10px] text-gray-500 mt-1 leading-normal line-clamp-2">Option: {booking.deliveryOption || 'Self Pickup'}</p>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className="grid grid-cols-2 gap-2 mt-auto">
-                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
-                                                                                    <Calendar size={14} className="text-primary shrink-0" />
-                                                                                    <div className="min-w-0">
-                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Rental Period</p>
-                                                                                        <p className="text-[10px] font-black text-white mt-0.5 truncate" title={booking.vehicleDesc}>{booking.vehicleDesc}</p>
+                                                                    {activeAdminTab === 'Car Rental' && (() => {
+                                                                        const car = (booking as any).carObj;
+                                                                        const startDate = (booking as any).startDate || booking.date;
+                                                                        const endDate = (booking as any).endDate || booking.date;
+                                                                        
+                                                                        // Calculate duration in days
+                                                                        let totalDays = 1;
+                                                                        if (startDate && endDate) {
+                                                                            const s = new Date(startDate).getTime();
+                                                                            const e = new Date(endDate).getTime();
+                                                                            if (!isNaN(s) && !isNaN(e) && e >= s) {
+                                                                                totalDays = Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1);
+                                                                            }
+                                                                        }
+
+                                                                        const transmission = car?.transmission || 'Automatic';
+                                                                        const seats = car?.seats ? `${car.seats} Seats` : '5-Seater';
+                                                                        const fuel = car?.fuelPolicy || car?.engineType || 'Gasoline';
+                                                                        const pricePerDay = car?.pricePerDay ? `₱${car.pricePerDay.toLocaleString()}/day` : null;
+                                                                        const plate = booking.vehicle?.plateNumber || car?.plateNumber;
+
+                                                                        return (
+                                                                            <div className="space-y-2.5">
+                                                                                {/* Top Row: Vehicle Header + Mode Badge */}
+                                                                                <div className="flex gap-3 items-start">
+                                                                                    <div className="w-12 h-12 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 shrink-0 overflow-hidden shadow-inner">
+                                                                                        {(booking as any).carImage ? (
+                                                                                            <img src={(booking as any).carImage} alt="Car" className="w-full h-full object-cover" />
+                                                                                        ) : (
+                                                                                            <Car size={22} />
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="min-w-0 flex-1">
+                                                                                        <div className="flex items-center justify-between gap-1">
+                                                                                            <p className="text-primary font-black text-sm leading-tight truncate">
+                                                                                                {booking.services?.[0]?.name || `${car?.make || 'Rental'} ${car?.model || 'Vehicle'}`}
+                                                                                            </p>
+                                                                                            <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded border shrink-0 ${
+                                                                                                (booking as any).includeDriver 
+                                                                                                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                                                                                                    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                                                                            }`}>
+                                                                                                {(booking as any).includeDriver ? 'With Driver' : 'Self Drive'}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                                                            <p className="text-[10px] text-gray-400 leading-normal">
+                                                                                                Mode: <span className="text-white font-bold">{booking.deliveryOption || ((booking as any).includeDriver ? 'With Professional Driver' : 'Self Drive')}</span>
+                                                                                            </p>
+                                                                                            {pricePerDay && (
+                                                                                                <span className="text-[9.5px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                                                                                    {pricePerDay}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
                                                                                     </div>
                                                                                 </div>
-                                                                                <div className="bg-white/5 p-2.5 rounded-lg border border-white/5 flex items-center gap-2">
-                                                                                    <Search size={14} className="text-primary shrink-0" />
-                                                                                    <div className="min-w-0">
-                                                                                        <p className="text-[9px] font-black text-gray-500 tracking-widest uppercase">Pickup Location</p>
-                                                                                        <p className="text-[10px] font-black text-white mt-0.5 truncate" title={booking.pickupLocation}>{booking.pickupLocation || 'Branch Office'}</p>
+
+                                                                                {/* Enhanced Specifications Data Chips */}
+                                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-gray-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg">
+                                                                                        <Gauge size={10} className="text-primary" /> {transmission}
+                                                                                    </span>
+                                                                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-gray-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg">
+                                                                                        <Users size={10} className="text-cyan-400" /> {seats}
+                                                                                    </span>
+                                                                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-gray-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg">
+                                                                                        <Fuel size={10} className="text-amber-400" /> {fuel}
+                                                                                    </span>
+                                                                                    {plate && (
+                                                                                        <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg">
+                                                                                            <Tag size={10} /> {plate}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* SINGLE ROW RENTAL PERIOD DETAILS */}
+                                                                                <div className="bg-gradient-to-r from-white/[0.07] via-white/[0.04] to-white/[0.07] p-2.5 rounded-xl border border-white/10 flex items-center justify-between gap-2 shadow-sm">
+                                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                                        <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                                                                                            <CalendarDays size={14} />
+                                                                                        </div>
+                                                                                        <div className="min-w-0">
+                                                                                            <p className="text-[8px] font-black text-gray-400 tracking-widest uppercase">Rental Period</p>
+                                                                                            <div className="flex items-center gap-1.5 text-[11px] font-black text-white mt-0.5 truncate">
+                                                                                                <span className="text-gray-200">{startDate}</span>
+                                                                                                <ArrowRight size={11} className="text-primary shrink-0" />
+                                                                                                <span className="text-gray-200">{endDate}</span>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <div className="text-right shrink-0 flex items-center gap-1.5">
+                                                                                        <span className="px-2 py-0.5 rounded-lg bg-primary/20 border border-primary/40 text-primary text-[10px] font-black tracking-wide">
+                                                                                            {totalDays} {totalDays === 1 ? 'Day' : 'Days'}
+                                                                                        </span>
+                                                                                        <span className="text-[9px] text-gray-400 font-mono hidden sm:inline-block">
+                                                                                            (8:00 AM)
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Service Location / Live GPS Pin */}
+                                                                                <div 
+                                                                                    onClick={() => setViewingMapBooking(booking)}
+                                                                                    className="bg-white/5 hover:bg-white/10 p-2.5 rounded-xl border border-white/5 hover:border-primary/40 flex items-center gap-2 cursor-pointer transition-all group/loc"
+                                                                                    title="Click to view realtime location map"
+                                                                                >
+                                                                                    <MapPin size={14} className="text-primary shrink-0 group-hover/loc:scale-110 transition-transform" />
+                                                                                    <div className="min-w-0 flex-1">
+                                                                                        <div className="flex items-center justify-between">
+                                                                                            <p className="text-[8px] font-black text-gray-500 tracking-widest uppercase">Pickup & Service Location</p>
+                                                                                            <span className="text-[7.5px] font-bold text-emerald-400 bg-emerald-500/10 px-1 rounded flex items-center gap-1">
+                                                                                                <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping" /> Live GPS Pin
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <p className="text-[10px] font-black text-white mt-0.5 truncate group-hover/loc:text-primary transition-colors" title={booking.pickupLocation || (booking.location as any)?.address}>
+                                                                                            {booking.pickupLocation || (booking.location as any)?.address || 'Branch Office HQ'}
+                                                                                        </p>
                                                                                     </div>
                                                                                 </div>
                                                                             </div>
-                                                                        </>
-                                                                    )}
+                                                                        );
+                                                                    })()}
 
                                                                     {activeAdminTab === 'Driver for Hire' && (() => {
                                                                         const assignedDriverObj = (booking as any).driverObj || (db.hireDrivers || []).find(d => d.name === booking.driverName || d.id === (booking as any).driverId);
@@ -4408,13 +5229,23 @@ const AdminBookingsScreen: React.FC = () => {
 
                                                                         const handleSaveDetails = async () => {
                                                                             try {
+                                                                                const shouldAdvanceStatus = !booking.status || booking.status === 'Pending' || booking.status === 'Pending Admin Review';
+                                                                                const updatedStatus = shouldAdvanceStatus ? 'Driver Assigned' : booking.status;
+
                                                                                 await updateDoc(doc(firestoreDB, 'serviceRequests', booking.id), {
                                                                                     driverName: currentFields.driverName,
                                                                                     driverPhone: currentFields.driverPhone,
                                                                                     estimatedArrivalTime: currentFields.estimatedArrivalTime,
-                                                                                    remarks: currentFields.remarks
+                                                                                    remarks: currentFields.remarks,
+                                                                                    status: updatedStatus,
+                                                                                    updatedAt: new Date().toISOString()
                                                                                 });
-                                                                                addNotification({ type: 'success', title: 'Driver Assigned', message: 'Driver details updated successfully.', recipientId: 'admin' });
+
+                                                                                if (shouldAdvanceStatus && updateServiceRequestStatus) {
+                                                                                    await updateServiceRequestStatus(booking.id, 'Driver Assigned', `Driver ${currentFields.driverName} assigned to request.`);
+                                                                                }
+
+                                                                                addNotification({ type: 'success', title: 'Driver Assigned', message: `Driver details updated for #${booking.id.slice(-6)}.`, recipientId: 'admin' });
                                                                             } catch (e) {
                                                                                 addNotification({ type: 'error', title: 'Update Failed', message: (e as Error).message, recipientId: 'admin' });
                                                                             }
@@ -4426,43 +5257,8 @@ const AdminBookingsScreen: React.FC = () => {
                                                                         return (
                                                                             <div className="space-y-3 flex-1 flex flex-col justify-between">
                                                                                 <div className="space-y-2.5">
-                                                                                    {/* Trip details overview */}
-                                                                                    <div className="p-3 bg-white/5 border border-white/5 rounded-xl space-y-1.5 text-[10px]">
-                                                                                        <div className="flex items-start gap-2">
-                                                                                            <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px] shrink-0 mt-0.5">Route:</span> 
-                                                                                            <span className="text-white font-black truncate">{booking.details?.pickupLocation || booking.location?.address || 'Pickup Point'} ➔ {booking.details?.destination || 'Destination'}</span>
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Vehicle Option:</span>{' '}
-                                                                                            {booking.vehicleDetails ? (
-                                                                                                <span className="text-emerald-400 font-black">Drive Customer's Car</span>
-                                                                                            ) : (
-                                                                                                <span className="text-blue-400 font-black">Driver Provides Vehicle</span>
-                                                                                            )}
-                                                                                        </div>
-                                                                                        {booking.vehicleDetails && (
-                                                                                            <div className="mt-1 pl-2 border-l border-primary/40 space-y-0.5 text-gray-300">
-                                                                                                <div><span className="text-gray-500 font-medium">Brand & Model:</span> {booking.vehicleDetails.brand} {booking.vehicleDetails.model}</div>
-                                                                                                <div><span className="text-gray-500 font-medium">Plate Number:</span> <span className="font-mono bg-white/5 px-1 rounded text-white">{booking.vehicleDetails.plateNumber}</span></div>
-                                                                                                <div><span className="text-gray-500 font-medium">Type:</span> {booking.vehicleDetails.type || 'Sedan'}</div>
-                                                                                            </div>
-                                                                                        )}
-                                                                                        {!booking.vehicleDetails && (
-                                                                                            <div className="mt-1 pl-2 border-l border-blue-500/40 text-gray-300">
-                                                                                                <div><span className="text-gray-500 font-medium">Requested Type:</span> {booking.details?.vehicleType || 'Sedan'}</div>
-                                                                                            </div>
-                                                                                        )}
-                                                                                        <div className="flex justify-between items-center pt-0.5">
-                                                                                            <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Duration:</span> <span className="text-white font-medium">{booking.details?.duration || '8 Hours (Full Day)'}</span></div>
-                                                                                            <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Time:</span> <span className="text-primary font-bold">{booking.details?.time || booking.time || '08:00 AM'}</span></div>
-                                                                                        </div>
-                                                                                        {booking.notes && (
-                                                                                            <div className="pt-0.5"><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Customer Notes:</span> <span className="text-gray-400 italic">"{booking.notes}"</span></div>
-                                                                                        )}
-                                                                                    </div>
-
                                                                                     {/* Selected & Assigned Driver Card */}
-                                                                                    <div className="pt-2 border-t border-white/5 space-y-2">
+                                                                                    <div className="space-y-2">
                                                                                         <h4 className="text-[9px] font-black uppercase tracking-widest text-primary flex items-center justify-between">
                                                                                             <span>Selected Driver</span>
                                                                                             {activeDriver?.rating && (
@@ -4586,7 +5382,7 @@ const AdminBookingsScreen: React.FC = () => {
                                                                         </>
                                                                     )}
 
-                                                                     {activeAdminTab !== 'Liaison' && activeAdminTab !== 'Driver for Hire' && (
+                                                                     {activeAdminTab !== 'Liaison' && (
                                                                          <div className="pt-2 border-t border-white/5 space-y-2 mt-auto">
                                                                              <div className="flex items-center justify-between ml-0.5">
                                                                                  <h4 className="text-[9px] font-black tracking-widest text-gray-500 uppercase">Update Status</h4>
@@ -4598,9 +5394,14 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                      {(() => {
                                                                                          let options = ['Pending', 'Mechanic Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled'];
                                                                                          if (activeAdminTab === 'Car Rental') {
-                                                                                             options = ['Received', 'Pending', 'Approved', 'Completed', 'Cancelled'];
+                                                                                             const isSelfDrive = !(booking as any).includeDriver;
+                                                                                             options = isSelfDrive
+                                                                                                 ? ['Received', 'Confirmed', 'Ready for Pickup', 'Active Rental', 'Completed', 'Cancelled']
+                                                                                                 : ['Received', 'Confirmed', 'Driver Assigned', 'Ready for Pickup', 'Completed', 'Cancelled'];
                                                                                          } else if (activeAdminTab === 'Towing') {
                                                                                              options = ['Pending', 'In Progress', 'Completed', 'Cancelled'];
+                                                                                         } else if (activeAdminTab === 'Driver for Hire') {
+                                                                                             options = ['Pending', 'Driver Assigned', 'En Route', 'In Progress', 'Completed', 'Cancelled'];
                                                                                          }
 
                                                                                          const getStatusMeta = (status: string) => {
@@ -4608,9 +5409,16 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                                  case 'Pending':
                                                                                                  case 'Received':
                                                                                                      return { icon: Clock, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/30' };
-                                                                                                 case 'Mechanic Assigned':
-                                                                                                 case 'Approved':
-                                                                                                     return { icon: Users, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/30' };
+                                                                                                 case 'Confirmed':
+                                                                                                  case 'Approved':
+                                                                                                      return { icon: CheckCircle, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/30' };
+                                                                                                  case 'Driver Assigned':
+                                                                                                  case 'Mechanic Assigned':
+                                                                                                      return { icon: Users, color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/30' };
+                                                                                                  case 'Ready for Pickup':
+                                                                                                      return { icon: KeyRound, color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/30' };
+                                                                                                  case 'Active Rental':
+                                                                                                      return { icon: Car, color: 'text-[#FF7903]', bg: 'bg-[#FF7903]/10', border: 'border-[#FF7903]/30' };
                                                                                                  case 'En Route':
                                                                                                      return { icon: Navigation, color: 'text-cyan-400', bg: 'bg-cyan-400/10', border: 'border-cyan-400/30' };
                                                                                                  case 'In Progress':
@@ -4850,6 +5658,47 @@ const AdminBookingsScreen: React.FC = () => {
                                                                         )}
                                                                     </div>
 
+                                                                    {/* Driver for Hire: Trip Details Overview placed before Progress Tracking rail */}
+                                                                    {activeAdminTab === 'Driver for Hire' && (
+                                                                        <div className="mb-3 p-3 bg-white/5 border border-white/5 rounded-xl space-y-1.5 text-[10px]">
+                                                                            <div className="flex items-start gap-2">
+                                                                                <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px] shrink-0 mt-0.5">Route:</span> 
+                                                                                <span className="text-white font-black truncate">{booking.details?.pickupLocation || booking.location?.address || 'Pickup Point'} ➔ {booking.details?.destination || 'Destination'}</span>
+                                                                            </div>
+                                                                            <div>
+                                                                                <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Purpose of Hire:</span>{' '}
+                                                                                <span className="text-amber-400 font-black">{booking.purposeOfHire || booking.details?.purposeOfHire || 'Personal Travel / Errands'}</span>
+                                                                            </div>
+                                                                            <div>
+                                                                                <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Vehicle Option:</span>{' '}
+                                                                                {booking.vehicleDetails ? (
+                                                                                    <span className="text-emerald-400 font-black">Drive Customer's Car</span>
+                                                                                ) : (
+                                                                                    <span className="text-blue-400 font-black">Driver Provides Vehicle</span>
+                                                                                )}
+                                                                            </div>
+                                                                            {booking.vehicleDetails && (
+                                                                                <div className="mt-1 pl-2 border-l border-primary/40 space-y-0.5 text-gray-300">
+                                                                                    <div><span className="text-gray-500 font-medium">Brand & Model:</span> {booking.vehicleDetails.brand} {booking.vehicleDetails.model}</div>
+                                                                                    <div><span className="text-gray-500 font-medium">Plate Number:</span> <span className="font-mono bg-white/5 px-1 rounded text-white">{booking.vehicleDetails.plateNumber}</span></div>
+                                                                                    <div><span className="text-gray-500 font-medium">Type:</span> {booking.vehicleDetails.type || 'Sedan'}</div>
+                                                                                </div>
+                                                                            )}
+                                                                            {!booking.vehicleDetails && (
+                                                                                <div className="mt-1 pl-2 border-l border-blue-500/40 text-gray-300">
+                                                                                    <div><span className="text-gray-500 font-medium">Requested Type:</span> {booking.details?.vehicleType || 'Sedan'}</div>
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="flex justify-between items-center pt-0.5">
+                                                                                <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Duration:</span> <span className="text-white font-medium">{booking.details?.duration || '8 Hours (Full Day)'}</span></div>
+                                                                                <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Time:</span> <span className="text-primary font-bold">{booking.details?.time || booking.time || '08:00 AM'}</span></div>
+                                                                            </div>
+                                                                            {booking.notes && (
+                                                                                <div className="pt-0.5"><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Customer Notes:</span> <span className="text-gray-400 italic">"{booking.notes}"</span></div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+
                                                                     {/* Vertical Timeline Rail */}
                                                                     <div className="flex-1 overflow-y-auto pr-0.5">
                                                                         {(() => {
@@ -4966,16 +5815,54 @@ const AdminBookingsScreen: React.FC = () => {
                                                                         </h4>
 
                                                                         <div className="space-y-4">
-                                                                            {/* Pickup Option card */}
-                                                                            <div className="bg-white/5 rounded-xl border border-white/5 p-3">
-                                                                                <div className="flex items-center gap-2.5">
-                                                                                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                                                                                        <MapPin size={16} />
+                                                                            {/* Pickup Option interactive button & Live Map Modal trigger */}
+                                                                            <div 
+                                                                                onClick={() => setViewingMapBooking(booking)}
+                                                                                className="bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 hover:border-primary/50 p-3.5 cursor-pointer transition-all duration-200 group/loc shadow-lg relative overflow-hidden"
+                                                                                title="Click to view real-time location map & route"
+                                                                            >
+                                                                                <div className="flex items-center justify-between gap-2">
+                                                                                    <div className="flex items-center gap-3 min-w-0">
+                                                                                        <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary group-hover/loc:scale-105 group-hover/loc:bg-primary group-hover/loc:text-black transition-all shrink-0">
+                                                                                            <MapPin size={18} />
+                                                                                        </div>
+                                                                                        <div className="min-w-0">
+                                                                                            <div className="flex items-center gap-2">
+                                                                                                <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase">Pickup Option</p>
+                                                                                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-bold shrink-0">
+                                                                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                                                                                    Live GPS
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            <p className="text-xs font-black text-white group-hover/loc:text-primary transition-colors mt-0.5 truncate">
+                                                                                                {(booking as any).pickupOption || 'Customer brings documents to branch'}
+                                                                                            </p>
+                                                                                        </div>
                                                                                     </div>
-                                                                                    <div>
-                                                                                        <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase">Pickup Option</p>
-                                                                                        <p className="text-xs font-black text-white mt-0.5">{(booking as any).pickupOption || 'Customer brings documents to branch'}</p>
-                                                                                    </div>
+                                                                                    <button 
+                                                                                        type="button"
+                                                                                        className="px-3 py-1.5 rounded-lg bg-primary/15 hover:bg-primary text-primary hover:text-black border border-primary/30 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm shrink-0"
+                                                                                    >
+                                                                                        <Navigation size={12} />
+                                                                                        <span>View Map</span>
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* Embedded Live Map Card preview */}
+                                                                            <div 
+                                                                                onClick={() => setViewingMapBooking(booking)}
+                                                                                className="h-32 rounded-xl overflow-hidden relative border border-white/10 cursor-pointer group/minimap hover:border-primary/50 transition-all"
+                                                                                title="Click to expand real-time live map & route"
+                                                                            >
+                                                                                <LiveMapCard booking={booking} />
+                                                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex items-end justify-between p-2.5 z-10 pointer-events-none">
+                                                                                    <span className="px-2 py-1 rounded bg-black/85 backdrop-blur-md border border-white/20 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1.5 shadow-md">
+                                                                                        <Maximize2 size={11} className="text-primary" /> Live Client & HQ Route
+                                                                                    </span>
+                                                                                    <span className="text-[9px] font-bold text-gray-300 bg-black/70 px-2 py-0.5 rounded border border-white/10">
+                                                                                        Tap to Expand
+                                                                                    </span>
                                                                                 </div>
                                                                             </div>
 
@@ -4983,9 +5870,68 @@ const AdminBookingsScreen: React.FC = () => {
                                                                             <div className="bg-white/5 rounded-xl border border-white/5 p-3">
                                                                                 <p className="text-[8px] font-black text-gray-500 tracking-wider uppercase mb-1">Pickup Address</p>
                                                                                 <p className="text-xs font-bold text-gray-300 leading-relaxed">
-                                                                                    {(booking as any).pickupAddress || (booking as any).pickupOption === 'Customer brings documents' ? 'Not applicable (Documents will be delivered directly by customer to LTO Branch)' : 'No pickup address specified.'}
+                                                                                    {(booking as any).pickupAddress || ((booking as any).pickupOption === 'Customer brings documents' ? 'Not applicable (Documents will be delivered directly by customer to LTO Branch)' : 'No pickup address specified.')}
                                                                                 </p>
                                                                             </div>
+
+                                                                            {/* Itemized LTO Transaction Fees & Payment Status Card */}
+                                                                            {(() => {
+                                                                                const fees = (booking as any).fees || {};
+                                                                                const total = fees.total || booking.totalAmount || 1500;
+                                                                                const serviceFee = fees.serviceFee || total;
+                                                                                const govtFee = fees.governmentFee || 0;
+                                                                                const pickupFee = fees.pickupFee || 0;
+                                                                                const dpAmount = (booking as any).downpaymentAmount || Math.round(total * 0.5);
+                                                                                const isPaid = booking.paymentStatus === 'Paid' || booking.status === 'Completed';
+                                                                                const isDpPaid = booking.paymentStatus === 'Downpayment Paid';
+                                                                                const paidAmount = isPaid ? total : (isDpPaid ? dpAmount : ((booking as any).paidAmount || 0));
+                                                                                const remainingBalance = Math.max(0, total - paidAmount);
+
+                                                                                return (
+                                                                                    <div className="bg-white/5 rounded-xl border border-white/5 p-3 space-y-2">
+                                                                                        <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                                                                                            <span className="text-[8px] font-black text-gray-500 tracking-wider uppercase">LTO Fee Structure</span>
+                                                                                            <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded border ${
+                                                                                                isPaid 
+                                                                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                                                                                    : isDpPaid 
+                                                                                                    ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
+                                                                                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                                                            }`}>
+                                                                                                {booking.paymentStatus || 'Pending Payment'}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <div className="space-y-1 text-[10px]">
+                                                                                            <div className="flex justify-between text-gray-400">
+                                                                                                <span>Liaison Assistance:</span>
+                                                                                                <span className="font-mono text-gray-200">₱{serviceFee.toLocaleString()}</span>
+                                                                                            </div>
+                                                                                            {govtFee > 0 && (
+                                                                                                <div className="flex justify-between text-gray-400">
+                                                                                                    <span>LTO Government Fee:</span>
+                                                                                                    <span className="font-mono text-gray-200">₱{govtFee.toLocaleString()}</span>
+                                                                                                </div>
+                                                                                            )}
+                                                                                            {pickupFee > 0 && (
+                                                                                                <div className="flex justify-between text-gray-400">
+                                                                                                    <span>Door Pickup Fee:</span>
+                                                                                                    <span className="font-mono text-gray-200">₱{pickupFee.toLocaleString()}</span>
+                                                                                                </div>
+                                                                                            )}
+                                                                                            <div className="flex justify-between text-white font-black pt-1 border-t border-white/5">
+                                                                                                <span>Total Order:</span>
+                                                                                                <span className="font-mono text-primary font-black">₱{total.toLocaleString()}</span>
+                                                                                            </div>
+                                                                                            {remainingBalance > 0 && (
+                                                                                                <div className="flex justify-between text-amber-400 font-bold">
+                                                                                                    <span>Remaining Balance:</span>
+                                                                                                    <span className="font-mono">₱{remainingBalance.toLocaleString()}</span>
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            })()}
 
                                                                             {/* Designated LTO Branch card */}
                                                                             <div className="bg-white/5 rounded-xl border border-white/5 p-3">
@@ -5337,6 +6283,51 @@ const AdminBookingsScreen: React.FC = () => {
                                                 </div>
                                             </div>
 
+                                            {/* DRIVER FOR HIRE: TRIP DETAILS (MOBILE) */}
+                                            {activeAdminTab === 'Driver for Hire' && (
+                                                <div className="bg-[#151515] p-3.5 rounded-xl border border-white/10 shadow-2xl space-y-1.5 text-[10px]">
+                                                    <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 mb-2 flex items-center gap-2">
+                                                        <Navigation size={14} className="text-primary" />
+                                                        Trip Details
+                                                    </h4>
+                                                    <div className="flex items-start gap-2">
+                                                        <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px] shrink-0 mt-0.5">Route:</span> 
+                                                        <span className="text-white font-black truncate">{booking.details?.pickupLocation || booking.location?.address || 'Pickup Point'} ➔ {booking.details?.destination || 'Destination'}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Purpose of Hire:</span>{' '}
+                                                        <span className="text-amber-400 font-black">{booking.purposeOfHire || booking.details?.purposeOfHire || 'Personal Travel / Errands'}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Vehicle Option:</span>{' '}
+                                                        {booking.vehicleDetails ? (
+                                                            <span className="text-emerald-400 font-black">Drive Customer's Car</span>
+                                                        ) : (
+                                                            <span className="text-blue-400 font-black">Driver Provides Vehicle</span>
+                                                        )}
+                                                    </div>
+                                                    {booking.vehicleDetails && (
+                                                        <div className="mt-1 pl-2 border-l border-primary/40 space-y-0.5 text-gray-300">
+                                                            <div><span className="text-gray-500 font-medium">Brand & Model:</span> {booking.vehicleDetails.brand} {booking.vehicleDetails.model}</div>
+                                                            <div><span className="text-gray-500 font-medium">Plate Number:</span> <span className="font-mono bg-white/5 px-1 rounded text-white">{booking.vehicleDetails.plateNumber}</span></div>
+                                                            <div><span className="text-gray-500 font-medium">Type:</span> {booking.vehicleDetails.type || 'Sedan'}</div>
+                                                        </div>
+                                                    )}
+                                                    {!booking.vehicleDetails && (
+                                                        <div className="mt-1 pl-2 border-l border-blue-500/40 text-gray-300">
+                                                            <div><span className="text-gray-500 font-medium">Requested Type:</span> {booking.details?.vehicleType || 'Sedan'}</div>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between items-center pt-0.5">
+                                                        <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Duration:</span> <span className="text-white font-medium">{booking.details?.duration || '8 Hours (Full Day)'}</span></div>
+                                                        <div><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Time:</span> <span className="text-primary font-bold">{booking.details?.time || booking.time || '08:00 AM'}</span></div>
+                                                    </div>
+                                                    {booking.notes && (
+                                                        <div className="pt-0.5"><span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Customer Notes:</span> <span className="text-gray-400 italic">"{booking.notes}"</span></div>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             {/* TIMELINE PROGRESS CARD */}
                                             <div className="bg-[#151515] p-3.5 rounded-xl border border-white/10 shadow-2xl">
                                                 <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 mb-3 flex items-center gap-2">
@@ -5367,38 +6358,36 @@ const AdminBookingsScreen: React.FC = () => {
                                             </div>
 
                                             {/* MOBILE REAL-TIME LOCATION CARD */}
-                                            {activeAdminTab !== 'Liaison' && (
-                                                <div 
-                                                    onClick={() => setViewingMapBooking(booking)}
-                                                    className="bg-[#151515] p-3.5 rounded-xl border border-white/10 shadow-2xl hover:border-primary/50 transition-all cursor-pointer group/mobilemap relative overflow-hidden"
-                                                >
-                                                    <div className="flex items-center justify-between mb-2.5">
-                                                        <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 flex items-center gap-2 group-hover/mobilemap:text-white transition-colors">
-                                                            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                                                <Navigation size={12} />
-                                                            </div>
-                                                            Real-time Location
-                                                        </h4>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-black uppercase tracking-wider">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                                                                Live
-                                                            </span>
-                                                            <span className="p-1 rounded-md bg-white/5 text-primary">
-                                                                <Maximize2 size={11} />
-                                                            </span>
+                                            <div 
+                                                onClick={() => setViewingMapBooking(booking)}
+                                                className="bg-[#151515] p-3.5 rounded-xl border border-white/10 shadow-2xl hover:border-primary/50 transition-all cursor-pointer group/mobilemap relative overflow-hidden"
+                                            >
+                                                <div className="flex items-center justify-between mb-2.5">
+                                                    <h4 className="text-[11px] font-black tracking-[0.2em] text-gray-500 flex items-center gap-2 group-hover/mobilemap:text-white transition-colors">
+                                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                                            <Navigation size={12} />
                                                         </div>
-                                                    </div>
-                                                    <div className="h-36 rounded-lg overflow-hidden relative border border-white/5 pointer-events-none">
-                                                        <LiveMapCard booking={booking} />
-                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end justify-center p-2 z-10">
-                                                            <span className="px-2.5 py-1 rounded bg-black/80 backdrop-blur-md border border-white/10 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1">
-                                                                <Maximize2 size={10} className="text-primary" /> Tap to Open Live Tracking
-                                                            </span>
-                                                        </div>
+                                                        Real-time Location
+                                                    </h4>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-black uppercase tracking-wider">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                                                            Live
+                                                        </span>
+                                                        <span className="p-1 rounded-md bg-white/5 text-primary">
+                                                            <Maximize2 size={11} />
+                                                        </span>
                                                     </div>
                                                 </div>
-                                            )}
+                                                <div className="h-36 rounded-lg overflow-hidden relative border border-white/5 pointer-events-none">
+                                                    <LiveMapCard booking={booking} />
+                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex items-end justify-center p-2 z-10">
+                                                        <span className="px-2.5 py-1 rounded bg-black/80 backdrop-blur-md border border-white/10 text-white font-black text-[9px] uppercase tracking-wider flex items-center gap-1">
+                                                            <Maximize2 size={10} className="text-primary" /> Tap to Open Live Tracking
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

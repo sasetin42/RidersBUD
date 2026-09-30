@@ -235,15 +235,15 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
                         </div>
                     )}
 
-                    {/* Trust & Escrow Guarantee */}
-                    <div className="flex items-center gap-3 p-3 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
-                        <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 flex-shrink-0">
-                            <ShieldCheck size={18} />
+                    {/* Trust & Safe Payment Guarantee */}
+                    <div className="flex items-center gap-3 p-3.5 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                        <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 flex-shrink-0">
+                            <ShieldCheck size={20} />
                         </div>
                         <div className="min-w-0">
-                            <p className="text-xs font-bold text-emerald-300">100% Secure Gateway & Escrow</p>
-                            <p className="text-[10px] text-emerald-400/80 leading-tight">
-                                Payments are protected via 256-bit encrypted HitPay gateway with free cancellation coverage.
+                            <p className="text-xs font-black text-emerald-300">100% Safe & Protected Payment</p>
+                            <p className="text-[11px] text-emerald-200/90 leading-snug mt-0.5">
+                                Your money is held safely until your mechanic arrives and completes the job. If you cancel, you get a quick and hassle-free refund.
                             </p>
                         </div>
                     </div>

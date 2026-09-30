@@ -3,6 +3,7 @@ import { useMechanicAuth } from '../../context/MechanicAuthContext';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { DayAvailability, Mechanic, PayoutDetails, Review } from '../../types';
+import { calculateMechanicWalletLedger } from '../../utils/mechanicLedger';
 import { fileToBase64, compressAndEncodeImage } from '../../utils/fileUtils';
 import { storageService } from '../../services/StorageService';
 import Modal from '../../components/admin/Modal';
@@ -3439,43 +3440,23 @@ const MechanicProfileManagementScreen: React.FC = () => {
     const { totalJobs, lifetimeEarnings, availableForPayout } = useMemo(() => {
         if (!mechanic || !db) return { totalJobs: 0, lifetimeEarnings: 0, availableForPayout: 0 };
 
-        const completedJobs = db.bookings.filter(b => 
-            (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) && 
-            b.status === 'Completed'
+        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 10;
+        const currentMechanicDoc = db.mechanics.find(m => m.id === mechanic.id) || mechanic;
+
+        const ledger = calculateMechanicWalletLedger(
+            mechanic.id,
+            currentMechanicDoc,
+            db.bookings || [],
+            db.payouts || [],
+            serviceFeePercentage
         );
-        
-        // Sum total earnings directly from completed jobs in real-time
-        const calculatedEarnings = completedJobs.reduce((sum, job: any) => {
-            if (job.totalAmount != null && Number(job.totalAmount) > 0) return sum + Number(job.totalAmount);
-            if (job.price != null && Number(job.price) > 0) return sum + Number(job.price);
-            const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
-            const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
-            const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
-            return sum + svcsSum + addCosts + (Number(job.laborFee) || 0);
-        }, 0);
-        
-        const grossEarnings = calculatedEarnings;
-
-        const approvedPayoutsAmount = db.payouts
-            .filter((p: any) => p.mechanicId === mechanic.id && (p.status === 'Approved' || p.status === 'Paid' || p.status === 'Completed'))
-            .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
-
-        const pendingPayoutsAmount = db.payouts
-            .filter((p: any) => p.mechanicId === mechanic.id && p.status === 'Pending')
-            .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
-            
-        // Available for payout equals gross completed earnings minus all active/settled payouts
-        const ledgerAvailable = Math.max(0, grossEarnings - approvedPayoutsAmount - pendingPayoutsAmount);
-        const availableForPayout = (mechanic.walletBalance != null && mechanic.walletBalance >= 0)
-            ? Math.max(ledgerAvailable, Math.max(0, mechanic.walletBalance - pendingPayoutsAmount))
-            : ledgerAvailable;
 
         return {
-            totalJobs: completedJobs.length,
-            lifetimeEarnings: grossEarnings,
-            availableForPayout,
+            totalJobs: ledger.completedJobsCount,
+            lifetimeEarnings: ledger.lifetimeEarnings,
+            availableForPayout: ledger.availableBalance,
         };
-    }, [db.bookings, db.payouts, mechanic.walletBalance, mechanic.id]);
+    }, [db.bookings, db.payouts, db.settings, db.mechanics, mechanic]);
 
     if (loading || !db || !mechanic) {
         return (

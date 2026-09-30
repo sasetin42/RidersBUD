@@ -587,7 +587,6 @@ const AdminCustomersScreen: React.FC = () => {
     };
 
     const handleDeleteCustomer = async (id: string) => {
-        if (!window.confirm("FATAL ACTION: Are you absolutely sure you want to terminate this customer's account?")) return;
         try {
             await deleteCustomer(id);
             addNotification({ type: 'success', title: 'Account Terminated', message: 'The customer has been purged from the database.', recipientId: 'admin' });

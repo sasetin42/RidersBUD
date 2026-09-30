@@ -69,8 +69,14 @@ service firebase.storage {
       allow write: if isAuth();
     }
     
-    // System Settings
+    // System Settings & Releases
     match /settings/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+    
+    // APK Releases & Mobile App Binaries
+    match /releases/{allPaths=**} {
       allow read: if true;
       allow write: if isAuth();
     }

@@ -117,9 +117,7 @@ const AdminPartsScreen: React.FC = () => {
     };
 
     const handleDelete = (id: string) => {
-        if (window.confirm('Are you sure you want to delete this part?')) {
-            deletePart(id);
-        }
+        deletePart(id);
     };
     
     return (

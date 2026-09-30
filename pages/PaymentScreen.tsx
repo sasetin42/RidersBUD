@@ -10,6 +10,7 @@ import { Card } from '../components/ui';
 
 import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
+import { getPartImage } from '../utils/fallbackImages';
 
 const PaymentScreen: React.FC = () => {
     const location = useLocation();
@@ -153,6 +154,10 @@ const PaymentScreen: React.FC = () => {
                     setProcessingStep('Finalizing Order...');
                     setIsProcessing(true);
                     setIsSuccess(true);
+                    if (sessionData.orderId && updateOrderStatus) {
+                        await updateOrderStatus(sessionData.orderId, 'Processing', 'Paid');
+                    }
+                    clearCart();
                     sessionStorage.removeItem('pendingHitPayTx');
                     window.history.replaceState({}, document.title, window.location.pathname + '?success=true');
                 } catch (err) {
@@ -162,14 +167,21 @@ const PaymentScreen: React.FC = () => {
                 }
             };
             finalizeOrder();
-        } else if (status === 'canceled' || status === 'failed') {
+        } else if (status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') {
             const pendingTx = sessionStorage.getItem('pendingHitPayTx');
             const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
             sessionStorage.removeItem('pendingHitPayTx');
+            sessionStorage.removeItem('pendingHitPayBookingTx');
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+            try {
+                localStorage.removeItem('last_hitpay_booking_tx');
+                localStorage.removeItem('last_hitpay_service_tx');
+            } catch (e) {}
 
+            const rawRef = sessionData?.orderId || reference || 'ORD-CANCELLED';
             const cancellationInfo = {
-                type: 'Order',
-                referenceId: sessionData?.orderId || reference || 'ORD-CANCELLED',
+                type: 'Order' as const,
+                referenceId: rawRef.startsWith('#') ? rawRef : `#${rawRef.slice(-8).toUpperCase()}`,
                 amount: total,
                 date: new Date().toLocaleString(),
                 reason: 'Payment process was cancelled by the user at the payment gateway.',
@@ -277,26 +289,28 @@ const PaymentScreen: React.FC = () => {
                     throw new Error("Order creation failed.");
                 }
 
+                sessionStorage.setItem('pendingHitPayTx', JSON.stringify({
+                    orderId: newOrder.id,
+                    reference: reference,
+                    amount: total
+                }));
+
                 try {
-                    const { url } = await hitPay.createPaymentRequest({
-                        amount: total,
+                    const checkoutParams = new URLSearchParams({
+                        amount: String(total),
                         currency: db?.settings?.currency || 'PHP',
                         reference_number: reference,
-                        webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                        redirect_url: returnUrl, // Return exactly to this page
-                        email: user.email,
-                        name: deliveryDetails.fullName,
-                        phone: deliveryDetails.phone,
-                        address: {
-                            line1: deliveryDetails.addressLine1,
-                            city: deliveryDetails.city,
-                            postal_code: deliveryDetails.zipCode,
-                            country: 'PH'
-                        }
+                        reference: reference,
+                        redirect_url: returnUrl,
+                        email: user.email || 'customer@ridersbud.com',
+                        name: deliveryDetails.fullName || 'Valued Customer',
+                        phone: deliveryDetails.phone || '09171234567',
+                        purpose: `RidersBUD Parts & Services Order #${reference}`,
+                        sandbox: hitPay.getIsSandbox() ? 'true' : 'false'
                     });
 
-                    window.location.href = url;
-                    return; // Stop execution here, user is leaving the page
+                    navigate(`/hitpay-checkout?${checkoutParams.toString()}`);
+                    return;
                 } catch (hitpayErr) {
                     console.warn('HitPay online checkout unavailable. Falling back to GCash payment modal:', hitpayErr);
                     setPendingOrderId(newOrder.id);
@@ -330,7 +344,7 @@ const PaymentScreen: React.FC = () => {
         <div className="flex flex-col h-screen h-[100dvh] bg-[#0F0F0F] text-white font-sans overflow-hidden">
             <CustomerHeader title="CHECKOUT" showBackButton icon={<CreditCard size={22} />} />
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pb-64">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 pb-48 sm:pb-52 max-w-3xl mx-auto w-full">
                 {/* Order Summary */}
                 <section className="mb-8 animate-slideUp">
                     <h2 className="text-[11px] font-bold text-gray-400  tracking-widest mb-3 flex items-center gap-2">
@@ -340,33 +354,23 @@ const PaymentScreen: React.FC = () => {
                         {cartItems.map((item, idx) => (
                             <div key={item.id} className={`flex justify-between items-center py-1 ${idx !== cartItems.length - 1 ? 'border-b border-white/5 pb-4' : ''}`}>
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-[#222222] overflow-hidden flex items-center justify-center">
-                                        {item.imageUrls?.[0] ? (
-                                            <img
-                                                src={item.imageUrls[0]}
-                                                alt={item.name}
-                                                className="w-full h-full object-cover"
-                                                onError={(e) => {
-                                                    const target = e.currentTarget;
-                                                    target.style.display = 'none';
-                                                    const fallback = target.nextElementSibling as HTMLElement | null;
-                                                    if (fallback) fallback.style.display = 'flex';
-                                                }}
-                                            />
-                                        ) : null}
-                                        <div
-                                            className="w-full h-full items-center justify-center text-xl"
-                                            style={{ display: item.imageUrls?.[0] ? 'none' : 'flex' }}
-                                        >
-                                            📦
-                                        </div>
+                                    <div className="w-14 h-14 rounded-2xl bg-[#141416] border border-white/10 overflow-hidden flex items-center justify-center shrink-0 p-1">
+                                        <img
+                                            src={getPartImage(item)}
+                                            alt={item.name}
+                                            className="w-full h-full object-contain drop-shadow-sm rounded-xl"
+                                            onError={(e) => {
+                                                const target = e.currentTarget;
+                                                target.src = 'https://images.unsplash.com/photo-1486006920555-c77dce18193b?auto=format&fit=crop&q=80&w=300';
+                                            }}
+                                        />
                                     </div>
-                                    <div className="flex flex-col">
-                                        <p className="font-bold text-sm text-white">{item.name}</p>
-                                        <p className="text-[11px] font-medium text-gray-500 mt-0.5">Quantity: {item.quantity}</p>
+                                    <div className="flex flex-col min-w-0">
+                                        <p className="font-bold text-sm text-white truncate">{item.name}</p>
+                                        <p className="text-[11px] font-semibold text-gray-400 mt-0.5">Qty: {item.quantity}</p>
                                     </div>
                                 </div>
-                                <p className="font-black text-sm text-primary">₱{(item.price * item.quantity).toLocaleString()}</p>
+                                <p className="font-black text-base text-primary shrink-0">₱{(item.price * item.quantity).toLocaleString()}</p>
                             </div>
                         ))}
                         <div className="pt-3 mt-1 border-t border-white/5 flex justify-between items-center">
@@ -387,61 +391,61 @@ const PaymentScreen: React.FC = () => {
                     </h2>
                     <div className="bg-[#1A1A1A] rounded-[1.25rem] p-5 shadow-lg space-y-4">
                         <div>
-                            <label htmlFor="payment-fullname" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Full Name *</label>
+                            <label htmlFor="payment-fullname" className="text-[11px] text-gray-300 font-bold uppercase tracking-wider mb-2 block">Full Name *</label>
                             <input
                                 id="payment-fullname"
                                 name="payment-fullname"
                                 type="text"
-                                className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors"
+                                className="w-full bg-[#121214] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-gray-600"
                                 placeholder="Recipient's Name"
                                 value={deliveryDetails.fullName}
                                 onChange={e => setDeliveryDetails({ ...deliveryDetails, fullName: e.target.value })}
                             />
                         </div>
                         <div>
-                            <label htmlFor="payment-phone" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Phone Number *</label>
+                            <label htmlFor="payment-phone" className="text-[11px] text-gray-300 font-bold uppercase tracking-wider mb-2 block">Phone Number *</label>
                             <input
                                 id="payment-phone"
                                 name="payment-phone"
                                 type="tel"
-                                className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white transition-colors"
+                                className="w-full bg-[#121214] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-gray-600"
                                 placeholder="e.g. 0917 123 4567"
                                 value={deliveryDetails.phone}
                                 onChange={e => setDeliveryDetails({ ...deliveryDetails, phone: e.target.value })}
                             />
                         </div>
                         <div>
-                            <label htmlFor="payment-address" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Address Line 1 *</label>
+                            <label htmlFor="payment-address" className="text-[11px] text-gray-300 font-bold uppercase tracking-wider mb-2 block">Address Line 1 *</label>
                             <input
                                 id="payment-address"
                                 name="payment-address"
                                 type="text"
-                                className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-primary/50 transition-colors"
+                                className="w-full bg-[#121214] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-gray-600"
                                 placeholder="House Number, Street Name"
                                 value={deliveryDetails.addressLine1}
                                 onChange={e => setDeliveryDetails({ ...deliveryDetails, addressLine1: e.target.value })}
                             />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-3 sm:gap-4">
                             <div>
-                                <label htmlFor="payment-city" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">City *</label>
+                                <label htmlFor="payment-city" className="text-[11px] text-gray-300 font-bold uppercase tracking-wider mb-2 block">City *</label>
                                 <input
                                     id="payment-city"
                                     name="payment-city"
                                     type="text"
-                                    className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors"
+                                    className="w-full bg-[#121214] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-gray-600"
                                     placeholder="City"
                                     value={deliveryDetails.city}
                                     onChange={e => setDeliveryDetails({ ...deliveryDetails, city: e.target.value })}
                                 />
                             </div>
                             <div>
-                                <label htmlFor="payment-zip" className="text-xs text-gray-400 font-bold  tracking-wider mb-2 block">Zip Code</label>
+                                <label htmlFor="payment-zip" className="text-[11px] text-gray-300 font-bold uppercase tracking-wider mb-2 block">Zip Code</label>
                                 <input
                                     id="payment-zip"
                                     name="payment-zip"
                                     type="text"
-                                    className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white transition-colors"
+                                    className="w-full bg-[#121214] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-gray-600"
                                     placeholder="Optional"
                                     value={deliveryDetails.zipCode}
                                     onChange={e => setDeliveryDetails({ ...deliveryDetails, zipCode: e.target.value })}
@@ -453,7 +457,7 @@ const PaymentScreen: React.FC = () => {
 
                 {/* Order Notes */}
                 <section className="mb-8 animate-slideUp" style={{ animationDelay: '0.08s' }}>
-                    <h2 className="text-[11px] font-bold text-gray-400  tracking-widest mb-3 flex items-center gap-2">
+                    <h2 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                         <svg viewBox="0 0 24 24" fill="none" className="w-[14px] h-[14px] text-gray-400" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                             <polyline points="14 2 14 8 20 8"></polyline>
@@ -465,7 +469,7 @@ const PaymentScreen: React.FC = () => {
                     </h2>
                     <div className="bg-[#1A1A1A] rounded-[1.25rem] p-5 shadow-lg">
                         <textarea
-                            className="w-full bg-[#0F0F0F] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-colors resize-none h-24"
+                            className="w-full bg-[#121214] border border-white/10 rounded-xl px-4 py-3.5 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none h-24 placeholder:text-gray-600"
                             placeholder="Optional instructions for delivery or rider..."
                             value={orderNotes}
                             onChange={e => setOrderNotes(e.target.value)}
@@ -526,6 +530,26 @@ const PaymentScreen: React.FC = () => {
                                 </div>
                             </div>
                         )}
+
+                        <div 
+                            onClick={() => setSelectedMethod('Cash on Delivery')}
+                            className={`border rounded-[1.25rem] p-5 flex items-center gap-4 cursor-pointer transition-all ${
+                                selectedMethod === 'Cash on Delivery' 
+                                    ? 'bg-[#1A1A1A] border-primary/40 shadow-lg shadow-primary/10' 
+                                    : 'bg-[#141414] border-white/5 hover:border-white/10'
+                            }`}
+                        >
+                            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0">
+                                <Banknote size={20} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h3 className="font-bold text-[13px] text-white">Cash on Delivery (COD)</h3>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Pay in cash upon doorstep delivery</p>
+                            </div>
+                            <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg px-2.5 py-1 text-[9px] font-black uppercase shrink-0">
+                                Standard
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -538,8 +562,8 @@ const PaymentScreen: React.FC = () => {
             </div>
 
             {/* Sticky Bottom Bar */}
-            <div className="fixed bottom-0 left-0 right-0 px-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 bg-gradient-to-t from-[#0F0F0F] via-[#0F0F0F]/95 to-transparent z-50 animate-slideUp">
-                <div className="max-w-2xl mx-auto w-full space-y-4">
+            <div className="fixed bottom-0 left-0 right-0 px-5 sm:px-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4 bg-[#141416]/98 backdrop-blur-xl border-t border-white/10 shadow-[0_-12px_32px_rgba(0,0,0,0.85)] z-50 animate-slideUp">
+                <div className="max-w-2xl mx-auto w-full space-y-3">
                     {/* Error Message */}
                     {error && (
                         <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-center gap-2 animate-shake">
@@ -547,33 +571,35 @@ const PaymentScreen: React.FC = () => {
                         </div>
                     )}
 
-                    <div>
-                        <p className="text-[10px] text-gray-500 font-black  tracking-widest mb-1">TOTAL AMOUNT</p>
-                        <div className="text-3xl font-black text-white flex items-baseline gap-1">
-                            <span className="text-primary text-xl tracking-tight">₱</span>
-                            {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">TOTAL AMOUNT</p>
+                            <div className="text-2xl sm:text-3xl font-black text-white flex items-baseline gap-1">
+                                <span className="text-primary text-lg sm:text-xl tracking-tight">₱</span>
+                                {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
                         </div>
-                    </div>
 
-                    {isProcessing ? (
-                        <div className="w-full bg-[#1A1A1A] rounded-[1.25rem] p-4 text-center space-y-3">
-                            <Spinner size="md" />
-                            <p className="font-bold text-sm text-gray-300">
-                                {processingStep}
-                            </p>
-                        </div>
-                    ) : (
-                        <button
-                            onClick={handlePayment}
-                            disabled={isProcessing || !selectedMethod}
-                            className={`w-full py-4 rounded-[1.25rem] font-bold text-sm transition-all flex items-center justify-center gap-2
-                                ${!selectedMethod
-                                    ? 'bg-[#2A2A2A] text-gray-500 cursor-not-allowed'
-                                    : 'bg-primary hover:bg-orange-600 active:scale-[0.98] text-white shadow-lg shadow-primary/20'}`}
-                        >
-                            Pay Now <ChevronRight size={16} />
-                        </button>
-                    )}
+                        {isProcessing ? (
+                            <div className="flex-1 max-w-xs bg-[#1F1F24] rounded-2xl py-3.5 px-4 text-center flex items-center justify-center gap-3">
+                                <Spinner size="sm" />
+                                <span className="font-bold text-xs text-gray-300 truncate">
+                                    {processingStep || 'Processing...'}
+                                </span>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={handlePayment}
+                                disabled={isProcessing || !selectedMethod}
+                                className={`flex-1 max-w-xs py-4 px-6 rounded-2xl font-bold text-sm sm:text-base transition-all flex items-center justify-center gap-2
+                                    ${!selectedMethod
+                                        ? 'bg-[#2A2A2A] text-gray-500 cursor-not-allowed'
+                                        : 'bg-primary hover:bg-orange-600 active:scale-[0.98] text-white shadow-lg shadow-primary/25'}`}
+                            >
+                                Pay Now <ChevronRight size={18} />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 

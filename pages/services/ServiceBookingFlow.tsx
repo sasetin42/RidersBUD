@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useAuth } from '../../context/AuthContext';
-import { ChevronLeft, ChevronRight, CheckCircle, Car, Calendar, MapPin, FileText, Camera } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Car, Calendar, MapPin, FileText, Camera, CreditCard, ShieldCheck } from 'lucide-react';
 import Spinner from '../../components/Spinner';
 import { ServiceRequest } from '../../types';
+import { HitPayService } from '../../services/HitPayService';
 
 const ServiceBookingFlow: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
@@ -42,6 +43,9 @@ const ServiceBookingFlow: React.FC = () => {
     }
 
     const totalSteps = 4;
+    const isTowing = service.name.toLowerCase().includes('towing') || service.category?.toLowerCase().includes('towing') || slug === 'towing';
+    const totalPrice = Number(service.price) || (isTowing ? 3500 : 1500);
+    const downpaymentAmount = totalPrice * 0.5;
 
     const handleNext = () => {
         if (currentStep < totalSteps) setCurrentStep(s => s + 1);
@@ -56,24 +60,86 @@ const ServiceBookingFlow: React.FC = () => {
         if (!user) return;
         setSubmitting(true);
         try {
+            const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+            
+            if (isTowing && !isHitPayActive) {
+                throw new Error("Online Payment Gateway (HitPay) is required for Towing requests but is currently inactive in system settings. Please contact the administrator.");
+            }
+
             const request: Omit<ServiceRequest, 'id'> = {
                 customerId: user.id,
                 customerName: user.name,
                 serviceId: service.id,
                 serviceName: service.name,
-                status: 'Pending',
-                details: dynamicFields,
+                status: isTowing ? 'Pending' : 'Pending',
+                details: {
+                    ...dynamicFields,
+                    totalAmount: totalPrice,
+                    downpaymentAmount: downpaymentAmount,
+                    paidAmount: isTowing ? downpaymentAmount : 0,
+                    paymentStatus: isTowing ? 'partial' : 'Pending',
+                    paymentMethod: isTowing ? 'Online (HitPay)' : 'Cash / Direct'
+                },
                 vehicleId: selectedVehicle,
                 scheduledDate,
                 notes,
+                price: totalPrice,
+                totalAmount: totalPrice,
+                paidAmount: isTowing ? downpaymentAmount : 0,
+                paymentStatus: isTowing ? 'partial' : 'Pending',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             };
             
-            await addServiceRequest(request);
+            const createdRequest = await addServiceRequest(request);
+
+            if (isTowing && createdRequest && isHitPayActive) {
+                const hitPay = HitPayService.fromSettings(db?.settings);
+                const returnUrl = `${window.location.origin}/customer-portal/service-payment?bookingId=${createdRequest.id || ''}&isServiceRequest=true`;
+
+                sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
+                    bookingId: createdRequest.id,
+                    amount: downpaymentAmount,
+                    totalAmount: totalPrice,
+                    currentPaid: 0,
+                    isServiceRequest: true,
+                    isTowing: true,
+                    leavingTimestamp: Date.now(),
+                    fullBooking: {
+                        ...request,
+                        id: createdRequest.id,
+                        isServiceRequest: true,
+                        isTowing: true,
+                        totalAmount: totalPrice,
+                        paidAmount: 0,
+                        services: [{ name: `Towing Service: ${service.name}`, price: totalPrice }]
+                    }
+                }));
+
+                const { url } = await hitPay.createPaymentRequest({
+                    amount: downpaymentAmount,
+                    currency: db?.settings?.currency || 'PHP',
+                    reference_number: `TOW-${createdRequest.id || Date.now()}`,
+                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    redirect_url: returnUrl,
+                    email: user.email || 'customer@example.com',
+                    name: user.name || 'Customer',
+                    phone: user.phone || undefined,
+                    purpose: `RidersBUD — Emergency Towing 50% Deposit (${service.name})`
+                });
+
+                if (url.startsWith('/')) {
+                    navigate(url);
+                } else {
+                    window.location.href = url;
+                }
+                return;
+            }
+
             navigate('/customer-portal/my-service-requests', { replace: true });
         } catch (e) {
             console.error(e);
+            alert(e instanceof Error ? e.message : 'Failed to submit service request.');
         } finally {
             setSubmitting(false);
         }
@@ -293,6 +359,33 @@ const ServiceBookingFlow: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* Price & Deposit Breakdown (Especially for Towing) */}
+                            {isTowing && (
+                                <div className="border-t border-white/10 pt-4 space-y-3">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-gray-400">Standard Towing Base Fee</span>
+                                        <span className="font-bold text-white">₱{totalPrice.toLocaleString()}</span>
+                                    </div>
+
+                                    <div className="p-3.5 bg-white/5 border border-white/10 rounded-xl space-y-2">
+                                        <div className="flex justify-between text-xs text-gray-300">
+                                            <span className="flex items-center gap-1.5 font-bold">
+                                                <CreditCard size={14} className="text-[#E62E00]" />
+                                                Online Deposit Required (50%)
+                                            </span>
+                                            <span className="font-black text-amber-400">₱{downpaymentAmount.toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-gray-400">
+                                            <span>Remaining Balance on Tow Completion</span>
+                                            <span className="font-bold text-gray-300">₱{downpaymentAmount.toLocaleString()}</span>
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 leading-normal pt-1 border-t border-white/5">
+                                            * Pay 50% online deposit now via HitPay to dispatch our towing vehicle immediately.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="border-t border-white/10 pt-6">
                                 <label htmlFor="service-notes" className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Additional Notes</label>
                                 <textarea 
@@ -325,9 +418,9 @@ const ServiceBookingFlow: React.FC = () => {
                         <button 
                             onClick={handleSubmit}
                             disabled={submitting}
-                            className="flex-1 bg-[#E62E00] hover:bg-[#ff3300] disabled:opacity-50 text-white font-black uppercase tracking-widest text-xs py-4 flex items-center justify-center gap-2 transition-colors"
+                            className="flex-1 bg-[#E62E00] hover:bg-[#ff3300] disabled:opacity-50 text-white font-black uppercase tracking-widest text-xs py-4 flex items-center justify-center gap-2 transition-colors cursor-pointer"
                         >
-                            {submitting ? <Spinner size="sm" /> : 'Confirm Booking'}
+                            {submitting ? <Spinner size="sm" /> : (isTowing ? `Pay Deposit (₱${downpaymentAmount.toLocaleString()}) & Book` : 'Confirm Booking')}
                         </button>
                     )}
                 </div>

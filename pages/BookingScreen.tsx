@@ -16,7 +16,15 @@ import { HitPayService } from '../services/HitPayService';
 import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers } from '../data/mockData';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import BookingPaymentBreakdownModal from '../components/BookingPaymentBreakdownModal';
-import { safeGetCurrentPosition, safeWatchPosition, safeClearWatch, isGeolocationPermissionDenied } from '../utils/locationHelper';
+import { 
+    safeGetCurrentPosition, 
+    safeWatchPosition, 
+    safeClearWatch, 
+    isGeolocationPermissionDenied,
+    getAccurateLivePosition,
+    reverseGeocodeCoordinates
+} from '../utils/locationHelper';
+import { getLeafletTileConfig } from '../utils/mapTileProviders';
 
 
 declare const L: any;
@@ -362,7 +370,7 @@ const BookingScreen: React.FC = () => {
                     console.error("Error processing return from HitPay", e);
                 }
             }
-        } else if (statusParam === 'canceled' || statusParam === 'failed' || hitpayParam === 'canceled') {
+        } else if (statusParam === 'canceled' || statusParam === 'cancelled' || statusParam === 'failed' || statusParam === 'expired' || statusParam === 'abort' || hitpayParam === 'canceled' || hitpayParam === 'cancelled') {
             const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
             let parsedBookingId = '';
             let cancelAmount = 0;
@@ -405,7 +413,12 @@ const BookingScreen: React.FC = () => {
             }
 
             sessionStorage.removeItem('pendingHitPayBookingTx');
-            localStorage.removeItem('last_hitpay_booking_tx');
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+            sessionStorage.removeItem('pendingHitPayTx');
+            try {
+                localStorage.removeItem('last_hitpay_booking_tx');
+                localStorage.removeItem('last_hitpay_service_tx');
+            } catch (e) {}
 
             if (targetBookingId && cancelBooking) {
                 cancelBooking(targetBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
@@ -413,7 +426,7 @@ const BookingScreen: React.FC = () => {
 
             const cancellationInfo = {
                 type: 'Service Booking' as const,
-                referenceId: targetBookingId ? `BOK-${targetBookingId}` : 'BOK-CANCELLED',
+                referenceId: targetBookingId ? (targetBookingId.startsWith('#') ? targetBookingId : `#${targetBookingId.slice(-8).toUpperCase()}`) : '#TXN-CANCELLED',
                 amount: cancelAmount,
                 date: new Date().toLocaleString(),
                 reason: 'Payment process was cancelled by the user at the payment gateway.',
@@ -471,7 +484,6 @@ const BookingScreen: React.FC = () => {
     const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
     const [isTrackingLive, setIsTrackingLive] = useState(true);
     const watchIdRef = useRef<number | null>(null);
-    const accuracyCircleRef = useRef<any>(null);
 
     const [serviceSearch, setServiceSearch] = useState('');
     const [mechanicSearch, setMechanicSearch] = useState(initialState?.mechanicSearch || '');
@@ -562,7 +574,7 @@ const BookingScreen: React.FC = () => {
         }
     }, [user, selectedVehiclePlate]);
 
-     // Live Geocoding and Location Helper with fallback
+    // Live Geocoding and Location Helper with progressive precision and reverse geocoding
     const handleUseLiveLocation = async () => {
         if (!navigator.geolocation) {
             alert('Geolocation is not supported by your browser.');
@@ -577,59 +589,33 @@ const BookingScreen: React.FC = () => {
 
         setIsLocating(true);
 
-        const onGeoSuccess = async (position: GeolocationPosition) => {
-            const { latitude, longitude } = position.coords;
-            setStartCoords([latitude, longitude]);
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 6000);
-                const res = await fetch(
-                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
-                    { signal: controller.signal }
-                );
-                clearTimeout(timeoutId);
-                const data = await res.json();
-                if (data && data.display_name) {
-                    setStartLocation(data.display_name);
-                } else {
-                    setStartLocation(`Live Location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
-                }
-            } catch (e) {
-                setStartLocation(`Live Location (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`);
-            } finally {
-                setIsLocating(false);
-            }
-        };
-
-        const onGeoError = (error: GeolocationPositionError) => {
-            if (error.code === 1) {
-                setIsLocating(false);
-                alert('Location access denied. Please enable location permissions in your browser or device settings.');
-                return;
-            }
-            safeGetCurrentPosition(
-                onGeoSuccess,
-                (fallbackErr) => {
-                    setIsLocating(false);
-                    let errMsg = 'Unable to retrieve your location.';
-                    if (fallbackErr.code === 1) {
-                        errMsg = 'Location access denied. Please enable location permissions in your browser or device settings.';
-                    } else if (fallbackErr.code === 2) {
-                        errMsg = 'Location position unavailable. Please ensure your device GPS is turned on.';
-                    } else if (fallbackErr.code === 3) {
-                        errMsg = 'Location request timed out. Please try again.';
-                    }
-                    alert(errMsg);
+        try {
+            const accurate = await getAccurateLivePosition(
+                (pos) => {
+                    setStartCoords([pos.latitude, pos.longitude]);
                 },
-                { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+                { timeoutMs: 6000, targetAccuracy: 12 }
             );
-        };
 
-        safeGetCurrentPosition(
-            onGeoSuccess,
-            onGeoError,
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
-        );
+            setStartCoords([accurate.latitude, accurate.longitude]);
+            const address = await reverseGeocodeCoordinates(accurate.latitude, accurate.longitude);
+            setStartLocation(address);
+        } catch (err: any) {
+            console.warn("High accuracy geolocation error:", err);
+            safeGetCurrentPosition(
+                async (pos) => {
+                    setStartCoords([pos.coords.latitude, pos.coords.longitude]);
+                    const address = await reverseGeocodeCoordinates(pos.coords.latitude, pos.coords.longitude);
+                    setStartLocation(address);
+                },
+                () => {
+                    alert('Unable to retrieve precise location. Please verify your GPS is active.');
+                },
+                { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+            );
+        } finally {
+            setIsLocating(false);
+        }
     };
 
     // Fetch suggestions for Start Location (Philippines only)
@@ -984,66 +970,73 @@ const BookingScreen: React.FC = () => {
         if (step === 2) {
             setLocationStatus('fetching');
 
-            const handleSuccess = (position: GeolocationPosition) => {
-                const { latitude, longitude, accuracy } = position.coords;
+            // Apply high-precision progressive auto-hone
+            getAccurateLivePosition(
+                (accurate) => {
+                    setServiceLocation(prev => {
+                        // Jitter filter: if moved less than 1 meter and not first reading, ignore minor sensor bounce
+                        if (prev !== null) {
+                            const dLat = (accurate.latitude - prev.lat) * 111320;
+                            const dLng = (accurate.longitude - prev.lng) * (111320 * Math.cos(prev.lat * (Math.PI / 180)));
+                            const distanceMoved = Math.sqrt(dLat * dLat + dLng * dLng);
+                            if (distanceMoved < 1.0) {
+                                return prev;
+                            }
+                        }
+                        if (isTrackingLive || prev === null) {
+                            return { lat: accurate.latitude, lng: accurate.longitude };
+                        }
+                        return prev;
+                    });
+                    setLocationAccuracy(accurate.accuracy);
+                    setLocationStatus('success');
+                    setLocationError('');
+                },
+                { timeoutMs: 9000, targetAccuracy: 12 }
+            ).catch((err) => {
+                console.warn("[BookingScreen] Initial high-precision lock warning:", err);
+                // Safe fallback default Carmona / Manila if permission or device failed
                 setServiceLocation(prev => {
-                    // Update location if live tracking is enabled, or if it is our first read
+                    if (prev === null) {
+                        setLocationStatus('success');
+                        return { lat: 14.3149, lng: 121.0583 };
+                    }
+                    return prev;
+                });
+            });
+
+            // Long-term active GPS stream for live following
+            const handleStreamSuccess = (position: GeolocationPosition) => {
+                const { latitude, longitude, accuracy } = position.coords;
+                // Avoid overriding a better reading with a severely degraded coarse network reading
+                setLocationAccuracy(prevAcc => {
+                    if (prevAcc !== null && accuracy > prevAcc * 2.0 && accuracy > 35) {
+                        return prevAcc;
+                    }
+                    return accuracy;
+                });
+
+                setServiceLocation(prev => {
+                    if (prev !== null) {
+                        const dLat = (latitude - prev.lat) * 111320;
+                        const dLng = (longitude - prev.lng) * (111320 * Math.cos(prev.lat * (Math.PI / 180)));
+                        const distanceMoved = Math.sqrt(dLat * dLat + dLng * dLng);
+                        if (distanceMoved < 1.0) {
+                            return prev;
+                        }
+                    }
                     if (isTrackingLive || prev === null) {
                         return { lat: latitude, lng: longitude };
                     }
                     return prev;
                 });
-                setLocationAccuracy(accuracy);
                 setLocationStatus('success');
-                setLocationError('');
             };
 
-            const handleError = (error: GeolocationPositionError) => {
-                if (error.code === 1) {
-                    setServiceLocation(prev => {
-                        if (prev === null) {
-                            setLocationStatus('success');
-                            return { lat: 14.5995, lng: 120.9842 };
-                        }
-                        return prev;
-                    });
-                    return;
-                }
-                // Fallback to lower accuracy if high accuracy times out/fails
-                safeGetCurrentPosition(
-                    handleSuccess,
-                    (fallbackError) => {
-                        setServiceLocation(prev => {
-                            if (prev === null) {
-                                // Default fallback to Manila, Philippines if GPS is completely unavailable/timed out
-                                setLocationStatus('success'); // allow map to load instead of failing
-                                return { lat: 14.5995, lng: 120.9842 };
-                            }
-                            return prev;
-                        });
-                    },
-                    { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-                );
-            };
-
-            const options = {
-                enableHighAccuracy: true,
-                timeout: 8000,
-                maximumAge: 0
-            };
-
-            // Get initial position safely
-            safeGetCurrentPosition(handleSuccess, handleError, options);
-
-            // Subscribe to real-time location updates safely
             safeWatchPosition(
-                handleSuccess, 
-                () => {}, 
-                {
-                    enableHighAccuracy: true, 
-                    timeout: 10000, 
-                    maximumAge: 0
-                }
+                handleStreamSuccess,
+                () => {},
+                { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
             ).then(watchId => {
                 watchIdRef.current = watchId;
             });
@@ -1072,28 +1065,12 @@ const BookingScreen: React.FC = () => {
             dragging: true
         }).setView([lat, lng], 18);
 
-        const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-            maxZoom: 19,
-            subdomains: 'abc',
-            crossOrigin: true,
-        });
+        const tileConfig = getLeafletTileConfig(db?.settings);
+        const osmTile = L.tileLayer(tileConfig.url, tileConfig.options);
 
         osmTile.addTo(mapInstanceRef.current);
 
-        // Accuracy Halo Circle for Live GPS accuracy feedback
-        if (locationAccuracy && locationAccuracy > 0) {
-            accuracyCircleRef.current = L.circle([lat, lng], {
-                radius: Math.max(8, locationAccuracy),
-                color: '#FE7803',
-                fillColor: '#FE7803',
-                fillOpacity: 0.15,
-                weight: 1.5,
-                dashArray: '4, 4'
-            }).addTo(mapInstanceRef.current);
-        }
-
-        // Branded draggable location pin
+        // Branded draggable location pin - Calibrated tip anchor
         const locationIcon = L.divIcon({
             html: `<div class="rb-location-pin-wrapper">
                 <div class="rb-location-circle">
@@ -1103,8 +1080,8 @@ const BookingScreen: React.FC = () => {
                 <div class="rb-location-dot"></div>
             </div>`,
             className: 'rb-leaflet-icon',
-            iconSize: [56, 76],
-            iconAnchor: [28, 76],
+            iconSize: [56, 72],
+            iconAnchor: [28, 72],
         });
 
         markerRef.current = L.marker([lat, lng], {
@@ -1119,17 +1096,11 @@ const BookingScreen: React.FC = () => {
             const { lat: newLat, lng: newLng } = e.target.getLatLng();
             setServiceLocation({ lat: newLat, lng: newLng });
             setIsTrackingLive(false);
-            if (accuracyCircleRef.current) {
-                accuracyCircleRef.current.setLatLng([newLat, newLng]);
-            }
         });
         markerRef.current.on('dragend', (e: any) => {
             const { lat: newLat, lng: newLng } = e.target.getLatLng();
             setServiceLocation({ lat: newLat, lng: newLng });
             setIsTrackingLive(false);
-            if (accuracyCircleRef.current) {
-                accuracyCircleRef.current.setLatLng([newLat, newLng]);
-            }
         });
 
         // Map click also repositions pin
@@ -1139,9 +1110,6 @@ const BookingScreen: React.FC = () => {
             setIsTrackingLive(false);
             if (markerRef.current) {
                 markerRef.current.setLatLng([newLat, newLng]);
-            }
-            if (accuracyCircleRef.current) {
-                accuracyCircleRef.current.setLatLng([newLat, newLng]);
             }
         });
 
@@ -1161,42 +1129,25 @@ const BookingScreen: React.FC = () => {
                 }
                 mapInstanceRef.current = null;
                 markerRef.current = null;
-                accuracyCircleRef.current = null;
             }
         };
     }, [step, serviceLocation === null, leafletLoaded]); // eslint-disable-line
 
-    // Live updater: smoothly follow GPS and update accuracy halo when tracking is active
+    // Live updater: smoothly follow GPS when tracking is active without radius background
     useEffect(() => {
         if (step === 2 && mapInstanceRef.current && serviceLocation) {
             if (markerRef.current) {
                 markerRef.current.setLatLng([serviceLocation.lat, serviceLocation.lng]);
             }
-            if (accuracyCircleRef.current) {
-                accuracyCircleRef.current.setLatLng([serviceLocation.lat, serviceLocation.lng]);
-                if (locationAccuracy && locationAccuracy > 0) {
-                    accuracyCircleRef.current.setRadius(Math.max(8, locationAccuracy));
-                }
-            } else if (locationAccuracy && locationAccuracy > 0 && typeof L !== 'undefined') {
-                accuracyCircleRef.current = L.circle([serviceLocation.lat, serviceLocation.lng], {
-                    radius: Math.max(8, locationAccuracy),
-                    color: '#FE7803',
-                    fillColor: '#FE7803',
-                    fillOpacity: 0.15,
-                    weight: 1.5,
-                    dashArray: '4, 4'
-                }).addTo(mapInstanceRef.current);
-            }
 
             if (isTrackingLive) {
-                mapInstanceRef.current.setView(
+                mapInstanceRef.current.panTo(
                     [serviceLocation.lat, serviceLocation.lng],
-                    mapInstanceRef.current.getZoom() || 18,
-                    { animate: true, duration: 0.5 }
+                    { animate: true, duration: 0.6, easeLinearity: 0.25 }
                 );
             }
         }
-    }, [serviceLocation, isTrackingLive, locationAccuracy, step]);
+    }, [serviceLocation, isTrackingLive, step]);
 
 
 
@@ -1229,15 +1180,11 @@ const BookingScreen: React.FC = () => {
                 touchZoom: false
             });
 
-            // Add free OpenStreetMap tile layer
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors',
-                maxZoom: 19,
-                subdomains: 'abc',
-                crossOrigin: true
-            }).addTo(confirmationMapInstanceRef.current);
+            // Add tile layer from configured provider
+            const confirmTileConfig = getLeafletTileConfig(db?.settings);
+            L.tileLayer(confirmTileConfig.url, confirmTileConfig.options).addTo(confirmationMapInstanceRef.current);
 
-            // Add marker
+            // Add marker - Calibrated tip anchor
             const locationIcon = L.divIcon({
                 html: `<div class="rb-location-pin-wrapper">
                     <div class="rb-location-circle">
@@ -1247,8 +1194,8 @@ const BookingScreen: React.FC = () => {
                     <div class="rb-location-dot"></div>
                 </div>`,
                 className: 'rb-leaflet-icon',
-                iconSize: [56, 76],
-                iconAnchor: [28, 76],
+                iconSize: [56, 72],
+                iconAnchor: [28, 72],
             });
             L.marker([serviceLocation.lat, serviceLocation.lng], { icon: locationIcon }).addTo(confirmationMapInstanceRef.current);
 
@@ -1368,11 +1315,23 @@ const BookingScreen: React.FC = () => {
             if (mechanic.status !== 'Active') return false;
             if (isToday && !mechanic.isOnline) return false;
 
+            // Inactivity threshold check for today's live bookings:
+            // If auto-offline is enabled and mechanic has exceeded inactivity threshold without an active ongoing job, filter them out
+            const autoOfflineEnabled = db.settings?.mechanicAutoOfflineEnabled !== false;
+            const thresholdHours = db.settings?.mechanicInactivityThresholdHours ?? 1;
+            const thresholdMs = thresholdHours * 60 * 60 * 1000;
+
             const hasBusyBooking = bookings.some(b =>
-                b.mechanic?.id === mechanic.id &&
+                (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
                 (b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Mechanic Assigned')
             );
-            // Removed: if (hasBusyBooking) return false; so busy mechanics still show up
+
+            if (isToday && autoOfflineEnabled && !hasBusyBooking && mechanic.lastActive) {
+                const lastActiveTime = new Date(mechanic.lastActive).getTime();
+                if (!isNaN(lastActiveTime) && (Date.now() - lastActiveTime > thresholdMs)) {
+                    return false;
+                }
+            }
 
             if (mechanic.unavailableDates?.some(d => {
                 const start = new Date(d.startDate.replace(/-/g, '/'));
@@ -1504,6 +1463,15 @@ const BookingScreen: React.FC = () => {
     };
 
     const handleSelectTimeSlot = (mechanic: Mechanic, time: string) => {
+        const isMechanicBusy = bookings.some(b =>
+            (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
+            (b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Mechanic Assigned')
+        );
+        if (isMechanicBusy) {
+            setError(`Mechanic ${mechanic.name} is currently on an active job. Please select an available mechanic.`);
+            return;
+        }
+        setError('');
         setSelectedMechanic(mechanic);
         setSelectedTime(time);
         setStep(4);
@@ -1603,7 +1571,8 @@ const BookingScreen: React.FC = () => {
                     name: s.name || 'Vehicle Service',
                     price: s.price || 0
                 })),
-                services: selectedServices
+                services: selectedServices,
+                leavingTimestamp: Date.now()
             };
             sessionStorage.setItem('pendingHitPayBookingTx', JSON.stringify(txDetails));
             try {
@@ -2422,13 +2391,27 @@ const BookingScreen: React.FC = () => {
                             {/* GPS Accuracy Pill */}
                             {locationAccuracy !== null && (
                                 <div className="absolute top-24 left-4 z-[400] bg-[#1a1a1ae0] backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 flex items-center gap-2 shadow-2xl transition-all duration-300 animate-slideDown">
-                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isTrackingLive ? 'bg-green-500 animate-pulse shadow-md shadow-green-500/50' : 'bg-amber-500'}`} />
+                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                        !isTrackingLive 
+                                            ? 'bg-amber-500' 
+                                            : locationAccuracy <= 25 
+                                            ? 'bg-green-500 animate-pulse shadow-md shadow-green-500/50' 
+                                            : 'bg-yellow-400 animate-ping'
+                                    }`} />
                                     <div className="flex flex-col">
                                         <span className="text-[10px] text-white font-extrabold tracking-wider leading-none">
-                                            {isTrackingLive ? 'LIVE GPS ACTIVE' : 'MANUAL PIN PLACEMENT'}
+                                            {!isTrackingLive 
+                                                ? 'MANUAL PIN PLACEMENT' 
+                                                : locationAccuracy <= 25 
+                                                ? 'LIVE GPS ACTIVE' 
+                                                : 'REFINING GPS ACCURACY...'}
                                         </span>
                                         <span className="text-[8px] text-gray-400 font-bold mt-1 leading-none">
-                                            {isTrackingLive ? `Accurate to ±${Math.round(locationAccuracy)}m` : 'Tap recenter to resume'}
+                                            {isTrackingLive 
+                                                ? (locationAccuracy <= 25 
+                                                    ? `Accurate to ±${Math.round(locationAccuracy)}m (Pinpoint)` 
+                                                    : `Satellite calibrating: ±${Math.round(locationAccuracy)}m`)
+                                                : 'Tap recenter to resume GPS'}
                                         </span>
                                     </div>
                                     {!isTrackingLive && (
@@ -2473,21 +2456,19 @@ const BookingScreen: React.FC = () => {
                                 <button
                                     onClick={() => {
                                         setIsTrackingLive(true);
-                                        safeGetCurrentPosition(
-                                            (position) => {
-                                                const { latitude, longitude, accuracy } = position.coords;
-                                                setServiceLocation({ lat: latitude, lng: longitude });
-                                                setLocationAccuracy(accuracy);
+                                        getAccurateLivePosition(
+                                            (accurate) => {
+                                                setServiceLocation({ lat: accurate.latitude, lng: accurate.longitude });
+                                                setLocationAccuracy(accurate.accuracy);
                                                 if (mapInstanceRef.current) {
-                                                    mapInstanceRef.current.setView([latitude, longitude], 18, { animate: true, duration: 0.8 });
+                                                    mapInstanceRef.current.setView([accurate.latitude, accurate.longitude], 18, { animate: true, duration: 0.6 });
                                                 }
                                                 if (markerRef.current) {
-                                                    markerRef.current.setLatLng([latitude, longitude]);
+                                                    markerRef.current.setLatLng([accurate.latitude, accurate.longitude]);
                                                 }
                                             },
-                                            () => {},
-                                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-                                        );
+                                            { timeoutMs: 6000, targetAccuracy: 10 }
+                                        ).catch(() => {});
                                     }}
                                     className={`w-11 h-11 flex items-center justify-center rounded-full shadow-2xl transition-all duration-300 active:scale-90 relative overflow-hidden ${
                                         isTrackingLive
@@ -2683,12 +2664,25 @@ const BookingScreen: React.FC = () => {
         // Check which mechanics are currently busy
         const isMechanicBusy = (mechanicId: string) => {
             return bookings.some(b =>
-                b.mechanic?.id === mechanicId &&
+                (b.mechanic?.id === mechanicId || b.mechanicId === mechanicId) &&
                 (b.status === 'En Route' || b.status === 'In Progress' || b.status === 'Mechanic Assigned')
             );
         };
 
         const handleSelectMechanic = (mechanic: Mechanic) => {
+            const selectedDateWithoutTime = new Date(selectedDate);
+            selectedDateWithoutTime.setHours(0, 0, 0, 0);
+            const isBookingToday = selectedDateWithoutTime.getTime() === new Date().setHours(0, 0, 0, 0);
+
+            if (isMechanicBusy(mechanic.id)) {
+                setError(`Mechanic ${mechanic.name} is currently on an active job. Please select another available mechanic.`);
+                return;
+            }
+            if (isBookingToday && !mechanic.isOnline) {
+                setError(`Mechanic ${mechanic.name} is currently offline. Please choose an active mechanic.`);
+                return;
+            }
+            setError('');
             setSelectedMechanic(mechanic);
             setStep(4);
         };
@@ -2996,14 +2990,14 @@ const BookingScreen: React.FC = () => {
 
                                             {/* Card Header & Badge */}
                                             <div className="flex items-center justify-between gap-2 relative z-10">
-                                                <div className="flex items-center gap-1.5">
-                                                    <CreditCard size={13} className="text-[#FE7803]" />
-                                                    <p className="text-[10px] font-black text-[#FE7803] tracking-wider leading-none uppercase">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <CreditCard size={13} className="text-[#FE7803] flex-shrink-0" />
+                                                    <p className="text-[10px] font-black text-[#FE7803] tracking-wider leading-none uppercase whitespace-nowrap truncate">
                                                         Payment Breakdown
                                                     </p>
                                                 </div>
-                                                <span className="bg-[#FE7803]/20 border border-[#FE7803]/40 text-[#FE7803] text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
-                                                    <Sparkles size={9} /> 50% Split
+                                                <span className="bg-[#FE7803]/20 border border-[#FE7803]/40 text-[#FE7803] text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 whitespace-nowrap flex-shrink-0">
+                                                    <Sparkles size={9} className="flex-shrink-0" /> 50% Split
                                                 </span>
                                             </div>
 

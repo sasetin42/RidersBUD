@@ -179,10 +179,8 @@ const RemindersScreen: React.FC = () => {
     };
 
     const handleDeleteReminder = (id: string) => {
-        if (window.confirm('Are you sure you want to delete this reminder?')) {
-            const updatedReminders = reminders.filter(r => r.id !== id);
-            saveReminders(updatedReminders);
-        }
+        const updatedReminders = reminders.filter(r => r.id !== id);
+        saveReminders(updatedReminders);
     };
 
     const handleEditReminder = (reminder: Reminder) => {

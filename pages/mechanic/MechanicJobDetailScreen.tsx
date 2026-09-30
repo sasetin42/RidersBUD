@@ -291,7 +291,16 @@ const MechanicJobDetailScreen: React.FC = () => {
         });
 
         if (booking?.status === 'En Route' && bookingId) {
-            const handleSuccess = (lat: number, lng: number) => {
+            let lastReportedAccuracy = 999;
+            const handleSuccess = (lat: number, lng: number, accuracy?: number) => {
+                // If reading accuracy is severely degraded (> 45m) and we already have a reliable fix, suppress jitter
+                if (typeof accuracy === 'number' && accuracy > 45 && lastReportedAccuracy <= 30) {
+                    return;
+                }
+                if (typeof accuracy === 'number') {
+                    lastReportedAccuracy = accuracy;
+                }
+
                 setMechanicCurrentLocation({ lat, lng });
 
                 // 1. Update RTDB for high-performance live tracking
@@ -299,6 +308,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                 set(trackingRef, {
                     lat,
                     lng,
+                    accuracy: typeof accuracy === 'number' ? accuracy : null,
                     timestamp: Date.now()
                 }).catch(() => {});
 
@@ -308,6 +318,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                     mechanicLocation: {
                         lat,
                         lng,
+                        accuracy: typeof accuracy === 'number' ? accuracy : null,
                         lastUpdated: new Date().toISOString()
                     }
                 }).catch(() => {});
@@ -321,14 +332,14 @@ const MechanicJobDetailScreen: React.FC = () => {
                         { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
                         (position) => {
                             if (position) {
-                                handleSuccess(position.coords.latitude, position.coords.longitude);
+                                handleSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
                             }
                         }
                     ).then((id) => {
                         nativeWatchId = id;
                     }).catch(() => {
                         safeWatchPosition(
-                            (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                            (position) => handleSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy),
                             () => {},
                             { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
                         ).then(id => {
@@ -337,7 +348,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                     });
                 } else {
                     safeWatchPosition(
-                        (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
+                        (position) => handleSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy),
                         () => {},
                         { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
                     ).then(id => {

@@ -11,7 +11,7 @@ import MechanicVerificationModal from '../../components/MechanicVerificationModa
 import NotificationBell from '../../components/NotificationBell';
 import Header from '../../components/Header';
 import Tooltip from '../../components/ui/Tooltip';
-import { Phone, MapPin, MessageSquare, User, Car } from 'lucide-react';
+import { Phone, MapPin, MessageSquare, User, Car, Radio, Wifi, WifiOff, AlertTriangle, X } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
 import { CallButton } from '../../components/CallUI';
@@ -89,7 +89,7 @@ const NewJobRequestModal: React.FC<{
 
 
 const MechanicDashboardScreen: React.FC = () => {
-    const { mechanic, updateOnlineStatus } = useMechanicAuth();
+    const { mechanic, updateOnlineStatus, autoOfflineNotice, clearAutoOfflineNotice } = useMechanicAuth();
     const { db, loading, acceptJobRequest } = useDatabase();
     const navigate = useNavigate();
 
@@ -216,7 +216,8 @@ const MechanicDashboardScreen: React.FC = () => {
             };
         }
         const currentMechanicDoc = db.mechanics.find(m => m.id === mechanic.id) || mechanic;
-        return calculateMechanicWalletLedger(mechanic.id, currentMechanicDoc, db.bookings || [], db.payouts || []);
+        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 10;
+        return calculateMechanicWalletLedger(mechanic.id, currentMechanicDoc, db.bookings || [], db.payouts || [], serviceFeePercentage);
     }, [db, mechanic]);
 
     const analyticsData = useMemo(() => {
@@ -406,31 +407,57 @@ const MechanicDashboardScreen: React.FC = () => {
                             <NotificationBell />
                         </Tooltip>
                         <div className="flex items-center">
-                            <Tooltip content={isOnline ? 'Go offline' : 'Go online to receive jobs'}>
+                            <Tooltip content={
+                                mechanic.verificationDocuments?.verificationStatus !== 'Approved'
+                                    ? 'Account pending verification. Cannot go online yet.'
+                                    : isOnline
+                                        ? 'Status: LIVE & ONLINE. Ready for new jobs. Tap to switch to Offline.'
+                                        : 'Status: OFFLINE. New requests paused. Tap to switch to Online.'
+                            }>
                                 <button
                                     type="button"
                                     disabled={mechanic.verificationDocuments?.verificationStatus !== 'Approved' || isUpdatingStatus}
                                     onClick={handleToggleStatus}
-                                    className={`relative flex items-center justify-between gap-2.5 px-3.5 py-2 rounded-full transition-all duration-300 active:scale-95 border select-none ${
+                                    aria-label={isOnline ? "Switch to offline mode" : "Switch to online mode"}
+                                    className={`group relative flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full border transition-all duration-300 select-none shadow-sm ${
                                         isOnline 
-                                            ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border-emerald-500/30 text-emerald-400 hover:from-emerald-500/30 hover:to-teal-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)] font-extrabold' 
-                                            : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10 hover:border-white/10 font-bold'
-                                    } ${mechanic.verificationDocuments?.verificationStatus !== 'Approved' ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'} ${isUpdatingStatus ? 'opacity-70' : ''}`}
+                                            ? 'bg-emerald-950/40 hover:bg-emerald-900/50 border-emerald-500/40 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.2)]' 
+                                            : 'bg-[#1e1e1e] hover:bg-[#252525] border-white/10 text-gray-400 hover:text-gray-200'
+                                    } ${
+                                        mechanic.verificationDocuments?.verificationStatus !== 'Approved' 
+                                            ? 'opacity-40 cursor-not-allowed' 
+                                            : 'cursor-pointer active:scale-95'
+                                    } ${isUpdatingStatus ? 'opacity-80 pointer-events-none' : ''}`}
                                 >
-                                    <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+                                    {/* Status Dot / Ping or Spinner */}
+                                    <span className="relative flex h-3 w-3 items-center justify-center shrink-0">
                                         {isUpdatingStatus ? (
-                                            <span className="w-2 h-2 rounded-full border border-current border-t-transparent animate-spin"></span>
-                                        ) : (
+                                            <span className="w-2.5 h-2.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+                                        ) : isOnline ? (
                                             <>
-                                                {isOnline && (
-                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                )}
-                                                <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? 'bg-emerald-500' : 'bg-gray-500'}`}></span>
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
                                             </>
+                                        ) : (
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-500 group-hover:bg-gray-400 transition-colors"></span>
                                         )}
                                     </span>
-                                    <span className="text-[10px] font-black tracking-[0.18em] uppercase transition-colors leading-none">
-                                        {isUpdatingStatus ? 'Updating...' : (isOnline ? 'Online' : 'Offline')}
+
+                                    {/* Status Text & Live details */}
+                                    <span className="text-[10.5px] sm:text-[11px] font-black tracking-[0.14em] uppercase transition-colors flex items-center gap-1.5 leading-none">
+                                        {isUpdatingStatus ? (
+                                            'Syncing...'
+                                        ) : isOnline ? (
+                                            <>
+                                                <span>Online</span>
+                                                <span className="hidden sm:inline-block w-1.5 h-1.5 rounded-full bg-emerald-400/40"></span>
+                                                <span className="hidden sm:inline-block text-[9px] text-emerald-400/80 font-bold lowercase tracking-normal">live</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span>Offline</span>
+                                            </>
+                                        )}
                                     </span>
                                 </button>
                             </Tooltip>
@@ -440,6 +467,27 @@ const MechanicDashboardScreen: React.FC = () => {
             />
 
             <div className="flex-grow p-4 space-y-6 overflow-y-auto">
+                {/* Inactivity Auto-Offline Alert Notice */}
+                {autoOfflineNotice && (
+                    <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-4 flex items-start justify-between gap-3 text-amber-200 animate-fadeIn shadow-lg shadow-amber-950/20">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                            <div>
+                                <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">Status Changed to Offline</h4>
+                                <p className="text-xs text-amber-200/90 mt-0.5 leading-relaxed font-medium">{autoOfflineNotice}</p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={clearAutoOfflineNotice}
+                            className="p-1 text-amber-400/80 hover:text-amber-200 hover:bg-white/5 rounded-lg transition-colors"
+                            aria-label="Dismiss notice"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
+
                 {/* Ongoing Job - Enhanced */}
                 {ongoingJob && (() => {
                     // Fetch customer data for enhanced display from live customerProfile state or local db fallback

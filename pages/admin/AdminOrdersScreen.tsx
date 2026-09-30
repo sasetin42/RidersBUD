@@ -555,26 +555,36 @@ const AdminOrdersScreen: React.FC = () => {
         });
 
         filtered.sort((a, b) => {
-            let aValue: string | number;
-            let bValue: string | number;
+            let aValue: number;
+            let bValue: number;
 
             if (sortConfig.key === 'date') {
-                const parseDate = (d: string) => {
+                const parseDate = (d: any) => {
                     if (!d) return 0;
-                    const cleaned = d.replace(/-/g, '/');
-                    const parsed = new Date(cleaned).getTime();
-                    return isNaN(parsed) ? 0 : parsed;
+                    if (typeof d === 'number') return d;
+                    const parsed = new Date(d).getTime();
+                    if (!isNaN(parsed)) return parsed;
+                    const cleaned = String(d).replace(/-/g, '/');
+                    const fallback = new Date(cleaned).getTime();
+                    return isNaN(fallback) ? 0 : fallback;
                 };
                 aValue = parseDate(a.date);
                 bValue = parseDate(b.date);
+            } else if (sortConfig.key === 'total') {
+                aValue = Number(a.total) || 0;
+                bValue = Number(b.total) || 0;
             } else {
-                aValue = a[sortConfig.key];
-                bValue = b[sortConfig.key];
+                const aStr = String(a[sortConfig.key] || '');
+                const bStr = String(b[sortConfig.key] || '');
+                const cmp = aStr.localeCompare(bStr);
+                return sortConfig.direction === 'ascending' ? cmp : -cmp;
             }
 
-            if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
-            if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
-            return 0;
+            if (aValue !== bValue) {
+                return sortConfig.direction === 'ascending' ? aValue - bValue : bValue - aValue;
+            }
+            // Stable deterministic tie-breaker: order ID
+            return a.id.localeCompare(b.id);
         });
         return filtered;
     }, [db, searchQuery, dateFilter, statusFilter, sortConfig, orderSequences]);
@@ -774,6 +784,37 @@ const AdminOrdersScreen: React.FC = () => {
                             onChange={e => { setDateFilter(prev => ({ ...prev, end: e.target.value })); setDatePreset('custom'); }}
                             className="bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-primary/50"
                         />
+                        {/* Sort Controls */}
+                        <div className="flex items-center gap-1 bg-white/5 border border-white/5 rounded-xl p-1">
+                            <select
+                                value={sortConfig.key}
+                                onChange={(e) => setSortConfig(prev => ({ ...prev, key: e.target.value as SortableKeys }))}
+                                className="bg-transparent text-white text-xs font-semibold px-2 py-1 outline-none cursor-pointer"
+                                title="Sort by attribute"
+                            >
+                                <option value="date" className="bg-[#121212]">Date</option>
+                                <option value="total" className="bg-[#121212]">Total</option>
+                                <option value="customerName" className="bg-[#121212]">Customer</option>
+                                <option value="status" className="bg-[#121212]">Status</option>
+                            </select>
+                            <button
+                                type="button"
+                                onClick={() => setSortConfig(prev => ({
+                                    ...prev,
+                                    direction: prev.direction === 'ascending' ? 'descending' : 'ascending'
+                                }))}
+                                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition-all ${
+                                    sortConfig.direction === 'ascending'
+                                        ? 'bg-primary/20 text-primary border border-primary/30'
+                                        : 'bg-white/10 text-white'
+                                }`}
+                                title={`Currently: ${sortConfig.direction}. Click to toggle.`}
+                            >
+                                <ArrowUpDown size={12} />
+                                <span>{sortConfig.direction === 'ascending' ? 'Asc (Oldest)' : 'Desc (Newest)'}</span>
+                            </button>
+                        </div>
+
                         {activeFiltersCount > 0 && (
                             <button
                                 onClick={clearFilters}

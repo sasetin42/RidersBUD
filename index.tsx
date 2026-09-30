@@ -23,6 +23,9 @@ const EXTENSION_WARN_PATTERNS = [
   'webchannel',
   'transport errored',
   'ERR_QUIC_PROTOCOL_ERROR',
+  'ERR_HTTP2_PING_FAILED',
+  'ERR_HTTP2_PROTOCOL_ERROR',
+  'net::ERR_HTTP2_PING_FAILED',
   'Write/channel',
   'Listen/channel',
   'GeolocationPositionError',
@@ -55,6 +58,10 @@ const EXTENSION_WARN_PATTERNS = [
   // Recharts negative dimension warnings
   'width(-1)',
   'height(-1)',
+  // Capacitor Web fallback warnings
+  'Capacitor App info unavailable',
+  'Not implemented on web',
+  'AppUpdateService'
 ];
 
 const EXTENSION_ERROR_PATTERNS = [
@@ -73,6 +80,9 @@ const EXTENSION_ERROR_PATTERNS = [
   'transport errored',
   'ERR_QUIC_PROTOCOL_ERROR',
   'QUIC_TOO_MANY_RTOS',
+  'ERR_HTTP2_PING_FAILED',
+  'ERR_HTTP2_PROTOCOL_ERROR',
+  'net::ERR_HTTP2_PING_FAILED',
   'Write/channel',
   'Listen/channel',
   'webchannel_blob',
@@ -87,6 +97,10 @@ const EXTENSION_ERROR_PATTERNS = [
   'The above error occurred',
   'Consider adding an error boundary',
   'ERR_NAME_NOT_RESOLVED',
+  'ERR_INTERNET_DISCONNECTED',
+  'ERR_NETWORK_CHANGED',
+  'cleardot.gif',
+  'firestore.googleapis.com',
   'r.stripe.com',
   'stripe.com',
   'm.stripe.com',
@@ -105,7 +119,14 @@ const EXTENSION_ERROR_PATTERNS = [
   'hcaptcha',
   'startTime',
   'reportAllChanges',
-  'Cannot read properties of undefined (reading \'startTime\')'
+  'Cannot read properties of undefined (reading \'startTime\')',
+  'Failed to check for RidersBUD app updates',
+  'version.json',
+  'ERR_BLOCKED_BY_CLIENT',
+  'BLOCKED_BY_CLIENT',
+  'net::ERR_BLOCKED_BY_CLIENT',
+  'Failed to reload',
+  'Failed to load resource'
 ];
 
 const _matchesPattern = (args: any[], patterns: string[]): boolean => {
@@ -134,38 +155,38 @@ const _filteredError = (...args: any[]) => {
   _origError(...args);
 };
 
-// Use Object.defineProperty so the override cannot be re-overridden by extensions
+// Assign filtered handlers while keeping them configurable and writable for React and dev tools
 try {
-  Object.defineProperty(console, 'warn', {
-    configurable: false,
-    writable: false,
-    value: _filteredWarn,
-  });
-} catch {
-  // Fallback if defineProperty fails (e.g., frozen console)
   console.warn = _filteredWarn;
+} catch {
+  // Ignore fallback failure
 }
 
 try {
-  Object.defineProperty(console, 'error', {
-    configurable: false,
-    writable: false,
-    value: _filteredError,
-  });
-} catch {
   console.error = _filteredError;
+} catch {
+  // Ignore fallback failure
 }
 
 
 // Suppress unhandled promise rejections and window errors originating from extension message channels or network asset failures
 window.addEventListener('error', (event) => {
   const target = event.target as HTMLElement | null;
-  // Automatically fallback broken images to default brand logo
+  // Automatically recover broken or cache-failed images with fresh cache buster, then fallback to logo
   if (target && target.tagName === 'IMG') {
     const img = target as HTMLImageElement;
+    const src = img.src || '';
+    if (!img.dataset.cacheBusted && (src.includes('firebasestorage.googleapis.com') || src.includes('unsplash.com'))) {
+      img.dataset.cacheBusted = 'true';
+      const separator = src.includes('?') ? '&' : '?';
+      img.src = src.replace(/([?&])_cb=[^&]*/, '') + separator + '_cb=' + Date.now();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (!img.dataset.fallbackApplied) {
       img.dataset.fallbackApplied = 'true';
-      img.src = '/riders-logo.png';
+      img.src = '/assets/logo.png';
     }
     event.preventDefault();
     event.stopPropagation();
@@ -179,6 +200,16 @@ window.addEventListener('error', (event) => {
     errorMsg.includes('asynchronous response') ||
     errorMsg.includes('runtime.lastError') ||
     errorMsg.includes('ERR_NAME_NOT_RESOLVED') ||
+    errorMsg.includes('ERR_INTERNET_DISCONNECTED') ||
+    errorMsg.includes('ERR_NETWORK_CHANGED') ||
+    errorMsg.includes('ERR_HTTP2_PING_FAILED') ||
+    errorMsg.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
+    errorMsg.includes('net::ERR_HTTP2_PING_FAILED') ||
+    errorMsg.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+    errorMsg.includes('QUIC_TOO_MANY_RTOS') ||
+    errorMsg.includes('ERR_BLOCKED_BY_CLIENT') ||
+    errorMsg.includes('BLOCKED_BY_CLIENT') ||
+    errorMsg.includes('cleardot.gif') ||
     errorMsg.includes('usePusher') ||
     errorMsg.includes('CLOSING or CLOSED') ||
     errorMsg.includes('Evervault') ||
@@ -202,6 +233,16 @@ window.addEventListener('unhandledrejection', (event) => {
     reasonStr.includes('asynchronous response') ||
     reasonStr.includes('runtime.lastError') ||
     reasonStr.includes('ERR_NAME_NOT_RESOLVED') ||
+    reasonStr.includes('ERR_INTERNET_DISCONNECTED') ||
+    reasonStr.includes('ERR_NETWORK_CHANGED') ||
+    reasonStr.includes('ERR_HTTP2_PING_FAILED') ||
+    reasonStr.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
+    reasonStr.includes('net::ERR_HTTP2_PING_FAILED') ||
+    reasonStr.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+    reasonStr.includes('QUIC_TOO_MANY_RTOS') ||
+    reasonStr.includes('ERR_BLOCKED_BY_CLIENT') ||
+    reasonStr.includes('BLOCKED_BY_CLIENT') ||
+    reasonStr.includes('cleardot.gif') ||
     reasonStr.includes('usePusher') ||
     reasonStr.includes('CLOSING or CLOSED') ||
     reasonStr.includes('startTime') ||

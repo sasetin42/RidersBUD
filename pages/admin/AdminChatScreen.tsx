@@ -12,11 +12,45 @@ import { useOnlineStatus } from '../../hooks/usePresence';
 const ChatUserAvatar: React.FC<{ userId: string; userType: string; avatarUrl?: string; userName: string }> = ({ userId, userType, avatarUrl, userName }) => {
     const collectionName = userType === 'mechanic' ? 'mechanics' : 'customers';
     const isOnline = useOnlineStatus(userId, collectionName);
+    const [liveAvatar, setLiveAvatar] = useState<string | null>(avatarUrl || null);
+    const [imgFailed, setImgFailed] = useState<boolean>(false);
+
+    useEffect(() => {
+        if (!userId) return;
+        setImgFailed(false);
+        const userDocRef = doc(firestoreDB, collectionName, userId);
+        const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                const pic = data.picture || data.imageUrl || data.profilePicture || data.photoUrl;
+                if (pic) {
+                    setLiveAvatar(pic);
+                    setImgFailed(false);
+                } else if (avatarUrl) {
+                    setLiveAvatar(avatarUrl);
+                }
+            }
+        }, (error) => {
+            console.warn("Realtime avatar listener warning:", error);
+        });
+
+        return () => {
+            try { unsubscribe(); } catch (_) {}
+        };
+    }, [userId, collectionName, avatarUrl]);
+
+    const effectiveAvatar = (!imgFailed && liveAvatar) ? liveAvatar : '/favicon.png';
+    const isFavicon = effectiveAvatar === '/favicon.png' || imgFailed;
 
     return (
         <div className="relative shrink-0">
-            <div className="w-12 h-12 rounded-full overflow-hidden border border-white/10 bg-gray-800">
-                <img src={avatarUrl || '/riders-logo.png'} alt={userName} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }} />
+            <div className={`w-12 h-12 rounded-full overflow-hidden border border-white/10 ${isFavicon ? 'bg-[#181818] p-1.5 flex items-center justify-center' : 'bg-gray-800'}`}>
+                <img 
+                    src={effectiveAvatar} 
+                    alt={userName} 
+                    className={`w-full h-full ${isFavicon ? 'object-contain' : 'object-cover'}`}
+                    onError={() => setImgFailed(true)} 
+                />
             </div>
             <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 border-2 border-[#121212] rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
         </div>
@@ -33,6 +67,11 @@ interface ChatMessage {
         content: string;
         name: string;
     };
+    attachments?: Array<{
+        type: 'image' | 'file';
+        content: string;
+        name: string;
+    }>;
 }
 
 interface ChatSession {
@@ -498,13 +537,29 @@ const AdminChatScreen: React.FC = () => {
                                     </button>
                                 </Tooltip>
                                 <div className="relative shrink-0">
-                                    <div className="w-10 h-10 rounded-full overflow-hidden border border-white/10">
-                                        <img 
-                                            src={selectedChat?.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedChat?.userName || '')}&background=random`} 
-                                            alt="User" 
-                                            className="w-full h-full object-cover" 
-                                        />
-                                    </div>
+                                    {(() => {
+                                        const headerAvatar = customerDetails?.picture || customerDetails?.imageUrl || customerDetails?.profilePicture || customerDetails?.photoUrl || selectedChat?.userAvatar;
+                                        const isFavicon = !headerAvatar;
+                                        return (
+                                            <div className={`w-10 h-10 rounded-full overflow-hidden border border-white/10 ${isFavicon ? 'bg-[#181818] p-1 flex items-center justify-center' : 'bg-gray-800'}`}>
+                                                <img 
+                                                    src={headerAvatar || '/favicon.png'} 
+                                                    alt={selectedChat?.userName || 'User'} 
+                                                    className={`w-full h-full ${isFavicon ? 'object-contain' : 'object-cover'}`}
+                                                    onError={(e) => {
+                                                        const target = e.target as HTMLImageElement;
+                                                        if (!target.src.endsWith('/favicon.png')) {
+                                                            target.src = '/favicon.png';
+                                                            target.className = 'w-full h-full object-contain';
+                                                            if (target.parentElement) {
+                                                                target.parentElement.className = 'w-10 h-10 rounded-full overflow-hidden border border-white/10 bg-[#181818] p-1 flex items-center justify-center';
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                        );
+                                    })()}
                                     {selectedChat?.status !== 'completed' && (
                                         <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 border-2 border-[#121212] rounded-full ${selectedUserOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
                                     )}
@@ -574,7 +629,20 @@ const AdminChatScreen: React.FC = () => {
                                                     : 'bg-[#1E1E1E] text-gray-200 border border-white/5 rounded-bl-none shadow-xl'
                                                 }
                                             `}>
-                                                {msg.attachment && renderAttachment(msg.attachment)}
+                                                {/* Single attachment */}
+                                                {msg.attachment && !msg.attachments && renderAttachment(msg.attachment)}
+                                                
+                                                {/* Multiple attachments */}
+                                                {msg.attachments && msg.attachments.length > 0 && (
+                                                    <div className="flex flex-wrap gap-2 my-2">
+                                                        {msg.attachments.map((att, i) => (
+                                                            <div key={i} className="max-w-[200px]">
+                                                                {renderAttachment(att)}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
                                                 {msg.text && renderMessageContent(msg.text, msg.sender === 'admin')}
                                             </div>
                                             {!isNextSame && (
@@ -669,16 +737,31 @@ const AdminChatScreen: React.FC = () => {
                         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-8">
                             {/* Basic Info */}
                             <div className="text-center">
-                                <div className="w-24 h-24 rounded-2xl overflow-hidden mx-auto mb-4 border-2 border-orange-500/20 shadow-2xl relative group">
-                                    <img 
-                                        src={customerDetails?.picture || chats.find(c => c.id === selectedChatId)?.userAvatar || '/riders-logo.png'} 
-                                        alt="User" 
-                                        className="w-full h-full object-cover transition-transform group-hover:scale-110" 
-                                        onError={(e) => { (e.target as HTMLImageElement).src = '/riders-logo.png'; }}
-                                    />
-                                    <div className="absolute inset-0 bg-orange-500/10 mix-blend-overlay"></div>
-                                </div>
-                                <h4 className="text-lg font-black tracking-tight">{customerDetails?.name || 'Loading...'}</h4>
+                                {(() => {
+                                    const profilePic = customerDetails?.picture || customerDetails?.imageUrl || customerDetails?.profilePicture || customerDetails?.photoUrl || chats.find(c => c.id === selectedChatId)?.userAvatar;
+                                    const isFavicon = !profilePic;
+                                    return (
+                                        <div className={`w-24 h-24 rounded-2xl overflow-hidden mx-auto mb-4 border-2 border-orange-500/20 shadow-2xl relative group ${isFavicon ? 'bg-[#181818] p-3 flex items-center justify-center' : 'bg-gray-800'}`}>
+                                            <img 
+                                                src={profilePic || '/favicon.png'} 
+                                                alt="User" 
+                                                className={`w-full h-full ${isFavicon ? 'object-contain' : 'object-cover transition-transform group-hover:scale-110'}`} 
+                                                onError={(e) => {
+                                                    const target = e.target as HTMLImageElement;
+                                                    if (!target.src.endsWith('/favicon.png')) {
+                                                        target.src = '/favicon.png';
+                                                        target.className = 'w-full h-full object-contain';
+                                                        if (target.parentElement) {
+                                                            target.parentElement.className = 'w-24 h-24 rounded-2xl overflow-hidden mx-auto mb-4 border-2 border-orange-500/20 shadow-2xl relative group bg-[#181818] p-3 flex items-center justify-center';
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                            {!isFavicon && <div className="absolute inset-0 bg-orange-500/10 mix-blend-overlay"></div>}
+                                        </div>
+                                    );
+                                })()}
+                                <h4 className="text-lg font-black tracking-tight">{customerDetails?.name || selectedChat?.userName || 'Loading...'}</h4>
                                 <div className="flex items-center justify-center gap-1.5 mb-4">
                                     <span className={`w-2 h-2 rounded-full ${selectedUserOnline ? 'bg-green-500' : 'bg-gray-500'}`}></span>
                                     <p className="text-[10px] uppercase tracking-widest font-black">

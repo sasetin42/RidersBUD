@@ -13,7 +13,11 @@ import {
     Layers, 
     Maximize2, 
     Activity, 
-    CheckCircle2 
+    CheckCircle2,
+    Route,
+    Store,
+    User,
+    Wrench
 } from 'lucide-react';
 import { Mechanic } from '../types';
 
@@ -41,6 +45,20 @@ interface LiveRouteMapModalProps {
     onChatCustomer?: () => void;
     onOpenExternalNav?: () => void;
     appLogoUrl?: string;
+    // Enhanced props for Order Delivery tracking
+    trackingType?: 'service' | 'order';
+    serviceType?: 'Car Rental' | 'Driver for Hire' | 'Liaison' | 'Towing' | string;
+    hqLocation?: { lat: number; lng: number; name?: string; address?: string } | null;
+    deliveryRider?: {
+        name?: string;
+        phone?: string;
+        vehicle?: string;
+        imageUrl?: string;
+        plateNumber?: string;
+    } | null;
+    originAddress?: string;
+    destinationAddress?: string;
+    orderNumber?: string;
 }
 
 export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
@@ -64,7 +82,14 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
     onCallCustomer,
     onChatCustomer,
     onOpenExternalNav,
-    appLogoUrl = '/favicon.png'
+    appLogoUrl = '/favicon.png',
+    trackingType = 'service',
+    serviceType,
+    hqLocation,
+    deliveryRider,
+    originAddress = 'Carmona Commercial Center, Governor\'s Drive, Cavite',
+    destinationAddress,
+    orderNumber
 }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
@@ -76,12 +101,30 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
     const [isLoadingRoute, setIsLoadingRoute] = useState(false);
     const [activeView, setActiveView] = useState<'both' | 'customer' | 'mechanic'>('both');
 
+    // Default HQ coordinates fallback (Carmona Commercial Center)
+    const defaultHqLat = hqLocation?.lat ?? 14.3149;
+    const defaultHqLng = hqLocation?.lng ?? 121.0583;
+    const defaultHqName = hqLocation?.name ?? 'RidersBUD Central HQ & Dispatch Hub';
+    const defaultHqAddress = hqLocation?.address ?? 'Carmona Commercial Center, Governor\'s Drive, Cavite';
+
+    const isHqOriginService = Boolean(
+        trackingType === 'order' ||
+        serviceType === 'Car Rental' ||
+        serviceType === 'Driver for Hire' ||
+        serviceType === 'Liaison' ||
+        serviceType === 'Towing' ||
+        (!mechanicLocation && !mechanic?.lat)
+    );
+
+    const isMechanicAssigned = Boolean(mechanic?.name || mechanic?.id || deliveryRider?.name || mechanicLocation);
+
     // Extract primitive coordinates to avoid object identity reference re-triggers
     const custLat = customerLocation?.lat ?? 14.291457;
     const custLng = customerLocation?.lng ?? 121.001210;
 
-    const mechLat = mechanicLocation?.lat ?? (mechanic?.lat ? mechanic.lat : custLat + 0.0125);
-    const mechLng = mechanicLocation?.lng ?? (mechanic?.lng ? mechanic.lng : custLng + 0.0145);
+    // Origin resolution: Live mechanic location if available, otherwise default HQ dispatch hub
+    const mechLat = mechanicLocation?.lat ?? (mechanic?.lat ? mechanic.lat : (isHqOriginService ? defaultHqLat : custLat + 0.0125));
+    const mechLng = mechanicLocation?.lng ?? (mechanic?.lng ? mechanic.lng : (isHqOriginService ? defaultHqLng : custLng + 0.0145));
 
     const fallbackExternalNav = () => {
         const destLat = viewMode === 'mechanic' ? custLat : mechLat;
@@ -123,7 +166,8 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
         const routeLayerGroup = L.layerGroup().addTo(map);
         routeLayerGroupRef.current = routeLayerGroup;
 
-        // Modern Custom Customer Pin
+        // Modern Custom Customer / Destination Pin
+        const destinationTitle = trackingType === 'order' ? 'Client Delivery Address' : 'Service Destination';
         const customerIcon = L.divIcon({
             html: `
                 <div class="relative flex items-center justify-center filter drop-shadow-[0_8px_16px_rgba(16,185,129,0.4)]">
@@ -153,22 +197,57 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
         customerMarkerRef.current = L.marker([custLat, custLng], { icon: customerIcon })
             .addTo(map)
             .bindPopup(`
-                <div style="font-family:inherit;padding:4px;color:#111;">
-                    <div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:#059669;">
-                        <span>📍 Service Destination</span>
+                <div style="font-family:inherit;padding:8px 10px;min-width:170px;max-width:210px;background:#141419;border-radius:14px;box-sizing:border-box;">
+                    <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;padding-right:16px;">
+                        <span style="width:6px;height:6px;border-radius:50%;background:#10b981;flex-shrink:0;"></span>
+                        <span style="font-weight:900;font-size:9px;color:#34d399;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${destinationTitle}</span>
                     </div>
-                    <div style="font-weight:700;font-size:12px;margin-top:2px;">${customerName || 'Customer'}</div>
-                    ${customerAddress ? `<div style="font-size:10px;color:#6b7280;margin-top:2px;max-width:180px;">${customerAddress}</div>` : ''}
+                    <div style="font-weight:800;font-size:12px;color:#ffffff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;">
+                        ${customerName || 'Client'}
+                    </div>
+                    <div style="font-size:10px;color:#9ca3af;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                        📍 ${destinationAddress || customerAddress || 'Carmona City Delivery Area'}
+                    </div>
                 </div>
-            `);
+            `, {
+                autoPan: true,
+                autoPanPadding: [15, 15],
+                offset: [0, -18],
+                closeButton: true
+            });
 
-        // Modern Custom Mechanic Pin
+        // Modern Custom Store Hub or Courier / Mechanic Pin
+        const isMechanicAssigned = Boolean(mechanicLocation || mechanic?.lat);
+        const originTitle = trackingType === 'order' 
+            ? 'Store Hub' 
+            : (!isMechanicAssigned && isHqOriginService)
+                ? 'RidersBUD Central HQ'
+                : 'Mechanic';
+
+        const originSub = trackingType === 'order' 
+            ? 'RidersBUD Store'
+            : (!isMechanicAssigned && isHqOriginService)
+                ? (defaultHqName || 'Dispatch Hub')
+                : (mechanic?.name || 'Specialist');
+
+        const originImage = trackingType === 'order' 
+            ? (appLogoUrl || '/ridersbud_logo.png')
+            : (!isMechanicAssigned && isHqOriginService)
+                ? (appLogoUrl || '/ridersbud_logo.png')
+                : (mechanic?.imageUrl || appLogoUrl);
+
         const mechanicIcon = L.divIcon({
             html: `
                 <div class="relative flex items-center justify-center filter drop-shadow-[0_8px_16px_rgba(254,120,3,0.45)]">
                     <div class="absolute w-12 h-12 rounded-full bg-[#FE7803]/25 animate-pulse"></div>
                     <div class="relative w-11 h-11 rounded-2xl bg-[#141419] border-2 border-[#FE7803] p-0.5 shadow-2xl flex items-center justify-center overflow-hidden transition-transform duration-300 hover:scale-110">
-                        <img src="${mechanic?.imageUrl || appLogoUrl}" alt="Mechanic" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.src='${appLogoUrl}'" />
+                        ${(trackingType === 'order' || (!isMechanicAssigned && isHqOriginService)) ? `
+                            <div class="w-full h-full bg-[#FE7803]/15 rounded-xl flex items-center justify-center p-1">
+                                <img src="${originImage}" alt="${originTitle}" style="width:100%;height:100%;object-fit:contain;border-radius:8px;" onerror="this.onerror=null;this.parentElement.innerHTML='<span style=\\'font-size:16px;\\'>🏬</span>';" />
+                            </div>
+                        ` : `
+                            <img src="${originImage}" alt="Mechanic" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.src='${appLogoUrl}'" />
+                        `}
                     </div>
                     <div class="absolute -top-1 -right-1 w-4 h-4 bg-[#FE7803] rounded-full border-2 border-[#141419] flex items-center justify-center">
                         <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
@@ -184,14 +263,24 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
         mechanicMarkerRef.current = L.marker([mechLat, mechLng], { icon: mechanicIcon })
             .addTo(map)
             .bindPopup(`
-                <div style="font-family:inherit;padding:4px;color:#111;">
-                    <div style="display:flex;align-items:center;gap:6px;font-weight:900;font-size:13px;color:#d97706;">
-                        <span>🔧 Pro Mechanic</span>
+                <div style="font-family:inherit;padding:8px 10px;min-width:180px;max-width:230px;background:#141419;border-radius:14px;box-sizing:border-box;">
+                    <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px;padding-right:16px;">
+                        <span style="width:6px;height:6px;border-radius:50%;background:#FE7803;flex-shrink:0;"></span>
+                        <span style="font-weight:900;font-size:9px;color:#FE7803;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${originTitle}</span>
                     </div>
-                    <div style="font-weight:700;font-size:12px;margin-top:2px;">${mechanic?.name || 'Assigned Specialist'}</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:2px;">Live GPS Tracking</div>
+                    <div style="font-weight:800;font-size:12px;color:#ffffff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;">
+                        ${originSub}
+                    </div>
+                    <div style="font-size:10px;color:#9ca3af;line-height:1.3;white-space:normal;">
+                        ${(!isMechanicAssigned && isHqOriginService) ? `🏬 ${defaultHqAddress}` : (trackingType === 'order' ? '🏬 Carmona Commercial Center' : '🔧 Live GPS Position')}
+                    </div>
                 </div>
-            `);
+            `, {
+                autoPan: true,
+                autoPanPadding: [15, 15],
+                offset: [0, -18],
+                closeButton: true
+            });
 
         mapInstanceRef.current = map;
 
@@ -333,8 +422,8 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 animate-fadeIn">
-            <div className="relative flex flex-col w-full max-w-2xl h-[94vh] max-h-[800px] bg-[#121217] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/85 backdrop-blur-md p-0 sm:p-4 animate-fadeIn">
+            <div className="relative flex flex-col w-full sm:max-w-2xl h-full sm:h-[94vh] sm:max-h-[800px] bg-[#121217] border-0 sm:border border-white/10 rounded-none sm:rounded-3xl overflow-hidden shadow-2xl">
                 
                 {/* Modal Header */}
                 <div className="flex items-center justify-between px-3.5 sm:px-5 py-3 bg-[#181820]/95 backdrop-blur-md border-b border-white/10 z-20 gap-2">
@@ -404,45 +493,114 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Quick View Segmented Control */}
-                        <div className="bg-[#141419]/95 backdrop-blur-md border border-white/10 p-0.5 rounded-xl shadow-2xl pointer-events-auto flex items-center">
+                        {/* Quick View Segmented Control (Icon-only) */}
+                        <div className="bg-[#141419]/95 backdrop-blur-md border border-white/10 p-1 rounded-xl shadow-2xl pointer-events-auto flex items-center gap-1">
                             <button
                                 onClick={() => handleFocusView('both')}
-                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                                    activeView === 'both' ? 'bg-[#FE7803] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                                title="Full Route"
+                                aria-label="Full Route"
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                    activeView === 'both' 
+                                        ? 'bg-[#FE7803] text-white shadow-md shadow-[#FE7803]/30 scale-105' 
+                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
                                 }`}
                             >
-                                Route
+                                <Route size={16} strokeWidth={2.4} />
                             </button>
                             <button
                                 onClick={() => handleFocusView('mechanic')}
-                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                                    activeView === 'mechanic' ? 'bg-[#FE7803] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                                title={trackingType === 'order' ? 'Store Hub' : 'Mechanic Location'}
+                                aria-label={trackingType === 'order' ? 'Store Hub' : 'Mechanic Location'}
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                    activeView === 'mechanic' 
+                                        ? 'bg-[#FE7803] text-white shadow-md shadow-[#FE7803]/30 scale-105' 
+                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
                                 }`}
                             >
-                                Mechanic
+                                {trackingType === 'order' ? (
+                                    <Store size={16} strokeWidth={2.4} />
+                                ) : (
+                                    <Wrench size={16} strokeWidth={2.4} />
+                                )}
                             </button>
                             <button
                                 onClick={() => handleFocusView('customer')}
-                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                                    activeView === 'customer' ? 'bg-[#FE7803] text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                                title={trackingType === 'order' ? 'Client Delivery Area' : 'Customer Location'}
+                                aria-label={trackingType === 'order' ? 'Client Delivery Area' : 'Customer Location'}
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                    activeView === 'customer' 
+                                        ? 'bg-[#FE7803] text-white shadow-md shadow-[#FE7803]/30 scale-105' 
+                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
                                 }`}
                             >
-                                Customer
+                                <User size={16} strokeWidth={2.4} />
                             </button>
                         </div>
                     </div>
 
-                    {/* Map Zoom Controls (Bottom Right) */}
-                    <div className="absolute bottom-4 right-2.5 z-[400] flex flex-col gap-1">
+                    {/* Floating Communication & Map Controls (Bottom Right of Map) */}
+                    <div className="absolute bottom-4 right-2.5 z-[400] flex flex-col gap-1.5 items-center">
+                        {/* Call Button (Above Zoom) */}
+                        {(onCallCustomer || onCallMechanic) && (
+                            <button
+                                onClick={onCallCustomer || onCallMechanic}
+                                className="w-8 h-8 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white backdrop-blur-md border border-emerald-400/30 flex items-center justify-center hover:scale-105 active:scale-90 transition-all shadow-xl"
+                                title={
+                                    trackingType === 'order'
+                                        ? 'Call the Store Hub'
+                                        : viewMode === 'mechanic'
+                                            ? 'Call Customer'
+                                            : 'Call Mechanic'
+                                }
+                                aria-label={
+                                    trackingType === 'order'
+                                        ? 'Call the Store Hub'
+                                        : viewMode === 'mechanic'
+                                            ? 'Call Customer'
+                                            : 'Call Mechanic'
+                                }
+                            >
+                                <Phone size={14} className="animate-pulse" />
+                            </button>
+                        )}
+
+                        {/* Message Button (Above Zoom) */}
+                        {(onChatCustomer || onChatMechanic) && (
+                            <button
+                                onClick={onChatCustomer || onChatMechanic}
+                                className="w-8 h-8 rounded-lg bg-[#FE7803]/90 hover:bg-[#FE7803] text-white backdrop-blur-md border border-[#FE7803]/40 flex items-center justify-center hover:scale-105 active:scale-90 transition-all shadow-xl mb-1"
+                                title={
+                                    trackingType === 'order'
+                                        ? 'Message the Store Hub'
+                                        : viewMode === 'mechanic'
+                                            ? 'Message Customer'
+                                            : 'Message Mechanic'
+                                }
+                                aria-label={
+                                    trackingType === 'order'
+                                        ? 'Message the Store Hub'
+                                        : viewMode === 'mechanic'
+                                            ? 'Message Customer'
+                                            : 'Message Mechanic'
+                                }
+                            >
+                                <MessageSquare size={14} />
+                            </button>
+                        )}
+
+                        {/* Map Zoom Controls */}
                         <button
                             onClick={() => mapInstanceRef.current?.zoomIn()}
+                            title="Zoom In"
+                            aria-label="Zoom In"
                             className="w-8 h-8 rounded-lg bg-[#141419]/95 backdrop-blur-md border border-white/10 text-white font-black text-sm flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all shadow-lg"
                         >
                             +
                         </button>
                         <button
                             onClick={() => mapInstanceRef.current?.zoomOut()}
+                            title="Zoom Out"
+                            aria-label="Zoom Out"
                             className="w-8 h-8 rounded-lg bg-[#141419]/95 backdrop-blur-md border border-white/10 text-white font-black text-sm flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all shadow-lg"
                         >
                             −
@@ -453,7 +611,34 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
                 {/* Footer Info & Actions */}
                 <div className="p-3 sm:p-4 bg-[#181820] border-t border-white/10 z-20">
                     <div className="flex items-center justify-between gap-2.5">
-                        {viewMode === 'mechanic' ? (
+                        {trackingType === 'order' ? (
+                            /* Store & Courier Profile Snippet (Order View) */
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="relative w-10 h-10 rounded-xl bg-[#22222B] border border-[#FE7803]/40 p-1 flex-shrink-0 overflow-hidden shadow-md flex items-center justify-center">
+                                    <img
+                                        src={appLogoUrl || '/ridersbud_logo.png'}
+                                        alt="RidersBUD Store"
+                                        className="w-full h-full object-contain rounded-md"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.png'; }}
+                                    />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <h4 className="text-xs sm:text-sm font-black text-white truncate">
+                                            RidersBUD Parts & Tools Store
+                                        </h4>
+                                        <span className="bg-[#FE7803]/10 text-[#FE7803] border border-[#FE7803]/20 text-[8px] font-black uppercase px-1.5 py-0.2 rounded">
+                                            Dispatch Hub
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-300 truncate mt-0.5 flex items-center gap-1 font-medium">
+                                        <span className="text-[#FE7803] font-bold">📍 Origin: Carmona Hub</span>
+                                        <span className="text-gray-500">•</span>
+                                        <span className="text-emerald-400 font-bold truncate">Dest: {destinationAddress || customerAddress || 'Client Location'}</span>
+                                    </p>
+                                </div>
+                            </div>
+                        ) : viewMode === 'mechanic' ? (
                             /* Customer Profile Snippet (Mechanic View) */
                             <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="relative w-10 h-10 rounded-xl bg-[#22222B] border border-emerald-500/40 p-0.5 flex-shrink-0 overflow-hidden shadow-md">
@@ -490,6 +675,33 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
                                     </p>
                                 </div>
                             </div>
+                        ) : (!isMechanicAssigned && isHqOriginService) ? (
+                            /* HQ Dispatch Hub Snippet (For HQ-origin services like Car Rental, Towing, Driver Hire, Liaison) */
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="relative w-10 h-10 rounded-xl bg-[#22222B] border border-[#FE7803]/40 p-1 flex-shrink-0 overflow-hidden shadow-md flex items-center justify-center">
+                                    <img
+                                        src={appLogoUrl || '/ridersbud_logo.png'}
+                                        alt="RidersBUD Central HQ"
+                                        className="w-full h-full object-contain rounded-md"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = '/favicon.png'; }}
+                                    />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <h4 className="text-xs sm:text-sm font-black text-white truncate">
+                                            {defaultHqName}
+                                        </h4>
+                                        <span className="bg-[#FE7803]/10 text-[#FE7803] border border-[#FE7803]/20 text-[8px] font-black uppercase px-1.5 py-0.2 rounded">
+                                            {serviceType || 'Dispatch HQ'}
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-gray-300 truncate mt-0.5 flex items-center gap-1 font-medium">
+                                        <span className="text-[#FE7803] font-bold">📍 HQ: {defaultHqAddress.split(',')[0]}</span>
+                                        <span className="text-gray-500">•</span>
+                                        <span className="text-emerald-400 font-bold truncate">Client: {destinationAddress || customerAddress || 'Customer Address'}</span>
+                                    </p>
+                                </div>
+                            </div>
                         ) : (
                             /* Mechanic Profile Snippet (Customer View) */
                             <div className="flex items-center gap-2.5 min-w-0">
@@ -504,7 +716,7 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
                                         <h4 className="text-xs sm:text-sm font-black text-white truncate">
-                                            {mechanic?.name || 'Assigned Mechanic Specialist'}
+                                            {mechanic?.name || 'Assigned Specialist'}
                                         </h4>
                                         <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[8px] font-black uppercase px-1.5 py-0.2 rounded">
                                             Verified Pro
@@ -517,29 +729,6 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
                             </div>
                         )}
 
-                        {/* Direct Communication Quick Buttons */}
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {(onCallCustomer || onCallMechanic) && (
-                                <button
-                                    onClick={onCallCustomer || onCallMechanic}
-                                    className="flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-emerald-500 font-bold px-3 py-2 rounded-xl text-[11px] transition-all active:scale-95 shadow-md"
-                                    title={viewMode === 'mechanic' ? 'Call Customer' : 'Call Mechanic'}
-                                >
-                                    <Phone size={13} />
-                                    <span className="hidden sm:inline">Call</span>
-                                </button>
-                            )}
-                            {(onChatCustomer || onChatMechanic) && (
-                                <button
-                                    onClick={onChatCustomer || onChatMechanic}
-                                    className="flex items-center gap-1 bg-[#FE7803]/10 hover:bg-[#FE7803] text-[#FE7803] hover:text-white border border-[#FE7803]/20 hover:border-[#FE7803] font-bold px-3 py-2 rounded-xl text-[11px] transition-all active:scale-95 shadow-md"
-                                    title={viewMode === 'mechanic' ? 'Message Customer' : 'Message Mechanic'}
-                                >
-                                    <MessageSquare size={13} />
-                                    <span className="hidden sm:inline">Chat</span>
-                                </button>
-                            )}
-                        </div>
                     </div>
                 </div>
 

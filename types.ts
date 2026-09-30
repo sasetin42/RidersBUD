@@ -65,6 +65,8 @@ export interface Customer {
     status?: string;
     isOnline?: boolean;
     hasSeenTour?: boolean;
+    profileCompleted?: boolean;
+    profileCompletedAt?: string;
     registrationDate?: string;
     notificationSettings?: {
         bookingUpdates: boolean;
@@ -165,10 +167,13 @@ export interface Settings {
     // SMTP Configuration
     smtpHost?: string;
     smtpPort?: string;
+    smtpEncryption?: 'SSL/TLS' | 'STARTTLS' | 'None';
     smtpUsername?: string;
     smtpPassword?: string;
+    smtpAuthRequired?: boolean;
     smtpFromName?: string;
     smtpFromEmail?: string;
+    smtpReplyTo?: string;
 
     // Email Notification Templates
     emailTemplates?: Record<string, EmailTemplate>;
@@ -182,6 +187,7 @@ export interface Settings {
     // Default Profile Images
     defaultCustomerImageUrl?: string;
     defaultMechanicImageUrl?: string;
+
 
     // Support (New)
     virtualMechanicName?: string;
@@ -205,6 +211,14 @@ export interface Settings {
     defaultMapZoom?: number;
     enableTrafficLayer?: boolean;
 
+    // E-Commerce Parts & Tools Store Hub Location (Origin Pin for Live Tracking)
+    storeName?: string;
+    storeAddress?: string;
+    storeLatitude?: number;
+    storeLongitude?: number;
+    storePhone?: string;
+    autoDetectStoreLocation?: boolean; // When true, automatically detects and syncs live physical GPS coordinates
+
     // Leaflet Customization & Live Telemetry
     leafletTileProvider?: 'osm-dark' | 'osm' | 'esri-dark' | 'esri-satellite' | 'esri-streets' | 'cyclosm' | 'custom';
     leafletCustomTileUrl?: string;
@@ -216,6 +230,194 @@ export interface Settings {
     leafletShowAccuracyCircle?: boolean;
     leafletShowLiveTrail?: boolean;
     leafletMapTheme?: 'dark' | 'light' | 'auto';
+
+    // Mobile App & APK Live Updates
+    appUpdateConfig?: AppUpdateSettings;
+
+    // Specialized Services Customization (Car Rental, Driver for Hire, Liaison, Towing)
+    serviceCustomizations?: ServiceCustomizationSettings;
+
+    // General Extensions
+    companyName?: string;
+    defaultLanguage?: string;
+    timeZone?: string;
+    dateFormat?: string;
+    timeFormat?: string;
+    numberFormat?: string;
+
+    // Appearance Extensions
+    themeMode?: 'dark' | 'light' | 'system';
+    primaryBrandColor?: string;
+    secondaryBrandColor?: string;
+    borderRadius?: string;
+    fontFamily?: string;
+    fontSize?: string;
+    density?: 'compact' | 'comfortable' | 'spacious';
+    customCss?: string;
+    headerStyle?: 'solid' | 'glass' | 'minimal';
+    loginBackgroundUrl?: string;
+
+    // Operations Extensions
+    driverDispatchRadiusKm?: number;
+    cancellationFee?: number;
+    cancellationWindowHours?: number;
+    schedulingLeadTimeHours?: number;
+    autoAssignMechanics?: boolean;
+    mechanicAutoOfflineEnabled?: boolean;
+    mechanicInactivityThresholdHours?: number;
+    mechanicAutoOfflineWarningMinutes?: number;
+    serviceAreas?: string[];
+    operatingDays?: string[];
+    holidayDates?: string[];
+
+    // Financials Extensions
+    taxRatePercentage?: number;
+    taxIdentificationNumber?: string;
+    invoicePrefix?: string;
+    receiptPrefix?: string;
+    paymentTermsDays?: number;
+    financialApprovalThreshold?: number;
+
+    // Notifications Extensions
+    smsNotificationsEnabled?: boolean;
+    pushNotificationsEnabled?: boolean;
+    inAppNotificationsEnabled?: boolean;
+    smsGatewayProvider?: 'twilio' | 'semaphore' | 'infobip' | 'custom';
+    smsApiKey?: string;
+
+    // Verification Extensions
+    emailVerificationRequired?: boolean;
+    phoneVerificationRequired?: boolean;
+    otpVerificationRequired?: boolean;
+    identityVerificationRequired?: boolean;
+    mechanicAutoApproval?: boolean;
+    driverAutoApproval?: boolean;
+    verificationExpiryMonths?: number;
+
+    // Support Extensions
+    helpCenterUrl?: string;
+    faqUrl?: string;
+    slaResponseTimeHours?: number;
+    slaResolutionTimeHours?: number;
+    supportAutoReply?: boolean;
+    supportAutoReplyMessage?: string;
+
+    // System & Performance Extensions
+    debugMode?: boolean;
+    environment?: 'production' | 'staging' | 'development';
+    apiRateLimitPerMinute?: number;
+    maxUploadSizeMb?: number;
+    enableImageCompression?: boolean;
+    enableWebpConversion?: boolean;
+    cdnBaseUrl?: string;
+
+    // Security Extensions
+    passwordMinLength?: number;
+    passwordRequireSpecialChar?: boolean;
+    passwordRequireUppercase?: boolean;
+    passwordRequireNumber?: boolean;
+    passwordExpiryDays?: number;
+    accountLockoutAttempts?: number;
+    accountLockoutMinutes?: number;
+    sessionTimeoutMinutes?: number;
+    twoFactorAuthRequired?: boolean;
+    captchaEnabled?: boolean;
+
+    // Backups & Retention
+    autoBackupEnabled?: boolean;
+    autoBackupSchedule?: 'daily' | 'weekly' | 'monthly';
+    backupRetentionDays?: number;
+
+    // Webhooks & Integrations
+    webhooks?: WebhookConfig[];
+    thirdPartyIntegrations?: Record<string, { enabled: boolean; apiKey?: string; endpoint?: string; status?: string }>;
+}
+
+export interface WebhookConfig {
+    id: string;
+    name: string;
+    event: string;
+    endpointUrl: string;
+    secret?: string;
+    httpMethod?: 'POST' | 'PUT';
+    headers?: Record<string, string>;
+    isActive: boolean;
+    retryCount?: number;
+    timeoutSeconds?: number;
+    lastTriggeredAt?: string;
+    lastResponseStatus?: number;
+    failureCount?: number;
+}
+
+export interface WebhookDeliveryLog {
+    id: string;
+    webhookId: string;
+    webhookName: string;
+    event: string;
+    timestamp: string;
+    status: 'success' | 'failed' | 'retrying';
+    statusCode?: number;
+    payloadPreview: string;
+    responseBody?: string;
+    errorMessage?: string;
+    durationMs: number;
+}
+
+export interface AuditLogEntry {
+    id: string;
+    timestamp: string;
+    user: string;
+    userEmail: string;
+    userRole: string;
+    action: 'Created' | 'Updated' | 'Deleted' | 'Approved' | 'Rejected' | 'Login' | 'Logout' | 'Exported' | 'Imported' | 'Configuration Changed';
+    module: string;
+    recordId?: string;
+    previousValue?: string;
+    newValue?: string;
+    ipAddress?: string;
+    device?: string;
+    browser?: string;
+    status: 'Success' | 'Failed' | 'Warning';
+    details: string;
+}
+
+export interface BackupRecord {
+    id: string;
+    createdAt: string;
+    fileName: string;
+    sizeBytes: number;
+    sizeFormatted: string;
+    type: 'full' | 'database' | 'media' | 'configuration';
+    status: 'completed' | 'failed' | 'restoring';
+    collectionsIncluded: string[];
+    versionTag: string;
+    createdBy: string;
+    downloadUrl?: string;
+}
+
+export interface ConfigVersionRecord {
+    version: number;
+    timestamp: string;
+    changedBy: string;
+    changedFields: string[];
+    summary: string;
+    snapshot: Partial<Settings>;
+}
+
+export interface AppUpdateSettings {
+    versionCode: number;
+    versionName: string;
+    apkUrl: string;
+    releaseNotes: string;
+    mandatory: boolean;
+    minSupportedVersionCode?: number;
+    lastUpdated?: string;
+    fileSizeMb?: string;
+    // Customizable In-App Update Modal & Policy Controls
+    showUpdateModal?: boolean; // When false, suppresses/hides the in-app update modal globally
+    targetAudience?: 'all' | 'customers' | 'mechanics' | 'none'; // Controls who is prompted for the APK
+    externalDownloadUrl?: string; // Alternative external / mirror download link
+    allowRemindLater?: boolean; // Controls whether users can dismiss with Remind Me Later
 }
 
 export interface ModuleConfig {
@@ -223,6 +425,73 @@ export interface ModuleConfig {
     name: string;
     enabled: boolean;
     bannerMessage?: string;
+}
+
+export interface CarRentalServiceSettings {
+    enabled: boolean;
+    bannerMessage?: string;
+    securityDepositAmount: number;
+    driverAddonDailyRate: number;
+    minRentalDays: number;
+    fuelPolicy: 'full_to_full' | 'same_level';
+    dailyMileageLimitKm: number;
+    insuranceDailyFee: number;
+    lateReturnPenaltyPerHour: number;
+    requireValidLicense: boolean;
+    requireValidId: boolean;
+    cancellationWindowHours: number;
+    termsAndConditions?: string;
+}
+
+export interface DriverHireServiceSettings {
+    enabled: boolean;
+    bannerMessage?: string;
+    twoHoursRate: number;
+    fourHoursRate: number;
+    eightHoursRate: number;
+    airportTransferRate: number;
+    depositPercentage: number;
+    overtimeRatePerHour: number;
+    customerCarDiscount: number;
+    nightDifferentialRatePerHour: number;
+    advanceBookingNoticeHours: number;
+    allowCustomerCarOnly: boolean;
+    termsAndConditions?: string;
+}
+
+export interface LiaisonServiceSettings {
+    enabled: boolean;
+    bannerMessage?: string;
+    renewalServiceFee: number;
+    transferOwnershipFee: number;
+    duplicateDocFee: number;
+    documentPickupFee: number;
+    rushProcessingFee: number;
+    leadTimeDays: number;
+    requireEmissionTestCopy: boolean;
+    requireInsuranceCopy: boolean;
+    termsAndConditions?: string;
+}
+
+export interface TowingServiceSettings {
+    enabled: boolean;
+    bannerMessage?: string;
+    baseHookupFee: number;
+    perKmRate: number;
+    flatbedSurcharge: number;
+    winchingRecoveryFee: number;
+    nightDifferentialSurcharge: number;
+    maxDispatchRadiusKm: number;
+    priorityResponseTimeMinutes: number;
+    emergencyHotline?: string;
+    termsAndConditions?: string;
+}
+
+export interface ServiceCustomizationSettings {
+    carRental?: CarRentalServiceSettings;
+    driverHire?: DriverHireServiceSettings;
+    liaison?: LiaisonServiceSettings;
+    towing?: TowingServiceSettings;
 }
 
 export interface EmailTemplate {
@@ -253,6 +522,7 @@ export interface PaymentRequest {
     name: string;
     phone?: string;
     purpose?: string;
+    payment_methods?: string[];
     address?: {
         line1?: string;
         line2?: string;
@@ -341,6 +611,7 @@ export interface ServiceRequest {
     serviceName?: string;
     pricingId?: string;
     providerId?: string;
+    purposeOfHire?: string;
     status: 'Pending' | 'In Progress' | 'Completed' | 'Cancelled' | 'Pending Admin Review' | 'For Verification' | 'Awaiting Driver Availability' | 'Driver Assigned' | 'Confirmed' | string;
     details?: any;
     vehicleId?: string;
@@ -349,6 +620,28 @@ export interface ServiceRequest {
     completedDate?: string;
     notes?: string;
     totalAmount?: number;
+    price?: number;
+    paidAmount?: number;
+    downpaymentAmount?: number;
+    isPaid?: boolean;
+    paymentStatus?: 'pending' | 'partial' | 'paid' | 'unpaid' | 'downpayment_paid' | string;
+    paymentMethod?: string;
+    isVerified?: boolean;
+    downpaymentRef?: string;
+    downpaymentPaidAt?: string;
+    balancePaymentRef?: string;
+    balancePaidAt?: string;
+    balancePaid?: boolean;
+    hitpayReference?: string;
+    hitpayPaymentRequestId?: string;
+    hitpayStatus?: string;
+    gcashReceiptUrl?: string;
+    gcashDownpaymentReceiptUrl?: string;
+    gcashBalanceReceiptUrl?: string;
+    gcashReference?: string;
+    gcashPaymentStatus?: 'pending' | 'verified' | 'declined' | string;
+    gcashDeclineReason?: string;
+    additionalCosts?: { description: string; price: number }[];
     createdAt: string;
     updatedAt: string;
     driverName?: string;
@@ -382,6 +675,23 @@ export interface Reminder {
     createdAt?: string;
 }
 
+export interface SmtpLog {
+    id: string;
+    timestamp: string;
+    recipient: string;
+    sender: string;
+    subject: string;
+    status: 'Sending' | 'Submitted to SMTP Server' | 'Accepted by SMTP Server' | 'Delivered' | 'Failed';
+    host: string;
+    port: string | number;
+    encryption: string;
+    serverResponse?: string;
+    errorMessage?: string;
+    latencyMs?: number;
+    messageId?: string;
+}
+
+
 
 export type AdminModule = 'dashboard' | 'analytics' | 'bookings' | 'catalog' | 'mechanics' | 'customers' | 'marketing' | 'users' | 'settings' | 'orders' | 'monetization' | 'payouts' | 'chat' | 'gcash-payments' | 'notifications';
 export type PermissionLevel = 'none' | 'read' | 'write';
@@ -413,6 +723,28 @@ export interface AdminUser {
 
 
 // Part interface for inventory management
+export interface PartFitment {
+    make: string;
+    models: string;
+}
+
+export interface PartTechnicalSpec {
+    label: string;
+    value: string;
+}
+
+export interface PartWarrantyInfo {
+    title?: string;
+    coverage?: string;
+    subtitle?: string;
+}
+
+export interface PartShippingInfo {
+    title?: string;
+    eta?: string;
+    subtitle?: string;
+}
+
 export interface Part {
     id: string;
     name: string;
@@ -433,6 +765,13 @@ export interface Part {
     lastModified?: string;
     // Common fields
     id_alias?: string; // Sometimes id is aliased
+    // Extended product customization details
+    vehicleFitment?: PartFitment[];
+    technicalSpecs?: PartTechnicalSpec[];
+    rating?: number;
+    reviewCount?: number;
+    warrantyInfo?: PartWarrantyInfo;
+    shippingInfo?: PartShippingInfo;
 }
 
 export type Product = Part;
@@ -455,6 +794,8 @@ export interface Mechanic {
     phone: string;
     imageUrl?: string;
     isOnline: boolean;
+    lastActive?: string;
+    lastActionTimestamp?: string;
     hasSeenTour?: boolean;
     rating: number;
     reviewsCount?: number;
@@ -724,6 +1065,8 @@ export interface RentalBooking {
     carId: string;
     customerId?: string;
     customerName: string;
+    customerEmail?: string;
+    customerPhone?: string;
     startDate: string;
     endDate: string;
     totalPrice: number;
@@ -733,6 +1076,27 @@ export interface RentalBooking {
     paymentStatus?: string;
     isPaid?: boolean;
     includeDriver?: boolean;
+    location?: { latitude: number; longitude: number; address?: string } | { lat: number; lng: number; address?: string };
+    pickupLocation?: string;
+    deliveryOption?: string;
+    notes?: string;
+    downpaymentAmount?: number;
+    remainingBalance?: number;
+    downpaymentRef?: string;
+    downpaymentPaidAt?: string;
+    balancePaymentRef?: string;
+    balancePaidAt?: string;
+    balancePaid?: boolean;
+    isVerified?: boolean;
+    paymentMethod?: string;
+    isRental?: boolean;
+    vehicleModel?: string;
+    carName?: string;
+    carImage?: string;
+    totalAmount?: number;
+    cancellationReason?: string;
+    cancelReason?: string;
+    statusHistory?: any[];
 }
 export type Subscription = any;
 export type PromoCode = any;

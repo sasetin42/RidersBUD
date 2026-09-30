@@ -61,6 +61,9 @@ const LoginScreen: React.FC = () => {
         }
     }, [isMechanicAuthenticated, isAuthenticated, mechanicAuthLoading, authLoading, navigate]);
 
+    const [securityModalOpen, setSecurityModalOpen] = useState(false);
+    const [securityModalRole, setSecurityModalRole] = useState<'Customer' | 'Mechanic'>('Customer');
+
     if (!db) {
         return <div className="flex items-center justify-center h-screen bg-gradient-to-br from-[#0A0A0A] via-[#121212] to-[#1A1A1A]"><Spinner size="lg" /></div>;
     }
@@ -162,9 +165,6 @@ const LoginScreen: React.FC = () => {
             setIsLoading(false);
         }
     };
-
-    const [securityModalOpen, setSecurityModalOpen] = useState(false);
-    const [securityModalRole, setSecurityModalRole] = useState<'Customer' | 'Mechanic'>('Customer');
 
     const shouldShowSecurityModal = (role: 'Customer' | 'Mechanic') => {
         const key = `security_modal_dismissed_${role.toLowerCase()}`;
@@ -273,16 +273,16 @@ const LoginScreen: React.FC = () => {
                 </div>
             )}
 
-            <div className="w-full max-w-md relative z-10 py-8 flex flex-col">
+            <div className="w-full max-w-md relative z-10 py-4 flex flex-col">
 
                 {/* Header */}
-                <div className="text-center mb-8 animate-fadeIn">
+                <div className="text-center mb-5 animate-fadeIn">
                     {logoUrl ? (
-                        <img src={logoUrl} alt={`${settings.appName || 'RidersBUD'} Logo`} className="w-48 mb-6 max-h-24 object-contain mx-auto mix-blend-screen" />
+                        <img src={logoUrl} alt={`${settings.appName || 'RidersBUD'} Logo`} className="w-48 mb-2 max-h-24 object-contain mx-auto mix-blend-screen" />
                     ) : (
-                        <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent mb-2">{settings.appName || 'Riders'}</h1>
+                        <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent mb-1">{settings.appName || 'Riders'}</h1>
                     )}
-                    <p className="text-gray-400 text-lg">{settings.appTagline || 'Trusted Car Care Wherever You Are'}</p>
+                    <p className="text-gray-400 text-base">{settings.appTagline || 'Trusted Car Care Wherever You Are'}</p>
                 </div>
 
                 {/* Tab Switcher */}

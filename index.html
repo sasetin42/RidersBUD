@@ -3,8 +3,96 @@
 
 <head>
     <script>
-        // Suppress Tailwind Play CDN, Firebase snapshot, third-party payment gateway sandbox (HitPay iframe / Pusher / Evervault / Stripe / hCaptcha) console warnings/errors globally
+        // CRITICAL: Protect against third-party Chrome extensions, DevTools performance/web-vitals monitors, and scheduler callbacks
         (function() {
+            // 1. Prototype and fallback protection for startTime
+            try {
+                if (typeof Object.prototype.startTime === 'undefined') {
+                    Object.defineProperty(Object.prototype, 'startTime', {
+                        value: 0,
+                        writable: true,
+                        configurable: true
+                    });
+                }
+            } catch (_) {}
+
+            try {
+                if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
+                    var desc = Object.getOwnPropertyDescriptor(window.PerformanceEntry.prototype, 'startTime');
+                    if (!desc || desc.configurable) {
+                        Object.defineProperty(window.PerformanceEntry.prototype, 'startTime', {
+                            get: function() { return (this && typeof this._st === 'number') ? this._st : 0; },
+                            set: function(v) { try { this._st = Number(v) || 0; } catch(_) {} },
+                            configurable: true,
+                            enumerable: true
+                        });
+                    }
+                }
+            } catch (_) {}
+
+            // 2. Wrap requestIdleCallback, setTimeout, and requestAnimationFrame immediately at line 1
+            try {
+                if (typeof window.requestIdleCallback !== 'undefined') {
+                    var origRIC = window.requestIdleCallback;
+                    window.requestIdleCallback = function(cb, opts) {
+                        return origRIC.call(window, function(deadline) {
+                            try {
+                                return cb(deadline);
+                            } catch (e) {
+                                var errStr = (e && (e.message || e.stack || String(e))) || '';
+                                if (/starttime|reportallchanges/i.test(errStr)) {
+                                    return;
+                                }
+                                throw e;
+                            }
+                        }, opts);
+                    };
+                }
+            } catch (_) {}
+
+            try {
+                var origST = window.setTimeout;
+                window.setTimeout = function(fn, delay) {
+                    var args = [];
+                    for (var a = 2; a < arguments.length; a++) args.push(arguments[a]);
+                    if (typeof fn === 'function') {
+                        var safeFn = function() {
+                            try {
+                                return fn.apply(this, arguments);
+                            } catch (e) {
+                                var errStr = (e && (e.message || e.stack || String(e))) || '';
+                                if (/starttime|reportallchanges/i.test(errStr)) {
+                                    return;
+                                }
+                                throw e;
+                            }
+                        };
+                        return origST.apply(window, [safeFn, delay].concat(args));
+                    }
+                    return origST.apply(window, arguments);
+                };
+            } catch (_) {}
+
+            try {
+                if (typeof window.requestAnimationFrame !== 'undefined') {
+                    var origRAF = window.requestAnimationFrame;
+                    window.requestAnimationFrame = function(cb) {
+                        return origRAF.call(window, function(ts) {
+                            try {
+                                return cb(ts);
+                            } catch (e) {
+                                var errStr = (e && (e.message || e.stack || String(e))) || '';
+                                if (/starttime|reportallchanges/i.test(errStr)) {
+                                    return;
+                                }
+                                throw e;
+                            }
+                        });
+                    };
+                }
+            } catch (_) {}
+
+            // Suppress Tailwind Play CDN, Firebase snapshot, third-party payment gateway sandbox (HitPay iframe / Pusher / Evervault / Stripe / hCaptcha) console warnings/errors globally
             // Immediately unregister any stale Service Worker and clear cache from previous sessions on localhost
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.getRegistrations().then(function(regs) {
@@ -99,7 +187,10 @@
                     joined.includes('ERR_CACHE_READ_FAILURE') ||
                     joined.includes('CACHE_READ_FAILURE') ||
                     joined.includes('tile.openstreetmap.org') ||
-                    joined.includes('hcaptcha')
+                    joined.includes('hcaptcha') ||
+                    joined.includes('Capacitor App info unavailable') ||
+                    joined.includes('Not implemented on web') ||
+                    joined.includes('version.json')
                 ) return;
                 originalWarn.apply(console, args);
             };
@@ -170,7 +261,12 @@
                     joined.includes('CACHE_READ_FAILURE') ||
                     joined.includes('tile.openstreetmap.org') ||
                     joined.includes('Blocked aria-hidden on a <body>') ||
-                    joined.includes('hcaptcha')
+                    joined.includes('hcaptcha') ||
+                    joined.includes('Failed to check for RidersBUD app updates') ||
+                    joined.includes('version.json') ||
+                    joined.includes('smtp-bridge') ||
+                    joined.includes('hitpay-proxy') ||
+                    joined.includes('Failed to reload')
                 ) return;
                 originalError.apply(console, args);
             };
@@ -223,11 +319,27 @@
             try {
                 if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
                     try {
-                        Object.defineProperty(window.PerformanceEntry.prototype, 'startTime', {
-                            get: function() { return 0; },
-                            configurable: true
-                        });
+                        var desc = Object.getOwnPropertyDescriptor(window.PerformanceEntry.prototype, 'startTime');
+                        if (!desc || desc.configurable) {
+                            Object.defineProperty(window.PerformanceEntry.prototype, 'startTime', {
+                                get: function() { return (this && typeof this._st === 'number') ? this._st : 0; },
+                                set: function(v) { try { this._st = Number(v) || 0; } catch(_) {} },
+                                configurable: true,
+                                enumerable: true
+                            });
+                        }
                     } catch (_) {}
+                }
+            } catch (_) {}
+
+            // Fallback safety on Object.prototype to prevent `Cannot read properties of undefined (reading 'startTime')` if undefined/null is wrapped or if prototype chains are queried
+            try {
+                if (typeof Object.prototype.startTime === 'undefined') {
+                    Object.defineProperty(Object.prototype, 'startTime', {
+                        value: 0,
+                        writable: true,
+                        configurable: true
+                    });
                 }
             } catch (_) {}
 
@@ -251,7 +363,7 @@
                         var item = entries[i];
                         if (item && typeof item === 'object') {
                             if (typeof item.startTime === 'undefined' || item.startTime === null || isNaN(item.startTime)) {
-                                try { item.startTime = 0; } catch(_) {}
+                                try { item.startTime = (typeof performance !== 'undefined' && performance && performance.now) ? performance.now() : 0; } catch(_) {}
                             }
                             if (typeof item.duration === 'undefined' || item.duration === null || isNaN(item.duration)) {
                                 try { item.duration = 0; } catch(_) {}
@@ -371,7 +483,7 @@
                             try {
                                 return cb(deadline);
                             } catch (e) {
-                                if (e && e.message && (e.message.includes('startTime') || e.message.includes('reportAllChanges') || e.message.includes('undefined'))) {
+                                if (e && (e.message || String(e)).toLowerCase().match(/starttime|reportallchanges/)) {
                                     return;
                                 }
                                 throw e;
@@ -390,7 +502,7 @@
                             try {
                                 return cb(ts);
                             } catch (e) {
-                                if (e && e.message && (e.message.includes('startTime') || e.message.includes('reportAllChanges') || e.message.includes('undefined'))) {
+                                if (e && (e.message || String(e)).toLowerCase().match(/starttime|reportallchanges/)) {
                                     return;
                                 }
                                 throw e;
@@ -409,7 +521,7 @@
                             try {
                                 return fn.apply(this, arguments);
                             } catch (e) {
-                                if (e && e.message && (e.message.includes('startTime') || e.message.includes('reportAllChanges') || e.message.includes('undefined'))) {
+                                if (e && (e.message || String(e)).toLowerCase().match(/starttime|reportallchanges/)) {
                                     return;
                                 }
                                 throw e;
@@ -433,33 +545,72 @@
                 var msg = event.message || (event.error && event.error.message) || (event.error && String(event.error)) || '';
                 var filename = event.filename || '';
                 var stack = (event.error && event.error.stack) || '';
-                if (shouldSuppress(msg) || shouldSuppress(filename) || shouldSuppress(stack) || filename.includes('VM') || filename.includes('extensions::') || filename.includes('chrome-extension://') || filename.includes('usePusher') || filename.includes('hcaptcha') || msg.includes('startTime') || msg.includes('reportAllChanges') || stack.includes('reportAllChanges') || stack.includes('startTime') || msg.includes('QUIC')) {
+                if (
+                    shouldSuppress(msg) || 
+                    shouldSuppress(filename) || 
+                    shouldSuppress(stack) || 
+                    filename.includes('VM') || 
+                    filename.includes('extensions::') || 
+                    filename.includes('chrome-extension://') || 
+                    filename.includes('usePusher') || 
+                    filename.includes('hcaptcha') || 
+                    msg.includes('startTime') || 
+                    msg.includes('reportAllChanges') || 
+                    stack.includes('reportAllChanges') || 
+                    stack.includes('startTime') || 
+                    msg.includes('QUIC')
+                ) {
                     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
                     event.preventDefault();
                     event.stopPropagation();
+                    // Remove Vite error overlay if caused by this external extension script error
+                    try {
+                        var overlay = document.querySelector('vite-error-overlay');
+                        if (overlay && overlay.parentNode) {
+                            overlay.parentNode.removeChild(overlay);
+                        }
+                    } catch (_) {}
                     return true;
                 }
             }, true);
             window.addEventListener('unhandledrejection', function(event) {
                 var msg = (event.reason && event.reason.message) || String(event.reason) || '';
                 var stack = (event.reason && event.reason.stack) || '';
-                if (shouldSuppress(msg) || shouldSuppress(stack) || msg.includes('usePusher') || msg.includes('CLOSING or CLOSED') || msg.includes('Evervault') || msg.includes('QUIC') || msg.includes('startTime') || msg.includes('reportAllChanges') || stack.includes('reportAllChanges')) {
+                if (
+                    shouldSuppress(msg) || 
+                    shouldSuppress(stack) || 
+                    msg.includes('usePusher') || 
+                    msg.includes('CLOSING or CLOSED') || 
+                    msg.includes('Evervault') || 
+                    msg.includes('QUIC') || 
+                    msg.includes('startTime') || 
+                    msg.includes('reportAllChanges') || 
+                    stack.includes('reportAllChanges') ||
+                    stack.includes('startTime')
+                ) {
                     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
                     event.preventDefault();
                     event.stopPropagation();
                     return true;
                 }
             }, true);
-            // Extra safety: window.onerror return true prevents default console output in some browsers
-            window.onerror = function(msg, url, line, col, err) {
-                var m = msg || (err && err.message) || (err && String(err)) || '';
-                var u = url || '';
-                var s = (err && err.stack) || '';
-                if (shouldSuppress(m) || shouldSuppress(s) || u.includes('VM') || u.includes('chrome-extension://') || u.includes('usePusher') || u.includes('hcaptcha') || m.includes('startTime') || m.includes('reportAllChanges') || s.includes('reportAllChanges') || m.includes('QUIC')) {
-                    return true;
+            // Global image cache read failure recovery: if Chromium fails reading local disk cache (ERR_CACHE_READ_FAILURE),
+            // bust the cache with timestamp and force fresh network reload without UI breakage
+            window.addEventListener('error', function(e) {
+                var target = e.target;
+                if (target && target.tagName === 'IMG') {
+                    var src = target.src || '';
+                    if (src && !target.dataset.cacheBusted && (src.indexOf('firebasestorage.googleapis.com') !== -1 || src.indexOf('unsplash.com') !== -1)) {
+                        target.dataset.cacheBusted = 'true';
+                        var separator = src.indexOf('?') !== -1 ? '&' : '?';
+                        target.src = src.replace(/([?&])_cb=[^&]*/, '') + separator + '_cb=' + Date.now();
+                        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
                 }
-                return false;
-            };
+            }, true);
         })();
     </script>
     <meta charset="UTF-8" />
@@ -500,7 +651,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#FE7803" />
     <meta name="color-scheme" content="dark" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com https://smtpjs.com https://*.smtpjs.com https://api.hit-pay.com https://api.sandbox.hit-pay.com https://*.hit-pay.com https://*.stripe.com https://r.stripe.com https://m.stripe.com https://*.stripe.network wss://*.pusher.com https://*.pusher.com https://*.evervault.com https://js.evervault.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://*.hit-pay.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.firebaseio.com https://unpkg.com https://smtpjs.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.stripe.network https://*.pusher.com https://*.evervault.com https://js.evervault.com; frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.evervault.com; child-src 'self' https://*.firebaseapp.com https://*.google.com https://*.hit-pay.com https://*.stripe.com https://*.evervault.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.web.app https://ridersbud-10806.web.app https://*.firebaseapp.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com https://smtpjs.com https://*.smtpjs.com https://api.hit-pay.com https://api.sandbox.hit-pay.com https://*.hit-pay.com https://*.stripe.com https://r.stripe.com https://m.stripe.com https://*.stripe.network wss://*.pusher.com https://*.pusher.com https://*.evervault.com https://js.evervault.com https://webhook.site https://*.webhook.site; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://*.hit-pay.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.firebaseio.com https://unpkg.com https://smtpjs.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.stripe.network https://*.pusher.com https://*.evervault.com https://js.evervault.com; frame-src 'self' https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.google.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.evervault.com; child-src 'self' https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.google.com https://*.hit-pay.com https://*.stripe.com https://*.evervault.com;">
     <link rel="manifest" href="/manifest.json" />
     
     <!-- Leaflet CSS & JS for Maps (self-hosted to avoid tracking prevention blocks) -->

@@ -25,6 +25,7 @@ import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { paymentService } from '../services/PaymentService';
 import { sendEmail, sendTemplatedEmail } from '../services/emailService';
+import { getJobTotalAmount, calculateMechanicWalletLedger } from '../utils/mechanicLedger';
 
 interface DatabaseContextType {
     db: Database | null;
@@ -104,7 +105,8 @@ interface DatabaseContextType {
     addServicePricing: (pricing: Omit<ServicePricing, 'id'>) => Promise<void>;
     updateServicePricing: (pricing: ServicePricing) => Promise<void>;
     deleteServicePricing: (id: string) => Promise<void>;
-    addServiceRequest: (request: Omit<ServiceRequest, 'id'>) => Promise<void>;
+    addServiceRequest: (request: Omit<ServiceRequest, 'id'>) => Promise<ServiceRequest>;
+    updateServiceRequest: (id: string, updates: Partial<ServiceRequest>) => Promise<void>;
     updateServiceRequestStatus: (id: string, status: string, notes?: string) => Promise<void>;
     // Rental Fleet
     addRentalCar: (car: Omit<RentalCar, 'id'>) => Promise<void>;
@@ -118,7 +120,8 @@ interface DatabaseContextType {
     updateHireDriver: (driver: HireDriver) => Promise<void>;
     deleteHireDriver: (id: string) => Promise<void>;
     // Liaison Services
-    addLiaisonBooking: (booking: Omit<LiaisonBooking, 'id'>) => Promise<void>;
+    addLiaisonBooking: (booking: Omit<LiaisonBooking, 'id'>) => Promise<LiaisonBooking>;
+    updateLiaisonBooking: (id: string, updates: Partial<LiaisonBooking>) => Promise<void>;
     updateLiaisonBookingStatus: (id: string, status: LiaisonBooking['status'], notes?: string, officerName?: string) => Promise<void>;
     deleteLiaisonBooking: (id: string) => Promise<void>;
     deleteServiceRequest: (id: string) => Promise<void>;
@@ -180,6 +183,9 @@ const FIRESTORE_SUPPRESS = [
     'malformed chunk',
     'MaxListenersExceededWarning',
     'ERR_QUIC_PROTOCOL_ERROR',
+    'ERR_HTTP2_PING_FAILED',
+    'ERR_HTTP2_PROTOCOL_ERROR',
+    'net::ERR_HTTP2_PING_FAILED',
     'Write/channel',
     'Listen/channel',
     'webchannel',
@@ -205,6 +211,23 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
     }
 });
 
+// Helper to remove any undefined fields recursively to prevent Firestore 'Unsupported field value: undefined' errors
+const cleanFirestoreData = (obj: any): any => {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) {
+        return obj
+            .filter(item => item !== undefined)
+            .map(item => cleanFirestoreData(item));
+    }
+    const cleaned: Record<string, any> = {};
+    for (const [key, val] of Object.entries(obj)) {
+        if (val !== undefined) {
+            cleaned[key] = cleanFirestoreData(val);
+        }
+    }
+    return cleaned;
+};
 
 export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const getCachedSettings = (): Settings => {
@@ -237,18 +260,110 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
                 { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
                 { id: 'towing', name: 'Towing Service', enabled: true, bannerMessage: '' }
-            ]
+            ],
+            // Default HQ / Store Location
+            address: "Carmona Commercial Center, Governor's Drive, Cavite, Philippines",
+            storeName: 'RidersBUD Parts & Tools Store',
+            storeAddress: "Carmona Commercial Center, Governor's Drive, Cavite, Philippines",
+            storeLatitude: 14.3149,
+            storeLongitude: 121.0583,
+            storePhone: '+63 917 888 7433',
+            autoDetectStoreLocation: true,
+            // Mechanic Auto-Offline Inactivity Policy
+            mechanicAutoOfflineEnabled: true,
+            mechanicInactivityThresholdHours: 1,
+            // Android In-App APK Update Controls
+            appUpdateConfig: {
+                versionCode: 2,
+                versionName: '1.0.1',
+                apkUrl: 'https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk',
+                releaseNotes: '• Auto updates added\n• High precision GPS fix\n• Improved driver dispatching',
+                mandatory: false,
+                fileSizeMb: '27.3 MB',
+                showUpdateModal: true,
+                targetAudience: 'all',
+                externalDownloadUrl: '',
+                allowRemindLater: true
+            },
+            // Specialized Service Customizations (Car Rental, Driver for Hire, Liaison, Towing)
+            serviceCustomizations: {
+                carRental: {
+                    enabled: true,
+                    bannerMessage: '',
+                    securityDepositAmount: 3000,
+                    driverAddonDailyRate: 800,
+                    minRentalDays: 1,
+                    fuelPolicy: 'full_to_full',
+                    dailyMileageLimitKm: 300,
+                    insuranceDailyFee: 350,
+                    lateReturnPenaltyPerHour: 200,
+                    requireValidLicense: true,
+                    requireValidId: true,
+                    cancellationWindowHours: 24,
+                    termsAndConditions: 'Drivers must possess a valid driver\'s license and government-issued ID. Security deposit is fully refundable upon safe vehicle return with no damages.'
+                },
+                driverHire: {
+                    enabled: true,
+                    bannerMessage: '',
+                    twoHoursRate: 1600,
+                    fourHoursRate: 3200,
+                    eightHoursRate: 4500,
+                    airportTransferRate: 5500,
+                    depositPercentage: 50,
+                    overtimeRatePerHour: 400,
+                    customerCarDiscount: 0,
+                    nightDifferentialRatePerHour: 250,
+                    advanceBookingNoticeHours: 2,
+                    allowCustomerCarOnly: false,
+                    termsAndConditions: 'Driver for Hire services require a 50% deposit upon booking confirmation. Overtime charges apply after the selected hourly package.'
+                },
+                liaison: {
+                    enabled: true,
+                    bannerMessage: '',
+                    renewalServiceFee: 1500,
+                    transferOwnershipFee: 2200,
+                    duplicateDocFee: 1200,
+                    documentPickupFee: 250,
+                    rushProcessingFee: 500,
+                    leadTimeDays: 2,
+                    requireEmissionTestCopy: true,
+                    requireInsuranceCopy: true,
+                    termsAndConditions: 'Liaison officers handle official LTO document processing. Government fees and document clearance are settled prior to submission.'
+                },
+                towing: {
+                    enabled: true,
+                    bannerMessage: '',
+                    baseHookupFee: 1500,
+                    perKmRate: 65,
+                    flatbedSurcharge: 800,
+                    winchingRecoveryFee: 1200,
+                    nightDifferentialSurcharge: 500,
+                    maxDispatchRadiusKm: 50,
+                    priorityResponseTimeMinutes: 30,
+                    emergencyHotline: '0917-888-7433',
+                    termsAndConditions: 'Towing dispatch operates 24/7. Base hookup includes the first 5km; succeeding distance is calculated based on exact GPS coordinates.'
+                }
+            }
         };
     };
 
     const initialSettings: Settings = getCachedSettings();
+
+    const getCachedServiceRequests = (): ServiceRequest[] => {
+        try {
+            const raw = localStorage.getItem('rb_recent_service_requests');
+            return raw ? JSON.parse(raw) : [];
+        } catch {
+            return [];
+        }
+    };
 
     const [db, setDb] = useState<Database | null>({
         services: [], parts: [], mechanics: [], bookings: [], customers: [], orders: [],
         banners: [], settings: initialSettings, faqs: [], adminUsers: [], roles: [],
         tasks: [], payouts: [], notifications: [], rentalCars: [], rentalBookings: [], hireDrivers: [],
         subscriptions: [], promoCodes: [],
-        appServices: [], serviceRequests: [], serviceProviders: [], servicePricing: [], serviceActivityLogs: [],
+        appServices: [], serviceRequests: getCachedServiceRequests(), serviceProviders: [], servicePricing: [], serviceActivityLogs: [],
         liaisonBookings: [], liaisonStaff: [], liaisonBranches: []
     });
     const [loading, setLoading] = useState(true);
@@ -1155,9 +1270,52 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         await deleteDoc(doc(firestore, 'servicePricing', id));
     };
 
-    const addServiceRequest = async (request: Omit<ServiceRequest, 'id'>) => {
+    const addServiceRequest = async (request: Omit<ServiceRequest, 'id'>): Promise<ServiceRequest> => {
         const docRef = await addDoc(collection(firestore, 'serviceRequests'), request);
+        const newRecord: ServiceRequest = {
+            id: docRef.id,
+            ...request
+        };
+
+        // Optimistically update local database state immediately so customer & admin see it without delay
+        setDb(prev => {
+            if (!prev) return prev;
+            const existing = prev.serviceRequests || [];
+            if (existing.some(r => r.id === docRef.id)) return prev;
+            return {
+                ...prev,
+                serviceRequests: [newRecord, ...existing]
+            };
+        });
+
+        // Backup to local storage for instant offline / reload hydration
+        try {
+            const rawStored = localStorage.getItem('rb_recent_service_requests');
+            const stored = rawStored ? JSON.parse(rawStored) : [];
+            localStorage.setItem('rb_recent_service_requests', JSON.stringify([newRecord, ...stored.filter((r: any) => r.id !== docRef.id)].slice(0, 50)));
+        } catch {
+            // ignore storage errors
+        }
         
+        // Sync realtime live location to Firebase RTDB tracking path if available
+        if ((request as any).location && docRef.id) {
+            try {
+                const locObj: any = (request as any).location;
+                const lat = locObj.latitude ?? locObj.lat;
+                const lng = locObj.longitude ?? locObj.lng;
+                if (typeof lat === 'number' && typeof lng === 'number') {
+                    rtdbSet(rtdbRef(rtdb, `tracking/${docRef.id}/customerLocation`), {
+                        lat,
+                        lng,
+                        address: locObj.address || 'Client Location',
+                        updatedAt: Date.now()
+                    }).catch(err => console.warn('[RTDB Sync Error] Failed to update serviceRequest location in RTDB:', err));
+                }
+            } catch (e) {
+                console.warn('[RTDB Sync Error] Failed to prepare serviceRequest location for RTDB:', e);
+            }
+        }
+
         await addDoc(collection(firestore, 'serviceActivityLogs'), {
             requestId: docRef.id,
             customerId: request.customerId,
@@ -1176,6 +1334,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             read: false,
             link: '/admin/services/requests'
         });
+
+        return newRecord;
     };
 
     // --- Rental Car CRUD ---
@@ -1209,6 +1369,25 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         
         const createdBooking = { id: newId, ...bookingData } as RentalBooking;
         
+        // Sync realtime live location to Firebase RTDB tracking path if available
+        if (bookingData.location && newId) {
+            try {
+                const locObj: any = bookingData.location;
+                const lat = locObj.latitude ?? locObj.lat;
+                const lng = locObj.longitude ?? locObj.lng;
+                if (typeof lat === 'number' && typeof lng === 'number') {
+                    rtdbSet(rtdbRef(rtdb, `tracking/${newId}/customerLocation`), {
+                        lat,
+                        lng,
+                        address: locObj.address || 'Client Address',
+                        updatedAt: Date.now()
+                    }).catch(err => console.warn('[RTDB Sync Error] Failed to update customerLocation:', err));
+                }
+            } catch (e) {
+                console.warn('[RTDB Sync Error] Failed to prepare customerLocation:', e);
+            }
+        }
+        
         setDb(prev => {
             if (!prev) return null;
             return {
@@ -1221,17 +1400,61 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const updateRentalBooking = async (id: string, updates: Partial<RentalBooking>) => {
+        let updatedRecord: RentalBooking | null = null;
+        let targetCustomerId = '';
+        let targetVehicleName = 'Rental Vehicle';
+
         setDb(prev => {
             if (!prev) return null;
-            const updated = (prev.rentalBookings || []).map(b => b.id === id ? { ...b, ...updates } : b);
+            const updated = (prev.rentalBookings || []).map(b => {
+                if (b.id === id) {
+                    targetCustomerId = b.customerId || '';
+                    const car = prev.rentalCars?.find(c => c.id === b.carId);
+                    if (car) targetVehicleName = `${car.make} ${car.model}`;
+                    const history = b.statusHistory ? [...b.statusHistory] : [];
+                    if (updates.status && updates.status !== b.status) {
+                        history.push({
+                            status: updates.status,
+                            timestamp: new Date().toISOString(),
+                            note: updates.cancelReason ? `Cancellation Reason: ${updates.cancelReason}` : `Status updated to ${updates.status}`
+                        });
+                    }
+                    const merged = { ...b, ...updates, statusHistory: history, updatedAt: new Date().toISOString() };
+                    updatedRecord = merged;
+                    return merged;
+                }
+                return b;
+            });
             return { ...prev, rentalBookings: updated };
         });
 
         if (auth.currentUser) {
             try {
-                await updateDoc(doc(firestore, 'rentalBookings', id), updates);
+                const bookingRef = doc(firestore, 'rentalBookings', id);
+                await updateDoc(bookingRef, {
+                    ...updates,
+                    statusHistory: updatedRecord?.statusHistory || [],
+                    updatedAt: new Date().toISOString()
+                });
             } catch (e) {
                 console.warn(`[Firestore Write Failed] updateRentalBooking for ${id} failed, but local cache is updated:`, e);
+            }
+        }
+
+        // Send customer notification if status changed
+        if (updates.status && targetCustomerId) {
+            try {
+                await sendNotification({
+                    recipientId: targetCustomerId,
+                    title: 'Car Rental Status Update',
+                    message: `Your booking for ${targetVehicleName} is now: ${updates.status}.`,
+                    type: 'booking_status',
+                    date: new Date().toISOString(),
+                    read: false,
+                    link: `/customer-portal/booking/${id}`
+                });
+            } catch (notifErr) {
+                console.warn('[Notification] Failed to send rental status notification:', notifErr);
             }
         }
     };
@@ -1265,8 +1488,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     // --- Liaison Booking CRUD ---
-    const addLiaisonBooking = async (booking: Omit<LiaisonBooking, 'id'>) => {
-        await addDoc(collection(firestore, 'liaisonBookings'), booking);
+    const addLiaisonBooking = async (booking: Omit<LiaisonBooking, 'id'>): Promise<LiaisonBooking> => {
+        const sanitizedBooking = cleanFirestoreData(booking);
+        const docRef = await addDoc(collection(firestore, 'liaisonBookings'), sanitizedBooking);
+        const record: LiaisonBooking = { id: docRef.id, ...sanitizedBooking };
+
+        // Optimistically update local database state
+        setDb(prev => {
+            if (!prev) return prev;
+            const existing = prev.liaisonBookings || [];
+            if (existing.some(b => b.id === docRef.id)) return prev;
+            return {
+                ...prev,
+                liaisonBookings: [record, ...existing]
+            };
+        });
+
         await sendNotification({
             recipientId: 'admin',
             title: 'New Liaison Booking',
@@ -1276,6 +1513,31 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             read: false,
             link: '/admin/liaison/bookings'
         });
+        return record;
+    };
+
+    const updateLiaisonBooking = async (id: string, updates: Partial<LiaisonBooking>) => {
+        const sanitizedUpdates = cleanFirestoreData(updates);
+        // Optimistically update local database state
+        setDb(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                liaisonBookings: (prev.liaisonBookings || []).map(b => 
+                    b.id === id ? { ...b, ...sanitizedUpdates, updatedAt: new Date().toISOString() } : b
+                )
+            };
+        });
+
+        try {
+            const bookingRef = doc(firestore, 'liaisonBookings', id);
+            await updateDoc(bookingRef, {
+                ...sanitizedUpdates,
+                updatedAt: new Date().toISOString()
+            });
+        } catch (e) {
+            console.warn(`[Firestore Update Failed] updateLiaisonBooking for ${id}:`, e);
+        }
     };
 
     const updateLiaisonBookingStatus = async (id: string, status: LiaisonBooking['status'], notes?: string, officerName?: string) => {
@@ -1306,6 +1568,30 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const updateServiceRequestStatus = async (id: string, status: string, notes?: string) => {
+        // Optimistically update local database state
+        setDb(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                serviceRequests: (prev.serviceRequests || []).map(r => 
+                    r.id === id ? { ...r, status, updatedAt: new Date().toISOString() } : r
+                )
+            };
+        });
+
+        // Update local storage cache if available
+        try {
+            const rawStored = localStorage.getItem('rb_recent_service_requests');
+            if (rawStored) {
+                const stored = JSON.parse(rawStored);
+                localStorage.setItem('rb_recent_service_requests', JSON.stringify(
+                    stored.map((r: any) => r.id === id ? { ...r, status, updatedAt: new Date().toISOString() } : r)
+                ));
+            }
+        } catch {
+            // ignore
+        }
+
         const reqDoc = await getDoc(doc(firestore, 'serviceRequests', id));
         if (!reqDoc.exists()) return;
         
@@ -1334,8 +1620,43 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             type: 'booking_status',
             date: new Date().toISOString(),
             read: false,
-            link: '/customer-portal/requests'
+            link: '/customer-portal/'
         });
+    };
+
+    const updateServiceRequest = async (id: string, updates: Partial<ServiceRequest>) => {
+        // Optimistically update local database state
+        setDb(prev => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                serviceRequests: (prev.serviceRequests || []).map(r => 
+                    r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r
+                )
+            };
+        });
+
+        // Update local storage cache if available
+        try {
+            const rawStored = localStorage.getItem('rb_recent_service_requests');
+            if (rawStored) {
+                const stored = JSON.parse(rawStored);
+                localStorage.setItem('rb_recent_service_requests', JSON.stringify(
+                    stored.map((r: any) => r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r)
+                ));
+            }
+        } catch {
+            // ignore
+        }
+
+        try {
+            await updateDoc(doc(firestore, 'serviceRequests', id), {
+                ...updates,
+                updatedAt: new Date().toISOString()
+            });
+        } catch (e) {
+            console.warn(`[Firestore Update Failed] updateServiceRequest for ${id}:`, e);
+        }
     };
 
     const deleteLiaisonBooking = async (id: string) => {
@@ -1890,10 +2211,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 });
             }
 
-            // Phase 3: Live Payments & Escrow Release (50% split for Completed job)
+            // Phase 3: Live Payments & Escrow Release
             if (status === 'Completed' && booking.mechanicId) {
-                const amount = booking.totalAmount || booking.services?.[0]?.price || booking.service?.price || 0;
-                const mechanicShare = Math.floor(amount * 0.5);
+                const totalJobRevenue = getJobTotalAmount(booking);
+                // Calculate dynamic platform service fee cut (default 10% or from settings)
+                const feePercentage = db?.settings?.serviceFeePercentage ?? 10;
+                const platformCut = Math.round(totalJobRevenue * (feePercentage / 100));
+                // Mechanic receives net revenue (job total minus platform commission)
+                const mechanicShare = Math.max(0, totalJobRevenue - platformCut);
+
                 try {
                     const mechanicRef = doc(firestore, 'mechanics', booking.mechanicId);
                     await updateDoc(mechanicRef, {
@@ -1921,7 +2247,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 await sendNotification({
                     recipientId: `mechanic-${booking.mechanicId}`,
                     title: 'Payment Released',
-                    message: `Funds (₱${mechanicShare.toLocaleString()}) for job #${booking.id.slice(-5).toUpperCase()} have been added to your balance.`,
+                    message: `Earnings (₱${mechanicShare.toLocaleString()}) for job #${booking.id.slice(-5).toUpperCase()} have been credited to your available balance.`,
                     type: 'success',
                     date: new Date().toISOString(),
                     read: false,
@@ -2119,16 +2445,18 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const verifyBookingPayment = async (bookingId: string) => {
-        // Check regular bookings first, then rental bookings
+        // Check regular bookings first, then rental bookings, then service requests (Driver for Hire / Towing)
         const booking = db?.bookings.find(b => b.id === bookingId);
         const rentalBooking = !booking ? db?.rentalBookings?.find(b => b.id === bookingId) : null;
-        const targetBooking = booking || rentalBooking;
+        const serviceReq = (!booking && !rentalBooking) ? db?.serviceRequests?.find(s => s.id === bookingId) : null;
+        const targetBooking = booking || rentalBooking || serviceReq;
         const isRentalBooking = !booking && !!rentalBooking;
+        const isServiceRequest = !booking && !rentalBooking && !!serviceReq;
 
         if (!targetBooking) return;
 
         const total = (targetBooking as any).totalAmount || (targetBooking as any).totalPrice || (targetBooking as any).services?.[0]?.price || (targetBooking as any).service?.price || 0;
-        const depositAmount = Math.ceil(total * 0.5);
+        const depositAmount = (targetBooking as any).downpaymentAmount ? Number((targetBooking as any).downpaymentAmount) : Math.ceil(total * 0.5);
         const hasPartialPaid = ((targetBooking as any).paidAmount || 0) > 0 && ((targetBooking as any).paidAmount || 0) < total;
         const isFinalBalancePayment = (targetBooking as any).isVerified === true && (targetBooking as any).paymentStatus === 'partial' && hasPartialPaid;
 
@@ -2136,7 +2464,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         const updatedPaidAmount = isFinalBalancePayment ? total : Math.max((targetBooking as any).paidAmount || 0, depositAmount);
         const updatedIsPaid = isFinalBalancePayment;
 
-        const collectionName = isRentalBooking ? 'rentalBookings' : 'bookings';
+        const collectionName = isRentalBooking ? 'rentalBookings' : isServiceRequest ? 'serviceRequests' : 'bookings';
         const batch = writeBatch(firestore);
         const bookingRef = doc(firestore, collectionName, bookingId);
 
@@ -2162,6 +2490,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         : b
                 );
                 return { ...prev, rentalBookings: updated };
+            });
+        } else if (isServiceRequest) {
+            setDb(prev => {
+                if (!prev) return null;
+                const updated = (prev.serviceRequests || []).map(s =>
+                    s.id === bookingId
+                        ? { ...s, isVerified: true, paymentStatus: updatedPaymentStatus as any, isPaid: updatedIsPaid, paidAmount: updatedPaidAmount, gcashPaymentStatus: 'verified' as any, gcashDeclineReason: undefined }
+                        : s
+                );
+                return { ...prev, serviceRequests: updated };
             });
         }
 
@@ -2383,6 +2721,33 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const addOrder = async (order: Omit<Order, 'id'>) => {
         const sanitizedOrder = cleanObject(order);
+
+        // Deduct inventory stock for ordered parts
+        if (order.items && Array.isArray(order.items)) {
+            for (const item of order.items) {
+                if (item.id && item.quantity) {
+                    const currentPart = db?.parts?.find(p => p.id === item.id);
+                    if (currentPart) {
+                        const newStock = Math.max(0, (currentPart.stock ?? 0) - item.quantity);
+                        setDb(prev => {
+                            if (!prev) return null;
+                            const updatedParts = (prev.parts || []).map(p =>
+                                p.id === item.id ? { ...p, stock: newStock } : p
+                            );
+                            return { ...prev, parts: updatedParts };
+                        });
+                        if (auth.currentUser) {
+                            try {
+                                await updateDoc(doc(firestore, 'parts', item.id), { stock: newStock });
+                            } catch (stockErr) {
+                                console.warn(`[DatabaseContext] Failed to update stock for part ${item.id}:`, stockErr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (!auth.currentUser) {
             console.info("[DatabaseContext] Performing local mock addOrder (bypass mode)");
             const mockId = `order-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -2691,34 +3056,22 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const addPayoutRequest = async (request: { mechanicId: string; mechanicName: string; amount: number; paymentMethod: string; accountDetails: string; notes?: string }) => {
-        // Double check balance accounting for other pending requests
         const mechanic = db?.mechanics.find(m => m.id === request.mechanicId);
-        const pendingAmount = db?.payouts
-            .filter(p => p.mechanicId === request.mechanicId && (p.status === 'Pending' || p.status === 'Approved'))
-            .reduce((sum, p) => sum + p.amount, 0) || 0;
+        const feePercentage = db?.settings?.serviceFeePercentage ?? 10;
+        // Authoritative real-time wallet ledger calculation
+        const walletLedger = calculateMechanicWalletLedger(
+            request.mechanicId,
+            mechanic,
+            db?.bookings || [],
+            db?.payouts || [],
+            feePercentage
+        );
 
-        const completedJobs = db?.bookings.filter(b => (b.mechanic?.id === request.mechanicId || b.mechanicId === request.mechanicId) && b.status === 'Completed') || [];
-        const calculatedEarnings = completedJobs.reduce((sum, job) => {
-            if (job.isPaid === false || job.paymentStatus === 'failed') return sum;
-            return sum + (job.service?.price || job.services?.[0]?.price || job.totalCost || 0);
-        }, 0);
-        const lifetimeEarnings = (mechanic as any)?.totalEarnings || calculatedEarnings;
-        
-        const priorPaidPayouts = (db?.payouts || [])
-            .filter(p => p.mechanicId === request.mechanicId && (p.status === 'Paid' || p.status === 'Completed'))
-            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const availableBalance = walletLedger.availableBalance;
+        const pendingAmount = walletLedger.pendingPayoutsTotal;
 
-        const priorApprovedPayouts = (db?.payouts || [])
-            .filter(p => p.mechanicId === request.mechanicId && p.status === 'Approved')
-            .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-
-        const ledgerAvailable = Math.max(0, lifetimeEarnings - priorPaidPayouts - priorApprovedPayouts);
-        const availableBalanceBase = (mechanic?.walletBalance != null && mechanic.walletBalance >= 0)
-            ? Math.max(ledgerAvailable, mechanic.walletBalance)
-            : ledgerAvailable;
-
-        if (mechanic && availableBalanceBase - pendingAmount < request.amount) {
-            throw new Error('Insufficient wallet balance (Pending requests: ₱' + pendingAmount.toLocaleString() + ').');
+        if (availableBalance < request.amount) {
+            throw new Error(`Insufficient wallet balance. Available: ₱${availableBalance.toLocaleString()} (Pending requests: ₱${pendingAmount.toLocaleString()}).`);
         }
 
         const newPayoutId = 'po_' + Date.now();
@@ -3117,18 +3470,62 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const addReview = async (bookingId: string, reviewData: Omit<Review, 'id' | 'date'>) => {
-        let booking = db?.bookings.find(b => b.id === bookingId);
-        if (!booking) {
+        let bookingType: 'booking' | 'serviceRequest' | 'rentalBooking' | null = null;
+        let targetBooking: any = null;
+
+        // 1. Look in db.bookings or Firestore 'bookings'
+        targetBooking = db?.bookings?.find(b => b.id === bookingId);
+        if (targetBooking) {
+            bookingType = 'booking';
+        } else {
             try {
                 const bookingSnap = await getDoc(doc(firestore, 'bookings', bookingId));
                 if (bookingSnap.exists()) {
-                    booking = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
+                    targetBooking = { id: bookingSnap.id, ...bookingSnap.data() };
+                    bookingType = 'booking';
                 }
             } catch (e) {
-                console.warn("[addReview] Fallback fetch failed:", e);
+                console.warn("[addReview] Fallback bookings fetch failed:", e);
             }
         }
-        if (!booking) throw new Error('Booking not found');
+
+        // 2. Look in db.serviceRequests or Firestore 'serviceRequests' (Driver for Hire, Towing, etc.)
+        if (!targetBooking) {
+            targetBooking = db?.serviceRequests?.find(s => s.id === bookingId);
+            if (targetBooking) {
+                bookingType = 'serviceRequest';
+            } else {
+                try {
+                    const reqSnap = await getDoc(doc(firestore, 'serviceRequests', bookingId));
+                    if (reqSnap.exists()) {
+                        targetBooking = { id: reqSnap.id, ...reqSnap.data() };
+                        bookingType = 'serviceRequest';
+                    }
+                } catch (e) {
+                    console.warn("[addReview] Fallback serviceRequests fetch failed:", e);
+                }
+            }
+        }
+
+        // 3. Look in db.rentalBookings or Firestore 'rentalBookings' (Car Rental)
+        if (!targetBooking) {
+            targetBooking = db?.rentalBookings?.find(r => r.id === bookingId);
+            if (targetBooking) {
+                bookingType = 'rentalBooking';
+            } else {
+                try {
+                    const rentSnap = await getDoc(doc(firestore, 'rentalBookings', bookingId));
+                    if (rentSnap.exists()) {
+                        targetBooking = { id: rentSnap.id, ...rentSnap.data() };
+                        bookingType = 'rentalBooking';
+                    }
+                } catch (e) {
+                    console.warn("[addReview] Fallback rentalBookings fetch failed:", e);
+                }
+            }
+        }
+
+        if (!targetBooking || !bookingType) throw new Error('Booking not found');
 
         const review: Review = {
             ...reviewData,
@@ -3137,21 +3534,54 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             bookingId
         };
 
-        // Update Booking with Review
-        await updateDoc(doc(firestore, 'bookings', bookingId), {
-            review,
-            isReviewed: true
-        });
+        // Update Document in Firestore with Review & update optimistic local state
+        if (bookingType === 'booking') {
+            await updateDoc(doc(firestore, 'bookings', bookingId), {
+                review,
+                isReviewed: true
+            });
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    bookings: prev.bookings.map(b => b.id === bookingId ? { ...b, review, isReviewed: true } : b)
+                };
+            });
+        } else if (bookingType === 'serviceRequest') {
+            await updateDoc(doc(firestore, 'serviceRequests', bookingId), {
+                review,
+                isReviewed: true
+            });
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    serviceRequests: (prev.serviceRequests || []).map(s => s.id === bookingId ? { ...s, review, isReviewed: true } as any : s)
+                };
+            });
+        } else if (bookingType === 'rentalBooking') {
+            await updateDoc(doc(firestore, 'rentalBookings', bookingId), {
+                review,
+                isReviewed: true
+            });
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    rentalBookings: (prev.rentalBookings || []).map(r => r.id === bookingId ? { ...r, review, isReviewed: true } as any : r)
+                };
+            });
+        }
 
-        // Update Mechanic Rating
-        const targetMechanicId = booking.mechanicId || booking.mechanic?.id || reviewData.mechanicId;
-        if (targetMechanicId) {
+        // Update Mechanic Rating if it's a mechanic
+        const targetMechanicId = targetBooking.mechanicId || targetBooking.mechanic?.id || reviewData.mechanicId;
+        if (targetMechanicId && targetMechanicId !== 'driver-assigned') {
             const mechanic = db?.mechanics.find(m => m.id === targetMechanicId);
             if (mechanic) {
                 const currentRating = mechanic.rating || 0;
                 const currentReviews = mechanic.reviews || 0;
                 const newReviews = currentReviews + 1;
-                const newRating = ((currentRating * currentReviews) + review.rating) / newReviews;
+                const newRating = Number((((currentRating * currentReviews) + review.rating) / newReviews).toFixed(1));
 
                 await updateDoc(doc(firestore, 'mechanics', targetMechanicId), {
                     rating: newRating,
@@ -3159,8 +3589,21 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     reviewsList: arrayUnion(review)
                 });
 
+                setDb(prev => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        mechanics: prev.mechanics.map(m => m.id === targetMechanicId ? {
+                            ...m,
+                            rating: newRating,
+                            reviews: newReviews,
+                            reviewsList: [...(m.reviewsList || []), review]
+                        } : m)
+                    };
+                });
+
                 // Notify mechanic about new review
-                const mechanicName = reviewData.mechanicName || booking.mechanicName || booking.mechanic?.name || 'Mechanic';
+                const mechanicName = reviewData.mechanicName || targetBooking.mechanicName || targetBooking.mechanic?.name || 'Mechanic';
                 await sendNotification({
                     recipientId: `mechanic-${targetMechanicId}`,
                     title: '⭐ New Review Received',
@@ -3172,47 +3615,199 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 });
             }
         }
+
+        // Update Hire Driver Rating if it's a Driver for Hire
+        const targetDriverName = targetBooking.driverName || targetBooking.details?.selectedDriverName || reviewData.mechanicName;
+        const targetDriverId = targetBooking.driverId || reviewData.mechanicId;
+        const driver = (db?.hireDrivers || []).find(d => 
+            (targetDriverId && d.id === targetDriverId) || 
+            (targetDriverName && d.name.toLowerCase() === targetDriverName.toLowerCase())
+        );
+
+        if (driver) {
+            const currentRating = driver.rating || 5.0;
+            const currentTrips = driver.totalTrips || 1;
+            const newTrips = currentTrips + 1;
+            const newRating = Number((((currentRating * currentTrips) + review.rating) / newTrips).toFixed(1));
+
+            try {
+                await updateDoc(doc(firestore, 'hireDrivers', driver.id), {
+                    rating: newRating,
+                    totalTrips: newTrips
+                });
+            } catch (err) {
+                console.warn("[addReview] hireDrivers update in Firestore warning:", err);
+            }
+
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    hireDrivers: (prev.hireDrivers || []).map(d => d.id === driver.id ? {
+                        ...d,
+                        rating: newRating,
+                        totalTrips: newTrips
+                    } : d)
+                };
+            });
+        }
     };
 
     const updateReview = async (bookingId: string, updatedReview: Review) => {
-        let booking = db?.bookings.find(b => b.id === bookingId);
-        if (!booking) {
+        let bookingType: 'booking' | 'serviceRequest' | 'rentalBooking' | null = null;
+        let targetBooking: any = null;
+
+        // 1. Look in db.bookings or Firestore 'bookings'
+        targetBooking = db?.bookings?.find(b => b.id === bookingId);
+        if (targetBooking) {
+            bookingType = 'booking';
+        } else {
             try {
                 const bookingSnap = await getDoc(doc(firestore, 'bookings', bookingId));
                 if (bookingSnap.exists()) {
-                    booking = { id: bookingSnap.id, ...bookingSnap.data() } as Booking;
+                    targetBooking = { id: bookingSnap.id, ...bookingSnap.data() };
+                    bookingType = 'booking';
                 }
             } catch (e) {
-                console.warn("[updateReview] Fallback fetch failed:", e);
+                console.warn("[updateReview] Fallback bookings fetch failed:", e);
             }
         }
-        if (!booking || !booking.review) throw new Error('Booking or review not found');
-        const oldReview = booking.review;
 
-        await updateDoc(doc(firestore, 'bookings', bookingId), {
-            review: { ...updatedReview, updatedAt: new Date().toISOString() }
-        });
+        // 2. Look in db.serviceRequests or Firestore 'serviceRequests'
+        if (!targetBooking) {
+            targetBooking = db?.serviceRequests?.find(s => s.id === bookingId);
+            if (targetBooking) {
+                bookingType = 'serviceRequest';
+            } else {
+                try {
+                    const reqSnap = await getDoc(doc(firestore, 'serviceRequests', bookingId));
+                    if (reqSnap.exists()) {
+                        targetBooking = { id: reqSnap.id, ...reqSnap.data() };
+                        bookingType = 'serviceRequest';
+                    }
+                } catch (e) {
+                    console.warn("[updateReview] Fallback serviceRequests fetch failed:", e);
+                }
+            }
+        }
+
+        // 3. Look in db.rentalBookings or Firestore 'rentalBookings'
+        if (!targetBooking) {
+            targetBooking = db?.rentalBookings?.find(r => r.id === bookingId);
+            if (targetBooking) {
+                bookingType = 'rentalBooking';
+            } else {
+                try {
+                    const rentSnap = await getDoc(doc(firestore, 'rentalBookings', bookingId));
+                    if (rentSnap.exists()) {
+                        targetBooking = { id: rentSnap.id, ...rentSnap.data() };
+                        bookingType = 'rentalBooking';
+                    }
+                } catch (e) {
+                    console.warn("[updateReview] Fallback rentalBookings fetch failed:", e);
+                }
+            }
+        }
+
+        if (!targetBooking || !targetBooking.review) throw new Error('Booking or review not found');
+        const oldReview = targetBooking.review;
+        const reviewPayload = { ...updatedReview, updatedAt: new Date().toISOString() };
+
+        if (bookingType === 'booking') {
+            await updateDoc(doc(firestore, 'bookings', bookingId), {
+                review: reviewPayload
+            });
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    bookings: prev.bookings.map(b => b.id === bookingId ? { ...b, review: reviewPayload } : b)
+                };
+            });
+        } else if (bookingType === 'serviceRequest') {
+            await updateDoc(doc(firestore, 'serviceRequests', bookingId), {
+                review: reviewPayload
+            });
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    serviceRequests: (prev.serviceRequests || []).map(s => s.id === bookingId ? { ...s, review: reviewPayload } as any : s)
+                };
+            });
+        } else if (bookingType === 'rentalBooking') {
+            await updateDoc(doc(firestore, 'rentalBookings', bookingId), {
+                review: reviewPayload
+            });
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    rentalBookings: (prev.rentalBookings || []).map(r => r.id === bookingId ? { ...r, review: reviewPayload } as any : r)
+                };
+            });
+        }
 
         // Update Mechanic Rating
-        if (booking.mechanicId) {
-            const mechanic = db?.mechanics.find(m => m.id === booking.mechanicId);
+        const mechanicId = targetBooking.mechanicId || targetBooking.mechanic?.id;
+        if (mechanicId && mechanicId !== 'driver-assigned') {
+            const mechanic = db?.mechanics.find(m => m.id === mechanicId);
             if (mechanic) {
                 const currentRating = mechanic.rating || 0;
-                const numReviews = mechanic.reviews || 1; // Prevent division by zero
-                // Calculate old total score, subtract old rating, add new rating, divide by same count
-                const newRating = ((currentRating * numReviews) - oldReview.rating + updatedReview.rating) / numReviews;
+                const numReviews = mechanic.reviews || 1;
+                const newRating = Number((((currentRating * numReviews) - oldReview.rating + updatedReview.rating) / numReviews).toFixed(1));
 
-                // For reviewsList update, we'd successfully need to replace the item in the array.
-                // Firestore arrayRemove/Union is simple but for updating an object inside, we need to read-modify-write the whole array
-                // OR we just accept we can't easily update the array object deep prop without reading.
-                // Since we have 'db' state, we can filter and reconstruct.
-                const updatedReviewsList = (mechanic.reviewsList || []).map((r: Review) => r.id === updatedReview.id ? updatedReview : r);
+                const updatedReviewsList = (mechanic.reviewsList || []).map((r: Review) => r.id === updatedReview.id ? reviewPayload : r);
 
-                await updateDoc(doc(firestore, 'mechanics', booking.mechanicId), {
+                await updateDoc(doc(firestore, 'mechanics', mechanicId), {
                     rating: newRating,
                     reviewsList: updatedReviewsList
                 });
+
+                setDb(prev => {
+                    if (!prev) return prev;
+                    return {
+                        ...prev,
+                        mechanics: prev.mechanics.map(m => m.id === mechanicId ? {
+                            ...m,
+                            rating: newRating,
+                            reviewsList: updatedReviewsList
+                        } : m)
+                    };
+                });
             }
+        }
+
+        // Update Driver Rating
+        const targetDriverName = targetBooking.driverName || targetBooking.details?.selectedDriverName;
+        const targetDriverId = targetBooking.driverId;
+        const driver = (db?.hireDrivers || []).find(d => 
+            (targetDriverId && d.id === targetDriverId) || 
+            (targetDriverName && d.name.toLowerCase() === targetDriverName.toLowerCase())
+        );
+        if (driver) {
+            const currentRating = driver.rating || 5.0;
+            const trips = driver.totalTrips || 1;
+            const newRating = Number((((currentRating * trips) - oldReview.rating + updatedReview.rating) / trips).toFixed(1));
+
+            try {
+                await updateDoc(doc(firestore, 'hireDrivers', driver.id), {
+                    rating: newRating
+                });
+            } catch (err) {
+                console.warn("[updateReview] hireDrivers update in Firestore warning:", err);
+            }
+
+            setDb(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    hireDrivers: (prev.hireDrivers || []).map(d => d.id === driver.id ? {
+                        ...d,
+                        rating: newRating
+                    } : d)
+                };
+            });
         }
     };
 
@@ -3276,6 +3871,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             updateServicePricing,
             deleteServicePricing,
             addServiceRequest,
+            updateServiceRequest,
             updateServiceRequestStatus,
             addPart,
             updatePart,
@@ -3347,6 +3943,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             updateHireDriver,
             deleteHireDriver,
             addLiaisonBooking,
+            updateLiaisonBooking,
             updateLiaisonBookingStatus,
             deleteLiaisonBooking,
             deleteServiceRequest,

@@ -74,13 +74,10 @@ export const AdminServicePricingScreen: React.FC = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (window.confirm('Are you sure you want to delete this pricing?')) {
-            try {
-                await deleteServicePricing(id);
-            } catch (error) {
-                console.error('Failed to delete:', error);
-                alert('Failed to delete pricing');
-            }
+        try {
+            await deleteServicePricing(id);
+        } catch (error) {
+            console.error('Failed to delete:', error);
         }
     };
 

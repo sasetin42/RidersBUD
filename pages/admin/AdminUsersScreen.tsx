@@ -511,31 +511,29 @@ const AdminUsersScreen: React.FC = () => {
             return;
         }
 
-        if (window.confirm(`Are you sure you want to completely delete ${user.name}? This will permanently remove the account.`)) {
-            try {
-                if (user.roleCategory === 'Admin') {
-                    await deleteAdminUser(user.id);
-                } else if (user.roleCategory === 'Customer') {
-                    await deleteCustomer(user.id);
-                } else if (user.roleCategory === 'Mechanic') {
-                    await deleteMechanic(user.id);
-                }
-
-                await createAuditLog('Account Removed', user.name, `${user.roleCategory} profile for ${user.name} was deleted.`);
-                addNotification({
-                    type: 'success',
-                    title: 'Account Deleted',
-                    message: `${user.name}'s account was successfully removed.`,
-                    recipientId: 'admin'
-                });
-            } catch (err: any) {
-                addNotification({
-                    type: 'error',
-                    title: 'Delete Failed',
-                    message: err.message || 'Operation could not complete.',
-                    recipientId: 'admin'
-                });
+        try {
+            if (user.roleCategory === 'Admin') {
+                await deleteAdminUser(user.id);
+            } else if (user.roleCategory === 'Customer') {
+                await deleteCustomer(user.id);
+            } else if (user.roleCategory === 'Mechanic') {
+                await deleteMechanic(user.id);
             }
+
+            await createAuditLog('Account Removed', user.name, `${user.roleCategory} profile for ${user.name} was deleted.`);
+            addNotification({
+                type: 'success',
+                title: 'Account Deleted',
+                message: `${user.name}'s account was successfully removed.`,
+                recipientId: 'admin'
+            });
+        } catch (err: any) {
+            addNotification({
+                type: 'error',
+                title: 'Delete Failed',
+                message: err.message || 'Operation could not complete.',
+                recipientId: 'admin'
+            });
         }
     };
 

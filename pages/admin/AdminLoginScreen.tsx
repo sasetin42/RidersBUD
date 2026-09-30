@@ -41,15 +41,15 @@ const AdminLoginScreen: React.FC = () => {
 
             <div className="w-full max-w-md relative z-10">
                 {/* Logo & Header */}
-                <div className="text-center mb-8 animate-fadeIn">
+                <div className="text-center mb-5 animate-fadeIn">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="RidersBUD Admin Logo" className="w-60 h-auto object-contain mx-auto mb-4 mix-blend-screen" />
+                        <img src={logoUrl} alt="RidersBUD Admin Logo" className="w-60 h-auto object-contain mx-auto mb-2 mix-blend-screen" />
                     ) : (
-                        <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-primary to-orange-600 rounded-2xl mb-6 shadow-lg shadow-primary/20">
+                        <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-primary to-orange-600 rounded-2xl mb-4 shadow-lg shadow-primary/20">
                             <Shield className="w-10 h-10 text-white" />
                         </div>
                     )}
-                    <h1 className="text-3xl font-bold text-white mb-2">Admin Portal</h1>
+                    <h1 className="text-3xl font-bold text-white mb-1">Admin Portal</h1>
                     <p className="text-gray-400">Trusted Car Care Wherever You Are</p>
                 </div>
 

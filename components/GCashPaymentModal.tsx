@@ -42,6 +42,8 @@ interface Props {
     services?: { name: string; price: number }[];
     isOrder?: boolean;
     isRental?: boolean;
+    isServiceRequest?: boolean;
+    isLiaison?: boolean;
     onPaymentVerified: () => void;
     onClose: () => void;
     newBookingData?: any;
@@ -58,11 +60,13 @@ const GCashPaymentModal: React.FC<Props> = ({
     services = [],
     isOrder = false,
     isRental = false,
+    isServiceRequest = false,
+    isLiaison = false,
     onPaymentVerified,
     onClose,
     newBookingData,
 }) => {
-    const { db, updateBooking, updateRentalBooking, notifyAdminGCashReceiptUploaded } = useDatabase();
+    const { db, updateBooking, updateRentalBooking, updateServiceRequest, updateLiaisonBooking, notifyAdminGCashReceiptUploaded } = useDatabase();
     const settings = db?.settings;
 
     const [qrLoadError, setQrLoadError] = useState(false);
@@ -122,9 +126,13 @@ const GCashPaymentModal: React.FC<Props> = ({
 
         const docRef = isRental 
             ? doc(firestore, 'rentalBookings', bookingId) 
-            : isOrder 
-                ? doc(firestore, 'orders', bookingId) 
-                : doc(firestore, 'bookings', bookingId);
+            : isServiceRequest
+                ? doc(firestore, 'serviceRequests', bookingId)
+                : isLiaison
+                    ? doc(firestore, 'liaisonBookings', bookingId)
+                    : isOrder 
+                        ? doc(firestore, 'orders', bookingId) 
+                        : doc(firestore, 'bookings', bookingId);
         const unsubscribe = onSnapshot(docRef, (snap) => {
             if (!snap.exists()) return;
             const data = snap.data();
@@ -195,6 +203,8 @@ const GCashPaymentModal: React.FC<Props> = ({
                     };
                     if (isRental) {
                         await setDoc(doc(firestore, 'rentalBookings', bookingId), bookingToSave);
+                    } else if (isServiceRequest) {
+                        await setDoc(doc(firestore, 'serviceRequests', bookingId), bookingToSave);
                     } else {
                         await setDoc(doc(firestore, 'bookings', bookingId), bookingToSave);
                     }
@@ -282,6 +292,114 @@ const GCashPaymentModal: React.FC<Props> = ({
                     bookingId,
                     customerName,
                     services[0]?.name || 'Car Rental'
+                );
+            } else if (isServiceRequest) {
+                const isSecondPayment = bookingData?.paymentStatus === 'partial';
+
+                if (newBookingData && !bookingData) {
+                    const bookingToSave = {
+                        ...newBookingData,
+                        id: bookingId,
+                        gcashReceiptUrl: downloadUrl,
+                        gcashDownpaymentReceiptUrl: downloadUrl,
+                        gcashReference: referenceNumber,
+                        gcashDownpaymentReference: referenceNumber,
+                        gcashPaymentStatus: 'receipt_uploaded',
+                        paymentStatus: 'partial',
+                        createdAt: new Date().toISOString(),
+                        statusHistory: [
+                            { status: newBookingData.status, timestamp: new Date().toISOString() },
+                            { status: 'Receipt Uploaded', timestamp: new Date().toISOString() }
+                        ]
+                    };
+
+                    await setDoc(doc(firestore, 'serviceRequests', bookingId), bookingToSave);
+
+                    await addDoc(collection(firestore, 'notifications'), {
+                        recipientId: 'admin',
+                        title: '🚗 New Driver for Hire Request',
+                        message: `New driver request by ${customerName} (${services[0]?.name || 'Driver for Hire'}).`,
+                        type: 'info',
+                        timestamp: Date.now(),
+                        read: false,
+                        link: '/admin-portal/bookings'
+                    });
+                } else {
+                    await updateServiceRequest(bookingId, {
+                        gcashReceiptUrl: downloadUrl,
+                        ...(isSecondPayment 
+                            ? { gcashBalanceReceiptUrl: downloadUrl, gcashBalanceReference: referenceNumber } 
+                            : { gcashDownpaymentReceiptUrl: downloadUrl, gcashReference: referenceNumber, gcashDownpaymentReference: referenceNumber }
+                        ),
+                        gcashPaymentStatus: isSecondPayment ? 'balance_receipt_uploaded' : 'receipt_uploaded',
+                        paymentStatus: 'partial',
+                    });
+                }
+
+                await notifyAdminGCashReceiptUploaded(
+                    bookingId,
+                    customerName,
+                    services[0]?.name || 'Driver for Hire'
+                );
+            } else if (isLiaison) {
+                const isSecondPayment = bookingData?.paymentStatus === 'partial' || (bookingData?.paidAmount > 0 && bookingData?.paidAmount < bookingData?.totalAmount);
+
+                if (newBookingData && !bookingData) {
+                    const bookingToSave = {
+                        ...newBookingData,
+                        id: bookingId,
+                        gcashReceiptUrl: downloadUrl,
+                        gcashDownpaymentReceiptUrl: downloadUrl,
+                        gcashReference: referenceNumber,
+                        gcashDownpaymentReference: referenceNumber,
+                        gcashPaymentStatus: 'receipt_uploaded',
+                        paymentStatus: 'partial',
+                        createdAt: new Date().toISOString(),
+                        statusHistory: [
+                            { status: newBookingData.status, timestamp: new Date().toISOString() },
+                            { status: 'Receipt Uploaded', timestamp: new Date().toISOString() }
+                        ]
+                    };
+
+                    await setDoc(doc(firestore, 'liaisonBookings', bookingId), bookingToSave);
+
+                    await addDoc(collection(firestore, 'notifications'), {
+                        recipientId: 'admin',
+                        title: '📋 New LTO Liaison Booking',
+                        message: `New liaison booking for ${services.map(s => s.name).join(', ') || 'Registration'} by ${customerName}.`,
+                        type: 'info',
+                        timestamp: Date.now(),
+                        read: false,
+                        link: '/admin-portal/liaison-bookings'
+                    });
+                } else {
+                    if (updateLiaisonBooking) {
+                        await updateLiaisonBooking(bookingId, {
+                            gcashReceiptUrl: downloadUrl,
+                            ...(isSecondPayment 
+                                ? { gcashBalanceReceiptUrl: downloadUrl, gcashBalanceReference: referenceNumber } 
+                                : { gcashDownpaymentReceiptUrl: downloadUrl, gcashReference: referenceNumber, gcashDownpaymentReference: referenceNumber }
+                            ),
+                            gcashPaymentStatus: isSecondPayment ? 'balance_receipt_uploaded' : 'receipt_uploaded',
+                            paymentStatus: 'partial',
+                        } as any);
+                    } else {
+                        await updateDoc(doc(firestore, 'liaisonBookings', bookingId), {
+                            gcashReceiptUrl: downloadUrl,
+                            ...(isSecondPayment 
+                                ? { gcashBalanceReceiptUrl: downloadUrl, gcashBalanceReference: referenceNumber } 
+                                : { gcashDownpaymentReceiptUrl: downloadUrl, gcashReference: referenceNumber, gcashDownpaymentReference: referenceNumber }
+                            ),
+                            gcashPaymentStatus: isSecondPayment ? 'balance_receipt_uploaded' : 'receipt_uploaded',
+                            paymentStatus: 'partial',
+                        });
+                    }
+                }
+
+                await notifyAdminGCashReceiptUploaded(
+                    bookingId,
+                    customerName,
+                    services[0]?.name || 'LTO Liaison Assistance'
                 );
             } else {
                 const isSecondPayment = bookingData?.paymentStatus === 'partial';
@@ -371,7 +489,7 @@ const GCashPaymentModal: React.FC<Props> = ({
         setShowCancelCaution(false);
         if (newBookingData && bookingId) {
             try {
-                const collectionName = isRental ? 'rentalBookings' : 'bookings';
+                const collectionName = isRental ? 'rentalBookings' : isServiceRequest ? 'serviceRequests' : 'bookings';
                 await deleteDoc(doc(firestore, collectionName, bookingId));
                 console.log(`Successfully deleted cancelled ${collectionName}:`, bookingId);
             } catch (err) {

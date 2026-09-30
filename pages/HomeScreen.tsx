@@ -11,7 +11,7 @@ import {
     User, Phone, MessageSquare, MapPin, Star, Package, Activity, X, UserCheck, Truck, 
     Layers, Clock, ShieldCheck, CheckCircle2, AlertCircle, ShoppingBag, Eye, Navigation, 
     ArrowRight, Check, Sparkles, ExternalLink, KeyRound, AlertOctagon, Trash2,
-    Copy, Receipt, CreditCard, Mail, Info, Award, Compass, CheckCircle
+    Copy, Receipt, CreditCard, Mail, Info, Award, Compass, CheckCircle, Shield
 } from 'lucide-react';
 import Spinner from '../components/Spinner';
 import NotificationBell from '../components/NotificationBell';
@@ -21,6 +21,10 @@ import { seedServices } from '../data/mockData';
 import Tooltip from '../components/ui/Tooltip';
 import { CancellationDetailsModal, CancellationData } from '../components/CancellationDetailsModal';
 import { useLocation } from 'react-router-dom';
+import LiveRouteMapModal from '../components/LiveRouteMapModal';
+import { geocodeAddressOrCity, resolveOrderTrackingLocations } from '../utils/locationHelper';
+import { HitPayService } from '../services/HitPayService';
+import GCashPaymentModal from '../components/GCashPaymentModal';
 
 const BookingImage: React.FC<{ src?: string; alt?: string; type?: string }> = ({ src, alt, type }) => {
     const [error, setError] = useState(false);
@@ -66,8 +70,10 @@ const HomeScreen: React.FC = () => {
         deleteBooking,
         updateRentalBooking, 
         deleteRentalBooking,
+        updateServiceRequest,
         updateServiceRequestStatus, 
         deleteServiceRequest,
+        updateLiaisonBooking,
         updateLiaisonBookingStatus, 
         deleteLiaisonBooking,
         updateOrderStatus,
@@ -104,6 +110,10 @@ const HomeScreen: React.FC = () => {
     const [viewingDocumentName, setViewingDocumentName] = useState<string>('');
     const [cancelledData, setCancelledData] = useState<CancellationData | null>(null);
     const [activeTransactionTab, setActiveTransactionTab] = useState<'all' | 'maintenance' | 'rental' | 'driver' | 'liaison' | 'towing' | 'order'>('all');
+    const [activeOrderForTracking, setActiveOrderForTracking] = useState<any | null>(null);
+    const [balanceBookingForModal, setBalanceBookingForModal] = useState<any | null>(null);
+    const [isInitiatingHitPayBalance, setIsInitiatingHitPayBalance] = useState(false);
+    const [showBalanceGCashModal, setShowBalanceGCashModal] = useState(false);
 
     const popularServices = useMemo(() => {
         const targetKeys = [
@@ -144,7 +154,209 @@ const HomeScreen: React.FC = () => {
             // Clear history state so modal doesn't re-open on page refresh
             window.history.replaceState({}, document.title, window.location.pathname);
         }
-    }, [location.state]);
+
+        // Auto-detect newly placed Driver for Hire booking and celebrate / notify
+        const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.get('bookedService') === 'driver') {
+            const ref = searchParams.get('ref') || '';
+            setActiveTransactionTab('driver');
+            addNotification({
+                recipientId: user?.id || 'all',
+                recipientRole: 'customer',
+                title: '🚗 Driver for Hire Request Confirmed',
+                message: `Your booking request #${ref ? ref.slice(-6).toUpperCase() : 'DRV'} has been received and is pending admin dispatch!`,
+                type: 'info'
+            });
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        // Monitor for HitPay return redirect directly on HomeScreen for Rental, Liaison & Driver Balance settlement
+        const gatewayStatus = searchParams.get('status') || searchParams.get('hitpay');
+        const isRentalReturn = searchParams.get('isRental') === 'true' || searchParams.get('rental') === 'true';
+        const isLiaisonReturn = searchParams.get('isLiaison') === 'true' || searchParams.get('liaison') === 'true';
+        const isDriverReturn = searchParams.get('isDriver') === 'true' || searchParams.get('driver') === 'true';
+        const targetBookingId = searchParams.get('bookingId') || searchParams.get('rentalId') || searchParams.get('liaisonId') || searchParams.get('driverId');
+
+        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isRentalReturn) {
+            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-BAL-${Date.now()}`;
+            const reqId = searchParams.get('payment_request_id') || '';
+
+            const rental = db?.rentalBookings?.find(r => r.id === targetBookingId || r.id?.toLowerCase() === targetBookingId.toLowerCase());
+            if (rental && !rental.isPaid && updateRentalBooking) {
+                const totalAmt = rental.totalPrice || 0;
+                updateRentalBooking(rental.id, {
+                    isPaid: true,
+                    isVerified: true,
+                    paidAmount: totalAmt,
+                    remainingBalance: 0,
+                    balanceAmount: 0,
+                    paymentStatus: 'paid',
+                    balancePaid: true,
+                    balancePaymentRef: hitpayRef,
+                    balancePaidAt: new Date().toISOString(),
+                    hitpayPaymentRequestId: reqId,
+                    hitpayReference: hitpayRef,
+                    hitpayStatus: 'completed',
+                    paymentMethod: 'HitPay (Online)',
+                    status: 'Completed'
+                }).then(() => {
+                    addNotification({
+                        recipientId: user?.id || 'all',
+                        recipientRole: 'customer',
+                        title: '✅ Rental Balance Settled',
+                        message: `Remaining balance for ${rental.carName || 'Rental Vehicle'} has been fully settled via HitPay online payment!`,
+                        type: 'info'
+                    });
+                }).catch(console.error);
+
+                sessionStorage.removeItem('pendingHitPayServiceTx');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+
+        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isLiaisonReturn) {
+            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-LIA-BAL-${Date.now()}`;
+            const reqId = searchParams.get('payment_request_id') || '';
+
+            const liaison = db?.liaisonBookings?.find(l => l.id === targetBookingId || l.id?.toLowerCase() === targetBookingId.toLowerCase());
+            if (liaison && !liaison.balancePaid && updateLiaisonBooking) {
+                const totalAmt = liaison.fees?.total || liaison.totalAmount || 0;
+                updateLiaisonBooking(liaison.id, {
+                    isPaid: true,
+                    isVerified: true,
+                    paidAmount: totalAmt,
+                    remainingBalance: 0,
+                    paymentStatus: 'paid',
+                    balancePaid: true,
+                    balancePaymentRef: hitpayRef,
+                    balancePaidAt: new Date().toISOString(),
+                    hitpayPaymentRequestId: reqId,
+                    hitpayReference: hitpayRef,
+                    hitpayStatus: 'completed',
+                    paymentMethod: 'HitPay (Online)',
+                    status: 'Completed'
+                } as any).then(() => {
+                    addNotification({
+                        recipientId: user?.id || 'all',
+                        recipientRole: 'customer',
+                        title: '✅ Liaison Balance Settled',
+                        message: `Remaining balance for LTO Liaison (${liaison.serviceType || 'Registration'}) has been fully settled via HitPay online payment!`,
+                        type: 'info'
+                    });
+                }).catch(console.error);
+
+                sessionStorage.removeItem('pendingHitPayServiceTx');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+
+        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isDriverReturn) {
+            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-DRV-BAL-${Date.now()}`;
+            const reqId = searchParams.get('payment_request_id') || '';
+
+            const driverReq = db?.serviceRequests?.find(s => s.id === targetBookingId || s.id?.toLowerCase() === targetBookingId.toLowerCase());
+            if (driverReq && !driverReq.isPaid && updateServiceRequest) {
+                const totalAmt = driverReq.totalAmount || driverReq.price || 0;
+                updateServiceRequest(driverReq.id, {
+                    isPaid: true,
+                    isVerified: true,
+                    paidAmount: totalAmt,
+                    remainingBalance: 0,
+                    paymentStatus: 'paid',
+                    balancePaid: true,
+                    balancePaymentRef: hitpayRef,
+                    balancePaidAt: new Date().toISOString(),
+                    hitpayPaymentRequestId: reqId,
+                    hitpayReference: hitpayRef,
+                    hitpayStatus: 'completed',
+                    paymentMethod: 'HitPay (Online)',
+                    status: 'Completed'
+                } as any).then(() => {
+                    addNotification({
+                        recipientId: user?.id || 'all',
+                        recipientRole: 'customer',
+                        title: '✅ Driver Service Balance Settled',
+                        message: `Remaining balance for Driver for Hire has been fully settled via HitPay online payment!`,
+                        type: 'info'
+                    });
+                }).catch(console.error);
+
+                sessionStorage.removeItem('pendingHitPayServiceTx');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+    }, [location.state, location.search, db?.rentalBookings, db?.liaisonBookings, db?.serviceRequests, updateRentalBooking, updateLiaisonBooking, updateServiceRequest, user?.id]);
+
+    const handleInitiateHitPayBalance = async (targetTx: any) => {
+        if (!targetTx || !user) return;
+        try {
+            setIsInitiatingHitPayBalance(true);
+            const total = Number(targetTx.totalAmount) || 0;
+            const paid = Number(targetTx.paidAmount) || Number(targetTx.downpaymentAmount) || Math.round(total * 0.5);
+            const balanceDue = targetTx.remainingBalance !== undefined && targetTx.remainingBalance > 0
+                ? targetTx.remainingBalance
+                : Math.max(0, total - paid);
+
+            const isRental = targetTx.type === 'rental';
+            const isLiaison = targetTx.type === 'liaison';
+            const isDriver = targetTx.type === 'driver';
+
+            const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+            if (!isHitPayActive) {
+                // Fallback to service payment screen
+                navigate(`/customer-portal/service-payment?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}`);
+                return;
+            }
+
+            const hitPay = HitPayService.fromSettings(db?.settings);
+            const returnUrl = `${window.location.origin}/customer-portal/?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}&status=completed`;
+            const appTitle = db?.settings?.appName || 'RidersBUD';
+
+            sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
+                bookingId: targetTx.id,
+                amount: balanceDue,
+                totalAmount: total,
+                currentPaid: paid,
+                fullBooking: targetTx.rawBooking || targetTx,
+                isRental,
+                isLiaison,
+                isDriver
+            }));
+
+            const purposeText = isRental
+                ? `${appTitle} — Car Rental Balance Settlement (#${targetTx.id.slice(-6).toUpperCase()})`
+                : isLiaison
+                ? `${appTitle} — LTO Liaison Balance Settlement (#${targetTx.id.slice(-6).toUpperCase()})`
+                : `${appTitle} — Driver for Hire Balance Settlement (#${targetTx.id.slice(-6).toUpperCase()})`;
+
+            const refPrefix = isRental ? 'RNT' : isLiaison ? 'LIA' : 'DRV';
+
+            const { url } = await hitPay.createPaymentRequest({
+                amount: balanceDue,
+                currency: db?.settings?.currency || 'PHP',
+                reference_number: `${refPrefix}-${targetTx.id}-BAL-${Date.now()}`,
+                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                redirect_url: returnUrl,
+                email: user.email || 'customer@example.com',
+                name: user.name || 'Customer',
+                purpose: purposeText
+            });
+
+            if (url.startsWith('/')) {
+                navigate(url);
+            } else {
+                window.location.href = url;
+            }
+        } catch (err) {
+            console.error("Failed to initiate HitPay for balance, navigating to service payment screen:", err);
+            const isRental = targetTx.type === 'rental';
+            const isLiaison = targetTx.type === 'liaison';
+            const isDriver = targetTx.type === 'driver';
+            navigate(`/customer-portal/service-payment?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}`);
+        } finally {
+            setIsInitiatingHitPayBalance(false);
+        }
+    };
 
     const handleCancelBooking = async (tx: any) => {
         if (!tx || !cancelReason.trim()) return;
@@ -339,10 +551,13 @@ const HomeScreen: React.FC = () => {
     // User-matching helper for robust filtering across all transaction collections
     const isUserMatch = (record: any) => {
         if (!record || !user) return false;
-        if (record.customerId && user.id && record.customerId === user.id) return true;
-        if (record.userId && user.id && record.userId === user.id) return true;
+        const uId = user.uid || user.id;
+        if (record.customerId && uId && (record.customerId === uId || record.customerId === user.id || record.customerId === user.uid)) return true;
+        if (record.userId && uId && (record.userId === uId || record.userId === user.id || record.userId === user.uid)) return true;
         if (record.customerEmail && user.email && record.customerEmail.toLowerCase() === user.email.toLowerCase()) return true;
         if (record.email && user.email && record.email.toLowerCase() === user.email.toLowerCase()) return true;
+        if (record.customerPhone && user.phone && record.customerPhone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) return true;
+        if (record.phone && user.phone && record.phone.replace(/\D/g, '') === user.phone.replace(/\D/g, '')) return true;
         if (record.customerName && user.name && record.customerName.trim().toLowerCase() === user.name.trim().toLowerCase()) return true;
         return false;
     };
@@ -426,13 +641,15 @@ const HomeScreen: React.FC = () => {
                         const paidAmt = b.paidAmount || 0;
                         const totAmt = b.totalAmount || (subtotal + laborFee + platformFee - discount);
                         const isFullyPaid = (b.paymentStatus === 'paid' || b.isPaid) && (paidAmt >= totAmt || totAmt === 0);
+                        if (isCancelled) return paidAmt > 0 ? 'Cancelled (DP Paid)' : 'Cancelled';
                         if (isFullyPaid) return 'Fully Paid';
                         if (b.paymentStatus === 'downpayment_paid' || b.paymentStatus === 'partial' || b.isVerified || paidAmt > 0) {
                             return '50% DP PAID';
                         }
                         return b.paymentStatus || 'Pending DP';
                     })(),
-                    isVerified: !!b.isVerified,
+                    remainingBalance: isCancelled ? 0 : Math.max(0, (b.totalAmount || (subtotal + laborFee + platformFee - discount)) - (b.paidAmount || (b.paymentStatus === 'downpayment_paid' || b.paymentStatus === 'partial' || b.isVerified ? (b.downpaymentAmount || (b.totalAmount || (subtotal + laborFee + platformFee - discount)) * 0.5) : 0))),
+                    isVerified: !isCancelled && !!b.isVerified,
                     isCancelable: !isCompleted && !isCancelled && !isOngoing,
                     isCancelled: isCancelled,
                     rawBooking: b
@@ -450,18 +667,42 @@ const HomeScreen: React.FC = () => {
                 const carTitle = `${carBrand} ${carModel}${carYear}`.trim() || 'Rental Car Fleet';
                 const statusLower = (b.status || '').toString().trim().toLowerCase();
                 const isCompleted = ['completed', 'returned', 'done'].includes(statusLower);
-                const isApproved = ['approved', 'active', 'in use'].includes(statusLower);
+                const isApproved = ['approved', 'active', 'in use', 'active rental'].includes(statusLower);
                 const isCancelled = ['cancelled', 'canceled', 'rejected', 'declined'].includes(statusLower);
 
                 let statusBadgeColor = 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-                if (isApproved) statusBadgeColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-                else if (isCancelled) statusBadgeColor = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+                if (statusLower === 'active rental' || statusLower === 'in use') {
+                    statusBadgeColor = 'text-[#FE7803] bg-[#FE7803]/15 border-[#FE7803]/30 font-bold';
+                } else if (isApproved) {
+                    statusBadgeColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+                } else if (isCancelled) {
+                    statusBadgeColor = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+                }
 
                 const dateStr = `${b.startDate || 'Start'} to ${b.endDate || 'End'}`;
                 const parsedDate = b.startDate ? new Date(b.startDate.replace(/-/g, '/')) : new Date(b.createdAt || Date.now());
                 const days = b.totalDays || 1;
                 const dailyRate = car?.pricePerDay || 2500;
                 const total = b.totalPrice || (dailyRate * days);
+
+                const rawPaymentStatus = (b.paymentStatus || '').toString().trim().toLowerCase();
+                const isPartialPayment = !isCancelled && (rawPaymentStatus === 'partial' || rawPaymentStatus === 'downpayment_paid' || rawPaymentStatus === '50% dp paid' || (!b.isPaid && (b.paidAmount || 0) > 0));
+                const isFullyPaid = !isCancelled && ((b.isPaid === true || rawPaymentStatus === 'paid' || rawPaymentStatus === 'fully paid') && (b.paidAmount ? b.paidAmount >= total - 1 : true));
+
+                const downpayment = b.downpaymentAmount || Math.round(total * 0.5);
+                const paidAmt = isCancelled ? (b.paidAmount || 0) : (isFullyPaid ? total : (b.paidAmount || (isPartialPayment ? downpayment : 0)));
+                const remainingBal = isCancelled ? 0 : Math.max(0, total - paidAmt);
+
+                let formattedPaymentStatus = 'Pending Payment';
+                if (isCancelled) {
+                    formattedPaymentStatus = paidAmt > 0 ? 'Cancelled (DP Paid)' : 'Cancelled';
+                } else if (isFullyPaid) {
+                    formattedPaymentStatus = 'Fully Paid';
+                } else if (isPartialPayment || paidAmt > 0) {
+                    formattedPaymentStatus = '50% DP PAID';
+                } else if (b.paymentStatus) {
+                    formattedPaymentStatus = b.paymentStatus;
+                }
 
                 list.push({
                     id: b.id,
@@ -486,13 +727,16 @@ const HomeScreen: React.FC = () => {
                     dropoffLocation: b.dropoffLocation || 'Main Hub Return',
                     notes: b.notes || (b.withDriver ? 'Includes Professional Driver' : 'Self-drive rental'),
                     totalAmount: total,
+                    downpaymentAmount: downpayment,
+                    paidAmount: paidAmt,
+                    remainingBalance: remainingBal,
                     subtotal: total,
                     laborFee: 0,
                     platformFee: 0,
                     discount: 0,
-                    paymentMethod: b.paymentMethod || 'GCash',
-                    paymentStatus: b.paymentStatus || 'Confirmed Booking',
-                    isVerified: true,
+                    paymentMethod: b.paymentMethod || 'HitPay / GCash',
+                    paymentStatus: formattedPaymentStatus,
+                    isVerified: isFullyPaid || isPartialPayment || !!b.isVerified,
                     isCancelable: !isCompleted && !isCancelled && !isApproved,
                     isCancelled: isCancelled,
                     rawBooking: { ...b, car }
@@ -511,41 +755,43 @@ const HomeScreen: React.FC = () => {
                 const statusLower = (req.status || '').toString().trim().toLowerCase();
                 const isCompleted = ['completed', 'done'].includes(statusLower);
                 const isCancelled = ['cancelled', 'canceled', 'rejected', 'declined'].includes(statusLower);
-                const isOngoing = ['in progress', 'assigned', 'dispatched', 'en route'].includes(statusLower);
+                const isOngoing = ['in progress', 'assigned', 'driver assigned', 'dispatched', 'en route'].includes(statusLower);
 
                 let statusBadgeColor = isTowing ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
                 if (isOngoing) statusBadgeColor = 'text-primary bg-primary/10 border-primary/30';
                 else if (isCompleted) statusBadgeColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
                 else if (isCancelled) statusBadgeColor = 'text-rose-400 bg-rose-500/10 border-rose-500/20';
 
-                const driverStaff = db?.hireDrivers?.find(d => d.id === req.driverId || d.name === req.assignedDriverName);
+                const driverStaff = db?.hireDrivers?.find(d => d.id === req.driverId || d.name === req.assignedDriverName || d.name === req.driverName);
                 const dateStr = req.scheduledDate || (req.createdAt ? req.createdAt.split('T')[0] : 'Scheduled');
                 const parsedDate = req.scheduledDate ? new Date(req.scheduledDate.replace(/-/g, '/')) : new Date(req.createdAt || Date.now());
                 const total = req.totalAmount || req.price || (isTowing ? 1800 : 1200);
+                const purpose = req.purposeOfHire || req.details?.purposeOfHire || (isTowing ? 'Emergency Towing Dispatch' : 'Personal Travel / Errands');
 
                 list.push({
                     id: req.id,
                     type,
                     typeLabel: isTowing ? 'Towing Service' : 'Driver for Hire',
-                    title: isTowing ? 'Towing Assistance' : (driverStaff ? `Chauffeur: ${driverStaff.name}` : 'Driver for Hire Service'),
+                    title: isTowing ? 'Towing Assistance' : (driverStaff?.name || req.driverName ? `Chauffeur: ${driverStaff?.name || req.driverName}` : 'Driver for Hire Service'),
                     refCode: isTowing ? `TW-${req.id.slice(-6).toUpperCase()}` : `DR-${req.id.slice(-6).toUpperCase()}`,
                     status: req.status || 'Pending',
                     statusBadgeColor,
                     isActive: isOngoing,
                     dateTimeStr: dateStr,
                     dateObj: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
-                    detailsUrl: isTowing ? '/customer-portal/app-services' : '/customer-portal/hire-driver',
+                    detailsUrl: `/customer-portal/booking-detail/${req.id}`,
                     image: isTowing ? '/images/services/towing.png' : (driverStaff?.imageUrl || '/images/services/driver_for_hire.png'),
                     category: isTowing ? 'Towing & Rescue' : 'Chauffeur Services',
-                    vehicleDesc: req.vehicleDetails ? `${req.vehicleDetails.year || ''} ${req.vehicleDetails.make || ''} ${req.vehicleDetails.model || ''}`.trim() : (req.notes || (isTowing ? 'Emergency Towing Dispatch' : 'Professional Driver Booking')),
+                    purposeOfHire: purpose,
+                    vehicleDesc: req.vehicleDetails ? `${req.vehicleDetails.year || ''} ${req.vehicleDetails.make || req.vehicleDetails.brand || ''} ${req.vehicleDetails.model || ''}`.trim() : (req.notes || (isTowing ? 'Emergency Towing Dispatch' : `Driver Service (${purpose})`)),
                     plateNumber: req.plateNumber || req.vehicleDetails?.plateNumber || '',
                     customerName: req.customerName || req.userName || user?.name || 'Customer',
                     customerPhone: req.customerPhone || req.contactNumber || user?.phone || '',
                     customerEmail: req.customerEmail || req.email || user?.email || '',
-                    pickupLocation: req.pickupLocation || req.pickupAddress || 'Customer Pickup Point',
-                    dropoffLocation: req.dropoffLocation || req.destination || (isTowing ? 'Partner Service Center' : 'Drop-off Destination'),
+                    pickupLocation: req.pickupLocation || req.details?.pickupLocation || req.pickupAddress || 'Customer Pickup Point',
+                    dropoffLocation: req.dropoffLocation || req.destination || req.details?.destination || (isTowing ? 'Partner Service Center' : 'Drop-off Destination'),
                     notes: req.notes || req.instructions || '',
-                    specialistName: driverStaff?.name || req.assignedDriverName,
+                    specialistName: driverStaff?.name || req.driverName || req.assignedDriverName,
                     specialistRole: isTowing ? 'Tow Truck Specialist' : 'Professional Driver',
                     specialistPhone: driverStaff?.phone || req.driverPhone,
                     specialistRating: driverStaff?.rating || 4.9,
@@ -558,9 +804,9 @@ const HomeScreen: React.FC = () => {
                     laborFee: 0,
                     platformFee: 0,
                     discount: 0,
-                    paymentMethod: req.paymentMethod || 'Cash / GCash',
+                    paymentMethod: req.paymentMethod || 'Online (HitPay)',
                     paymentStatus: isCompleted ? 'Paid / Settled' : (req.paymentStatus || 'Pending Payment'),
-                    isVerified: isCompleted,
+                    isVerified: isCompleted || req.paymentStatus === 'paid',
                     isCancelable: !isCompleted && !isCancelled && !isOngoing,
                     isCancelled: isCancelled,
                     rawBooking: { ...req, driverStaff }
@@ -585,7 +831,21 @@ const HomeScreen: React.FC = () => {
 
                 const dateStr = b.appointmentDate ? (b.appointmentTime ? `${b.appointmentDate} · ${b.appointmentTime}` : b.appointmentDate) : (b.createdAt?.split('T')[0] || 'Scheduled');
                 const parsedDate = b.appointmentDate ? new Date(`${b.appointmentDate.replace(/-/g, '/')} ${b.appointmentTime || '08:00 AM'}`) : new Date(b.createdAt || Date.now());
-                const total = b.totalAmount || b.price || 1500;
+                const total = b.fees?.total || b.totalAmount || b.price || 1500;
+                const serviceFee = b.fees?.serviceFee || 1500;
+                const governmentFee = b.fees?.governmentFee || 0;
+                const pickupFee = b.fees?.pickupFee || 0;
+                const discount = b.fees?.discount || 0;
+                const downpaymentAmount = b.downpaymentAmount || Math.round(total * 0.5);
+                const isPaidFull = b.paymentStatus === 'Paid' || b.paymentStatus === 'Paid in Full' || b.paymentStatus === 'paid' || b.balancePaid === true || b.isPaid === true;
+                const isPartial = !isPaidFull && (b.paymentStatus === 'Downpayment Paid' || b.paymentStatus === 'partial' || (b.paidAmount && b.paidAmount > 0 && b.paidAmount < total) || b.isVerified);
+                const paidAmount = isPaidFull ? total : (b.paidAmount || (isPartial ? downpaymentAmount : 0));
+                const remainingBalance = isPaidFull ? 0 : Math.max(0, total - paidAmount);
+
+                let formattedPaymentStatus = 'Pending Payment';
+                if (isPaidFull) formattedPaymentStatus = 'Paid in Full';
+                else if (isPartial) formattedPaymentStatus = 'Downpayment Paid (50%)';
+                else if (b.paymentStatus) formattedPaymentStatus = b.paymentStatus;
 
                 list.push({
                     id: b.id,
@@ -598,7 +858,7 @@ const HomeScreen: React.FC = () => {
                     isActive: isOngoing,
                     dateTimeStr: dateStr,
                     dateObj: isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
-                    detailsUrl: '/customer-portal/reminders',
+                    detailsUrl: `/customer-portal/booking-detail/${b.id}`,
                     image: uploadedImg || staff?.imageUrl || '/images/services/liaison.png',
                     category: 'LTO Liaison Assistance',
                     vehicleDesc: b.vehicleDetails ? `${b.vehicleDetails.year || ''} ${b.vehicleDetails.brand || ''} ${b.vehicleDetails.model || ''}`.trim() : 'Document Registration',
@@ -617,13 +877,19 @@ const HomeScreen: React.FC = () => {
                     specialistExperience: 'Accredited Liaison',
                     specialistLocation: b.branchName || 'LTO Main Branch',
                     totalAmount: total,
+                    downpaymentAmount: downpaymentAmount,
+                    paidAmount: paidAmount,
+                    remainingBalance: remainingBalance,
+                    serviceFee,
+                    governmentFee,
+                    pickupFee,
                     subtotal: total,
-                    laborFee: 0,
+                    laborFee: serviceFee,
                     platformFee: 0,
-                    discount: 0,
-                    paymentMethod: b.paymentMethod || 'GCash',
-                    paymentStatus: b.paymentStatus === 'Paid' ? 'Paid in Full' : (b.paymentStatus || 'Pending Payment'),
-                    isVerified: b.paymentStatus === 'Paid',
+                    discount: discount,
+                    paymentMethod: b.paymentMethod || 'HitPay Online (GCash / Cards / Maya)',
+                    paymentStatus: formattedPaymentStatus,
+                    isVerified: isPaidFull || isPartial,
                     isCancelable: !isCompleted && !isCancelled && !isOngoing,
                     isCancelled: isCancelled,
                     rawBooking: { ...b, staff }
@@ -707,6 +973,19 @@ const HomeScreen: React.FC = () => {
         return allTransactions.filter(t => t.type === activeTransactionTab);
     }, [allTransactions, activeTransactionTab]);
 
+    // Handler to navigate or open complete details modal when card is clicked
+    const handleTransactionCardClick = (tx: any) => {
+        if (!tx) return;
+        if (tx.type === 'maintenance' || tx.type === 'driver' || tx.type === 'towing' || tx.type === 'rental') {
+            navigate(`/customer-portal/booking-detail/${tx.id}`, { state: { booking: tx.rawBooking } });
+        } else if (tx.type === 'order') {
+            navigate(`/customer-portal/order-history?id=${tx.id}`);
+        } else {
+            // For liaison and any other booking types, open the rich details modal
+            setSelectedDetailsBooking(tx);
+        }
+    };
+
     // Live mechanic data lookup for top active banner
     const liveMechanic = activeBooking && db?.mechanics
         ? db.mechanics.find(m => m.id === activeBooking.mechanicId || m.id === activeBooking.mechanic?.id)
@@ -746,11 +1025,13 @@ const HomeScreen: React.FC = () => {
 
             {/* Search Bar section */}
             <div className="px-6 py-4 bg-[#121212]/90 backdrop-blur-md sticky top-[53px] z-30 border-b border-white/5 w-full">
-                {/* Search Bar & Live Dropdown - Fully Functional 1-row width */}
+                {/* Search Bar & Live Dropdown - Ultra-Modern Glassmorphic Search Widget */}
                 <div className="relative w-full z-40 max-w-5xl mx-auto">
                     <div className="relative flex items-center group w-full">
                         <label htmlFor="globalSearch" className="sr-only">Search services, products, and tools</label>
-                        <Search className="absolute left-5 h-5 w-5 text-gray-500 group-focus-within:text-primary transition-colors pointer-events-none" />
+                        <div className="absolute left-3.5 flex items-center justify-center pointer-events-none text-gray-400 group-focus-within:text-primary transition-colors">
+                            <Search className="h-5 w-5" />
+                        </div>
                         <input
                             id="globalSearch"
                             name="globalSearch"
@@ -760,23 +1041,44 @@ const HomeScreen: React.FC = () => {
                             onKeyDown={handleSearch}
                             onFocus={() => setShowSearchDropdown(true)}
                             placeholder="Search services, products, and tools..."
-                            className="w-full bg-[#1E1E1E] border border-white/10 rounded-2xl pl-14 pr-5 py-4 text-sm text-white placeholder-gray-500 shadow-inner focus:outline-none focus:border-primary/50 transition-all"
+                            className="w-full bg-[#16161D]/80 backdrop-blur-xl border border-white/15 hover:border-white/25 rounded-2xl pl-11 pr-11 py-3.5 text-sm text-white placeholder-gray-400 shadow-[0_4px_20px_rgba(0,0,0,0.4)] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-medium"
                         />
+                        {searchQuery && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSearchQuery('');
+                                    setShowSearchDropdown(false);
+                                }}
+                                className="absolute right-3.5 p-1 rounded-full bg-white/10 hover:bg-white/20 text-gray-400 hover:text-white transition-all"
+                                title="Clear search"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
                     </div>
 
                     {/* Live Search Overlay Backdrop */}
                     {showSearchDropdown && (searchQuery.trim().length > 0) && (
-                        <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowSearchDropdown(false)} />
+                        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] transition-opacity" onClick={() => setShowSearchDropdown(false)} />
                     )}
 
-                    {/* Live Search Results Dropdown */}
+                    {/* Live Search Results Dropdown - Glassmorphic Container */}
                     {showSearchDropdown && searchQuery.trim() && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-[#1E1E1E]/95 border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.65)] z-50 overflow-hidden max-h-[380px] overflow-y-auto divide-y divide-white/5 backdrop-blur-xl">
-                            {/* Services */}
+                        <div className="absolute top-full left-0 right-0 mt-2.5 bg-[#0e0f15]/90 border border-white/15 rounded-2xl shadow-[0_25px_60px_-10px_rgba(0,0,0,0.85),0_0_25px_rgba(254,120,3,0.06)] z-50 overflow-hidden max-h-[440px] overflow-y-auto divide-y divide-white/10 backdrop-blur-2xl custom-scrollbar animate-in fade-in-50 zoom-in-95 duration-200">
+                            {/* Services Section */}
                             {searchResults.services.length > 0 && (
                                 <div className="p-3">
-                                    <h4 className="text-[10px] font-black text-primary tracking-widest uppercase mb-2 px-3">Services</h4>
-                                    <div className="space-y-1">
+                                    <div className="flex items-center justify-between mb-2.5 px-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-sm shadow-primary animate-pulse" />
+                                            <h4 className="text-[10px] font-black text-primary tracking-widest uppercase">Services</h4>
+                                        </div>
+                                        <span className="text-[9px] font-black text-primary/80 bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                                            {searchResults.services.length}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-1.5">
                                         {searchResults.services.map(s => (
                                             <button
                                                 key={s.id}
@@ -784,29 +1086,50 @@ const HomeScreen: React.FC = () => {
                                                     navigate(`/customer-portal/services?q=${encodeURIComponent(s.name)}`);
                                                     setShowSearchDropdown(false);
                                                 }}
-                                                className="w-full text-left px-3 py-2 hover:bg-white/5 rounded-xl transition flex items-center justify-between group"
+                                                className="w-full text-left p-2.5 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/5 hover:border-primary/40 rounded-xl transition-all flex items-center justify-between group shadow-sm"
                                             >
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary border border-primary/20 shrink-0">
-                                                        <Wrench size={14} />
+                                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary border border-primary/25 shrink-0 group-hover:scale-105 group-hover:border-primary/50 transition-all shadow-inner">
+                                                        <Wrench size={15} />
                                                     </div>
-                                                    <div className="min-w-0">
-                                                        <p className="text-xs font-bold text-white group-hover:text-primary transition-colors truncate">{s.name}</p>
-                                                        <p className="text-[10px] text-gray-500 truncate">{s.description || 'Professional mechanical service'}</p>
+                                                    <div className="min-w-0 pr-2">
+                                                        <p className="text-xs font-black text-white group-hover:text-primary transition-colors truncate">
+                                                            {s.name}
+                                                        </p>
+                                                        <p className="text-[11px] text-gray-300 font-medium truncate mt-0.5 leading-snug">
+                                                            {s.description || 'Professional automotive maintenance & repair'}
+                                                        </p>
                                                     </div>
                                                 </div>
-                                                <ChevronRight size={12} className="text-gray-600 group-hover:text-primary group-hover:translate-x-0.5 transition" />
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {s.price && (
+                                                        <span className="text-[11px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-lg">
+                                                            ₱{Number(s.price).toLocaleString()}
+                                                        </span>
+                                                    )}
+                                                    <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-primary group-hover:bg-primary/15 transition-all">
+                                                        <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
+                                                </div>
                                             </button>
                                         ))}
                                     </div>
                                 </div>
                             )}
 
-                            {/* Products */}
+                            {/* Products Section */}
                             {searchResults.products.length > 0 && (
                                 <div className="p-3">
-                                    <h4 className="text-[10px] font-black text-cyan-400 tracking-widest uppercase mb-2 px-3">Products & Parts</h4>
-                                    <div className="space-y-1">
+                                    <div className="flex items-center justify-between mb-2.5 px-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400 animate-pulse" />
+                                            <h4 className="text-[10px] font-black text-cyan-400 tracking-widest uppercase">Products & Parts</h4>
+                                        </div>
+                                        <span className="text-[9px] font-black text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full">
+                                            {searchResults.products.length}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-1.5">
                                         {searchResults.products.map(p => (
                                             <button
                                                 key={p.id}
@@ -814,24 +1137,32 @@ const HomeScreen: React.FC = () => {
                                                     navigate(`/customer-portal/parts-store?q=${encodeURIComponent(p.name)}`);
                                                     setShowSearchDropdown(false);
                                                 }}
-                                                className="w-full text-left px-3 py-2 hover:bg-white/5 rounded-xl transition flex items-center justify-between group"
+                                                className="w-full text-left p-2.5 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/5 hover:border-cyan-400/40 rounded-xl transition-all flex items-center justify-between group shadow-sm"
                                             >
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 border border-white/10 shrink-0 flex items-center justify-center">
+                                                    <div className="w-9 h-9 rounded-xl overflow-hidden bg-black/40 border border-white/10 shrink-0 flex items-center justify-center p-1 group-hover:scale-105 group-hover:border-cyan-400/40 transition-all shadow-inner">
                                                         {p.imageUrls?.[0] ? (
-                                                            <img src={p.imageUrls[0]} alt={p.name} className="w-full h-full object-cover" />
+                                                            <img src={p.imageUrls[0]} alt={p.name} className="w-full h-full object-contain" />
                                                         ) : (
-                                                            <Car size={14} className="text-cyan-400" />
+                                                            <Car size={15} className="text-cyan-400" />
                                                         )}
                                                     </div>
-                                                    <div className="min-w-0">
-                                                        <p className="text-xs font-bold text-white group-hover:text-cyan-400 transition-colors truncate">{p.name}</p>
-                                                        <p className="text-[10px] text-gray-500 truncate">{p.brand || 'Premium replacement part'}</p>
+                                                    <div className="min-w-0 pr-2">
+                                                        <p className="text-xs font-black text-white group-hover:text-cyan-400 transition-colors truncate">
+                                                            {p.name}
+                                                        </p>
+                                                        <p className="text-[11px] text-gray-300 font-medium truncate mt-0.5 leading-snug">
+                                                            {p.brand ? `${p.brand} • ` : ''}{p.description || 'Genuine replacement part'}
+                                                        </p>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-[11px] font-black text-cyan-400">₱{p.price.toLocaleString()}</span>
-                                                    <ChevronRight size={12} className="text-gray-600 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition" />
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className="text-[11px] font-black text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-lg">
+                                                        ₱{Number(p.price).toLocaleString()}
+                                                    </span>
+                                                    <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-cyan-400 group-hover:bg-cyan-500/15 transition-all">
+                                                        <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
                                                 </div>
                                             </button>
                                         ))}
@@ -839,11 +1170,19 @@ const HomeScreen: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Tools */}
+                            {/* Tools Section */}
                             {searchResults.tools.length > 0 && (
                                 <div className="p-3">
-                                    <h4 className="text-[10px] font-black text-emerald-400 tracking-widest uppercase mb-2 px-3">Tools & Equipment</h4>
-                                    <div className="space-y-1">
+                                    <div className="flex items-center justify-between mb-2.5 px-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400 animate-pulse" />
+                                            <h4 className="text-[10px] font-black text-emerald-400 tracking-widest uppercase">Tools & Equipment</h4>
+                                        </div>
+                                        <span className="text-[9px] font-black text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                                            {searchResults.tools.length}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-1.5">
                                         {searchResults.tools.map(t => (
                                             <button
                                                 key={t.id}
@@ -851,24 +1190,32 @@ const HomeScreen: React.FC = () => {
                                                     navigate(`/customer-portal/parts-store?q=${encodeURIComponent(t.name)}`);
                                                     setShowSearchDropdown(false);
                                                 }}
-                                                className="w-full text-left px-3 py-2 hover:bg-white/5 rounded-xl transition flex items-center justify-between group"
+                                                className="w-full text-left p-2.5 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/5 hover:border-emerald-400/40 rounded-xl transition-all flex items-center justify-between group shadow-sm"
                                             >
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 border border-white/10 shrink-0 flex items-center justify-center">
+                                                    <div className="w-9 h-9 rounded-xl overflow-hidden bg-black/40 border border-white/10 shrink-0 flex items-center justify-center p-1 group-hover:scale-105 group-hover:border-emerald-400/40 transition-all shadow-inner">
                                                         {t.imageUrls?.[0] ? (
-                                                            <img src={t.imageUrls[0]} alt={t.name} className="w-full h-full object-cover" />
+                                                            <img src={t.imageUrls[0]} alt={t.name} className="w-full h-full object-contain" />
                                                         ) : (
-                                                            <Settings size={14} className="text-emerald-400" />
+                                                            <Settings size={15} className="text-emerald-400" />
                                                         )}
                                                     </div>
-                                                    <div className="min-w-0">
-                                                        <p className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors truncate">{t.name}</p>
-                                                        <p className="text-[10px] text-gray-500 truncate">{t.brand || 'Workshop tools'}</p>
+                                                    <div className="min-w-0 pr-2">
+                                                        <p className="text-xs font-black text-white group-hover:text-emerald-400 transition-colors truncate">
+                                                            {t.name}
+                                                        </p>
+                                                        <p className="text-[11px] text-gray-300 font-medium truncate mt-0.5 leading-snug">
+                                                            {t.brand ? `${t.brand} • ` : ''}{t.description || 'Professional garage equipment'}
+                                                        </p>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-[11px] font-black text-emerald-400">₱{t.price.toLocaleString()}</span>
-                                                    <ChevronRight size={12} className="text-gray-600 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition" />
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className="text-[11px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg">
+                                                        ₱{Number(t.price).toLocaleString()}
+                                                    </span>
+                                                    <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-emerald-400 group-hover:bg-emerald-500/15 transition-all">
+                                                        <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
                                                 </div>
                                             </button>
                                         ))}
@@ -876,12 +1223,14 @@ const HomeScreen: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* No Results */}
+                            {/* No Results State */}
                             {searchResults.services.length === 0 && searchResults.products.length === 0 && searchResults.tools.length === 0 && (
-                                <div className="p-6 text-center">
-                                    <Search size={24} className="text-gray-600 mx-auto mb-2" />
-                                    <p className="text-xs font-bold text-gray-400">No matching services, products, or tools found</p>
-                                    <p className="text-[10px] text-gray-600 mt-1">Try another keyword</p>
+                                <div className="p-8 text-center bg-white/[0.01]">
+                                    <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3 text-gray-400 shadow-inner">
+                                        <Search size={22} className="text-gray-400" />
+                                    </div>
+                                    <p className="text-xs font-black text-white tracking-wide">No results found for "{searchQuery}"</p>
+                                    <p className="text-[11px] text-gray-400 mt-1 font-medium">Try searching for "towing", "change oil", "brake", or "battery"</p>
                                 </div>
                             )}
                         </div>
@@ -1087,8 +1436,17 @@ const HomeScreen: React.FC = () => {
                                 return (
                                     <div
                                         key={`${tx.type}-${tx.id}`}
-                                        className={`bg-gradient-to-br from-[#1C1C20] via-[#161618] to-[#121214] border rounded-2xl sm:rounded-3xl p-3.5 sm:p-4.5 relative overflow-hidden group shadow-lg hover:shadow-xl transition-all duration-300 w-full ${
-                                            tx.isActive ? 'border-primary/40 ring-1 ring-primary/20' : 'border-white/10 hover:border-white/20'
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => handleTransactionCardClick(tx)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                handleTransactionCardClick(tx);
+                                            }
+                                        }}
+                                        className={`bg-gradient-to-br from-[#1C1C20] via-[#161618] to-[#121214] border rounded-2xl sm:rounded-3xl p-3.5 sm:p-4.5 relative overflow-hidden group shadow-lg hover:shadow-2xl transition-all duration-300 w-full cursor-pointer hover:border-primary/50 hover:bg-[#1D1D22] active:scale-[0.995] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                                            tx.isActive ? 'border-primary/40 ring-1 ring-primary/20' : 'border-white/10 hover:border-white/25'
                                         }`}
                                     >
                                         {/* Ambient Glow Accent for Active Items */}
@@ -1105,6 +1463,7 @@ const HomeScreen: React.FC = () => {
                                                         <span>{tx.typeLabel}</span>
                                                     </span>
                                                     <span className="text-[10px] sm:text-[11px] font-mono text-gray-400 font-bold truncate">#{tx.refCode}</span>
+                                                    <ChevronRight size={13} className="text-gray-500 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 ml-0.5" />
                                                 </div>
 
                                                 {/* Live Status Pill */}
@@ -1185,22 +1544,87 @@ const HomeScreen: React.FC = () => {
                                             {/* Card Bottom / Financial & Action Bar */}
                                             <div className="flex items-center justify-between gap-2 pt-2.5 sm:pt-3 border-t border-white/5">
                                                 {/* Price & Payment Badge */}
-                                                <div className="flex items-center gap-1.5 min-w-0">
-                                                    {/* Show Downpayment amount if 50% DP PAID, else show total or remaining */}
-                                                    <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
-                                                        ₱{(tx.paymentStatus === '50% DP PAID' ? (tx.downpaymentAmount || tx.totalAmount * 0.5) : tx.totalAmount).toLocaleString()}
-                                                    </span>
-                                                    <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-lg border uppercase whitespace-nowrap truncate ${
-                                                        tx.isVerified || (typeof tx.paymentStatus === 'string' && tx.paymentStatus.toLowerCase().includes('paid'))
-                                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                            : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                                                    }`}>
-                                                        {tx.paymentStatus}
-                                                    </span>
+                                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap sm:flex-nowrap">
+                                                    {(() => {
+                                                        const pStatus = (tx.paymentStatus || '').toString().toLowerCase();
+                                                        const isCancelledTx = tx.isCancelled || tx.status === 'Cancelled' || pStatus.includes('cancelled') || pStatus.includes('canceled');
+
+                                                        if (isCancelledTx) {
+                                                            return (
+                                                                <>
+                                                                    <span className="text-xs sm:text-sm font-black text-white/60 line-through whitespace-nowrap">
+                                                                        ₱{(tx.totalAmount || 0).toLocaleString()}
+                                                                    </span>
+                                                                    <span className="text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-lg border uppercase whitespace-nowrap truncate bg-rose-500/10 text-rose-400 border-rose-500/20">
+                                                                        {tx.paidAmount > 0 ? 'Cancelled (DP Paid)' : 'Cancelled'}
+                                                                    </span>
+                                                                </>
+                                                            );
+                                                        }
+
+                                                        const isPartial = pStatus.includes('dp') || pStatus.includes('partial') || pStatus.includes('downpayment') || ((tx.paidAmount || 0) > 0 && (tx.paidAmount || 0) < (tx.totalAmount || 0));
+                                                        const displayAmount = isPartial
+                                                            ? (tx.paidAmount || tx.downpaymentAmount || (tx.totalAmount ? tx.totalAmount * 0.5 : 0))
+                                                            : tx.totalAmount;
+                                                        const displayBalance = tx.remainingBalance !== undefined
+                                                            ? tx.remainingBalance
+                                                            : (isPartial ? Math.max(0, (tx.totalAmount || 0) - displayAmount) : 0);
+
+                                                        return (
+                                                            <>
+                                                                <div className="flex items-baseline gap-1">
+                                                                    <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
+                                                                        ₱{displayAmount.toLocaleString()}
+                                                                    </span>
+                                                                    {isPartial && displayBalance > 0 && (
+                                                                        <span className="text-[9px] sm:text-[10px] text-amber-400 font-semibold whitespace-nowrap">
+                                                                            (Bal: ₱{displayBalance.toLocaleString()})
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 sm:px-2 py-0.5 rounded-lg border uppercase whitespace-nowrap truncate ${
+                                                                    tx.isVerified || (typeof tx.paymentStatus === 'string' && tx.paymentStatus.toLowerCase().includes('paid'))
+                                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                                        : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                                                }`}>
+                                                                    {tx.paymentStatus}
+                                                                </span>
+                              </>
+                                                        );
+                                                    })()}
                                                 </div>
 
                                                 {/* Action Buttons */}
                                                 <div className="flex items-center gap-1.5 shrink-0">
+                                                    {/* Direct Pay Balance button for Work Done service bookings */}
+                                                    {isMaint && (tx.status === 'Work Done' || tx.status === 'Completed') && tx.rawBooking && !tx.rawBooking.isPaid && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigate(`/customer-portal/booking-detail/${tx.id}`);
+                                                            }}
+                                                            className="text-[10px] sm:text-xs font-black text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 px-3 py-1.5 rounded-lg border border-emerald-400/40 transition-all flex items-center gap-1 shadow-md shadow-emerald-600/20 active:scale-95 animate-pulse cursor-pointer"
+                                                        >
+                                                            <CreditCard size={12} />
+                                                            <span>Pay Balance</span>
+                                                        </button>
+                                                    )}
+
+                                                    {/* Pay Balance button for Car Rentals, Liaison & Driver with remaining balance */}
+                                                    {(tx.type === 'rental' || tx.type === 'liaison' || tx.type === 'driver') && (tx.remainingBalance || 0) > 0 && !tx.isCancelled && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setBalanceBookingForModal(tx);
+                                                            }}
+                                                            className="text-[10px] sm:text-xs font-black text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 px-2.5 py-1.5 rounded-lg border border-emerald-400/40 transition-all flex items-center gap-1 shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
+                                                            title="Settle remaining balance"
+                                                        >
+                                                            <CreditCard size={12} />
+                                                            <span>Pay Bal</span>
+                                                        </button>
+                                                    )}
+
                                                     {/* Live Tracking button */}
                                                     {tx.isActive && (
                                                         <button
@@ -1208,6 +1632,8 @@ const HomeScreen: React.FC = () => {
                                                                 e.stopPropagation();
                                                                 if (isMaint && tx.id) {
                                                                     navigate(`/customer-portal/booking-detail/${tx.id}?track=true`);
+                                                                } else if (tx.type === 'order') {
+                                                                    setActiveOrderForTracking(tx);
                                                                 } else {
                                                                     setSelectedDetailsBooking(tx);
                                                                 }
@@ -1691,10 +2117,10 @@ const HomeScreen: React.FC = () => {
             )}
 
             {selectedDetailsBooking && (
-                <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn">
-                    <div className="bg-[#141416] border border-white/10 rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 max-w-lg w-full max-h-[92vh] overflow-y-auto custom-scrollbar shadow-2xl relative text-white flex flex-col">
+                <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-2.5 sm:p-4 animate-fadeIn">
+                    <div className="bg-[#141416] border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-5 max-w-lg w-full max-h-[88vh] sm:max-h-[85vh] shadow-2xl relative text-white flex flex-col overflow-hidden">
                         {/* Modal Header Bar */}
-                        <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+                        <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3 shrink-0">
                             <div className="min-w-0 space-y-1">
                                 <div className="flex items-center flex-wrap gap-1.5">
                                     <span className={`text-[9px] sm:text-[10px] font-black uppercase px-2 sm:px-2.5 py-0.5 rounded-full tracking-wider border ${
@@ -1741,8 +2167,8 @@ const HomeScreen: React.FC = () => {
                             </button>
                         </div>
 
-                        {/* Content Body - High Density & Compact Layout */}
-                        <div className="space-y-2.5 pt-3 text-xs">
+                        {/* Content Body - Scrollable Container */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 py-3 space-y-2.5 text-xs">
                             {/* Live Status & Schedule Compact Strip */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {/* Status Card */}
@@ -1782,6 +2208,7 @@ const HomeScreen: React.FC = () => {
                                     <div className="flex items-center justify-between gap-1 mb-0.5">
                                         <h4 className="text-gray-400 font-bold uppercase text-[9px] tracking-wider">
                                             {selectedDetailsBooking.type === 'rental' ? 'Rental Fleet Specification' :
+                                             selectedDetailsBooking.type === 'driver' ? 'Driver for Hire Details' :
                                              selectedDetailsBooking.type === 'order' ? 'Package Summary' : 'Vehicle Specification'}
                                         </h4>
                                         {selectedDetailsBooking.plateNumber && (
@@ -1793,6 +2220,14 @@ const HomeScreen: React.FC = () => {
                                     <p className="text-white font-medium text-xs leading-snug">
                                         {selectedDetailsBooking.vehicleDesc}
                                     </p>
+                                    {selectedDetailsBooking.purposeOfHire && selectedDetailsBooking.type === 'driver' && (
+                                        <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center gap-1.5">
+                                            <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider">Purpose:</span>
+                                            <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                                {selectedDetailsBooking.purposeOfHire}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -2036,13 +2471,24 @@ const HomeScreen: React.FC = () => {
                                             <p className="text-[10px] text-gray-400">Method: {selectedDetailsBooking.paymentMethod || 'HitPay (Online)'}</p>
                                         </div>
                                     </div>
-                                    <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${
-                                        selectedDetailsBooking.isVerified || (typeof selectedDetailsBooking.paymentStatus === 'string' && selectedDetailsBooking.paymentStatus.toLowerCase().includes('paid'))
-                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                            : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                                    }`}>
-                                        {selectedDetailsBooking.paymentStatus}
-                                    </span>
+                                    {(() => {
+                                        const pStatus = (selectedDetailsBooking.paymentStatus || '').toString().toLowerCase();
+                                        const isCancelledBooking = selectedDetailsBooking.isCancelled || selectedDetailsBooking.status === 'Cancelled' || pStatus.includes('cancelled') || pStatus.includes('canceled');
+                                        const badgeText = isCancelledBooking
+                                            ? (selectedDetailsBooking.paidAmount > 0 ? 'Cancelled (DP Paid)' : 'Cancelled')
+                                            : selectedDetailsBooking.paymentStatus;
+                                        const badgeStyle = isCancelledBooking
+                                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                            : (selectedDetailsBooking.isVerified || (typeof selectedDetailsBooking.paymentStatus === 'string' && selectedDetailsBooking.paymentStatus.toLowerCase().includes('paid'))
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20');
+
+                                        return (
+                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${badgeStyle}`}>
+                                                {badgeText}
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
 
                                 {/* Itemized Calculation */}
@@ -2071,22 +2517,102 @@ const HomeScreen: React.FC = () => {
                                     )}
                                     <div className="flex items-center justify-between text-white font-bold text-xs sm:text-sm pt-1.5 border-t border-white/10">
                                         <span className="font-sans font-black text-gray-200">Total Amount</span>
-                                        <span className="text-emerald-400 font-black">₱{(selectedDetailsBooking.totalAmount || 0).toLocaleString()}</span>
+                                        <span className={`${selectedDetailsBooking.isCancelled ? 'text-white/50 line-through' : 'text-white'} font-black`}>
+                                            ₱{(selectedDetailsBooking.totalAmount || 0).toLocaleString()}
+                                        </span>
                                     </div>
+
+                                    {/* Breakdown for Partial / Downpayment Payments */}
+                                    {(() => {
+                                        const pStatus = (selectedDetailsBooking.paymentStatus || '').toString().toLowerCase();
+                                        const isCancelledBooking = selectedDetailsBooking.isCancelled || selectedDetailsBooking.status === 'Cancelled' || pStatus.includes('cancelled') || pStatus.includes('canceled');
+
+                                        if (isCancelledBooking) {
+                                            if (selectedDetailsBooking.paidAmount > 0) {
+                                                return (
+                                                    <div className="pt-1.5 space-y-1 border-t border-dashed border-white/10 text-[10px]">
+                                                        <div className="flex items-center justify-between text-gray-400 font-semibold">
+                                                            <span>Downpayment Previously Paid</span>
+                                                            <span>₱{(selectedDetailsBooking.paidAmount || 0).toLocaleString()}</span>
+                                                        </div>
+                                                        <div className="p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-400 font-sans text-[10px] leading-relaxed">
+                                                            This booking has been cancelled. Remaining balance has been waived.
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                            return (
+                                                <div className="pt-1.5 border-t border-dashed border-white/10 text-center">
+                                                    <span className="text-[10px] text-rose-400 font-sans font-semibold">This booking has been cancelled.</span>
+                                                </div>
+                                            );
+                                        }
+
+                                        const isPartial = pStatus.includes('dp') || pStatus.includes('partial') || pStatus.includes('downpayment') || ((selectedDetailsBooking.paidAmount || 0) > 0 && (selectedDetailsBooking.paidAmount || 0) < (selectedDetailsBooking.totalAmount || 0));
+                                        if (!isPartial) return null;
+
+                                        const paidAmt = selectedDetailsBooking.paidAmount || selectedDetailsBooking.downpaymentAmount || ((selectedDetailsBooking.totalAmount || 0) * 0.5);
+                                        const remainingDue = selectedDetailsBooking.remainingBalance !== undefined
+                                            ? selectedDetailsBooking.remainingBalance
+                                            : Math.max(0, (selectedDetailsBooking.totalAmount || 0) - paidAmt);
+
+                                        return (
+                                            <div className="pt-1.5 space-y-1 border-t border-dashed border-white/10">
+                                                <div className="flex items-center justify-between text-emerald-400 font-semibold">
+                                                    <span>Downpayment Paid (50%)</span>
+                                                    <span>-₱{paidAmt.toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-amber-400 font-bold">
+                                                    <span>Remaining Balance Due</span>
+                                                    <span>₱{remainingDue.toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Action Buttons Bar */}
-                        <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap gap-2">
-                            {selectedDetailsBooking.detailsUrl && selectedDetailsBooking.type === 'maintenance' && (
+                        {/* Action Buttons Bar - Sticky Footer */}
+                        <div className="shrink-0 pt-3 pb-1 border-t border-white/10 bg-[#141416] flex flex-wrap sm:flex-nowrap gap-2 items-center justify-end">
+                            {/* Pay Balance Action Button for Rental or Service Bookings with remaining balance */}
+                            {(() => {
+                                const pStatus = (selectedDetailsBooking.paymentStatus || '').toString().toLowerCase();
+                                const isPartial = pStatus.includes('dp') || pStatus.includes('partial') || pStatus.includes('downpayment') || ((selectedDetailsBooking.paidAmount || 0) > 0 && (selectedDetailsBooking.paidAmount || 0) < (selectedDetailsBooking.totalAmount || 0));
+                                const remainingDue = selectedDetailsBooking.remainingBalance !== undefined
+                                    ? selectedDetailsBooking.remainingBalance
+                                    : (isPartial ? Math.max(0, (selectedDetailsBooking.totalAmount || 0) - (selectedDetailsBooking.paidAmount || selectedDetailsBooking.downpaymentAmount || 0)) : 0);
+
+                                if (remainingDue > 0 && !selectedDetailsBooking.isCancelled) {
+                                    return (
+                                        <button
+                                            onClick={() => {
+                                                const target = selectedDetailsBooking;
+                                                setSelectedDetailsBooking(null);
+                                                if (target.type === 'liaison' || target.type === 'rental' || target.type === 'driver') {
+                                                    setBalanceBookingForModal(target);
+                                                } else {
+                                                    navigate(`/customer-portal/booking-detail/${target.id}`, { state: { booking: target } });
+                                                }
+                                            }}
+                                            className="flex-1 min-w-[140px] bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black py-2 px-3 rounded-xl border border-emerald-400/40 transition-all text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 active:scale-95 cursor-pointer"
+                                        >
+                                            <CreditCard size={14} />
+                                            <span>Pay Balance (₱{remainingDue.toLocaleString()})</span>
+                                        </button>
+                                    );
+                                }
+                                return null;
+                            })()}
+                            {(selectedDetailsBooking.type === 'maintenance' || selectedDetailsBooking.type === 'liaison' || selectedDetailsBooking.type === 'rental') && (
                                 <button
                                     onClick={() => {
-                                        const url = selectedDetailsBooking.detailsUrl;
+                                        const target = selectedDetailsBooking;
+                                        const url = target.detailsUrl || `/customer-portal/booking-detail/${target.id}${target.type === 'liaison' ? '?service=liaison' : target.type === 'rental' ? '?service=rental' : ''}`;
                                         setSelectedDetailsBooking(null);
-                                        navigate(url);
+                                        navigate(url, { state: { booking: target } });
                                     }}
-                                    className="flex-1 min-w-[120px] bg-primary hover:bg-orange-600 text-black font-black py-2 px-3 rounded-xl border border-primary/20 transition-all text-xs flex items-center justify-center gap-1.5 shadow-md shadow-primary/10"
+                                    className="flex-1 min-w-[120px] bg-primary hover:bg-orange-600 text-black font-black py-2 px-3 rounded-xl border border-primary/20 transition-all text-xs flex items-center justify-center gap-1.5 shadow-md shadow-primary/10 cursor-pointer"
                                 >
                                     <ExternalLink size={12} />
                                     <span>Open Full Booking</span>
@@ -2109,10 +2635,12 @@ const HomeScreen: React.FC = () => {
                             {selectedDetailsBooking.isActive && (
                                 <button
                                     onClick={() => {
-                                        const targetId = selectedDetailsBooking.id;
+                                        const target = selectedDetailsBooking;
                                         setSelectedDetailsBooking(null);
-                                        if (selectedDetailsBooking.type === 'maintenance' && targetId) {
-                                            navigate(`/customer-portal/booking-detail/${targetId}?track=true`);
+                                        if (target.type === 'maintenance' && target.id) {
+                                            navigate(`/customer-portal/booking-detail/${target.id}?track=true`);
+                                        } else if (target.type === 'order') {
+                                            setActiveOrderForTracking(target);
                                         } else {
                                             navigate('/customer-portal/support-chat');
                                         }
@@ -2258,6 +2786,278 @@ const HomeScreen: React.FC = () => {
                     onClose={() => setCancelledData(null)}
                 />
             )}
+
+            {/* Realtime Order Delivery Live Route Map Modal */}
+            {activeOrderForTracking && (() => {
+                const { store, customer } = resolveOrderTrackingLocations(activeOrderForTracking, user, db?.settings);
+                const orderRef = activeOrderForTracking.refCode || (activeOrderForTracking.id ? `ORD-${activeOrderForTracking.id.slice(-6).toUpperCase()}` : 'ORDER');
+                const orderData = activeOrderForTracking.rawBooking || activeOrderForTracking;
+
+                return (
+                    <LiveRouteMapModal
+                        isOpen={true}
+                        onClose={() => setActiveOrderForTracking(null)}
+                        trackingType="order"
+                        customerLocation={{
+                            lat: customer.lat,
+                            lng: customer.lng,
+                            address: customer.address
+                        }}
+                        mechanicLocation={{
+                            lat: store.lat,
+                            lng: store.lng,
+                            address: store.address
+                        }}
+                        deliveryRider={{
+                            name: 'Carlos Mendoza',
+                            phone: '+63 917 555 8921',
+                            vehicle: 'Honda Click 150i (Store Courier)',
+                            imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+                            plateNumber: 'RB-8821-EX'
+                        }}
+                        customerName={customer.name}
+                        customerPhone={customer.phone || user?.phone || ''}
+                        customerAddress={customer.address}
+                        destinationAddress={customer.address}
+                        originAddress={store.address}
+                        title={`Store Delivery Route — #${orderRef}`}
+                        status={activeOrderForTracking.status || 'En Route'}
+                        eta="18 mins"
+                        etaNote="Dispatched from RidersBUD Parts & Tools Store Hub"
+                        orderNumber={orderRef}
+                        onCallCustomer={() => {
+                            if (customer.phone) window.open(`tel:${customer.phone}`);
+                            else navigate('/customer-portal/support-chat');
+                        }}
+                        onChatCustomer={() => {
+                            setActiveOrderForTracking(null);
+                            navigate('/customer-portal/support-chat');
+                        }}
+                        appLogoUrl={db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/ridersbud_logo.png'}
+                    />
+                );
+            })()}
+
+            {/* Settle Remaining Balance Modal for Car Rental, Liaison & Driver Assistance */}
+            {balanceBookingForModal && (() => {
+                const targetBooking = balanceBookingForModal;
+                const isRental = targetBooking.type === 'rental';
+                const isLiaison = targetBooking.type === 'liaison';
+                const isDriver = targetBooking.type === 'driver';
+                const totalAmount = Number(targetBooking.totalAmount) || 0;
+                const paidDownpayment = Number(targetBooking.paidAmount) || Number(targetBooking.downpaymentAmount) || Math.round(totalAmount * 0.5);
+                const remainingBalance = targetBooking.remainingBalance !== undefined && targetBooking.remainingBalance > 0
+                    ? targetBooking.remainingBalance
+                    : Math.max(0, totalAmount - paidDownpayment);
+
+                const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+                const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+                const itemTitle = isRental
+                    ? (targetBooking.title ? targetBooking.title.replace(/^Rental:\s*/i, '') : (targetBooking.rawBooking?.carName || 'Rental Vehicle'))
+                    : isLiaison
+                    ? (targetBooking.title || `LTO: ${targetBooking.rawBooking?.serviceType || 'Registration Assistance'}`)
+                    : (targetBooking.title || 'Driver for Hire Service');
+
+                const vehicleIdentifier = targetBooking.plateNumber 
+                    || targetBooking.rawBooking?.vehicleDetails?.plateNumber 
+                    || targetBooking.rawBooking?.plateNumber 
+                    || targetBooking.vehicleDesc 
+                    || (isLiaison ? 'your registered vehicle' : isRental ? 'rental fleet vehicle' : 'assigned vehicle');
+
+                return (
+                    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fadeIn">
+                        <div className="relative w-full max-w-md bg-[#161618] rounded-3xl p-5 sm:p-6 border border-primary/30 shadow-[0_0_50px_rgba(249,115,22,0.15)] animate-modal-scale-up space-y-4 text-left">
+                            
+                            {/* Close Modal Button (X) */}
+                            <button
+                                onClick={() => setBalanceBookingForModal(null)}
+                                className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition"
+                            >
+                                <X size={18} />
+                            </button>
+
+                            {/* Top Header Badge & Icon */}
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                                    <CheckCircle size={26} className="text-emerald-400" />
+                                </div>
+                                <div className="flex-1 min-w-0 pr-6">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full mb-1">
+                                        {isRental ? <><Car size={10} /> Rental Reservation</> : isLiaison ? <><Shield size={10} /> LTO Liaison Assistance</> : <><Navigation size={10} /> Driver for Hire</>}
+                                    </span>
+                                    <h3 className="text-lg font-black text-white leading-tight">
+                                        Settle Remaining Balance
+                                    </h3>
+                                </div>
+                            </div>
+
+                            <p className="text-xs text-gray-400 leading-relaxed">
+                                {isRental ? (
+                                    <>Your vehicle reservation for <strong className="text-white">{itemTitle}</strong> is active. Payment of the remaining balance is required to finalize your car rental booking.</>
+                                ) : isLiaison ? (
+                                    <>Your registration documents for <strong className="text-white">{vehicleIdentifier}</strong> have been processed. Payment of the remaining balance is required to finalize and release your documents.</>
+                                ) : (
+                                    <>Your chauffeur service for <strong className="text-white">{itemTitle}</strong> is ready. Payment of the remaining balance is required to finalize your booking.</>
+                                )}
+                            </p>
+
+                            {/* Financial Breakdown Card */}
+                            <div className="bg-black/50 border border-white/5 rounded-2xl p-4 space-y-2.5 font-sans">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-gray-400">{isRental ? 'Rental Vehicle:' : isLiaison ? 'Service:' : 'Service Type:'}</span>
+                                    <span className="text-white font-bold truncate max-w-[200px] text-right">{itemTitle}</span>
+                                </div>
+                                {targetBooking.dateTimeStr && (
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-gray-400">{isRental ? 'Duration / Dates:' : 'Schedule:'}</span>
+                                        <span className="text-white font-bold">{targetBooking.dateTimeStr}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-gray-400">{isRental ? 'Total Rental Amount:' : isLiaison ? 'Total Liaison Fee:' : 'Total Service Fee:'}</span>
+                                    <span className="text-white font-bold">₱{totalAmount.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs text-emerald-400">
+                                    <span className="flex items-center gap-1">
+                                        <CheckCircle size={11} /> 50% Downpayment Paid:
+                                    </span>
+                                    <span className="font-bold">-₱{paidDownpayment.toLocaleString()}</span>
+                                </div>
+
+                                <div className="pt-2.5 border-t border-white/10 flex justify-between items-end">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">TOTAL BALANCE DUE</p>
+                                        <p className="text-2xl font-black text-emerald-400 mt-0.5 leading-none">
+                                            ₱{remainingBalance.toLocaleString()}
+                                        </p>
+                                    </div>
+                                    <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                                        Payment Required
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Payment Actions */}
+                            <div className="space-y-2 pt-1">
+                                <button
+                                    onClick={() => handleInitiateHitPayBalance(targetBooking)}
+                                    disabled={isInitiatingHitPayBalance}
+                                    className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-black py-3.5 rounded-xl text-xs tracking-widest uppercase flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                                >
+                                    {isInitiatingHitPayBalance ? (
+                                        <>
+                                            <Spinner size="sm" color="text-white" />
+                                            <span>Redirecting to Payment Gateway...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CreditCard size={15} />
+                                            <span>PAY BALANCE WITH HITPAY ONLINE</span>
+                                        </>
+                                    )}
+                                </button>
+
+                                {isManualGcashEnabled && (
+                                    <button
+                                        onClick={() => setShowBalanceGCashModal(true)}
+                                        className="w-full bg-white/5 hover:bg-white/10 text-gray-300 font-bold py-2.5 rounded-xl text-xs tracking-wider transition-all border border-white/5 cursor-pointer"
+                                    >
+                                        Pay via Manual GCash QR & Upload
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Mandatory Lock Notice Footer */}
+                            <div className="p-2 bg-amber-500/5 border border-amber-500/10 rounded-xl text-center">
+                                <p className="text-[10px] text-amber-400/90 font-medium">
+                                    🔒 <strong>Mandatory Payment:</strong> Balance payment is required to finalize and release your {isRental ? 'car rental booking' : isLiaison ? 'documents' : 'chauffeur booking'}.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Manual GCash Payment Modal for Rental, Liaison & Driver Balance */}
+            {showBalanceGCashModal && balanceBookingForModal && (() => {
+                const targetBooking = balanceBookingForModal;
+                const isRental = targetBooking.type === 'rental';
+                const isLiaison = targetBooking.type === 'liaison';
+                const isDriver = targetBooking.type === 'driver';
+                const totalAmount = Number(targetBooking.totalAmount) || 0;
+                const paidDownpayment = Number(targetBooking.paidAmount) || Number(targetBooking.downpaymentAmount) || Math.round(totalAmount * 0.5);
+                const balanceDue = targetBooking.remainingBalance !== undefined && targetBooking.remainingBalance > 0
+                    ? targetBooking.remainingBalance
+                    : Math.max(0, totalAmount - paidDownpayment);
+
+                const paymentLabel = isRental 
+                    ? "CAR RENTAL REMAINING BALANCE (50%)" 
+                    : isLiaison 
+                    ? "LTO LIAISON REMAINING BALANCE (50%)" 
+                    : "DRIVER FOR HIRE REMAINING BALANCE (50%)";
+
+                return (
+                    <GCashPaymentModal
+                        bookingId={targetBooking.id}
+                        totalAmount={totalAmount}
+                        paymentAmount={balanceDue}
+                        paymentLabel={paymentLabel}
+                        customerName={targetBooking.customerName || user?.name || 'Customer'}
+                        isRental={isRental}
+                        isLiaison={isLiaison}
+                        isServiceRequest={isDriver}
+                        services={[{ name: targetBooking.title || (isRental ? 'Car Rental Reservation' : isLiaison ? 'LTO Liaison Assistance' : 'Driver for Hire Service'), price: totalAmount }]}
+                        onPaymentVerified={async () => {
+                            setShowBalanceGCashModal(false);
+                            if (isRental && updateRentalBooking) {
+                                await updateRentalBooking(targetBooking.id, {
+                                    paidAmount: totalAmount,
+                                    paymentStatus: 'paid',
+                                    isPaid: true,
+                                    isVerified: true,
+                                    remainingBalance: 0,
+                                    balancePaid: true,
+                                    balancePaidAt: new Date().toISOString(),
+                                    paymentMethod: 'Manual GCash QR'
+                                } as any);
+                            } else if (isLiaison && updateLiaisonBooking) {
+                                await updateLiaisonBooking(targetBooking.id, {
+                                    paidAmount: totalAmount,
+                                    paymentStatus: 'paid',
+                                    isPaid: true,
+                                    isVerified: true,
+                                    remainingBalance: 0,
+                                    balancePaid: true,
+                                    balancePaidAt: new Date().toISOString(),
+                                    paymentMethod: 'Manual GCash QR',
+                                    status: 'Completed'
+                                } as any);
+                            } else if (isDriver && updateServiceRequest) {
+                                await updateServiceRequest(targetBooking.id, {
+                                    paidAmount: totalAmount,
+                                    paymentStatus: 'paid',
+                                    isPaid: true,
+                                    isVerified: true,
+                                    remainingBalance: 0,
+                                    balancePaid: true,
+                                    balancePaidAt: new Date().toISOString(),
+                                    paymentMethod: 'Manual GCash QR',
+                                    status: 'Completed'
+                                } as any);
+                            }
+                            setBalanceBookingForModal(null);
+                            addNotification({
+                                recipientId: user?.id || 'all',
+                                recipientRole: 'customer',
+                                title: `✅ ${isRental ? 'Rental' : isLiaison ? 'Liaison' : 'Driver'} Balance Payment Received`,
+                                message: `Your manual GCash balance receipt for ${targetBooking.title} was submitted and recorded!`,
+                                type: 'info'
+                            });
+                        }}
+                        onClose={() => setShowBalanceGCashModal(false)}
+                    />
+                );
+            })()}
         </div>
     );
 };

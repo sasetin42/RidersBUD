@@ -65,13 +65,10 @@ export const AdminManageServicesScreen: React.FC = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (window.confirm('Are you sure you want to delete this service?')) {
-            try {
-                await deleteAppService(id);
-            } catch (error) {
-                console.error('Failed to delete:', error);
-                alert('Failed to delete service');
-            }
+        try {
+            await deleteAppService(id);
+        } catch (error) {
+            console.error('Failed to delete:', error);
         }
     };
 

@@ -7,8 +7,8 @@ import { useAuth } from './AuthContext';
 
 interface CartContextType {
     cartItems: CartItem[];
-    // Fix: Changed product type from Product to Part.
-    addToCart: (product: Part) => void;
+    // Fix: Changed product type from Product to Part and allow custom quantity.
+    addToCart: (product: Part, requestedQty?: number) => void;
     removeFromCart: (productId: string) => void;
     removeAllFromCart: (productId: string) => void;
     clearCart: () => void;
@@ -59,16 +59,19 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, [cartItems, user?.id]);
 
-    // Fix: Changed product type from Product to Part.
-    const addToCart = (product: Part) => {
+    // Fix: Changed product type from Product to Part and enforced stock limit.
+    const addToCart = (product: Part, requestedQty: number = 1) => {
         setCartItems(prevItems => {
+            const currentStock = product.stock ?? 999;
             const exist = prevItems.find(item => item.id === product.id);
             if (exist) {
+                const nextQty = Math.min(exist.quantity + requestedQty, currentStock);
                 return prevItems.map(item =>
-                    item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                    item.id === product.id ? { ...item, quantity: nextQty } : item
                 );
             } else {
-                return [...prevItems, { ...product, quantity: 1 }];
+                const initialQty = Math.min(Math.max(1, requestedQty), currentStock);
+                return [...prevItems, { ...product, quantity: initialQty }];
             }
         });
     };

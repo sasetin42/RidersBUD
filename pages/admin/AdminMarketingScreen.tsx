@@ -397,9 +397,7 @@ const AdminMarketingScreen: React.FC = () => {
     };
 
     const handleDeleteBanner = (id: string) => {
-        if (window.confirm('Are you sure you want to delete this campaign?')) {
-            deleteBanner(id);
-        }
+        deleteBanner(id);
     };
 
     return (

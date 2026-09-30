@@ -31,7 +31,7 @@ const BookingConfirmationScreen: React.FC = () => {
         const status = queryParams.get('status') || queryParams.get('hitpay');
         const bookingId = queryParams.get('bookingId') || locationState.bookingId;
 
-        if (status === 'canceled' || status === 'failed') {
+        if (status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') {
             const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
             let parsedBookingId = bookingId;
             let cancelAmount = 0;
@@ -72,7 +72,12 @@ const BookingConfirmationScreen: React.FC = () => {
             }
 
             sessionStorage.removeItem('pendingHitPayBookingTx');
-            localStorage.removeItem('last_hitpay_booking_tx');
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+            sessionStorage.removeItem('pendingHitPayTx');
+            try {
+                localStorage.removeItem('last_hitpay_booking_tx');
+                localStorage.removeItem('last_hitpay_service_tx');
+            } catch (e) {}
 
             if (parsedBookingId && cancelBooking) {
                 cancelBooking(parsedBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
@@ -80,7 +85,7 @@ const BookingConfirmationScreen: React.FC = () => {
 
             const cancellationInfo = {
                 type: 'Service Booking' as const,
-                referenceId: parsedBookingId ? `BOK-${parsedBookingId}` : 'BOK-CANCELLED',
+                referenceId: parsedBookingId ? (parsedBookingId.startsWith('#') ? parsedBookingId : `#${parsedBookingId.slice(-8).toUpperCase()}`) : '#TXN-CANCELLED',
                 amount: cancelAmount,
                 date: new Date().toLocaleString(),
                 reason: 'Payment process was cancelled by the user at the payment gateway.',
@@ -112,7 +117,19 @@ const BookingConfirmationScreen: React.FC = () => {
             window.location.hostname === '127.0.0.1'
         );
 
-        // Fetch the booking from Firestore using the bookingId
+        // 1. Check in-memory/context cache first
+        const cachedBooking = database?.bookings?.find(b => b.id === targetBookingId);
+        if (cachedBooking) {
+            if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(cachedBooking.status)) {
+                navigate(`/customer-portal/booking-detail/${cachedBooking.id}`, { replace: true });
+                return;
+            }
+            setBookings([cachedBooking]);
+            setIsLoading(false);
+            return;
+        }
+
+        // 2. Fetch the booking from Firestore using the bookingId
         setIsLoading(true);
         const bookingRef = doc(firestore, 'bookings', targetBookingId);
         getDoc(bookingRef).then(async (snapshot) => {
@@ -124,24 +141,38 @@ const BookingConfirmationScreen: React.FC = () => {
                     setBookings([fetchedBooking]);
                 }
             } else {
-                if (isLocalhost) {
-                    const liveDataMod = await import('../data/liveData.json');
-                    const localBooking = liveDataMod.default.bookings.find((b: any) => b.id === targetBookingId);
-                    if (localBooking) {
-                        if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(localBooking.status)) {
-                            navigate(`/customer-portal/booking-detail/${localBooking.id}`, { replace: true });
-                        } else {
-                            setBookings([localBooking as unknown as Booking]);
-                        }
-                    } else {
-                        navigate('/customer-portal/');
-                    }
-                } else {
-                    navigate('/customer-portal/');
+                // Check if in database.bookings after potential context sync
+                const syncBooking = database?.bookings?.find(b => b.id === targetBookingId);
+                if (syncBooking) {
+                    setBookings([syncBooking]);
+                    return;
                 }
+                if (isLocalhost) {
+                    try {
+                        const liveDataMod = await import('../data/liveData.json');
+                        const localBooking = liveDataMod.default.bookings.find((b: any) => b.id === targetBookingId);
+                        if (localBooking) {
+                            if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(localBooking.status)) {
+                                navigate(`/customer-portal/booking-detail/${localBooking.id}`, { replace: true });
+                            } else {
+                                setBookings([localBooking as unknown as Booking]);
+                            }
+                            return;
+                        }
+                    } catch (_) {}
+                }
+                navigate('/customer-portal/');
+            }
+        }).catch((err) => {
+            console.warn('[BookingConfirmationScreen] Firestore fetch failed:', err);
+            const fallback = database?.bookings?.find(b => b.id === targetBookingId);
+            if (fallback) {
+                setBookings([fallback]);
+            } else {
+                navigate('/customer-portal/');
             }
         }).finally(() => setIsLoading(false));
-    }, []);
+    }, [database?.bookings]);
 
     // Real-time listener for booking status changes
     useEffect(() => {

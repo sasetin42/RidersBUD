@@ -133,10 +133,8 @@ const WarrantyScreen: React.FC = () => {
     };
 
     const handleDeleteWarranty = (id: string) => {
-        if (window.confirm('Are you sure you want to delete this warranty?')) {
-            const updatedWarranties = warranties.filter(w => w.id !== id);
-            saveWarranties(updatedWarranties);
-        }
+        const updatedWarranties = warranties.filter(w => w.id !== id);
+        saveWarranties(updatedWarranties);
     };
 
     const sortedWarranties = [...warranties].sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());

@@ -11,6 +11,8 @@ import {
     X,
     Wallet,
     MapPin,
+    Receipt,
+    CheckCircle2,
 } from 'lucide-react';
 import { Booking } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -55,17 +57,34 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
 
     const customer = React.useMemo(() => {
         if (!db?.customers) return null;
-        if (Array.isArray(db.customers)) {
-            return db.customers.find((c) => c.id === booking.customerId) || null;
-        }
-        if ((db.customers as any).id === booking.customerId) {
-            return db.customers as any;
-        }
-        return null;
-    }, [db?.customers, booking.customerId]);
+        const list = Array.isArray(db.customers) ? db.customers : [db.customers as any];
+        return (
+            list.find((c) => c.id === booking.customerId) ||
+            list.find((c) => (booking as any).customerEmail && c.email?.toLowerCase() === (booking as any).customerEmail.toLowerCase()) ||
+            list.find((c) => booking.customerName && c.name?.toLowerCase() === booking.customerName.toLowerCase()) ||
+            null
+        );
+    }, [db?.customers, booking.customerId, (booking as any).customerEmail, booking.customerName]);
 
-    const imageUrl = customer?.picture || db?.settings?.defaultCustomerImageUrl || '';
-    const hasImage = !!imageUrl && !imageError;
+    const defaultUiAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(booking.customerName || 'Customer')}&background=FE7803&color=fff&bold=true&size=128`;
+
+    const rawImageUrl =
+        customer?.picture ||
+        (booking as any).customerAvatar ||
+        (booking as any).customerPhoto ||
+        (booking as any).customerImage ||
+        db?.settings?.defaultCustomerImageUrl ||
+        '';
+
+    const isValidImage = (url: string) =>
+        url &&
+        !url.includes('placeholder') &&
+        !url.includes('placehold.co') &&
+        !url.startsWith('data:image/svg') &&
+        url !== '/placeholder.svg';
+
+    const imageUrl = isValidImage(rawImageUrl) ? rawImageUrl : defaultUiAvatar;
+    const hasImage = !imageError;
 
     const handleViewDetails = () => {
         onClose();
@@ -86,11 +105,39 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
         }
     };
 
-    const payout =
-        booking.service?.price ||
-        booking.services?.[0]?.price ||
+    const subtotal =
         booking.totalAmount ||
+        booking.services?.reduce((acc, s) => acc + (s.price || 0), 0) ||
+        booking.service?.price ||
+        booking.price ||
         0;
+
+    const downpaymentAmount =
+        booking.paidAmount != null && Number(booking.paidAmount) > 0
+            ? Number(booking.paidAmount)
+            : booking.downpaymentAmount != null && Number(booking.downpaymentAmount) > 0
+            ? Number(booking.downpaymentAmount)
+            : Math.round(subtotal * 0.5);
+
+    const remainingBalance =
+        booking.remainingBalance != null
+            ? Number(booking.remainingBalance)
+            : Math.max(0, subtotal - downpaymentAmount);
+
+    const payout = subtotal;
+
+    const paymentMethodLabel =
+        booking.paymentMethod ||
+        booking.downpaymentMethod ||
+        'Online Payment';
+
+    const isDownpaymentPaid =
+        booking.isPaid ||
+        (typeof booking.paymentStatus === 'string' &&
+            (booking.paymentStatus.toLowerCase().includes('paid') ||
+                booking.paymentStatus.toLowerCase().includes('downpayment'))) ||
+        !!booking.downpaymentPaidAt ||
+        !!booking.isVerified;
 
     const formattedDate = new Date(
         booking.date.replace(/-/g, '/')
@@ -158,7 +205,7 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
 
                 {/* Modal Card */}
                 <div
-                    className="ag-scaleUp relative w-full max-w-[340px] overflow-hidden"
+                    className="ag-scaleUp relative w-full max-w-[348px] max-h-[92vh] flex flex-col overflow-y-auto custom-scrollbar"
                     style={{
                         background: '#121212',
                         border: '1.5px solid rgba(254,120,3,0.35)',
@@ -238,7 +285,13 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                                         src={imageUrl}
                                         alt={booking.customerName || 'Customer'}
                                         className="w-full h-full object-cover rounded-2xl"
-                                        onError={() => setImageError(true)}
+                                        onError={(e) => {
+                                            if ((e.currentTarget as HTMLImageElement).src !== defaultUiAvatar) {
+                                                (e.currentTarget as HTMLImageElement).src = defaultUiAvatar;
+                                            } else {
+                                                setImageError(true);
+                                            }
+                                        }}
                                     />
                                 ) : (
                                     <User size={24} color="#FE7803" strokeWidth={1.8} />
@@ -282,11 +335,25 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                                 'Service'
                             }
                         />
-                        <DetailRow
-                            icon={<User size={11} color="#60A5FA" strokeWidth={2.2} />}
-                            label="Customer"
-                            value={booking.customerName || 'Customer'}
-                        />
+                        <div className="flex items-center justify-between py-1.5 border-b border-white/[0.04]">
+                            <div className="flex items-center gap-2">
+                                <User size={11} color="#60A5FA" strokeWidth={2.2} />
+                                <span className="text-[11px] text-gray-400 font-medium">Customer</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <img
+                                    src={imageUrl}
+                                    alt={booking.customerName || 'Customer'}
+                                    className="w-4 h-4 rounded-full object-cover border border-white/10"
+                                    onError={(e) => {
+                                        (e.currentTarget as HTMLImageElement).src = defaultUiAvatar;
+                                    }}
+                                />
+                                <span className="text-[11px] font-semibold text-white tracking-wide">
+                                    {booking.customerName || 'Customer'}
+                                </span>
+                            </div>
+                        </div>
                         <DetailRow
                             icon={<MapPin size={11} color="#EF4444" strokeWidth={2.2} />}
                             label="Map Link"
@@ -311,44 +378,101 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                         />
                     </div>
 
-                    {/* ── PAYOUT CARD ── */}
+                    {/* ── PAYMENT BREAKDOWN CARD ── */}
                     <div
                         className="relative z-10 rounded-2xl mb-4 overflow-hidden"
                         style={{
                             background:
-                                'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(5,150,105,0.08) 100%)',
-                            border: '1px solid rgba(52,211,153,0.20)',
-                            padding: '0.75rem 1rem',
+                                'linear-gradient(145deg, rgba(16,185,129,0.12) 0%, rgba(5,150,105,0.06) 100%)',
+                            border: '1px solid rgba(52,211,153,0.22)',
+                            padding: '0.75rem 0.85rem',
                         }}
                     >
                         {/* Subtle glow */}
                         <div
-                            className="pointer-events-none absolute -bottom-4 -right-4 w-16 h-16 rounded-full"
+                            className="pointer-events-none absolute -bottom-4 -right-4 w-20 h-20 rounded-full"
                             style={{
                                 background: 'rgba(52,211,153,0.15)',
-                                filter: 'blur(16px)',
+                                filter: 'blur(18px)',
                             }}
                         />
-                        <div className="flex items-center justify-between">
+
+                        {/* Top Header of Breakdown */}
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-emerald-500/15">
+                            <div className="flex items-center gap-1.5">
+                                <Receipt size={12} className="text-emerald-400" />
+                                <span className="text-[9px] font-black text-emerald-400 tracking-wider uppercase">
+                                    Payment Breakdown
+                                </span>
+                            </div>
+                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                isDownpaymentPaid
+                                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                    : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                            }`}>
+                                {isDownpaymentPaid ? '50% DP Paid' : 'Payment Pending'}
+                            </span>
+                        </div>
+
+                        {/* Itemized lines */}
+                        <div className="space-y-1.5 text-[10px] mb-2.5">
+                            {/* Service Subtotal */}
+                            <div className="flex items-center justify-between text-gray-400">
+                                <span>Service Rate / Subtotal</span>
+                                <span className="font-mono text-gray-200 font-bold">₱{subtotal.toLocaleString()}</span>
+                            </div>
+
+                            {/* 50% Initial Downpayment */}
+                            <div className="flex items-center justify-between text-gray-400">
+                                <div className="flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                    <span>50% Downpayment</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span className="font-mono text-emerald-400 font-bold">₱{downpaymentAmount.toLocaleString()}</span>
+                                    {isDownpaymentPaid && (
+                                        <CheckCircle2 size={10} className="text-emerald-400" />
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 50% Remaining Balance */}
+                            <div className="flex items-center justify-between text-gray-400">
+                                <div className="flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                    <span>Remaining Balance</span>
+                                </div>
+                                <span className="font-mono text-amber-300 font-bold">₱{remainingBalance.toLocaleString()}</span>
+                            </div>
+
+                            {/* Method */}
+                            <div className="flex items-center justify-between text-[9px] text-gray-500 pt-0.5">
+                                <span>Payment Method</span>
+                                <span className="text-gray-300 font-semibold">{paymentMethodLabel}</span>
+                            </div>
+                        </div>
+
+                        {/* Estimated Earnings Bottom Highlight */}
+                        <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between">
                             <div>
-                                <p className="text-[8px] font-black text-emerald-400/70 tracking-widest uppercase mb-0.5">
-                                    Estimated Earnings
+                                <p className="text-[8px] font-black text-emerald-400/80 tracking-widest uppercase mb-0.5">
+                                    Total Earnings
                                 </p>
                                 <p
-                                    className="text-2xl font-black leading-none tracking-tight"
+                                    className="text-xl font-black leading-none tracking-tight"
                                     style={{ color: '#34D399' }}
                                 >
                                     ₱{payout.toLocaleString()}
                                 </p>
                             </div>
                             <div
-                                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                                className="w-8 h-8 rounded-xl flex items-center justify-center"
                                 style={{
-                                    background: 'rgba(52,211,153,0.12)',
-                                    border: '1px solid rgba(52,211,153,0.20)',
+                                    background: 'rgba(52,211,153,0.15)',
+                                    border: '1px solid rgba(52,211,153,0.25)',
                                 }}
                             >
-                                <Wallet size={16} color="#34D399" strokeWidth={1.8} />
+                                <Wallet size={15} color="#34D399" strokeWidth={1.8} />
                             </div>
                         </div>
                     </div>

@@ -925,12 +925,10 @@ const MyGarageScreen: React.FC = () => {
     };
 
     const handleDeleteVehicle = async (plateNumber: string) => {
-        if (window.confirm(`Are you sure you want to remove vehicle ${plateNumber}? This action cannot be undone.`)) {
-            try {
-                await deleteUserVehicle(plateNumber);
-            } catch (error) {
-                console.error(error);
-            }
+        try {
+            await deleteUserVehicle(plateNumber);
+        } catch (error) {
+            console.error(error);
         }
     };
 
@@ -943,12 +941,10 @@ const MyGarageScreen: React.FC = () => {
     };
 
     const handleDeleteLog = (plateNumber: string, logId: string) => {
-        if (window.confirm('Delete this maintenance record?')) {
-            const logs = getSelfLogs(plateNumber);
-            const filtered = logs.filter(l => l.id !== logId);
-            localStorage.setItem(`garage_logs_${plateNumber}`, JSON.stringify(filtered));
-            setRefreshLogsCount(c => c + 1);
-        }
+        const logs = getSelfLogs(plateNumber);
+        const filtered = logs.filter(l => l.id !== logId);
+        localStorage.setItem(`garage_logs_${plateNumber}`, JSON.stringify(filtered));
+        setRefreshLogsCount(c => c + 1);
     };
 
     // Filter vehicles (Category only: Sedans, SUVs, Vans / MPVs, Luxury Vehicles)

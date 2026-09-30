@@ -380,16 +380,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const settingsSnap = await getDoc(doc(firestore, 'settings', 'main'));
             const defaultPic = (settingsSnap.exists() ? settingsSnap.data()?.defaultCustomerImageUrl : null) || '/assets/logo.png';
 
+            const hasVehicle = !!(vehicle && vehicle.make && vehicle.plateNumber);
             const newCustomer: Customer = {
                 ...restOfData,
                 id: fbUser.uid,
                 vehicles: vehicle ? [{ ...vehicle, id: Date.now().toString(), isPrimary: true }] : [],
                 picture: defaultPic,
                 registrationDate: new Date().toISOString(),
-                status: 'Active'
+                status: 'Active',
+                profileCompleted: hasVehicle,
+                profileCompletedAt: hasVehicle ? new Date().toISOString() : undefined
             };
 
             await setDoc(doc(firestore, 'customers', fbUser.uid), newCustomer);
+            saveCustomerSessionToStorage(newCustomer, false);
         } catch (error: any) {
             console.error("Registration error:", error);
             throw error;

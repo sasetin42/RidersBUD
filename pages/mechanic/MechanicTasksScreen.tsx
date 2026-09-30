@@ -125,10 +125,8 @@ const MechanicTasksScreen: React.FC = () => {
     };
     
     const handleBatchDelete = () => {
-        if (window.confirm(`Are you sure you want to delete ${selectedTaskIds.size} selected tasks?`)) {
-            deleteMultipleTasks(Array.from(selectedTaskIds));
-            setSelectedTaskIds(new Set());
-        }
+        deleteMultipleTasks(Array.from(selectedTaskIds));
+        setSelectedTaskIds(new Set());
     };
 
     const handleBatchComplete = () => {

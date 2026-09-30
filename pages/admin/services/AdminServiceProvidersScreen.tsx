@@ -74,13 +74,10 @@ export const AdminServiceProvidersScreen: React.FC = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (window.confirm('Are you sure you want to delete this provider?')) {
-            try {
-                await deleteServiceProvider(id);
-            } catch (error) {
-                console.error('Failed to delete:', error);
-                alert('Failed to delete provider');
-            }
+        try {
+            await deleteServiceProvider(id);
+        } catch (error) {
+            console.error('Failed to delete:', error);
         }
     };
 

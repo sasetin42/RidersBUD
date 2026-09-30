@@ -747,7 +747,7 @@ const AdminServicesScreen: React.FC = () => {
         handleCloseServiceModal();
     };
     const handleDeleteService = (id: string) => {
-        if (window.confirm('Delete this service?')) deleteService(id);
+        deleteService(id);
     };
 
     // ── Car handlers ──
@@ -758,7 +758,7 @@ const AdminServicesScreen: React.FC = () => {
         handleCloseCarModal();
     };
     const handleDeleteCar = (id: string) => {
-        if (window.confirm('Remove this car from the fleet?')) deleteRentalCar(id);
+        deleteRentalCar(id);
     };
     const handleToggleCarAvailability = (car: RentalCar) => {
         updateRentalCar({ ...car, isAvailable: !car.isAvailable });
@@ -772,7 +772,7 @@ const AdminServicesScreen: React.FC = () => {
         handleCloseDriverModal();
     };
     const handleDeleteDriver = (id: string) => {
-        if (window.confirm('Remove this driver from the pool?')) deleteHireDriver(id);
+        deleteHireDriver(id);
     };
     const handleToggleDriverAvailability = (driver: HireDriver) => {
         updateHireDriver({ ...driver, isAvailable: !driver.isAvailable });

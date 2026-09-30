@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CustomerHeader from '../components/CustomerHeader';
@@ -8,8 +7,9 @@ import { useWishlist } from '../context/WishlistContext';
 import Spinner from '../components/Spinner';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
-import { Package, Search, X, ChevronDown } from 'lucide-react';
+import { Package, Search, X, ChevronDown, ShoppingBag, Check } from 'lucide-react';
 import UnifiedProductCard from '../components/ui/UnifiedProductCard';
+import { getPartImage } from '../utils/fallbackImages';
 
 // FIX: Changed 'interface' to 'const' to define a functional component.
 const ComparisonModal: React.FC<{ items: Part[]; onClose: () => void }> = ({ items, onClose }) => {
@@ -60,16 +60,19 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
     const navigate = useNavigate();
 
     const isWishlisted = isInWishlist(part.id);
-    const hasSale = part.salesPrice && part.salesPrice < part.price;
+    const hasSale = typeof part.salesPrice === 'number' && part.salesPrice > 0 && part.salesPrice < part.price;
+    const discountPercent = hasSale ? Math.round(((part.price - part.salesPrice!) / part.price) * 100) : 0;
     const stockStatus = part.stock > 10 ? 'in-stock' : part.stock > 0 ? 'low-stock' : 'out-of-stock';
     const canAddToCart = stockStatus !== 'out-of-stock';
 
+    const partImageUrl = getPartImage(part);
+
     const handleAddToCart = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!canAddToCart) return;
+        if (!canAddToCart || isAdded) return;
         addToCart(part);
         setIsAdded(true);
-        setTimeout(() => setIsAdded(false), 2000);
+        setTimeout(() => setIsAdded(false), 1800);
     };
 
     const handleToggleWishlist = (e: React.MouseEvent) => {
@@ -81,81 +84,177 @@ const PartCard: React.FC<{ part: Part; onToggleCompare: (part: Part) => void; is
     return (
         <div
             onClick={() => navigate(`/customer-portal/part/${part.id}`)}
-            className="bg-[#1E1E1E] rounded-xl overflow-hidden group border border-white/5 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 flex flex-col h-full"
+            className="bg-[#1E1E1E] rounded-2xl overflow-hidden group border border-white/5 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 flex flex-col h-full cursor-pointer relative"
         >
-            {/* Image Container - Square Aspect Ratio for bigger display */}
+            {/* Image Container - Square Aspect Ratio for crisp real display */}
             <UnifiedProductCard
-                imageUrl={part.imageUrls[0]}
+                imageUrl={partImageUrl}
+                fallbackImageUrl={partImageUrl}
                 alt={part.name}
                 aspectRatio="square"
                 className="group relative"
             >
-                {/* Gradient overlay for depth */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
+                {/* Subtle dark gradient overlay for image depth & text contrast */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent pointer-events-none" />
 
-                {/* Image glow border on hover */}
-                <div className="absolute inset-0 ring-1 ring-white/5 group-hover:ring-primary/30 rounded-xl transition-all duration-500 pointer-events-none" />
+                {/* Glow border ring on hover */}
+                <div className="absolute inset-0 ring-1 ring-white/5 group-hover:ring-primary/40 rounded-t-2xl transition-all duration-500 pointer-events-none" />
 
-                {/* Badges */}
-                <div className="absolute top-3 left-3 flex flex-col gap-1.5 pointer-events-auto">
-                    {hasSale && (
-                        <span className="bg-red-500 text-white text-[10px] font-black tracking-wider px-2 py-1 rounded shadow-lg animate-pulse">Sale</span>
-                    )}
-                    <span className="bg-black/60 backdrop-blur-md text-white text-[10px] font-bold tracking-wider px-2 py-1 rounded border border-white/10">{part.brand}</span>
-                </div>
+                {/* Dynamic Sale & Discount Badges */}
+                {hasSale && (
+                    <div className="absolute top-3 left-3 flex flex-col gap-1 pointer-events-auto z-10">
+                        <span className="bg-gradient-to-r from-red-600 to-rose-500 text-white text-[10px] font-black tracking-wider px-2 py-0.5 rounded-full shadow-lg shadow-red-500/20 uppercase">
+                            Sale
+                        </span>
+                        {discountPercent > 0 && (
+                            <span className="bg-primary/95 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-md backdrop-blur-xs">
+                                -{discountPercent}% OFF
+                            </span>
+                        )}
+                    </div>
+                )}
 
-                <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0 pointer-events-auto">
+                {/* Wishlist & Compare Floating Action Buttons */}
+                <div className="absolute top-3 right-3 flex flex-col gap-1.5 opacity-90 sm:opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-1 group-hover:translate-x-0 pointer-events-auto z-10">
                     <button
                         onClick={handleToggleWishlist}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${isWishlisted ? 'bg-red-500 text-white' : 'bg-white/90 text-gray-900 hover:bg-primary hover:text-white backdrop-blur-sm'}`}
+                        title={isWishlisted ? 'Remove from Wishlist' : 'Add to Wishlist'}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                            isWishlisted
+                                ? 'bg-red-500 text-white shadow-red-500/40 scale-105'
+                                : 'bg-black/60 text-white/90 hover:bg-red-500 hover:text-white backdrop-blur-md border border-white/10'
+                        }`}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={isWishlisted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" />
+                        </svg>
                     </button>
                     <button
                         onClick={(e) => { e.stopPropagation(); onToggleCompare(part); }}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${isComparing ? 'bg-primary text-white' : 'bg-white/90 text-gray-900 hover:bg-primary hover:text-white backdrop-blur-sm'}`}
+                        title={isComparing ? 'Remove from comparison' : 'Compare part'}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                            isComparing
+                                ? 'bg-primary text-white shadow-primary/40 scale-105'
+                                : 'bg-black/60 text-white/90 hover:bg-primary hover:text-white backdrop-blur-md border border-white/10'
+                        }`}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
                     </button>
                 </div>
 
+                {/* Out of Stock Overlay */}
                 {stockStatus === 'out-of-stock' && (
-                    <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px] flex items-center justify-center pointer-events-none z-10">
-                        <span className="text-white font-black text-xs sm:text-sm tracking-widest border-2 border-white/80 px-2 py-0.5 sm:px-3 sm:py-1 -rotate-12">Out of Stock</span>
+                    <div className="absolute inset-0 bg-black/75 backdrop-blur-[2px] flex items-center justify-center pointer-events-none z-10">
+                        <span className="text-rose-400 font-black text-xs sm:text-sm tracking-wider border-2 border-rose-500/80 px-3 py-1 rounded bg-black/60 -rotate-6 shadow-xl">
+                            ✕ Out of Stock
+                        </span>
                     </div>
                 )}
             </UnifiedProductCard>
 
-            <div className="p-3 sm:p-4 flex flex-col flex-grow">
-                <div className="mb-1 flex items-center justify-between">
-                    <p className="text-[10px] font-bold text-gray-500 tracking-widest truncate max-w-[65%]">{part.category}</p>
-                    <p className="text-[10px] font-mono text-gray-600 hidden sm:inline">SKU: {part.sku}</p>
-                </div>
+            {/* Part Details Body */}
+            <div className="p-2.5 sm:p-3 flex flex-col flex-grow justify-between bg-[#1E1E1E]">
+                <div>
+                    {/* Single Compact Line: Category & Stock Status */}
+                    <div className="mb-1.5 flex items-center justify-between gap-1.5 flex-nowrap">
+                        <span className="text-[9px] uppercase font-bold tracking-wider text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded shrink-0">
+                            {part.category || 'General'}
+                        </span>
 
-                <h3 className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-2 h-8 sm:h-10 group-hover:text-primary transition-colors mb-2 sm:mb-3">
-                    {part.name}
-                </h3>
-
-                <div className="mt-auto">
-                    <div className="flex flex-wrap items-baseline gap-1 sm:gap-2 mb-2 sm:mb-3">
-                        {hasSale ? (
-                            <>
-                                <span className="text-sm sm:text-lg font-black text-primary">₱{part.salesPrice!.toLocaleString()}</span>
-                                <span className="text-[10px] sm:text-xs font-semibold text-gray-500 line-through">₱{part.price.toLocaleString()}</span>
-                            </>
-                        ) : (
-                            <span className="text-sm sm:text-lg font-black text-white">₱{part.price.toLocaleString()}</span>
+                        {stockStatus === 'in-stock' && (
+                            <span className="text-[9px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded inline-flex items-center gap-1 shrink-0">
+                                <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse"></span>
+                                In Stock ({part.stock})
+                            </span>
+                        )}
+                        {stockStatus === 'low-stock' && (
+                            <span className="text-[9px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded inline-flex items-center gap-1 shrink-0">
+                                <span className="w-1 h-1 rounded-full bg-amber-400"></span>
+                                Low ({part.stock})
+                            </span>
+                        )}
+                        {stockStatus === 'out-of-stock' && (
+                            <span className="text-[9px] font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded inline-flex items-center gap-1 shrink-0">
+                                ✕ Out of Stock
+                            </span>
                         )}
                     </div>
 
-                    {/* Stock Indicator Bar */}
-                    <div className="w-full h-1 bg-white/10 rounded-full mb-1 sm:mb-3 overflow-hidden">
-                        <div
-                            className={`h-full rounded-full transition-all duration-500 ${stockStatus === 'in-stock' ? 'bg-green-500' : stockStatus === 'low-stock' ? 'bg-orange-500' : 'bg-red-500'}`}
-                            style={{ width: stockStatus === 'in-stock' ? '100%' : `${(part.stock / 20) * 100}%` }}
-                        ></div>
+                    {/* Product Title: 2-line clamped bold white title with hover transition */}
+                    <h3 className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-2 min-h-[2rem] group-hover:text-primary transition-colors mb-1.5">
+                        {part.name}
+                    </h3>
+                </div>
+
+                {/* Bottom Section: Pricing, Stock Progress & Quick-Add Button */}
+                <div className="mt-2 pt-2 border-t border-white/5">
+                    {/* Pricing Row */}
+                    <div className="flex items-baseline justify-between gap-1 mb-2">
+                        <div className="flex items-baseline gap-1.5 flex-wrap">
+                            {hasSale ? (
+                                <>
+                                    <span className="text-base sm:text-lg font-black text-primary">
+                                        ₱{part.salesPrice!.toLocaleString()}
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-gray-500 line-through">
+                                        ₱{part.price.toLocaleString()}
+                                    </span>
+                                </>
+                            ) : (
+                                <span className="text-base sm:text-lg font-black text-white">
+                                    ₱{part.price.toLocaleString()}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Interactive Quick Add Button */}
+                        <button
+                            onClick={handleAddToCart}
+                            disabled={!canAddToCart}
+                            title={canAddToCart ? (isAdded ? 'Added to Cart' : 'Quick Add to Cart') : 'Out of Stock'}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 select-none ${
+                                isAdded
+                                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 scale-105'
+                                    : !canAddToCart
+                                    ? 'bg-white/5 text-gray-600 border border-white/5 cursor-not-allowed'
+                                    : 'bg-primary hover:bg-orange-600 text-white shadow-md shadow-primary/20 active:scale-95'
+                            }`}
+                        >
+                            {isAdded ? (
+                                <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline">Added</span>
+                                </>
+                            ) : (
+                                <>
+                                    <ShoppingBag className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline">Add</span>
+                                </>
+                            )}
+                        </button>
                     </div>
 
+                    {/* Stock progress indicator: Clean glowing bar */}
+                    <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                                stockStatus === 'in-stock'
+                                    ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50'
+                                    : stockStatus === 'low-stock'
+                                    ? 'bg-amber-500 shadow-sm shadow-amber-500/50'
+                                    : 'bg-rose-500/50'
+                            }`}
+                            style={{
+                                width: stockStatus === 'in-stock'
+                                    ? '100%'
+                                    : stockStatus === 'low-stock'
+                                    ? `${Math.max(10, Math.min(100, (part.stock / 10) * 100))}%`
+                                    : '0%'
+                            }}
+                        />
+                    </div>
                 </div>
             </div>
         </div>

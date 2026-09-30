@@ -339,10 +339,20 @@ const CartScreen: React.FC = () => {
                     </div>
 
                     {/* Check out CTA buttons */}
+                    {cartItems.some(item => (item.stock ?? 0) < item.quantity) && (
+                        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-center gap-2">
+                            <span className="font-bold">Notice:</span> One or more items in your cart exceed available stock. Please adjust quantities to proceed.
+                        </div>
+                    )}
                     <div className="flex flex-col gap-2.5">
                         <button
                             onClick={() => navigate('/customer-portal/payment', { state: { total, items: cartItems, discount, shippingFee, shippingMethod } })}
-                            className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-bold text-sm py-3.5 rounded-xl hover:opacity-95 transition shadow-lg shadow-primary/20 flex items-center justify-center gap-2 tracking-wide active:scale-[0.98]"
+                            disabled={cartItems.some(item => (item.stock ?? 0) < item.quantity || (item.stock ?? 0) <= 0)}
+                            className={`w-full font-bold text-sm py-3.5 rounded-xl transition shadow-lg flex items-center justify-center gap-2 tracking-wide ${
+                                cartItems.some(item => (item.stock ?? 0) < item.quantity || (item.stock ?? 0) <= 0)
+                                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed shadow-none'
+                                    : 'bg-gradient-to-r from-primary to-orange-600 text-white hover:opacity-95 shadow-primary/20 active:scale-[0.98]'
+                            }`}
                         >
                             <span>Proceed to Checkout</span>
                             <span className="bg-black/25 px-2 py-0.5 rounded text-[10px]">{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>

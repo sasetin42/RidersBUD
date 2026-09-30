@@ -13,7 +13,7 @@ import Spinner from '../../components/Spinner';
 import { PayoutRequest, Booking, Mechanic, PayoutDetails } from '../../types';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useMechanicAuth } from '../../context/MechanicAuthContext';
-import { calculateMechanicWalletLedger, getJobTotalAmount } from '../../utils/mechanicLedger';
+import { calculateMechanicWalletLedger, getJobTotalAmount, getJobMechanicShare } from '../../utils/mechanicLedger';
 
 interface PayoutRequestModalProps {
     isOpen: boolean;
@@ -441,16 +441,18 @@ const MechanicEarningsScreen: React.FC = () => {
             });
         }
 
-        // Net Profit computation (paid jobs)
+        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 10;
+
+        // Net Profit computation (paid jobs net of platform commission)
         const paidJobsInPeriod = filteredJobs.filter(job => job.isPaid !== false && job.paymentStatus !== 'failed');
-        const earnings = paidJobsInPeriod.reduce((sum, job) => sum + getJobTotal(job), 0);
+        const earnings = paidJobsInPeriod.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
         const jobsCount = filteredJobs.length;
         const avgValue = paidJobsInPeriod.length > 0 ? earnings / paidJobsInPeriod.length : 0;
 
         // Lifetime earnings
-        const allCompletedPaid = myCompletedJobs.filter(job => job.isPaid !== false);
-        const lifetimeSum = allCompletedPaid.reduce((sum, job) => sum + getJobTotal(job), 0);
-        const calcAllTime = (currentMechanic as any).totalEarnings || lifetimeSum;
+        const allCompletedPaid = myCompletedJobs.filter(job => job.isPaid !== false && job.paymentStatus !== 'failed');
+        const lifetimeNetSum = allCompletedPaid.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
+        const calcAllTime = Math.max((currentMechanic as any).totalEarnings || 0, lifetimeNetSum);
 
         // Rolling 7-day chart buckets (matching Sun-Sat or rolling 7 days)
         const last7Days = Array.from({ length: 7 }).map((_, i) => {
@@ -466,7 +468,7 @@ const MechanicEarningsScreen: React.FC = () => {
                     if (job.isPaid === false || job.paymentStatus === 'failed') return false;
                     return normalizeDateStr(job.date) === dayNormalized;
                 })
-                .reduce((sum, job) => sum + getJobTotal(job), 0);
+                .reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
 
             return {
                 label: day.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -493,7 +495,8 @@ const MechanicEarningsScreen: React.FC = () => {
             currentMechanic.id,
             currentMechanic,
             db.bookings || [],
-            db.payouts || []
+            db.payouts || [],
+            serviceFeePercentage
         );
 
         return {

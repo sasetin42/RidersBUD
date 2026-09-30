@@ -25,5 +25,5 @@ export const getProfileImage = (photoURL?: string | null, name?: string | null):
     }
     return photoURL;
   }
-  return '/riders-logo.png';
+  return '/favicon.png';
 };

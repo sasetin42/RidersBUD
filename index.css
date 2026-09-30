@@ -116,31 +116,36 @@ textarea {
 }
 
 .glass-card {
-    background: linear-gradient(145deg, rgba(31, 41, 55, 0.6) 0%, rgba(17, 24, 39, 0.8) 100%);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: linear-gradient(145deg, rgba(28, 30, 36, 0.7) 0%, rgba(14, 15, 18, 0.85) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
 }
 
 .glass-modal {
-    background: rgba(15, 15, 16, 0.85);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    background: linear-gradient(145deg, rgba(20, 20, 24, 0.94) 0%, rgba(12, 12, 15, 0.97) 100%);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 
+        0 25px 60px -15px rgba(0, 0, 0, 0.85),
+        0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 0 45px -10px rgba(254, 120, 3, 0.1);
 }
 
 .glass-input {
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     transition: all 0.3s ease;
 }
 
 .glass-input:focus {
-    background: rgba(0, 0, 0, 0.4);
-    border-color: rgba(254, 120, 3, 0.5);
-    box-shadow: 0 0 15px rgba(254, 120, 3, 0.1);
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(254, 120, 3, 0.6);
+    box-shadow: 0 0 20px rgba(254, 120, 3, 0.15);
     outline: none;
 }
 
@@ -577,12 +582,13 @@ textarea {
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.6));
+    filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));
     position: relative;
     width: 56px;
-    height: 76px;
+    height: 72px;
     pointer-events: auto;
     cursor: grab;
+    padding-bottom: 0px;
 }
 
 .rb-location-pin-wrapper:active {
@@ -595,10 +601,10 @@ textarea {
     top: 22px;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 52px;
-    height: 52px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
-    background: rgba(254, 120, 3, 0.25);
+    background: rgba(254, 120, 3, 0.22);
     animation: rb-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
     z-index: 0;
     pointer-events: none;
@@ -629,24 +635,25 @@ textarea {
 .rb-location-stem {
     width: 3px;
     height: 22px;
-    background: linear-gradient(to bottom, #FE7803, #FE7803 80%, rgba(254,120,3,0.6));
+    background: linear-gradient(to bottom, #FE7803, #FE7803 80%, rgba(254,120,3,0.8));
     border-radius: 2px;
     position: relative;
     z-index: 1;
-    margin-top: -2px;
+    margin-top: -1px;
     flex-shrink: 0;
 }
 
 .rb-location-dot {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: #FE7803;
     border: 2px solid #ffffff;
-    box-shadow: 0 0 10px rgba(254,120,3,1);
+    box-shadow: 0 0 10px rgba(254,120,3,1), 0 2px 4px rgba(0,0,0,0.5);
     position: relative;
     z-index: 2;
     margin-top: -3px;
+    margin-bottom: 0px;
     flex-shrink: 0;
 }
 

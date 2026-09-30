@@ -132,6 +132,7 @@ service cloud.firestore {
     match /faqs/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /settings/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /promoCodes/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    match /smtpLogs/{document=**} { allow read, write: if isAdmin(); }
     
     // Admin Users
     match /adminUsers/{adminId} {

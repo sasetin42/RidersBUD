@@ -13,8 +13,20 @@ export const getJobTotalAmount = (job: any): number => {
     return svcsSum + addCosts + (Number(job.laborFee) || 0);
 };
 
+/**
+ * Compute the mechanic's net share for a job after deducting the platform service commission fee.
+ */
+export const getJobMechanicShare = (job: any, serviceFeePercentage: number = 10): number => {
+    const totalRevenue = getJobTotalAmount(job);
+    if (totalRevenue <= 0) return 0;
+    const feePct = typeof serviceFeePercentage === 'number' && serviceFeePercentage >= 0 ? serviceFeePercentage : 10;
+    const platformCut = Math.round(totalRevenue * (feePct / 100));
+    return Math.max(0, totalRevenue - platformCut);
+};
+
 export interface MechanicWalletLedger {
     lifetimeEarnings: number;
+    grossLifetimeEarnings: number;
     availableBalance: number;
     lockedBalance: number;
     pendingPayoutsTotal: number;
@@ -31,11 +43,13 @@ export const calculateMechanicWalletLedger = (
     mechanicId: string,
     mechanic: Partial<Mechanic> | null | undefined,
     bookings: Booking[] = [],
-    payouts: PayoutRequest[] = []
+    payouts: PayoutRequest[] = [],
+    serviceFeePercentage: number = 10
 ): MechanicWalletLedger => {
     if (!mechanicId) {
         return {
             lifetimeEarnings: 0,
+            grossLifetimeEarnings: 0,
             availableBalance: 0,
             lockedBalance: 0,
             pendingPayoutsTotal: 0,
@@ -53,10 +67,17 @@ export const calculateMechanicWalletLedger = (
 
     const paidCompletedJobs = completedJobs.filter(b => b.isPaid !== false && b.paymentStatus !== 'failed');
 
-    const calculatedLifetimeEarnings = paidCompletedJobs.reduce((sum, job) => sum + getJobTotalAmount(job), 0);
-    const lifetimeEarnings = (mechanic as any)?.totalEarnings && (mechanic as any).totalEarnings > calculatedLifetimeEarnings
-        ? (mechanic as any).totalEarnings
-        : calculatedLifetimeEarnings;
+    // Calculate gross and net earnings
+    const calculatedGrossLifetime = paidCompletedJobs.reduce((sum, job) => sum + getJobTotalAmount(job), 0);
+    const calculatedNetLifetime = paidCompletedJobs.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
+
+    const docTotalEarnings = (mechanic as any)?.totalEarnings != null && Number((mechanic as any).totalEarnings) > 0
+        ? Number((mechanic as any).totalEarnings)
+        : 0;
+
+    // Authoritative net lifetime earnings (net after platform fee, harmonized with doc totalEarnings if higher)
+    const lifetimeEarnings = Math.max(calculatedNetLifetime, docTotalEarnings);
+    const grossLifetimeEarnings = Math.max(calculatedGrossLifetime, lifetimeEarnings);
 
     // 2. Filter payouts for this mechanic
     const myPayouts = payouts.filter(p => p.mechanicId === mechanicId);
@@ -74,7 +95,7 @@ export const calculateMechanicWalletLedger = (
         .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
     // 3. Authoritative ledger calculation:
-    // Ledger Available = Lifetime Earnings - (Paid + Approved + Pending Payouts)
+    // Ledger Available = Lifetime Net Earnings - (Paid + Approved + Pending Payouts)
     const ledgerAvailableBalance = Math.max(0, lifetimeEarnings - paidPayoutsTotal - approvedPayoutsTotal - pendingPayoutsTotal);
 
     // In-transit locked balance is all pending requests + approved requests awaiting disbursement
@@ -85,12 +106,18 @@ export const calculateMechanicWalletLedger = (
     if (mechanic?.walletBalance != null && mechanic.walletBalance >= 0) {
         // If document balance is provided, deduct pending requests so it never over-reports
         const adjustedDocBalance = Math.max(0, mechanic.walletBalance - pendingPayoutsTotal);
-        // Take the authoritative maximum to protect mechanic earnings against static drift
-        availableBalance = Math.max(ledgerAvailableBalance, adjustedDocBalance);
+        if (paidCompletedJobs.length > 0) {
+            // When completed jobs exist, reconcile to the maximum of calculated net ledger or document balance
+            // to prevent balance truncation or static drift
+            availableBalance = Math.max(ledgerAvailableBalance, adjustedDocBalance);
+        } else {
+            availableBalance = Math.max(ledgerAvailableBalance, adjustedDocBalance);
+        }
     }
 
     return {
         lifetimeEarnings,
+        grossLifetimeEarnings,
         availableBalance,
         lockedBalance,
         pendingPayoutsTotal,

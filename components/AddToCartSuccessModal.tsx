@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, X, Check, ArrowRight } from 'lucide-react';
 import { Part } from '../types';
+import { getPartImage } from '../utils/fallbackImages';
 
 interface AddToCartSuccessModalProps {
     isOpen: boolean;
@@ -24,6 +25,8 @@ const AddToCartSuccessModal: React.FC<AddToCartSuccessModalProps> = ({
         onClose();
         navigate('/customer-portal/cart');
     };
+
+    const displayImg = getPartImage(item);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 animate-fadeIn">
@@ -57,7 +60,7 @@ const AddToCartSuccessModal: React.FC<AddToCartSuccessModalProps> = ({
                         {/* Product Image */}
                         <div className="w-20 h-20 rounded-xl bg-[#121212] border border-white/5 p-2 flex-shrink-0">
                             <img
-                                src={item.imageUrls[0]}
+                                src={displayImg}
                                 alt={item.name}
                                 className="w-full h-full object-contain"
                             />

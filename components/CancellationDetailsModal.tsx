@@ -27,6 +27,8 @@ export const CancellationDetailsModal: React.FC<CancellationDetailsModalProps> =
             sessionStorage.removeItem('pendingHitPayBookingTx');
             sessionStorage.removeItem('pendingHitPayServiceTx');
             sessionStorage.removeItem('pendingHitPayTx');
+            localStorage.removeItem('last_hitpay_booking_tx');
+            localStorage.removeItem('last_hitpay_service_tx');
         } catch (e) {
             console.warn('Failed to clear session storage:', e);
         }

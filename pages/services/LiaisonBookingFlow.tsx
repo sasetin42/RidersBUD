@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useAuth } from '../../context/AuthContext';
-import { ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Car, Calendar, MapPin, FileText, Camera, Shield, FileCheck, Check, AlertCircle, Search, Phone, Home, Briefcase, Mail, Wallet, CreditCard, Banknote, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Car, Calendar, MapPin, FileText, Camera, Shield, FileCheck, Check, AlertCircle, Search, Phone, Home, Briefcase, Mail, Wallet, CreditCard, Banknote, Info, Trash2, RefreshCw, Navigation, Loader2, Bike, Truck, ShieldCheck, ArrowRightLeft, Tag, Sparkles, HelpCircle, UserCheck, Eye, Maximize2, X, ExternalLink } from 'lucide-react';
 import Spinner from '../../components/Spinner';
 import { VehicleFormModal } from '../MyGarageScreen';
 import { Vehicle } from '../../types';
 import { HitPayService } from '../../services/HitPayService';
+import { getAccurateLivePosition, reverseGeocodeCoordinates, safeGetCurrentPosition, safeWatchPosition, safeClearWatch } from '../../utils/locationHelper';
+import { getLeafletTileConfig } from '../../utils/mapTileProviders';
 
 interface DocumentFile {
     name: string;
@@ -17,18 +19,31 @@ interface DocumentFile {
 
 const LiaisonBookingFlow: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
-    const { db, loading, addLiaisonBooking } = useDatabase();
+    const { db, loading, addLiaisonBooking, updateLiaisonBookingStatus } = useDatabase();
     const { user, addUserVehicle } = useAuth();
     const navigate = useNavigate();
 
     const service = db?.appServices?.find(s => s.id === slug || s.slug === slug);
     const vehicles = user?.vehicles || [];
     
-    // Check if the service is Registration Assistance
+// Check if the service is Registration Assistance
     const isRegAssist = slug === 'registration-assistance' || service?.slug === 'registration-assistance';
-    const totalSteps = isRegAssist ? 5 : 8;
+    const totalSteps = isRegAssist ? 6 : 8;
 
     // Registration Assistance specific state variables
+    const [regCoords, setRegCoords] = useState<[number, number] | null>(null);
+    const [regLocationAccuracy, setRegLocationAccuracy] = useState<number | null>(null);
+    const [regIsTrackingLive, setRegIsTrackingLive] = useState<boolean>(true);
+    const [regLocationStatus, setRegLocationStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('fetching');
+    const [regLocationError, setRegLocationError] = useState<string>('');
+    const [regAddressLoading, setRegAddressLoading] = useState<boolean>(false);
+    const regMapRef = useRef<HTMLDivElement | null>(null);
+    const regMapInstanceRef = useRef<any>(null);
+    const regMarkerRef = useRef<any>(null);
+    const regWatchIdRef = useRef<number | null>(null);
+    const regGeocodeTimeoutRef = useRef<any>(null);
+    const regIsTrackingLiveRef = useRef<boolean>(true);
+
     const [regVehicleType, setRegVehicleType] = useState<string>('Sedan');
     const [regPlateNumber, setRegPlateNumber] = useState<string>('');
     const [regStatus, setRegStatus] = useState<string>('Active');
@@ -38,6 +53,16 @@ const LiaisonBookingFlow: React.FC = () => {
     const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
     const [branchSearchQuery, setBranchSearchQuery] = useState('');
     const branchDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Modern dropdown states & refs for Step 2
+    const [isVehicleTypeDropdownOpen, setIsVehicleTypeDropdownOpen] = useState(false);
+    const vehicleTypeDropdownRef = useRef<HTMLDivElement>(null);
+
+    const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
+    const statusDropdownRef = useRef<HTMLDivElement>(null);
+
+    const [isAssistanceTypeDropdownOpen, setIsAssistanceTypeDropdownOpen] = useState(false);
+    const assistanceTypeDropdownRef = useRef<HTMLDivElement>(null);
 
     const defaultBranches = [
         { id: 'lto-qc', name: 'LTO Quezon City District Office', address: 'East Avenue, Diliman, Quezon City', city: 'Quezon City', phone: '09171234567', isAvailable: true, lat: 14.6441, lng: 121.0483 },
@@ -77,6 +102,9 @@ const LiaisonBookingFlow: React.FC = () => {
     const [currentStep, setCurrentStep] = useState(1);
     const [submitting, setSubmitting] = useState(false);
 
+    // Note: Do not abort or cancel bookings on background page load/refresh during normal flow
+
+
     // Form Wizard State
     const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
     const [manualVehicle, setManualVehicle] = useState({
@@ -102,6 +130,15 @@ const LiaisonBookingFlow: React.FC = () => {
 
     // Step 4: Documents Upload State
     const [uploadedDocs, setUploadedDocs] = useState<Record<string, { file: DocumentFile; progress: number }>>({});
+    const [previewDoc, setPreviewDoc] = useState<{ label: string; file: DocumentFile } | null>(null);
+
+    const formatFileSize = (bytes: number) => {
+        if (!bytes || bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+    };
 
     // Step 5: Liaison Agent
     const [selectedLiaisonId, setSelectedLiaisonId] = useState<string>('');
@@ -116,9 +153,23 @@ const LiaisonBookingFlow: React.FC = () => {
     // Step 7: Pickup & Contact Info
     const [pickupOption, setPickupOption] = useState<'Customer brings documents' | 'Home Pickup' | 'Office Pickup'>('Customer brings documents');
     const [pickupAddress, setPickupAddress] = useState<string>('');
+    const [isLocatingPickup, setIsLocatingPickup] = useState<boolean>(false);
     const [customerPhone, setCustomerPhone] = useState<string>('');
     const [customerEmail, setCustomerEmail] = useState<string>('');
     const [preferredContact, setPreferredContact] = useState<string>('Phone');
+
+    const handleUsePickupLiveLocation = async () => {
+        setIsLocatingPickup(true);
+        try {
+            const pos = await getAccurateLivePosition(undefined, { timeoutMs: 12000, maxAcceptableAccuracy: 35 });
+            const resolved = await reverseGeocodeCoordinates(pos.latitude, pos.longitude);
+            setPickupAddress(resolved);
+        } catch (err: any) {
+            console.error("Failed to get live position for liaison pickup:", err);
+        } finally {
+            setIsLocatingPickup(false);
+        }
+    };
 
     // Step 8: Payment
     const [paymentMethod, setPaymentMethod] = useState<'GCash' | 'Maya' | 'Credit Card' | 'Debit Card' | 'Cash' | 'Bank Transfer'>('GCash');
@@ -132,11 +183,20 @@ const LiaisonBookingFlow: React.FC = () => {
     const markersRef = React.useRef<any[]>([]);
     const dateInputRef = useRef<HTMLInputElement | null>(null);
 
-    // Close branch dropdown on click outside
+    // Close dropdowns on click outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target as Node)) {
                 setIsBranchDropdownOpen(false);
+            }
+            if (vehicleTypeDropdownRef.current && !vehicleTypeDropdownRef.current.contains(event.target as Node)) {
+                setIsVehicleTypeDropdownOpen(false);
+            }
+            if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target as Node)) {
+                setIsStatusDropdownOpen(false);
+            }
+            if (assistanceTypeDropdownRef.current && !assistanceTypeDropdownRef.current.contains(event.target as Node)) {
+                setIsAssistanceTypeDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -251,6 +311,220 @@ const LiaisonBookingFlow: React.FC = () => {
         }
     }, [currentStep, selectedBranchId, branches, db, searchQuery, accentColor]);
 
+    // Reverse geocode helper for Registration Assistance Step 2 map
+    const fetchRegAddress = useCallback((lat: number, lng: number) => {
+        if (regGeocodeTimeoutRef.current) clearTimeout(regGeocodeTimeoutRef.current);
+        setRegAddressLoading(true);
+        regGeocodeTimeoutRef.current = setTimeout(async () => {
+            try {
+                const addr = await reverseGeocodeCoordinates(lat, lng);
+                if (addr) {
+                    setRegLocation(addr);
+                } else {
+                    setRegLocation(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+                }
+            } catch (e) {
+                setRegLocation(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+            } finally {
+                setRegAddressLoading(false);
+            }
+        }, 300);
+    }, []);
+
+    // Sync ref mirror whenever live tracking state changes
+    useEffect(() => { 
+        regIsTrackingLiveRef.current = regIsTrackingLive; 
+    }, [regIsTrackingLive]);
+
+    // Registration Assistance: One-shot GPS acquisition on component mount
+    useEffect(() => {
+        if (!isRegAssist) return;
+        let isMounted = true;
+        setRegLocationStatus('fetching');
+
+        getAccurateLivePosition(
+            (accurate) => {
+                if (!isMounted) return;
+                setRegCoords([accurate.latitude, accurate.longitude]);
+                setRegLocationAccuracy(accurate.accuracy);
+                setRegLocationStatus('success');
+                setRegLocationError('');
+                fetchRegAddress(accurate.latitude, accurate.longitude);
+            },
+            { timeoutMs: 9000, targetAccuracy: 12 }
+        ).catch((err) => {
+            console.debug('[LiaisonRegistrationAssist] GPS fallback to default:', err);
+            if (!isMounted) return;
+            const fallback = { lat: 14.5995, lng: 120.9842 };
+            setRegCoords([fallback.lat, fallback.lng]);
+            setRegLocationStatus('success');
+            setRegLocationError('');
+            fetchRegAddress(fallback.lat, fallback.lng);
+        });
+
+        return () => { isMounted = false; };
+    }, [isRegAssist, fetchRegAddress]);
+
+    // Registration Assistance: Continuous live GPS watch
+    useEffect(() => {
+        if (!isRegAssist) return;
+        let isMounted = true;
+
+        safeWatchPosition(
+            (pos) => {
+                if (!isMounted) return;
+                const { latitude, longitude, accuracy } = pos.coords;
+                setRegLocationAccuracy(prev => (prev !== null && accuracy > prev * 2.0 && accuracy > 35 ? prev : accuracy));
+                setRegCoords(prev => {
+                    if (prev !== null) {
+                        const dLat = (latitude - prev[0]) * 111320;
+                        const dLng = (longitude - prev[1]) * (111320 * Math.cos(prev[0] * (Math.PI / 180)));
+                        const distanceMoved = Math.sqrt(dLat * dLat + dLng * dLng);
+                        if (distanceMoved < 1.0) return prev;
+                    }
+                    if (regIsTrackingLiveRef.current || prev === null) {
+                        fetchRegAddress(latitude, longitude);
+                        return [latitude, longitude];
+                    }
+                    return prev;
+                });
+                setRegLocationStatus('success');
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        ).then(watchId => {
+            if (isMounted) regWatchIdRef.current = watchId;
+            else safeClearWatch(watchId);
+        });
+
+        return () => {
+            isMounted = false;
+            if (regWatchIdRef.current !== null) {
+                safeClearWatch(regWatchIdRef.current);
+                regWatchIdRef.current = null;
+            }
+            if (regGeocodeTimeoutRef.current) clearTimeout(regGeocodeTimeoutRef.current);
+        };
+    }, [isRegAssist, fetchRegAddress]);
+
+    // Recenter handler for Registration Assistance map
+    const handleRegRecenter = useCallback(() => {
+        setRegIsTrackingLive(true);
+        getAccurateLivePosition(
+            (accurate) => {
+                setRegCoords([accurate.latitude, accurate.longitude]);
+                setRegLocationAccuracy(accurate.accuracy);
+                if (regMapInstanceRef.current) {
+                    regMapInstanceRef.current.setView([accurate.latitude, accurate.longitude], 18, { animate: true, duration: 0.6 });
+                }
+                if (regMarkerRef.current) {
+                    regMarkerRef.current.setLatLng([accurate.latitude, accurate.longitude]);
+                }
+                fetchRegAddress(accurate.latitude, accurate.longitude);
+            },
+            { timeoutMs: 6000, targetAccuracy: 10 }
+        ).catch(() => {});
+    }, [fetchRegAddress]);
+
+    // Initialize and maintain Step 2 Leaflet Live Map for Registration Assistance
+    useEffect(() => {
+        if (!isRegAssist || currentStep !== 2 || !regCoords || !regMapRef.current || typeof window === 'undefined' || !(window as any).L) return;
+        const L = (window as any).L;
+
+        if (regMapInstanceRef.current) {
+            try {
+                const container = regMapInstanceRef.current.getContainer();
+                if (container !== regMapRef.current) {
+                    regMapInstanceRef.current.remove();
+                    regMapInstanceRef.current = null;
+                    regMarkerRef.current = null;
+                }
+            } catch (e) {
+                regMapInstanceRef.current = null;
+                regMarkerRef.current = null;
+            }
+        }
+
+        if (!regMapInstanceRef.current) {
+            const map = L.map(regMapRef.current, {
+                zoomControl: false,
+                preferCanvas: false,
+                scrollWheelZoom: true,
+                doubleClickZoom: true,
+                touchZoom: true,
+                dragging: true
+            }).setView([regCoords[0], regCoords[1]], 18);
+
+            const tileConfig = getLeafletTileConfig(db?.settings);
+            L.tileLayer(tileConfig.url, tileConfig.options).addTo(map);
+
+            const pinColor = '#10B981'; // Green Location Pin
+
+            const locationIcon = L.divIcon({
+                html: `<div class="rb-location-pin-wrapper">
+                    <div class="rb-location-circle" style="border: 3px solid ${pinColor};">
+                        <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:contain;border-radius:50%;" />
+                    </div>
+                    <div class="rb-location-stem" style="background: ${pinColor};"></div>
+                    <div class="rb-location-dot" style="background: ${pinColor};"></div>
+                </div>`,
+                className: 'rb-leaflet-icon',
+                iconSize: [56, 72],
+                iconAnchor: [28, 72],
+            });
+
+            const marker = L.marker([regCoords[0], regCoords[1]], {
+                icon: locationIcon,
+                draggable: true,
+                autoPan: true,
+                autoPanSpeed: 10,
+            }).addTo(map);
+
+            marker.on('drag', (e: any) => {
+                const { lat, lng } = e.target.getLatLng();
+                setRegCoords([lat, lng]);
+                setRegIsTrackingLive(false);
+            });
+
+            marker.on('dragend', (e: any) => {
+                const { lat, lng } = e.target.getLatLng();
+                setRegCoords([lat, lng]);
+                setRegIsTrackingLive(false);
+                fetchRegAddress(lat, lng);
+            });
+
+            map.on('click', (e: any) => {
+                const { lat, lng } = e.latlng;
+                setRegCoords([lat, lng]);
+                setRegIsTrackingLive(false);
+                if (regMarkerRef.current) {
+                    regMarkerRef.current.setLatLng([lat, lng]);
+                }
+                fetchRegAddress(lat, lng);
+            });
+
+            regMapInstanceRef.current = map;
+            regMarkerRef.current = marker;
+
+            const inv = () => { if (regMapInstanceRef.current) regMapInstanceRef.current.invalidateSize(true); };
+            inv();
+            setTimeout(inv, 100);
+            setTimeout(inv, 400);
+            setTimeout(inv, 1000);
+        } else {
+            if (regMarkerRef.current) {
+                regMarkerRef.current.setLatLng([regCoords[0], regCoords[1]]);
+            }
+            if (regIsTrackingLive) {
+                regMapInstanceRef.current.panTo([regCoords[0], regCoords[1]], {
+                    animate: true,
+                    duration: 0.6,
+                    easeLinearity: 0.25
+                });
+            }
+        }
+    }, [isRegAssist, currentStep, regCoords, db?.settings, fetchRegAddress, regIsTrackingLive]);
+
     // Load state from sessionStorage
     useEffect(() => {
         try {
@@ -275,6 +549,7 @@ const LiaisonBookingFlow: React.FC = () => {
                 if (data.paymentMethod) setPaymentMethod(data.paymentMethod);
                 
                 // Registration Assistance loads
+                if (data.regCoords) setRegCoords(data.regCoords);
                 if (data.regVehicleType) setRegVehicleType(data.regVehicleType);
                 if (data.regPlateNumber) setRegPlateNumber(data.regPlateNumber);
                 if (data.regStatus) setRegStatus(data.regStatus);
@@ -307,6 +582,7 @@ const LiaisonBookingFlow: React.FC = () => {
                 paymentMethod,
 
                 // Registration Assistance saves
+                regCoords,
                 regVehicleType,
                 regPlateNumber,
                 regStatus,
@@ -317,6 +593,16 @@ const LiaisonBookingFlow: React.FC = () => {
             sessionStorage.setItem('LIAISON_WIZARD_STATE', JSON.stringify(state));
         } catch (_) {}
     };
+
+    // Auto-deselect liaison agent if they become unavailable in real-time
+    useEffect(() => {
+        if (selectedLiaisonId) {
+            const currentAgent = staff.find(s => s.id === selectedLiaisonId);
+            if (currentAgent && currentAgent.isAvailable === false) {
+                setSelectedLiaisonId('');
+            }
+        }
+    }, [staff, selectedLiaisonId]);
 
     if (loading) {
         return (
@@ -334,16 +620,6 @@ const LiaisonBookingFlow: React.FC = () => {
             </div>
         );
     }
-
-    // Auto-deselect liaison agent if they become unavailable in real-time
-    useEffect(() => {
-        if (selectedLiaisonId) {
-            const currentAgent = staff.find(s => s.id === selectedLiaisonId);
-            if (currentAgent && currentAgent.isAvailable === false) {
-                setSelectedLiaisonId('');
-            }
-        }
-    }, [staff, selectedLiaisonId]);
 
     // Dynamic Seeding fallback
     const selectedBranch = branches.find(b => b.id === selectedBranchId) || branches[0];
@@ -479,23 +755,39 @@ const LiaisonBookingFlow: React.FC = () => {
         }, 150);
     };
 
+    const removeUploadedDoc = (docKey: string) => {
+        setUploadedDocs(prev => {
+            const next = { ...prev };
+            delete next[docKey];
+            return next;
+        });
+    };
+
+    const clearAllUploadedDocs = () => {
+        setUploadedDocs({});
+    };
+
     const isStepValid = () => {
         if (isRegAssist) {
             if (currentStep === 1) return true; // Description step
             if (currentStep === 2) {
+                // Confirm Location map step: requires valid coordinates and address
+                return !!regCoords && !!regLocation && !regAddressLoading;
+            }
+            if (currentStep === 3) {
                 // Form step: vehicle type, plate number, location, contact
                 return !!regVehicleType && !!regPlateNumber && !!regLocation && (!!customerPhone || !!user?.phone);
             }
-            if (currentStep === 3) {
+            if (currentStep === 4) {
                 // Documents step - verify uploaded OR, CR, ID and Previous Registration if applicable
                 // Since this is documents, check if at least one file is uploaded to progress
                 return Object.keys(uploadedDocs).length > 0;
             }
-            if (currentStep === 4) {
+            if (currentStep === 5) {
                 // Preferred schedule step
                 return !!appointmentDate && !!appointmentTime;
             }
-            if (currentStep === 5) return true; // Review step
+            if (currentStep === 6) return true; // Review & pay step
             return true;
         }
 
@@ -550,7 +842,7 @@ const LiaisonBookingFlow: React.FC = () => {
                 };
             })();
 
-            const bookingPayload = {
+            const bookingPayload: any = {
                 customerId: user.id,
                 customerName: user.name,
                 customerPhone: customerPhone || user.phone || '',
@@ -564,41 +856,75 @@ const LiaisonBookingFlow: React.FC = () => {
                 appointmentDate,
                 appointmentTime,
                 pickupOption: isRegAssist ? 'Customer brings documents' as const : pickupOption,
-                pickupAddress: isRegAssist ? undefined : (pickupOption === 'Customer brings documents' ? undefined : pickupAddress),
                 documents: docArray,
-                status: isRegAssist ? 'Pending Admin Review' as const : 'Booking Received' as const,
-                paymentStatus: isRegAssist ? 'Pending' as const : 'partial' as const,
-                paymentMethod: isRegAssist ? 'Cash / Verification' as const : 'Online (HitPay)',
+                status: 'Booking Received' as const,
+                paymentStatus: 'partial' as const,
+                paymentMethod: 'Online (HitPay)',
                 totalAmount: fees.total,
-                paidAmount: isRegAssist ? 0 : fees.total * 0.5,
+                paidAmount: fees.total * 0.5,
                 fees,
-                notes: isRegAssist ? regNotes : '',
+                notes: isRegAssist ? (regNotes || '') : '',
                 statusHistory: [{
-                    status: isRegAssist ? 'Pending Admin Review' : 'Booking Received',
+                    status: 'Booking Received',
                     timestamp: new Date().toISOString(),
                     officerName: 'System',
                     notes: isRegAssist ? 'Your Registration Assistance request has been submitted and is pending admin review.' : 'Your Liaison booking request has been submitted.'
                 }],
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                location: isRegAssist && regCoords ? {
+                    lat: regCoords[0],
+                    lng: regCoords[1],
+                    latitude: regCoords[0],
+                    longitude: regCoords[1],
+                    address: regLocation || 'Registration Assistance Location'
+                } : selectedBranch ? {
+                    lat: selectedBranch.lat || 14.5995,
+                    lng: selectedBranch.lng || 120.9842,
+                    latitude: selectedBranch.lat || 14.5995,
+                    longitude: selectedBranch.lng || 120.9842,
+                    address: selectedBranch.address || selectedBranch.name
+                } : null,
+                pickupLocationCoords: isRegAssist && regCoords ? {
+                    lat: regCoords[0],
+                    lng: regCoords[1]
+                } : null
             };
 
+            const resolvedPickupAddress = !isRegAssist && pickupOption !== 'Customer brings documents' ? (pickupAddress || '') : '';
+            if (resolvedPickupAddress) {
+                bookingPayload.pickupAddress = resolvedPickupAddress;
+            }
+
             const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
-            if (!isRegAssist && !isHitPayActive) {
+            if (!isHitPayActive) {
                 throw new Error("Online Payment Gateway (HitPay) is required for Liaison bookings but currently inactive in system settings. Please contact the administrator.");
             }
 
+            const effectiveServiceType = isRegAssist ? (service?.name || 'Registration Assistance') : serviceType;
             const createdLiaison = await addLiaisonBooking(bookingPayload);
             sessionStorage.removeItem('LIAISON_WIZARD_STATE');
-
-            if (isRegAssist) {
-                navigate('/');
-                return;
-            }
 
             if (createdLiaison && isHitPayActive) {
                 const downpayment = fees.total * 0.5;
                 const hitPay = HitPayService.fromSettings(db?.settings);
-                const returnUrl = `${window.location.origin}/customer-portal/reminders?liaisonId=${createdLiaison.id || ''}`;
+                const returnUrl = `${window.location.origin}/customer-portal/service-payment?bookingId=${createdLiaison.id || ''}&isLiaison=true`;
+
+                sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
+                    bookingId: createdLiaison.id,
+                    amount: downpayment,
+                    totalAmount: fees.total,
+                    currentPaid: 0,
+                    isLiaison: true,
+                    leavingTimestamp: Date.now(),
+                    fullBooking: {
+                        ...bookingPayload,
+                        id: createdLiaison.id,
+                        isLiaison: true,
+                        totalAmount: fees.total,
+                        paidAmount: 0,
+                        services: [{ name: `Liaison Service: ${effectiveServiceType}`, price: fees.total }]
+                    }
+                }));
 
                 const { url } = await hitPay.createPaymentRequest({
                     amount: downpayment,
@@ -609,10 +935,14 @@ const LiaisonBookingFlow: React.FC = () => {
                     email: user.email || customerEmail || 'customer@example.com',
                     name: user.name || 'Customer',
                     phone: customerPhone || user.phone || undefined,
-                    purpose: `RidersBUD — Liaison Service 50% Downpayment (${serviceType})`
+                    purpose: `RidersBUD — Liaison Service 50% Downpayment (${effectiveServiceType})`
                 });
 
-                window.location.href = url;
+                if (url.startsWith('/')) {
+                    navigate(url);
+                } else {
+                    window.location.href = url;
+                }
                 return;
             }
 
@@ -767,7 +1097,140 @@ const LiaisonBookingFlow: React.FC = () => {
                     </div>
                 )}
 
+                {/* Step 2: Confirm Location (Registration Assistance) */}
                 {currentStep === 2 && isRegAssist && (
+                    <div className="space-y-4 animate-fadeIn">
+                        <div>
+                            <h2 className="text-xl font-black uppercase tracking-tight mb-1">Confirm Location</h2>
+                            <p className="text-xs text-gray-400">Pinpoint your exact location or nearest LTO area for Registration Assistance.</p>
+                        </div>
+
+                        {/* Interactive Leaflet Map Container */}
+                        <div className="relative w-full h-[360px] sm:h-[400px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-[#121215]">
+                            {/* Map Canvas */}
+                            <div ref={regMapRef} className="absolute inset-0 w-full h-full" style={{ zIndex: 1 }} />
+
+                            {/* Loading State Overlay */}
+                            {regLocationStatus === 'fetching' && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#121215]/85 backdrop-blur-sm z-30">
+                                    <div className="relative">
+                                        <div className="absolute inset-0 rounded-full animate-ping opacity-25" style={{ backgroundColor: accentColor }} />
+                                        <Spinner size="lg" />
+                                    </div>
+                                    <p className="mt-4 text-white font-bold tracking-widest text-[11px] animate-pulse uppercase">
+                                        Acquiring precise GPS location...
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* GPS Status & Accuracy Pill */}
+                            {regLocationStatus === 'success' && regLocationAccuracy !== null && (
+                                <div className="absolute top-3 left-3 z-20 bg-[#16161ab8] backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 shadow-xl">
+                                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                                        !regIsTrackingLive
+                                            ? 'bg-amber-400'
+                                            : regLocationAccuracy <= 25
+                                            ? 'bg-emerald-500 animate-pulse shadow-md shadow-emerald-500/50'
+                                            : 'bg-yellow-400 animate-ping'
+                                    }`} />
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] text-white font-extrabold tracking-wider leading-none">
+                                            {!regIsTrackingLive 
+                                                ? 'MANUAL PIN PLACEMENT' 
+                                                : regLocationAccuracy <= 25 
+                                                ? 'LIVE GPS ACTIVE' 
+                                                : 'CALIBRATING GPS...'}
+                                        </span>
+                                        <span className="text-[8px] text-gray-400 font-medium leading-none mt-0.5">
+                                            {regIsTrackingLive
+                                                ? `±${Math.round(regLocationAccuracy)}m accuracy`
+                                                : 'Tap recenter to resume GPS'}
+                                        </span>
+                                    </div>
+                                    {!regIsTrackingLive && (
+                                        <button
+                                            type="button"
+                                            onClick={handleRegRecenter}
+                                            style={{ borderColor: accentColor, color: accentColor }}
+                                            className="border hover:bg-primary/20 text-[8px] font-black px-1.5 py-0.5 rounded ml-1 transition-all uppercase tracking-wide"
+                                        >
+                                            Resume
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Zoom & Recenter Floating Controls */}
+                            <div className="absolute top-3 right-3 z-20 flex flex-col gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { if (regMapInstanceRef.current) regMapInstanceRef.current.zoomIn(); }}
+                                    className="w-9 h-9 flex items-center justify-center backdrop-blur-md border border-white/20 bg-[#1E1E1E]/90 text-white rounded-xl shadow-xl transition-all hover:bg-white/20 active:scale-95"
+                                    title="Zoom In"
+                                >
+                                    <span className="text-base font-bold leading-none">+</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { if (regMapInstanceRef.current) regMapInstanceRef.current.zoomOut(); }}
+                                    className="w-9 h-9 flex items-center justify-center backdrop-blur-md border border-white/20 bg-[#1E1E1E]/90 text-white rounded-xl shadow-xl transition-all hover:bg-white/20 active:scale-95"
+                                    title="Zoom Out"
+                                >
+                                    <span className="text-base font-bold leading-none">−</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleRegRecenter}
+                                    style={{ backgroundColor: accentColor }}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-xl shadow-xl transition-all active:scale-95 text-white ${
+                                        regIsTrackingLive ? 'border-2 border-white/40 shadow-primary/40' : 'border border-white/20 hover:brightness-110'
+                                    }`}
+                                    title="Recenter GPS"
+                                >
+                                    <Navigation size={14} className={regIsTrackingLive ? 'animate-pulse' : ''} />
+                                </button>
+                            </div>
+
+                            {/* Drag-pin hint overlay */}
+                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+                                <div className="bg-black/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 flex items-center gap-2 shadow-2xl">
+                                    <MapPin size={12} style={{ color: accentColor }} className="animate-bounce shrink-0" />
+                                    <span className="text-[9px] font-black text-white tracking-widest whitespace-nowrap uppercase">
+                                        Drag pin or tap map to adjust
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Geocoded Address Box */}
+                        <div className="p-4 bg-[#111113] border border-white/10 rounded-2xl flex items-start gap-3 shadow-lg">
+                            <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5" style={{ color: accentColor }}>
+                                <MapPin size={16} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-0.5">
+                                    Confirmed Service Location
+                                </span>
+                                <p className="text-xs font-bold text-white leading-snug">
+                                    {regAddressLoading ? (
+                                        <span className="text-gray-400 font-normal italic flex items-center gap-1.5">
+                                            <Loader2 size={12} className="animate-spin text-primary" />
+                                            Resolving verified address...
+                                        </span>
+                                    ) : (
+                                        regLocation || (regCoords ? `${regCoords[0].toFixed(5)}, ${regCoords[1].toFixed(5)}` : 'Detecting your coordinates...')
+                                    )}
+                                </p>
+                                <p className="text-[9px] text-gray-500 font-mono mt-1">
+                                    GPS: {regCoords ? `${regCoords[0].toFixed(5)}, ${regCoords[1].toFixed(5)}` : 'Pending'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Step 3: Request Details (Registration Assistance) */}
+                {currentStep === 3 && isRegAssist && (
                     <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Request Details</h2>
@@ -776,20 +1239,87 @@ const LiaisonBookingFlow: React.FC = () => {
 
                         <div className="space-y-4">
                             {/* Vehicle Type */}
-                            <div>
+                            <div className="relative" ref={vehicleTypeDropdownRef}>
                                 <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Vehicle Type *</label>
-                                <select 
-                                    value={regVehicleType}
-                                    onChange={(e) => setRegVehicleType(e.target.value)}
-                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50"
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsVehicleTypeDropdownOpen(!isVehicleTypeDropdownOpen);
+                                        setIsStatusDropdownOpen(false);
+                                        setIsAssistanceTypeDropdownOpen(false);
+                                        setIsBranchDropdownOpen(false);
+                                    }}
+                                    className={`w-full bg-[#111113] border p-3.5 rounded-xl text-xs text-white flex items-center justify-between transition-all duration-200 ${
+                                        isVehicleTypeDropdownOpen ? 'border-primary shadow-lg shadow-primary/10' : 'border-white/10 hover:border-white/20'
+                                    }`}
                                 >
-                                    <option value="Sedan">Sedan</option>
-                                    <option value="SUV">SUV</option>
-                                    <option value="Hatchback">Hatchback</option>
-                                    <option value="Pickup Truck">Pickup Truck</option>
-                                    <option value="Motorcycle">Motorcycle</option>
-                                    <option value="Van">Van / MPV</option>
-                                </select>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                                            {regVehicleType === 'Motorcycle' ? <Bike size={16} /> :
+                                             regVehicleType === 'Pickup Truck' ? <Truck size={16} /> :
+                                             <Car size={16} />}
+                                        </div>
+                                        <div className="text-left">
+                                            <p className="font-bold text-white leading-tight">{regVehicleType}</p>
+                                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                                {regVehicleType === 'Sedan' && 'Standard 4-door passenger car'}
+                                                {regVehicleType === 'SUV' && 'Sports utility vehicle / Crossover'}
+                                                {regVehicleType === 'Hatchback' && 'Compact 3 or 5-door vehicle'}
+                                                {regVehicleType === 'Pickup Truck' && 'Utility light cargo vehicle'}
+                                                {regVehicleType === 'Motorcycle' && '2-wheel scooter / motorcycle'}
+                                                {regVehicleType === 'Van' && 'Multi-purpose passenger van / MPV'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <ChevronDown 
+                                        size={16} 
+                                        className={`text-gray-400 transition-transform duration-300 ${isVehicleTypeDropdownOpen ? 'rotate-180 text-primary' : ''}`} 
+                                    />
+                                </button>
+
+                                {isVehicleTypeDropdownOpen && (
+                                    <div className="absolute left-0 right-0 z-50 mt-2 bg-[#141416]/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden divide-y divide-white/5 animate-in fade-in zoom-in-95 duration-150">
+                                        {[
+                                            { value: 'Sedan', label: 'Sedan', desc: 'Standard 4-door passenger car', icon: Car },
+                                            { value: 'SUV', label: 'SUV', desc: 'Sports utility vehicle / Crossover', icon: Truck },
+                                            { value: 'Hatchback', label: 'Hatchback', desc: 'Compact 3 or 5-door vehicle', icon: Car },
+                                            { value: 'Pickup Truck', label: 'Pickup Truck', desc: 'Utility light cargo vehicle', icon: Truck },
+                                            { value: 'Motorcycle', label: 'Motorcycle', desc: '2-wheel scooter / motorcycle', icon: Bike },
+                                            { value: 'Van', label: 'Van / MPV', desc: 'Multi-purpose passenger van', icon: Car },
+                                        ].map((opt) => {
+                                            const IconComp = opt.icon;
+                                            const isSelected = regVehicleType === opt.value;
+                                            return (
+                                                <button
+                                                    key={opt.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRegVehicleType(opt.value);
+                                                        setIsVehicleTypeDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full text-left p-3.5 flex items-center justify-between transition-colors group ${
+                                                        isSelected ? 'bg-primary/15' : 'hover:bg-white/[0.04]'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                            isSelected ? 'bg-primary text-black font-black' : 'bg-white/5 text-gray-400 group-hover:text-primary group-hover:bg-primary/10'
+                                                        }`}>
+                                                            <IconComp size={16} />
+                                                        </div>
+                                                        <div>
+                                                            <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-primary' : 'text-white group-hover:text-white'}`}>
+                                                                {opt.label}
+                                                            </p>
+                                                            <p className="text-[10px] text-gray-400 mt-0.5">{opt.desc}</p>
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && <Check size={16} className="text-primary" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Plate Number */}
@@ -805,56 +1335,267 @@ const LiaisonBookingFlow: React.FC = () => {
                             </div>
 
                             {/* Registration Status */}
-                            <div>
+                            <div className="relative" ref={statusDropdownRef}>
                                 <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Current Registration Status *</label>
-                                <select 
-                                    value={regStatus}
-                                    onChange={(e) => setRegStatus(e.target.value)}
-                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50"
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsStatusDropdownOpen(!isStatusDropdownOpen);
+                                        setIsVehicleTypeDropdownOpen(false);
+                                        setIsAssistanceTypeDropdownOpen(false);
+                                        setIsBranchDropdownOpen(false);
+                                    }}
+                                    className={`w-full bg-[#111113] border p-3.5 rounded-xl text-xs text-white flex items-center justify-between transition-all duration-200 ${
+                                        isStatusDropdownOpen ? 'border-primary shadow-lg shadow-primary/10' : 'border-white/10 hover:border-white/20'
+                                    }`}
                                 >
-                                    <option value="Active">Active / Pending Renewal</option>
-                                    <option value="Expired">Expired</option>
-                                    <option value="For Transfer">For Transfer of Ownership</option>
-                                    <option value="No Plate Issued">No Plate Issued Yet</option>
-                                </select>
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                            regStatus === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                            regStatus === 'Expired' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                                            regStatus === 'For Transfer' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                            'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                        }`}>
+                                            {regStatus === 'Active' ? <ShieldCheck size={16} /> :
+                                             regStatus === 'Expired' ? <AlertCircle size={16} /> :
+                                             regStatus === 'For Transfer' ? <ArrowRightLeft size={16} /> :
+                                             <Tag size={16} />}
+                                        </div>
+                                        <div className="text-left">
+                                            <p className="font-bold text-white leading-tight">
+                                                {regStatus === 'Active' && 'Active / Pending Renewal'}
+                                                {regStatus === 'Expired' && 'Expired Registration'}
+                                                {regStatus === 'For Transfer' && 'For Transfer of Ownership'}
+                                                {regStatus === 'No Plate Issued' && 'No Plate Issued Yet'}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                                {regStatus === 'Active' && 'Valid registration up for yearly renewal'}
+                                                {regStatus === 'Expired' && 'Overdue registration requires penalty settlement'}
+                                                {regStatus === 'For Transfer' && 'Ownership deed transfer to new owner'}
+                                                {regStatus === 'No Plate Issued' && 'Brand new vehicle or temporary plate record'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <ChevronDown 
+                                        size={16} 
+                                        className={`text-gray-400 transition-transform duration-300 ${isStatusDropdownOpen ? 'rotate-180 text-primary' : ''}`} 
+                                    />
+                                </button>
+
+                                {isStatusDropdownOpen && (
+                                    <div className="absolute left-0 right-0 z-50 mt-2 bg-[#141416]/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden divide-y divide-white/5 animate-in fade-in zoom-in-95 duration-150">
+                                        {[
+                                            { 
+                                                value: 'Active', 
+                                                label: 'Active / Pending Renewal', 
+                                                desc: 'Valid registration up for yearly renewal', 
+                                                icon: ShieldCheck, 
+                                                color: 'text-emerald-400',
+                                                bgColor: 'bg-emerald-500/10'
+                                            },
+                                            { 
+                                                value: 'Expired', 
+                                                label: 'Expired', 
+                                                desc: 'Overdue registration requires penalty settlement', 
+                                                icon: AlertCircle, 
+                                                color: 'text-rose-400',
+                                                bgColor: 'bg-rose-500/10'
+                                            },
+                                            { 
+                                                value: 'For Transfer', 
+                                                label: 'For Transfer of Ownership', 
+                                                desc: 'Ownership deed transfer to new owner', 
+                                                icon: ArrowRightLeft, 
+                                                color: 'text-blue-400',
+                                                bgColor: 'bg-blue-500/10'
+                                            },
+                                            { 
+                                                value: 'No Plate Issued', 
+                                                label: 'No Plate Issued Yet', 
+                                                desc: 'Brand new vehicle or temporary plate record', 
+                                                icon: Tag, 
+                                                color: 'text-amber-400',
+                                                bgColor: 'bg-amber-500/10'
+                                            },
+                                        ].map((opt) => {
+                                            const IconComp = opt.icon;
+                                            const isSelected = regStatus === opt.value;
+                                            return (
+                                                <button
+                                                    key={opt.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRegStatus(opt.value);
+                                                        setIsStatusDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full text-left p-3.5 flex items-center justify-between transition-colors group ${
+                                                        isSelected ? 'bg-primary/15' : 'hover:bg-white/[0.04]'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                            isSelected ? 'bg-primary text-black font-black' : `${opt.bgColor} ${opt.color} group-hover:scale-105`
+                                                        }`}>
+                                                            <IconComp size={16} />
+                                                        </div>
+                                                        <div>
+                                                            <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-primary' : 'text-white'}`}>
+                                                                {opt.label}
+                                                            </p>
+                                                            <p className="text-[10px] text-gray-400 mt-0.5">{opt.desc}</p>
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && <Check size={16} className="text-primary" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Preferred Assistance Type */}
-                            <div>
+                            <div className="relative" ref={assistanceTypeDropdownRef}>
                                 <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Preferred Assistance Type *</label>
-                                <select 
-                                    value={regAssistanceType}
-                                    onChange={(e) => setRegAssistanceType(e.target.value)}
-                                    className="w-full bg-[#111113] border border-white/5 p-4 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50"
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsAssistanceTypeDropdownOpen(!isAssistanceTypeDropdownOpen);
+                                        setIsVehicleTypeDropdownOpen(false);
+                                        setIsStatusDropdownOpen(false);
+                                        setIsBranchDropdownOpen(false);
+                                    }}
+                                    className={`w-full bg-[#111113] border p-3.5 rounded-xl text-xs text-white flex items-center justify-between transition-all duration-200 ${
+                                        isAssistanceTypeDropdownOpen ? 'border-primary shadow-lg shadow-primary/10' : 'border-white/10 hover:border-white/20'
+                                    }`}
                                 >
-                                    <option value="Registration Renewal">Vehicle Registration Renewal</option>
-                                    <option value="Transfer of Ownership">Transfer of Ownership</option>
-                                    <option value="Lost Plate Replacement">Lost Plate / Replacement Plate</option>
-                                    <option value="New Registration">New Vehicle Registration</option>
-                                    <option value="Other Concerns">Other Registration Concern</option>
-                                </select>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                                            {regAssistanceType === 'Registration Renewal' ? <RefreshCw size={16} /> :
+                                             regAssistanceType === 'Transfer of Ownership' ? <UserCheck size={16} /> :
+                                             regAssistanceType === 'Lost Plate Replacement' ? <FileCheck size={16} /> :
+                                             regAssistanceType === 'New Registration' ? <Sparkles size={16} /> :
+                                             <HelpCircle size={16} />}
+                                        </div>
+                                        <div className="text-left">
+                                            <p className="font-bold text-white leading-tight">{regAssistanceType}</p>
+                                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                                {regAssistanceType === 'Registration Renewal' && 'LTO Annual Registration Renewal with MVIR/Emission'}
+                                                {regAssistanceType === 'Transfer of Ownership' && 'Transfer Certificate of Registration to new owner'}
+                                                {regAssistanceType === 'Lost Plate Replacement' && 'Affidavit & replacement plate processing'}
+                                                {regAssistanceType === 'New Registration' && 'Initial registration for newly acquired vehicle'}
+                                                {regAssistanceType === 'Other Concerns' && 'Change engine, color, or special liaison request'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <ChevronDown 
+                                        size={16} 
+                                        className={`text-gray-400 transition-transform duration-300 ${isAssistanceTypeDropdownOpen ? 'rotate-180 text-primary' : ''}`} 
+                                    />
+                                </button>
+
+                                {isAssistanceTypeDropdownOpen && (
+                                    <div className="absolute left-0 right-0 z-50 mt-2 bg-[#141416]/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden divide-y divide-white/5 animate-in fade-in zoom-in-95 duration-150">
+                                        {[
+                                            { 
+                                                value: 'Registration Renewal', 
+                                                label: 'Vehicle Registration Renewal', 
+                                                desc: 'LTO Annual Renewal with MVIR & Emission', 
+                                                icon: RefreshCw 
+                                            },
+                                            { 
+                                                value: 'Transfer of Ownership', 
+                                                label: 'Transfer of Ownership', 
+                                                desc: 'Transfer Certificate of Registration to new owner', 
+                                                icon: UserCheck 
+                                            },
+                                            { 
+                                                value: 'Lost Plate Replacement', 
+                                                label: 'Lost Plate / Replacement Plate', 
+                                                desc: 'Affidavit & replacement plate processing', 
+                                                icon: FileCheck 
+                                            },
+                                            { 
+                                                value: 'New Registration', 
+                                                label: 'New Vehicle Registration', 
+                                                desc: 'Initial registration for newly acquired vehicle', 
+                                                icon: Sparkles 
+                                            },
+                                            { 
+                                                value: 'Other Concerns', 
+                                                label: 'Other Registration Concern', 
+                                                desc: 'Change engine, color, or special liaison request', 
+                                                icon: HelpCircle 
+                                            },
+                                        ].map((opt) => {
+                                            const IconComp = opt.icon;
+                                            const isSelected = regAssistanceType === opt.value;
+                                            return (
+                                                <button
+                                                    key={opt.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRegAssistanceType(opt.value);
+                                                        setIsAssistanceTypeDropdownOpen(false);
+                                                    }}
+                                                    className={`w-full text-left p-3.5 flex items-center justify-between transition-colors group ${
+                                                        isSelected ? 'bg-primary/15' : 'hover:bg-white/[0.04]'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                            isSelected ? 'bg-primary text-black font-black' : 'bg-white/5 text-gray-400 group-hover:text-primary group-hover:bg-primary/10'
+                                                        }`}>
+                                                            <IconComp size={16} />
+                                                        </div>
+                                                        <div>
+                                                            <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-primary' : 'text-white'}`}>
+                                                                {opt.label}
+                                                            </p>
+                                                            <p className="text-[10px] text-gray-400 mt-0.5">{opt.desc}</p>
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && <Check size={16} className="text-primary" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Location / Preferred Branch */}
                             <div className="relative" ref={branchDropdownRef}>
                                 <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Location or Preferred Branch/Area *</label>
-                                <div className="relative">
-                                    <input 
-                                        type="text"
-                                        readOnly
-                                        value={regLocation}
-                                        onClick={() => {
-                                            setIsBranchDropdownOpen(!isBranchDropdownOpen);
-                                            setBranchSearchQuery('');
-                                        }}
-                                        placeholder="Select or Search LTO Branch..."
-                                        className="w-full bg-[#111113] border border-white/5 p-4 pr-12 rounded-xl text-xs text-white focus:outline-none focus:border-primary/50 cursor-pointer placeholder-gray-600"
-                                    />
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
-                                        <MapPin size={16} className="text-primary/70" />
-                                        <ChevronDown size={14} className="text-gray-500" />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsBranchDropdownOpen(!isBranchDropdownOpen);
+                                        setIsVehicleTypeDropdownOpen(false);
+                                        setIsStatusDropdownOpen(false);
+                                        setIsAssistanceTypeDropdownOpen(false);
+                                        setBranchSearchQuery('');
+                                    }}
+                                    className={`w-full bg-[#111113] border p-3.5 rounded-xl text-xs text-white flex items-center justify-between transition-all duration-200 ${
+                                        isBranchDropdownOpen ? 'border-primary shadow-lg shadow-primary/10' : 'border-white/10 hover:border-white/20'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                                            <MapPin size={16} />
+                                        </div>
+                                        <div className="text-left truncate">
+                                            <p className={`font-bold leading-tight truncate ${regLocation ? 'text-white' : 'text-gray-500'}`}>
+                                                {regLocation || 'Select or Search LTO Branch...'}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                                                {regLocation ? 'Preferred designated processing district' : 'Choose nearest office for vehicle documentation'}
+                                            </p>
+                                        </div>
                                     </div>
-                                </div>
+                                    <ChevronDown 
+                                        size={16} 
+                                        className={`text-gray-400 shrink-0 ml-2 transition-transform duration-300 ${isBranchDropdownOpen ? 'rotate-180 text-primary' : ''}`} 
+                                    />
+                                </button>
 
                                 {isBranchDropdownOpen && (
                                     <div className="absolute left-0 right-0 z-50 mt-2 bg-[#141416]/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl max-h-[320px] flex flex-col overflow-hidden">
@@ -1051,12 +1792,24 @@ const LiaisonBookingFlow: React.FC = () => {
                     );
                 })()}
 
-                {/* Step 4 (or 3 for RegAssist): Documents Uploads */}
-                {((currentStep === 4 && !isRegAssist) || (currentStep === 3 && isRegAssist)) && (
+                {/* Step 4: Documents Uploads */}
+                {((currentStep === 4 && !isRegAssist) || (currentStep === 4 && isRegAssist)) && (
                     <div className="space-y-6 animate-fadeIn">
-                        <div>
-                            <h2 className="text-xl font-black uppercase tracking-tight mb-2">Upload Documents</h2>
-                            <p className="text-xs text-gray-400">Provide required files to process your request. Progress is simulated.</p>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-black uppercase tracking-tight mb-1">Upload Documents</h2>
+                                <p className="text-xs text-gray-400">Provide required files to process your request.</p>
+                            </div>
+                            {Object.keys(uploadedDocs).length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={clearAllUploadedDocs}
+                                    className="text-[10px] font-black uppercase tracking-wider text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded-lg border border-red-500/20 transition flex items-center gap-1 active:scale-95"
+                                >
+                                    <Trash2 size={12} />
+                                    <span>Clear All</span>
+                                </button>
+                            )}
                         </div>
 
                         <div className="space-y-4">
@@ -1074,8 +1827,8 @@ const LiaisonBookingFlow: React.FC = () => {
                             ]).map((docItem) => {
                                 const uploaded = uploadedDocs[docItem.key];
                                 return (
-                                    <div key={docItem.key} className="bg-[#111113] border border-white/5 p-4 rounded-xl">
-                                        <div className="flex justify-between items-center mb-3">
+                                    <div key={docItem.key} className="bg-[#111113] border border-white/5 p-4 rounded-xl space-y-3">
+                                        <div className="flex justify-between items-center">
                                             <span className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">{docItem.label}</span>
                                             {uploaded?.progress === 100 && <CheckCircle size={16} className="text-green-500" />}
                                         </div>
@@ -1103,17 +1856,109 @@ const LiaisonBookingFlow: React.FC = () => {
                                                 />
                                             </label>
                                         ) : (
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between items-center text-[10px] text-gray-400">
-                                                    <span className="truncate max-w-[180px] font-mono">{uploaded.file.name}</span>
-                                                    <span>{uploaded.progress}%</span>
-                                                </div>
-                                                <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div className="space-y-3 pt-1">
+                                                {/* File Information & Action Buttons */}
+                                                <div className="flex items-center gap-3 bg-black/40 p-2.5 rounded-xl border border-white/5">
+                                                    {/* Visual Thumbnail / Icon Preview */}
                                                     <div 
-                                                        className="h-full transition-all duration-300"
-                                                        style={{ width: `${uploaded.progress}%`, backgroundColor: accentColor }}
-                                                    ></div>
+                                                        onClick={() => setPreviewDoc({ label: docItem.label, file: uploaded.file })}
+                                                        className="w-14 h-14 rounded-lg bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center shrink-0 cursor-pointer group relative hover:border-primary/50 transition-all shadow-md"
+                                                    >
+                                                        {uploaded.file.url && (uploaded.file.type.startsWith('image/') || uploaded.file.url.startsWith('data:image')) ? (
+                                                            <>
+                                                                <img 
+                                                                    src={uploaded.file.url} 
+                                                                    alt={uploaded.file.name} 
+                                                                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                                                                />
+                                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                                    <Eye size={16} className="text-white" />
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            <div className="flex flex-col items-center justify-center text-primary group-hover:scale-105 transition-transform">
+                                                                <FileText size={20} />
+                                                                <span className="text-[7px] font-black uppercase tracking-wider mt-0.5 text-gray-400">PDF</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* File Metadata */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="truncate text-xs font-bold text-white font-mono leading-tight">
+                                                                {uploaded.file.name}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-[9px] text-gray-400 font-mono font-medium">
+                                                                {formatFileSize(uploaded.file.size)}
+                                                            </span>
+                                                            <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-0.5">
+                                                                <Check size={10} /> Ready
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Action Controls */}
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        {/* Full Preview Button */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPreviewDoc({ label: docItem.label, file: uploaded.file })}
+                                                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 text-gray-300 hover:text-white flex items-center justify-center transition-all active:scale-95"
+                                                            title="View full image"
+                                                        >
+                                                            <Maximize2 size={13} />
+                                                        </button>
+
+                                                        {/* Re-upload button */}
+                                                        <label 
+                                                            htmlFor={`liaison-document-${docItem.key}`} 
+                                                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 text-gray-300 hover:text-white flex items-center justify-center cursor-pointer transition-all active:scale-95" 
+                                                            title="Re-upload or change photo"
+                                                        >
+                                                            <RefreshCw size={13} />
+                                                            <input 
+                                                                id={`liaison-document-${docItem.key}`}
+                                                                name={`liaison-document-${docItem.key}`}
+                                                                type="file" 
+                                                                accept="image/*,application/pdf"
+                                                                className="hidden" 
+                                                                onChange={e => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (file) {
+                                                                        const reader = new FileReader();
+                                                                        reader.onloadend = () => {
+                                                                            simulateUpload(docItem.key, file.name, file.size, file.type, reader.result as string);
+                                                                        };
+                                                                        reader.readAsDataURL(file);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+
+                                                        {/* Delete button */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeUploadedDoc(docItem.key)}
+                                                            className="w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 hover:text-red-300 flex items-center justify-center transition-all active:scale-95"
+                                                            title="Delete file"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
                                                 </div>
+
+                                                {/* Progress Bar (if still in progress) */}
+                                                {uploaded.progress < 100 && (
+                                                    <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                                        <div 
+                                                            className="h-full transition-all duration-300"
+                                                            style={{ width: `${uploaded.progress}%`, backgroundColor: accentColor }}
+                                                        ></div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1243,8 +2088,8 @@ const LiaisonBookingFlow: React.FC = () => {
                     </div>
                 )}
 
-                {/* Step 6: Schedule */}
-                {((currentStep === 6 && !isRegAssist) || (currentStep === 4 && isRegAssist)) && (
+                {/* Step 6 (or 5 for RegAssist): Schedule */}
+                {((currentStep === 6 && !isRegAssist) || (currentStep === 5 && isRegAssist)) && (
                     <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Select Date & Time</h2>
@@ -1530,7 +2375,28 @@ const LiaisonBookingFlow: React.FC = () => {
 
                             {pickupOption !== 'Customer brings documents' && (
                                 <div className="space-y-1.5 animate-fadeIn">
-                                    <label htmlFor="liaison-pickup" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block">Pickup Address *</label>
+                                    <div className="flex items-center justify-between">
+                                        <label htmlFor="liaison-pickup" className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block">Pickup Address *</label>
+                                        <button
+                                            type="button"
+                                            onClick={handleUsePickupLiveLocation}
+                                            disabled={isLocatingPickup}
+                                            className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition-colors border border-white/10 disabled:opacity-50"
+                                            style={{ color: isLocatingPickup ? accentColor : undefined }}
+                                        >
+                                            {isLocatingPickup ? (
+                                                <>
+                                                    <Loader2 size={11} className="animate-spin" />
+                                                    <span>Locking GPS...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Navigation size={11} style={{ color: accentColor }} />
+                                                    <span>Live GPS</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                     <div className="relative flex items-center">
                                         <MapPin className="absolute left-4 pointer-events-none text-gray-500" size={14} style={{ color: accentColor }} />
                                         <input 
@@ -1582,8 +2448,8 @@ const LiaisonBookingFlow: React.FC = () => {
                     </div>
                 )}
 
-                {/* Step 8 (or 5 for RegAssist): Review & Summary / Checkout */}
-                {((currentStep === 8 && !isRegAssist) || (currentStep === 5 && isRegAssist)) && (
+                {/* Step 8 (or 6 for RegAssist): Review & Summary / Checkout */}
+                {((currentStep === 8 && !isRegAssist) || (currentStep === 6 && isRegAssist)) && (
                     <div className="space-y-6 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-black uppercase tracking-tight mb-2">Review Summary</h2>
@@ -1639,17 +2505,35 @@ const LiaisonBookingFlow: React.FC = () => {
                                                 <FileCheck size={15} style={{ color: accentColor }} />
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-0.5">Uploaded Documents</span>
+                                                <span className="text-[8px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Uploaded Documents</span>
                                                 {Object.keys(uploadedDocs).length === 0 ? (
                                                     <p className="text-[10px] text-gray-500 mt-1">No documents uploaded.</p>
                                                 ) : (
-                                                    <div className="mt-1.5 space-y-1.5">
-                                                        {Object.keys(uploadedDocs).map(key => (
-                                                            <div key={key} className="flex items-center gap-1.5 text-[10px] text-gray-300">
-                                                                <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                                                                <span className="font-mono truncate max-w-[200px]">{uploadedDocs[key].file.name}</span>
-                                                            </div>
-                                                        ))}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                                                        {Object.keys(uploadedDocs).map(key => {
+                                                            const doc = uploadedDocs[key];
+                                                            const isImg = doc.file.url && (doc.file.type.startsWith('image/') || doc.file.url.startsWith('data:image'));
+                                                            return (
+                                                                <div 
+                                                                    key={key} 
+                                                                    onClick={() => setPreviewDoc({ label: key, file: doc.file })}
+                                                                    className="flex items-center gap-2.5 p-2 bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 rounded-lg cursor-pointer transition-all group"
+                                                                >
+                                                                    <div className="w-9 h-9 rounded bg-black/60 border border-white/10 overflow-hidden flex items-center justify-center shrink-0 relative">
+                                                                        {isImg ? (
+                                                                            <img src={doc.file.url} alt={doc.file.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                                        ) : (
+                                                                            <FileText size={16} className="text-primary" />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="text-[10px] font-bold text-white truncate font-mono">{doc.file.name}</p>
+                                                                        <p className="text-[9px] text-gray-400 font-mono">{formatFileSize(doc.file.size)}</p>
+                                                                    </div>
+                                                                    <Eye size={12} className="text-gray-500 group-hover:text-primary transition-colors shrink-0 mr-1" />
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 )}
                                             </div>
@@ -1829,34 +2713,26 @@ const LiaisonBookingFlow: React.FC = () => {
                                     <span className="text-base font-black" style={{ color: accentColor }}>₱{fees.total.toLocaleString()}</span>
                                 </div>
 
-                                {/* Downpayment / Final Payment Breakdown (Standard only) */}
-                                {!isRegAssist ? (
-                                    <div className="p-3.5 bg-white/[0.02] border border-dashed border-white/10 rounded-xl space-y-2">
-                                        <div className="flex justify-between text-xs text-gray-400">
-                                            <span className="flex items-center gap-1.5">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                                Downpayment (50%)
-                                            </span>
-                                            <span className="font-bold text-white">₱{(fees.total * 0.5).toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex justify-between text-xs text-gray-400">
-                                            <span className="flex items-center gap-1.5">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
-                                                Final Payment (50%)
-                                            </span>
-                                            <span className="font-bold text-gray-400">₱{(fees.total * 0.5).toLocaleString()}</span>
-                                        </div>
-                                        <p className="text-[9px] text-gray-500 leading-normal pt-1 border-t border-white/5">
-                                            * You will pay the 50% downpayment now to process your order. The remaining 50% final payment will be settled upon LTO document handling completion.
-                                        </p>
+                                {/* Downpayment / Final Payment Breakdown */}
+                                <div className="p-3.5 bg-white/[0.02] border border-dashed border-white/10 rounded-xl space-y-2">
+                                    <div className="flex justify-between text-xs text-gray-400">
+                                        <span className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                            Downpayment (50%)
+                                        </span>
+                                        <span className="font-bold text-white">₱{(fees.total * 0.5).toLocaleString()}</span>
                                     </div>
-                                ) : (
-                                    <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
-                                        <p className="text-[10px] text-emerald-400 leading-normal text-center font-medium">
-                                            No immediate payment is required. Your request will be reviewed by our admin, who will verify documents and update your status in real-time.
-                                        </p>
+                                    <div className="flex justify-between text-xs text-gray-400">
+                                        <span className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
+                                            Final Payment (50%)
+                                        </span>
+                                        <span className="font-bold text-gray-400">₱{(fees.total * 0.5).toLocaleString()}</span>
                                     </div>
-                                )}
+                                    <p className="text-[9px] text-gray-500 leading-normal pt-1 border-t border-white/5">
+                                        * A 50% downpayment via HitPay Online Payment is required to secure and process your request. The remaining 50% will be settled upon document handling completion.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1870,19 +2746,29 @@ const LiaisonBookingFlow: React.FC = () => {
                         <button 
                             onClick={handleNext}
                             disabled={!isStepValid()}
-                            className="flex-1 hover:opacity-90 disabled:bg-white/5 disabled:text-white/30 text-black font-black uppercase tracking-widest text-[11px] py-4 flex items-center justify-center gap-2 transition-colors rounded-xl"
+                            className="flex-1 hover:opacity-90 disabled:bg-white/5 disabled:text-white/30 text-black font-black uppercase tracking-widest text-[11px] py-4 flex items-center justify-center gap-2 transition-colors rounded-xl shadow-lg cursor-pointer"
                             style={{ backgroundColor: isStepValid() ? accentColor : undefined, color: isStepValid() ? '#ffffff' : undefined }}
                         >
-                            Next Step <ChevronRight size={16} />
+                            {isRegAssist && currentStep === 2 ? (
+                                <>
+                                    <span>Confirm Location</span>
+                                    <MapPin size={16} />
+                                </>
+                            ) : (
+                                <>
+                                    <span>Next Step</span>
+                                    <ChevronRight size={16} />
+                                </>
+                            )}
                         </button>
                     ) : (
                         <button 
                             onClick={handleSubmit}
                             disabled={submitting}
-                            className="flex-1 hover:opacity-90 disabled:opacity-50 text-white font-black uppercase tracking-widest text-[11px] py-4 flex items-center justify-center gap-2 transition-colors rounded-xl"
+                            className="flex-1 hover:opacity-90 disabled:opacity-50 text-white font-black uppercase tracking-widest text-[11px] py-4 flex items-center justify-center gap-2 transition-colors rounded-xl cursor-pointer"
                             style={{ backgroundColor: accentColor }}
                         >
-                            {submitting ? <Spinner size="sm" /> : 'Confirm Booking'}
+                            {submitting ? <Spinner size="sm" /> : `Pay Deposit (₱${(fees.total * 0.5).toLocaleString()}) & Book`}
                         </button>
                     )}
                 </div>
@@ -1898,6 +2784,91 @@ const LiaisonBookingFlow: React.FC = () => {
                         setShowAddVehicleModal(false);
                     }}
                 />
+            )}
+
+            {/* Document Preview Lightbox Modal */}
+            {previewDoc && (
+                <div 
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 sm:p-6 animate-in fade-in duration-200"
+                    onClick={() => setPreviewDoc(null)}
+                >
+                    <div 
+                        className="relative w-full max-w-2xl bg-[#141416] border border-white/10 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/5 bg-white/[0.02]">
+                            <div className="min-w-0 pr-4">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-primary block">
+                                    Document Preview
+                                </span>
+                                <h3 className="text-sm font-bold text-white truncate mt-0.5">
+                                    {previewDoc.label}
+                                </h3>
+                                <p className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
+                                    {previewDoc.file.name} • {formatFileSize(previewDoc.file.size)}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {previewDoc.file.url && (
+                                    <a
+                                        href={previewDoc.file.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download={previewDoc.file.name}
+                                        className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-300 hover:text-white transition-colors"
+                                        title="Open / Download original"
+                                    >
+                                        <ExternalLink size={14} />
+                                    </a>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewDoc(null)}
+                                    className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Modal Body / Image Viewer */}
+                        <div className="p-4 sm:p-6 overflow-y-auto flex items-center justify-center bg-black/60 min-h-[300px]">
+                            {previewDoc.file.url && (previewDoc.file.type.startsWith('image/') || previewDoc.file.url.startsWith('data:image')) ? (
+                                <img 
+                                    src={previewDoc.file.url} 
+                                    alt={previewDoc.file.name} 
+                                    className="max-h-[60vh] max-w-full object-contain rounded-lg shadow-lg border border-white/5"
+                                />
+                            ) : (
+                                <div className="text-center p-8 space-y-3">
+                                    <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto text-primary">
+                                        <FileText size={32} />
+                                    </div>
+                                    <p className="text-xs font-bold text-white font-mono">{previewDoc.file.name}</p>
+                                    <p className="text-[11px] text-gray-400 max-w-xs mx-auto">
+                                        This is a PDF or binary document. You can open or download the original file using the button above.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-3 border-t border-white/5 bg-white/[0.02] flex items-center justify-between text-[11px]">
+                            <div className="flex items-center gap-1.5 text-emerald-400">
+                                <CheckCircle size={13} />
+                                <span className="font-semibold">Document Verified & Ready</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewDoc(null)}
+                                className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

@@ -56,6 +56,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const markersRef = useRef<Record<string, any>>({}); // Store marker instances by id
 
     const [leafletLoaded, setLeafletLoaded] = React.useState(typeof window !== 'undefined' && !!(window as any).L);
+    const [mapReadyVersion, setMapReadyVersion] = React.useState(0);
 
     useEffect(() => {
         if (leafletLoaded) return;
@@ -84,7 +85,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
         const tileConfig = getLeafletTileConfig(db?.settings);
         tileLayerRef.current = L.tileLayer(tileConfig.url, tileConfig.options).addTo(mapInstanceRef.current);
 
+        // Reset tracking references for new map instance
+        markersRef.current = {};
+        polylinesRef.current = {};
         markersLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+        polylinesLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+
+        // Trigger reactive marker and polyline placement
+        setMapReadyVersion(v => v + 1);
 
         if (onMapClick) {
             mapInstanceRef.current.on('click', onMapClick);
@@ -106,6 +114,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
             clearTimeout(timer1);
             clearTimeout(timer2);
             clearTimeout(timer3);
+            if (markersLayerRef.current) {
+                try { markersLayerRef.current.clearLayers(); } catch (e) {}
+                markersLayerRef.current = null;
+            }
+            if (polylinesLayerRef.current) {
+                try { polylinesLayerRef.current.clearLayers(); } catch (e) {}
+                polylinesLayerRef.current = null;
+            }
+            markersRef.current = {};
+            polylinesRef.current = {};
             if (mapInstanceRef.current) {
                 mapInstanceRef.current.remove();
                 mapInstanceRef.current = null;
@@ -167,6 +185,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
 
         // Add or update markers
         markers.forEach(markerData => {
+            if (!markerData || !markerData.position || isNaN(markerData.position[0]) || isNaN(markerData.position[1])) {
+                return;
+            }
+
             if (markersRef.current[markerData.id]) {
                 // Marker exists, update its position and icon
                 const marker = markersRef.current[markerData.id];
@@ -174,6 +196,10 @@ const MapComponent: React.FC<MapComponentProps> = ({
                     marker.setLatLng(markerData.position);
                     if (markerData.icon) marker.setIcon(markerData.icon);
                     if (markerData.popupContent) marker.setPopupContent(markerData.popupContent);
+                    // Ensure marker is attached to current layer
+                    if (!markersLayerRef.current.hasLayer(marker)) {
+                        markersLayerRef.current.addLayer(marker);
+                    }
                 } catch (e) {
                     // Marker may be in a bad state, remove and recreate
                     try { markersLayerRef.current.removeLayer(marker); } catch (e2) {}
@@ -191,7 +217,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 markersRef.current[markerData.id] = marker;
             }
         });
-    }, [markers]); // Re-run whenever markers change
+    }, [markers, mapReadyVersion]); // Re-run whenever markers or mapReadyVersion change
 
     // Polylines layer
     const polylinesLayerRef = useRef<any>(null);
@@ -229,6 +255,9 @@ const MapComponent: React.FC<MapComponentProps> = ({
                         lineCap: p.lineCap || 'round',
                         lineJoin: p.lineJoin || 'round'
                     });
+                    if (!polylinesLayerRef.current.hasLayer(poly)) {
+                        polylinesLayerRef.current.addLayer(poly);
+                    }
                 } catch (e) {
                     try { polylinesLayerRef.current.removeLayer(poly); } catch (e2) {}
                     delete polylinesRef.current[p.id];
@@ -254,7 +283,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 polylinesRef.current[p.id] = newPoly;
             }
         });
-    }, [polylines]);
+    }, [polylines, mapReadyVersion]);
 
     return <div ref={mapRef} className={className} style={{ height: '100%', width: '100%', zIndex: 0, ...style }} />;
 };

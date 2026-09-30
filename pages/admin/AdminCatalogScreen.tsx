@@ -5,7 +5,7 @@ import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { fileToBase64 } from '../../utils/fileUtils';
 import EnhancedKPICard from '../../components/admin/EnhancedKPICard';
-import { Plus, Search, Package, Table as WrenchPen, TrendingUp, AlertCircle, ShoppingBag, Edit, Trash2, Camera, User, BadgeCheck, Clock, Shield, Tag, Star, DollarSign, ArrowUpDown, ChevronDown, Wrench, Download, Upload, Filter, Edit2, Check, X, Copy, Grid, List, ToggleLeft, ToggleRight, Eye, Image as ImageIcon, MoreVertical, Car, UserCheck, Users, MapPin, FileText } from 'lucide-react';
+import { Plus, Search, Package, Table as WrenchPen, TrendingUp, AlertCircle, ShoppingBag, Edit, Trash2, Camera, User, BadgeCheck, Clock, Shield, Tag, Star, DollarSign, ArrowUpDown, ChevronDown, Wrench, Download, Upload, Filter, Edit2, Check, X, Copy, Grid, List, ToggleLeft, ToggleRight, Eye, Image as ImageIcon, MoreVertical, Car, UserCheck, Users, MapPin, FileText, CheckCircle2, Sparkles, Truck } from 'lucide-react';
 import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { doc, setDoc, addDoc, collection, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
@@ -123,16 +123,7 @@ const CategoryManagerModal: React.FC<{
 
     const handleDelete = (type: 'service' | 'part', categoryToDelete: string) => {
         if (categoryToDelete === 'SPECIAL Services') {
-            alert('The "SPECIAL Services" category is protected and cannot be deleted.');
             return;
-        }
-        const itemCount = type === 'service' ? getServiceCount(categoryToDelete) : getPartCount(categoryToDelete);
-        
-        if (itemCount > 0) {
-            const confirmDelete = window.confirm(
-                `Warning: There are ${itemCount} ${type === 'service' ? 'services' : 'parts/tools'} registered under "${categoryToDelete}". \n\nDeleting this category will leave them uncategorized. Proceed?`
-            );
-            if (!confirmDelete) return;
         }
 
         if (type === 'service') {
@@ -1039,6 +1030,8 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
         return list.length > 0 ? list : defaultParts;
     }, [db?.settings?.partCategories, categories]);
 
+    const [formTab, setFormTab] = useState<'basic' | 'fitment' | 'specs' | 'images' | 'badges'>('basic');
+
     const [formData, setFormData] = useState({ 
         id: part?.id, 
         name: part?.name || '', 
@@ -1048,14 +1041,114 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
         category: part?.category || (activeCategories[0] || ''), 
         sku: part?.sku || '', 
         imageUrl: part?.imageUrls?.[0] || '', 
+        imageUrls: part?.imageUrls && part.imageUrls.length > 0 ? [...part.imageUrls] : (part?.imageUrls?.[0] ? [part.imageUrls[0]] : []),
         stock: part?.stock ?? '', 
-        brand: part?.brand || '' 
+        brand: part?.brand || '',
+        rating: part?.rating ?? 4.9,
+        reviewCount: part?.reviewCount ?? 128,
+        warrantyTitle: part?.warrantyInfo?.title || 'Warranty',
+        warrantyCoverage: part?.warrantyInfo?.coverage || '1-Year Coverage',
+        warrantySubtitle: part?.warrantyInfo?.subtitle || 'Official Factory Protection',
+        shippingTitle: part?.shippingInfo?.title || 'Shipping',
+        shippingEta: part?.shippingInfo?.eta || 'Express 2-3 Days',
+        shippingSubtitle: part?.shippingInfo?.subtitle || 'Tracked Courier Dispatch'
     });
+
+    const [vehicleFitment, setVehicleFitment] = useState<Array<{ make: string; models: string }>>(
+        part?.vehicleFitment && part.vehicleFitment.length > 0 
+            ? part.vehicleFitment 
+            : []
+    );
+
+    const [technicalSpecs, setTechnicalSpecs] = useState<Array<{ label: string; value: string }>>(
+        part?.technicalSpecs && part.technicalSpecs.length > 0
+            ? part.technicalSpecs
+            : []
+    );
 
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [isUploading, setIsUploading] = useState(false);
     const [isAddingCategory, setIsAddingCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');
+    const [newImageUrl, setNewImageUrl] = useState('');
+
+    // Pre-fill presets based on category if empty
+    const handleLoadCategoryPresets = () => {
+        const cat = (formData.category || '').toLowerCase();
+        const nm = (formData.name || '').toLowerCase();
+
+        // Fitment presets
+        if (cat.includes('brake') || nm.includes('brake') || nm.includes('pad')) {
+            setVehicleFitment([
+                { make: 'Toyota', models: 'Vios (2013-2024), Yaris, Corolla Altis' },
+                { make: 'Honda', models: 'City (GM6/GN2), Civic, Jazz/Fit' },
+                { make: 'Mitsubishi', models: 'Mirage G4, Xpander (Cross)' },
+                { make: 'Nissan', models: 'Almera (N17/N18), Sentra' },
+            ]);
+            setTechnicalSpecs([
+                { label: 'Material', value: 'Premium Copper-Free Ceramic Composite' },
+                { label: 'Position', value: 'Front Axle (Left & Right)' },
+                { label: 'Friction Code', value: 'GG Rated (DOT Standard)' },
+                { label: 'Thermal Tolerance', value: 'Up to 650°C (1200°F)' },
+                { label: 'Hardware Included', value: 'Multi-layer Shims & Wear Clips' },
+                { label: 'Certifications', value: 'ISO 9001 / ECE R90 Certified' },
+            ]);
+        } else if (cat.includes('engine') || nm.includes('oil')) {
+            setVehicleFitment([
+                { make: 'Gasoline & Hybrid', models: 'All 4-Cylinder & V6 Petrol/Hybrid Engines' },
+                { make: 'Toyota / Lexus', models: 'Vios, Innova, Fortuner Gas, Camry, RAV4' },
+                { make: 'Honda', models: 'Civic, City, CR-V, HR-V, Accord' },
+                { make: 'Mazda / Subaru', models: 'SkyActiv-G & Boxer Engines' },
+            ]);
+            setTechnicalSpecs([
+                { label: 'Viscosity Grade', value: 'SAE 5W-30 Full Synthetic' },
+                { label: 'Volume', value: '5 Quarts (4.73 Liters)' },
+                { label: 'API Standard', value: 'API SP / ILSAC GF-6A' },
+                { label: 'Drain Interval', value: 'Up to 10,000 Miles / 1 Year' },
+                { label: 'Engine Protection', value: 'Advanced Sludge & Thermal Breakdown' },
+                { label: 'Manufacturer Approvals', value: 'Dexos1 Gen3, OEM Compliant' },
+            ]);
+        } else if (cat.includes('filter')) {
+            setVehicleFitment([
+                { make: 'Universal Fit', models: 'Standard OEM mounting & dimensions' },
+                { make: 'Asian Compacts', models: 'Toyota, Honda, Mitsubishi, Nissan, Suzuki' },
+            ]);
+            setTechnicalSpecs([
+                { label: 'Media Type', value: 'Multi-Fiber Pleated Micro-Cellulose' },
+                { label: 'Filtration Rating', value: '99.2% Efficiency at 20 Microns' },
+                { label: 'Seal Design', value: 'High-Temperature Polyurethane Gasket' },
+                { label: 'Service Interval', value: '15,000 - 30,000 KM' },
+                { label: 'Flow Resistance', value: 'Ultra-Low Airflow Restriction' },
+                { label: 'Compatibility', value: 'Direct Drop-in OEM Replacement' },
+            ]);
+        } else if (cat.includes('tool')) {
+            setVehicleFitment([
+                { make: 'Universal Mechanics', models: 'Standard Workshop & Automotive Application' }
+            ]);
+            setTechnicalSpecs([
+                { label: 'Material', value: 'Forged Chrome Vanadium (Cr-V) Steel' },
+                { label: 'Finish', value: 'Corrosion-Resistant Mirror Polish' },
+                { label: 'Drive / Size', value: 'Standard Metric & Imperial' },
+                { label: 'Tolerance Standard', value: 'ANSI / DIN Precision Spec' },
+                { label: 'Ergonomics', value: 'Slip-Resistant Textured Comfort Grip' },
+                { label: 'Warranty Type', value: 'Lifetime Mechanics Assurance' },
+            ]);
+        } else {
+            setVehicleFitment([
+                { make: 'Universal Fit', models: 'Standard OEM mounting & dimensions' },
+                { make: 'Asian Compacts', models: 'Toyota, Honda, Mitsubishi, Nissan, Suzuki' },
+                { make: 'Sedans & SUVs', models: 'Compatible across popular Philippine commuter lines' },
+            ]);
+            setTechnicalSpecs([
+                { label: 'Build Material', value: 'Industrial OEM Grade Component' },
+                { label: 'Part Category', value: formData.category || 'Automotive Component' },
+                { label: 'Fitment Type', value: 'Direct Replacement' },
+                { label: 'SKU / Part ID', value: formData.sku || 'OEM-GEN-01' },
+                { label: 'Quality Standard', value: 'Rigorous Road Tested QA' },
+                { label: 'Warranty Support', value: '12-Month RidersBUD Protection' },
+            ]);
+        }
+    };
 
     const validate = (data = formData) => {
         const newErrors: { [key: string]: string } = {};
@@ -1065,7 +1158,7 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
         if (data.stock === '' || Number(data.stock) < 0) newErrors.stock = "Stock is required.";
         if (!data.category.trim()) newErrors.category = "Category is required.";
         if (!data.sku.trim()) newErrors.sku = "SKU is required.";
-        if (!data.imageUrl) newErrors.imageUrl = "Image is required.";
+        if (!data.imageUrl && (!data.imageUrls || data.imageUrls.length === 0)) newErrors.imageUrl = "At least one image is required.";
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -1083,7 +1176,8 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
             try {
                 setIsUploading(true);
                 const downloadURL = await storageService.uploadFile(`catalog/parts/${Date.now()}_${file.name}`, file);
-                const newData = { ...formData, imageUrl: downloadURL };
+                const updatedList = formData.imageUrls.includes(downloadURL) ? formData.imageUrls : [downloadURL, ...formData.imageUrls];
+                const newData = { ...formData, imageUrl: downloadURL, imageUrls: updatedList };
                 setFormData(newData);
                 validate(newData);
             } catch (err) {
@@ -1093,6 +1187,37 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
                 setIsUploading(false);
             }
         }
+    };
+
+    const handleAddImageUrl = () => {
+        if (!newImageUrl.trim()) return;
+        const url = newImageUrl.trim();
+        const updatedList = formData.imageUrls.includes(url) ? formData.imageUrls : [...formData.imageUrls, url];
+        setFormData(prev => ({
+            ...prev,
+            imageUrl: prev.imageUrl || url,
+            imageUrls: updatedList
+        }));
+        setNewImageUrl('');
+    };
+
+    const handleRemoveImage = (indexToRemove: number) => {
+        const updated = formData.imageUrls.filter((_, idx) => idx !== indexToRemove);
+        setFormData(prev => ({
+            ...prev,
+            imageUrl: updated[0] || '',
+            imageUrls: updated
+        }));
+    };
+
+    const handleSetPrimaryImage = (index: number) => {
+        const selected = formData.imageUrls[index];
+        const rest = formData.imageUrls.filter((_, idx) => idx !== index);
+        setFormData(prev => ({
+            ...prev,
+            imageUrl: selected,
+            imageUrls: [selected, ...rest]
+        }));
     };
 
     const handleQuickAddCategory = async () => {
@@ -1124,254 +1249,715 @@ const PartForm: React.FC<{ part?: Part; onSave: (part: any) => void; onCancel: (
         }
     };
 
+    // Fitment Row Management
+    const handleAddFitmentRow = () => {
+        setVehicleFitment(prev => [...prev, { make: '', models: '' }]);
+    };
+    const handleFitmentChange = (index: number, field: 'make' | 'models', val: string) => {
+        setVehicleFitment(prev => prev.map((item, i) => i === index ? { ...item, [field]: val } : item));
+    };
+    const handleRemoveFitmentRow = (index: number) => {
+        setVehicleFitment(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Technical Specs Row Management
+    const handleAddSpecRow = () => {
+        setTechnicalSpecs(prev => [...prev, { label: '', value: '' }]);
+    };
+    const handleSpecChange = (index: number, field: 'label' | 'value', val: string) => {
+        setTechnicalSpecs(prev => prev.map((item, i) => i === index ? { ...item, [field]: val } : item));
+    };
+    const handleRemoveSpecRow = (index: number) => {
+        setTechnicalSpecs(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (validate()) {
-            const { imageUrl, ...rest } = formData;
-            onSave({ ...rest, price: Number(formData.price), salesPrice: formData.salesPrice ? Number(formData.salesPrice) : undefined, stock: Number(formData.stock), imageUrls: [imageUrl] });
+            const { 
+                imageUrl, 
+                imageUrls, 
+                rating, 
+                reviewCount, 
+                warrantyTitle, 
+                warrantyCoverage, 
+                warrantySubtitle, 
+                shippingTitle, 
+                shippingEta, 
+                shippingSubtitle, 
+                ...rest 
+            } = formData;
+
+            const finalImages = imageUrls.length > 0 ? imageUrls : [imageUrl];
+
+            // Filter out empty rows
+            const cleanFitment = vehicleFitment.filter(f => f.make.trim() || f.models.trim());
+            const cleanSpecs = technicalSpecs.filter(s => s.label.trim() || s.value.trim());
+
+            onSave({ 
+                ...rest, 
+                price: Number(formData.price), 
+                salesPrice: formData.salesPrice ? Number(formData.salesPrice) : undefined, 
+                stock: Number(formData.stock), 
+                imageUrls: finalImages,
+                vehicleFitment: cleanFitment,
+                technicalSpecs: cleanSpecs,
+                rating: Number(rating) || 4.9,
+                reviewCount: Number(reviewCount) || 128,
+                warrantyInfo: {
+                    title: warrantyTitle || 'Warranty',
+                    coverage: warrantyCoverage || '1-Year Coverage',
+                    subtitle: warrantySubtitle || 'Official Factory Protection'
+                },
+                shippingInfo: {
+                    title: shippingTitle || 'Shipping',
+                    eta: shippingEta || 'Express 2-3 Days',
+                    subtitle: shippingSubtitle || 'Tracked Courier Dispatch'
+                }
+            });
         }
     };
 
-    const isSaveDisabled = !formData.name || formData.price === '' || formData.stock === '' || !formData.category || !formData.sku || !formData.imageUrl || isUploading;
+    const isSaveDisabled = !formData.name || formData.price === '' || formData.stock === '' || !formData.category || !formData.sku || (formData.imageUrls.length === 0 && !formData.imageUrl) || isUploading;
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-6 animate-fadeIn" noValidate>
-            {/* Header Image Upload */}
-            <div className="relative group">
-                <div className="w-full h-48 rounded-2xl bg-black/40 border-2 border-dashed border-white/10 overflow-hidden flex items-center justify-center transition-all group-hover:border-primary/50">
-                    {isUploading ? (
-                        <div className="text-center space-y-2">
-                            <Spinner size="md" color="text-primary" />
-                            <p className="text-sm text-gray-500 font-medium">Uploading...</p>
-                        </div>
-                    ) : formData.imageUrl ? (
-                        <div className="relative w-full h-full">
-                            <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <Camera className="text-white" size={32} />
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="text-center space-y-2">
-                            <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center mx-auto">
-                                <ImageIcon className="text-gray-500" size={24} />
-                            </div>
-                            <p className="text-sm text-gray-500 font-medium">Click to upload part image</p>
-                        </div>
-                    )}
-                    <input
-                        id="part-image"
-                        name="partImage"
-                        type="file"
-                        onChange={handleFileChange}
-                        accept="image/*"
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                </div>
-                {errors.imageUrl && <p className="text-red-400 text-xs mt-2 flex items-center gap-1"><X size={12} /> {errors.imageUrl}</p>}
-            </div>
-
-            <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <label htmlFor="part-name" className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                            <Package size={14} /> Part Name
-                        </label>
-                        <input
-                            type="text"
-                            id="part-name"
-                            name="name"
-                            value={formData.name}
-                            onChange={handleChange}
-                            placeholder="e.g. Premium Brake Pads"
-                            autoComplete="off"
-                            className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.name ? 'border-red-500/50' : 'border-white/10'}`}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label htmlFor="part-sku" className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                            <Tag size={14} /> SKU
-                        </label>
-                        <input
-                            type="text"
-                            id="part-sku"
-                            name="sku"
-                            value={formData.sku}
-                            onChange={handleChange}
-                            placeholder="SKU-XXXX-X"
-                            autoComplete="off"
-                            className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.sku ? 'border-red-500/50' : 'border-white/10'}`}
-                        />
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                            <label htmlFor="part-category" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
-                                <Package size={14} /> Category
-                            </label>
-                            {!isAddingCategory ? (
-                                <button
-                                    type="button"
-                                    onClick={() => setIsAddingCategory(true)}
-                                    className="text-[10px] font-black text-primary hover:text-orange-400 transition-colors uppercase tracking-wider flex items-center gap-0.5"
-                                >
-                                    <Plus size={10} /> Add Category
-                                </button>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={() => setIsAddingCategory(false)}
-                                    className="text-[10px] font-black text-gray-500 hover:text-gray-400 transition-colors uppercase tracking-wider"
-                                >
-                                    Cancel
-                                </button>
-                            )}
-                        </div>
-
-                        {!isAddingCategory ? (
-                            <div className="relative">
-                                <select
-                                    id="part-category"
-                                    name="category"
-                                    value={formData.category}
-                                    onChange={handleChange}
-                                    className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white focus:ring-2 focus:ring-primary focus:border-transparent transition-all appearance-none pr-10 ${errors.category ? 'border-red-500/50' : 'border-white/10'}`}
-                                >
-                                    <option value="" disabled>Select Category</option>
-                                    {activeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                </select>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                                    <ChevronDown size={18} />
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="flex gap-2 animate-fadeIn">
-                                <input
-                                    type="text"
-                                    id="part-new-category"
-                                    name="newPartCategoryName"
-                                    value={newCategoryName}
-                                    onChange={e => setNewCategoryName(e.target.value)}
-                                    placeholder="Enter new category name..."
-                                    className="flex-grow py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-xs"
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleQuickAddCategory();
-                                        }
-                                    }}
-                                />
-                                <button
-                                    type="button"
-                                    onClick={handleQuickAddCategory}
-                                    className="bg-primary hover:bg-orange-600 text-white px-4 rounded-xl transition-all flex items-center justify-center active:scale-95"
-                                >
-                                    <Check size={18} />
-                                </button>
-                            </div>
-                        )}
-                        {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
-                    </div>
-
-                    <div className="space-y-2">
-                        <label htmlFor="part-brand" className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                            <Check size={14} /> Brand/Manufacturer
-                        </label>
-                        <input
-                            type="text"
-                            id="part-brand"
-                            name="brand"
-                            value={formData.brand}
-                            onChange={handleChange}
-                            placeholder="e.g. Brembo, Bosch"
-                            autoComplete="off"
-                            className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                        />
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <label htmlFor="part-description" className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                        <Package size={14} /> Description
-                    </label>
-                    <textarea
-                        id="part-description"
-                        name="description"
-                        value={formData.description}
-                        onChange={handleChange}
-                        placeholder="Key features, compatibility, and specifications..."
-                        rows={2}
-                        className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent resize-none transition-all"
-                    />
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                        <label htmlFor="part-price" className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                            <DollarSign size={14} /> Price (₱)
-                        </label>
-                        <input
-                            type="number"
-                            id="part-price"
-                            name="price"
-                            value={formData.price}
-                            onChange={handleChange}
-                            placeholder="0.00"
-                            autoComplete="off"
-                            className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.price ? 'border-red-500/50' : 'border-white/10'}`}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label htmlFor="part-sale-price" className="text-xs font-bold text-orange-400  tracking-wider flex items-center gap-2">
-                            <TrendingUp size={14} /> Sale (₱)
-                        </label>
-                        <input
-                            type="number"
-                            id="part-sale-price"
-                            name="salesPrice"
-                            value={formData.salesPrice}
-                            onChange={handleChange}
-                            placeholder="Optional"
-                            autoComplete="off"
-                            className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${errors.salesPrice ? 'border-red-500/50' : 'border-white/10'}`}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label htmlFor="part-stock" className="text-xs font-bold text-gray-400  tracking-wider flex items-center gap-2">
-                            <Package size={14} /> Stock
-                        </label>
-                        <input
-                            type="number"
-                            id="part-stock"
-                            name="stock"
-                            value={formData.stock}
-                            onChange={handleChange}
-                            placeholder="Qty"
-                            autoComplete="off"
-                            className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.stock ? 'border-red-500/50' : 'border-white/10'}`}
-                        />
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+        <form onSubmit={handleSubmit} className="space-y-5 animate-fadeIn" noValidate>
+            {/* Tab Navigation */}
+            <div className="flex items-center gap-1.5 p-1 bg-black/40 border border-white/10 rounded-2xl overflow-x-auto custom-scrollbar">
                 <button
                     type="button"
-                    onClick={onCancel}
-                    className="px-6 py-3 rounded-xl bg-white/5 text-gray-400 font-bold hover:bg-white/10 hover:text-white transition-all"
+                    onClick={() => setFormTab('basic')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black tracking-wider uppercase transition-all flex items-center gap-1.5 whitespace-nowrap ${formTab === 'basic' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                 >
-                    Cancel
+                    <Package size={13} />
+                    Basic Details
                 </button>
                 <button
-                    type="submit"
-                    disabled={isSaveDisabled}
-                    className="px-8 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:grayscale disabled:scale-100 flex items-center gap-2"
+                    type="button"
+                    onClick={() => setFormTab('fitment')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black tracking-wider uppercase transition-all flex items-center gap-1.5 whitespace-nowrap ${formTab === 'fitment' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                 >
-                    {isUploading ? <Spinner size="sm" color="text-white" /> : <Check size={18} />}
-                    {part ? 'Update Part' : 'Create Part'}
+                    <CheckCircle2 size={13} />
+                    Vehicle Fitment ({vehicleFitment.length})
                 </button>
+                <button
+                    type="button"
+                    onClick={() => setFormTab('specs')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black tracking-wider uppercase transition-all flex items-center gap-1.5 whitespace-nowrap ${formTab === 'specs' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                >
+                    <Wrench size={13} />
+                    Technical Specs ({technicalSpecs.length})
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setFormTab('images')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black tracking-wider uppercase transition-all flex items-center gap-1.5 whitespace-nowrap ${formTab === 'images' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                >
+                    <ImageIcon size={13} />
+                    Image Gallery ({formData.imageUrls.length})
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setFormTab('badges')}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black tracking-wider uppercase transition-all flex items-center gap-1.5 whitespace-nowrap ${formTab === 'badges' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                >
+                    <Shield size={13} />
+                    Badges & Rating
+                </button>
+            </div>
+
+            {/* TAB 1: BASIC DETAILS */}
+            {formTab === 'basic' && (
+                <div className="space-y-4 animate-fadeIn">
+                    {/* Primary Image Banner */}
+                    <div className="relative group">
+                        <div className="w-full h-40 rounded-2xl bg-black/40 border-2 border-dashed border-white/10 overflow-hidden flex items-center justify-center transition-all group-hover:border-primary/50">
+                            {isUploading ? (
+                                <div className="text-center space-y-2">
+                                    <Spinner size="md" color="text-primary" />
+                                    <p className="text-xs text-gray-500 font-medium">Uploading to Cloud Storage...</p>
+                                </div>
+                            ) : formData.imageUrl ? (
+                                <div className="relative w-full h-full">
+                                    <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-contain p-2" />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <Camera className="text-white" size={28} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-center space-y-1.5">
+                                    <div className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center mx-auto">
+                                        <ImageIcon className="text-gray-500" size={20} />
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium">Click to upload primary part image</p>
+                                </div>
+                            )}
+                            <input
+                                id="part-image"
+                                name="partImage"
+                                type="file"
+                                onChange={handleFileChange}
+                                accept="image/*"
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                        </div>
+                        {errors.imageUrl && <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1"><X size={12} /> {errors.imageUrl}</p>}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label htmlFor="part-name" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                <Package size={14} /> Part Name *
+                            </label>
+                            <input
+                                type="text"
+                                id="part-name"
+                                name="name"
+                                value={formData.name}
+                                onChange={handleChange}
+                                placeholder="e.g. Ceramic Brake Pads"
+                                autoComplete="off"
+                                className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.name ? 'border-red-500/50' : 'border-white/10'}`}
+                            />
+                            {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                            <label htmlFor="part-sku" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                <Tag size={14} /> SKU *
+                            </label>
+                            <input
+                                type="text"
+                                id="part-sku"
+                                name="sku"
+                                value={formData.sku}
+                                onChange={handleChange}
+                                placeholder="e.g. CER-PAD-F78"
+                                autoComplete="off"
+                                className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.sku ? 'border-red-500/50' : 'border-white/10'}`}
+                            />
+                            {errors.sku && <p className="text-red-400 text-xs mt-1">{errors.sku}</p>}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between items-center">
+                                <label htmlFor="part-category" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                    <Package size={14} /> Category *
+                                </label>
+                                {!isAddingCategory ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAddingCategory(true)}
+                                        className="text-[10px] font-black text-primary hover:text-orange-400 transition-colors uppercase tracking-wider flex items-center gap-0.5"
+                                    >
+                                        <Plus size={10} /> Add Category
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAddingCategory(false)}
+                                        className="text-[10px] font-black text-gray-500 hover:text-gray-400 transition-colors uppercase tracking-wider"
+                                    >
+                                        Cancel
+                                    </button>
+                                )}
+                            </div>
+
+                            {!isAddingCategory ? (
+                                <div className="relative">
+                                    <select
+                                        id="part-category"
+                                        name="category"
+                                        value={formData.category}
+                                        onChange={handleChange}
+                                        className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white focus:ring-2 focus:ring-primary focus:border-transparent transition-all appearance-none pr-10 ${errors.category ? 'border-red-500/50' : 'border-white/10'}`}
+                                    >
+                                        <option value="" disabled>Select Category</option>
+                                        {activeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                        <ChevronDown size={18} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex gap-2 animate-fadeIn">
+                                    <input
+                                        type="text"
+                                        id="part-new-category"
+                                        name="newPartCategoryName"
+                                        value={newCategoryName}
+                                        onChange={e => setNewCategoryName(e.target.value)}
+                                        placeholder="Enter new category name..."
+                                        className="flex-grow py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-xs"
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                handleQuickAddCategory();
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleQuickAddCategory}
+                                        className="bg-primary hover:bg-orange-600 text-white px-4 rounded-xl transition-all flex items-center justify-center active:scale-95"
+                                    >
+                                        <Check size={18} />
+                                    </button>
+                                </div>
+                            )}
+                            {errors.category && <p className="text-red-400 text-xs mt-1">{errors.category}</p>}
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label htmlFor="part-brand" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                <Check size={14} /> Brand / Manufacturer
+                            </label>
+                            <input
+                                type="text"
+                                id="part-brand"
+                                name="brand"
+                                value={formData.brand}
+                                onChange={handleChange}
+                                placeholder="e.g. Brembo, Bosch, ACDelco"
+                                autoComplete="off"
+                                className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                        <label htmlFor="part-description" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                            <Package size={14} /> Product Overview / Description
+                        </label>
+                        <textarea
+                            id="part-description"
+                            name="description"
+                            value={formData.description}
+                            onChange={handleChange}
+                            placeholder="Front set of premium ceramic brake pads for superior stopping power, low dust, and quiet operation..."
+                            rows={3}
+                            className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent resize-none transition-all"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                            <label htmlFor="part-price" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                <DollarSign size={14} /> Regular Price (₱) *
+                            </label>
+                            <input
+                                type="number"
+                                id="part-price"
+                                name="price"
+                                value={formData.price}
+                                onChange={handleChange}
+                                placeholder="2999"
+                                autoComplete="off"
+                                className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.price ? 'border-red-500/50' : 'border-white/10'}`}
+                            />
+                            {errors.price && <p className="text-red-400 text-xs mt-1">{errors.price}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                            <label htmlFor="part-sale-price" className="text-xs font-bold text-orange-400 tracking-wider flex items-center gap-2">
+                                <TrendingUp size={14} /> Sale Price (₱)
+                            </label>
+                            <input
+                                type="number"
+                                id="part-sale-price"
+                                name="salesPrice"
+                                value={formData.salesPrice}
+                                onChange={handleChange}
+                                placeholder="Optional"
+                                autoComplete="off"
+                                className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${errors.salesPrice ? 'border-red-500/50' : 'border-white/10'}`}
+                            />
+                            {errors.salesPrice && <p className="text-red-400 text-xs mt-1">{errors.salesPrice}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                            <label htmlFor="part-stock" className="text-xs font-bold text-gray-400 tracking-wider flex items-center gap-2">
+                                <Package size={14} /> Stock Level *
+                            </label>
+                            <input
+                                type="number"
+                                id="part-stock"
+                                name="stock"
+                                value={formData.stock}
+                                onChange={handleChange}
+                                placeholder="100"
+                                autoComplete="off"
+                                className={`w-full py-2 px-3 bg-black/40 border rounded-xl text-white placeholder-gray-600 focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${errors.stock ? 'border-red-500/50' : 'border-white/10'}`}
+                            />
+                            {errors.stock && <p className="text-red-400 text-xs mt-1">{errors.stock}</p>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 2: GUARANTEED VEHICLE FITMENT */}
+            {formTab === 'fitment' && (
+                <div className="space-y-4 animate-fadeIn">
+                    <div className="flex items-center justify-between bg-white/[0.02] p-3 rounded-xl border border-white/5">
+                        <div>
+                            <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                                <CheckCircle2 size={14} className="text-emerald-400" />
+                                Guaranteed Vehicle Fitment
+                            </h4>
+                            <p className="text-[11px] text-gray-400 mt-0.5">Define exact vehicle models compatible with this part or tool.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={handleLoadCategoryPresets}
+                                className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-primary border border-primary/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                            >
+                                <Sparkles size={12} /> Load Category Presets
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleAddFitmentRow}
+                                className="px-2.5 py-1.5 bg-primary hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                            >
+                                <Plus size={13} /> Add Vehicle
+                            </button>
+                        </div>
+                    </div>
+
+                    {vehicleFitment.length === 0 ? (
+                        <div className="text-center py-8 bg-black/20 rounded-2xl border border-white/5 border-dashed space-y-2">
+                            <p className="text-xs text-gray-400">No vehicle fitments defined yet for this product.</p>
+                            <p className="text-[10px] text-gray-500">Click "Load Category Presets" or "Add Vehicle" to specify compatible makes & models.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
+                            {vehicleFitment.map((row, idx) => (
+                                <div key={idx} className="flex items-center gap-2 bg-black/40 p-2.5 rounded-xl border border-white/5">
+                                    <div className="w-1/3">
+                                        <input
+                                            type="text"
+                                            value={row.make}
+                                            onChange={(e) => handleFitmentChange(idx, 'make', e.target.value)}
+                                            placeholder="Make (e.g. Toyota)"
+                                            className="w-full py-1.5 px-2.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white placeholder-gray-600 outline-none focus:border-primary/60 font-bold"
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <input
+                                            type="text"
+                                            value={row.models}
+                                            onChange={(e) => handleFitmentChange(idx, 'models', e.target.value)}
+                                            placeholder="Models (e.g. Vios (2013-2024), Yaris, Corolla Altis)"
+                                            className="w-full py-1.5 px-2.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white placeholder-gray-600 outline-none focus:border-primary/60"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveFitmentRow(idx)}
+                                        className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                                        title="Delete row"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* TAB 3: TECHNICAL SPECIFICATIONS */}
+            {formTab === 'specs' && (
+                <div className="space-y-4 animate-fadeIn">
+                    <div className="flex items-center justify-between bg-white/[0.02] p-3 rounded-xl border border-white/5">
+                        <div>
+                            <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                                <Wrench size={14} className="text-primary" />
+                                Technical Specifications Table
+                            </h4>
+                            <p className="text-[11px] text-gray-400 mt-0.5">Add custom specification key-value pairs matching the customer view.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={handleLoadCategoryPresets}
+                                className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-primary border border-primary/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                            >
+                                <Sparkles size={12} /> Load Category Presets
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleAddSpecRow}
+                                className="px-2.5 py-1.5 bg-primary hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                            >
+                                <Plus size={13} /> Add Spec
+                            </button>
+                        </div>
+                    </div>
+
+                    {technicalSpecs.length === 0 ? (
+                        <div className="text-center py-8 bg-black/20 rounded-2xl border border-white/5 border-dashed space-y-2">
+                            <p className="text-xs text-gray-400">No technical specifications defined yet for this product.</p>
+                            <p className="text-[10px] text-gray-500">Click "Load Category Presets" or "Add Spec" to add Material, Friction Code, Thermal Tolerance, etc.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
+                            {technicalSpecs.map((spec, idx) => (
+                                <div key={idx} className="flex items-center gap-2 bg-black/40 p-2.5 rounded-xl border border-white/5">
+                                    <div className="w-2/5">
+                                        <input
+                                            type="text"
+                                            value={spec.label}
+                                            onChange={(e) => handleSpecChange(idx, 'label', e.target.value)}
+                                            placeholder="Spec Label (e.g. Material)"
+                                            className="w-full py-1.5 px-2.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white placeholder-gray-600 outline-none focus:border-primary/60 font-bold"
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <input
+                                            type="text"
+                                            value={spec.value}
+                                            onChange={(e) => handleSpecChange(idx, 'value', e.target.value)}
+                                            placeholder="Value (e.g. Premium Copper-Free Ceramic Composite)"
+                                            className="w-full py-1.5 px-2.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white placeholder-gray-600 outline-none focus:border-primary/60"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveSpecRow(idx)}
+                                        className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                                        title="Delete row"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* TAB 4: IMAGE GALLERY */}
+            {formTab === 'images' && (
+                <div className="space-y-4 animate-fadeIn">
+                    <div className="bg-white/[0.02] p-3 rounded-xl border border-white/5 space-y-2">
+                        <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                            <ImageIcon size={14} className="text-primary" />
+                            Multi-Image Product Gallery
+                        </h4>
+                        <p className="text-[11px] text-gray-400">Add multiple high-resolution photos. Customers can browse these via the thumbnail carousel.</p>
+
+                        <div className="flex gap-2 pt-2">
+                            <input
+                                type="url"
+                                value={newImageUrl}
+                                onChange={(e) => setNewImageUrl(e.target.value)}
+                                placeholder="Paste image URL (https://...)..."
+                                className="flex-1 py-1.5 px-3 bg-black/40 border border-white/10 rounded-xl text-xs text-white placeholder-gray-600 outline-none focus:border-primary/60"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleAddImageUrl();
+                                    }
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={handleAddImageUrl}
+                                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all"
+                            >
+                                Add URL
+                            </button>
+                        </div>
+                    </div>
+
+                    {formData.imageUrls.length === 0 ? (
+                        <div className="text-center py-8 bg-black/20 rounded-2xl border border-white/5 border-dashed">
+                            <p className="text-xs text-gray-400">No images added yet.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {formData.imageUrls.map((img, idx) => {
+                                const isPrimary = idx === 0;
+                                return (
+                                    <div key={idx} className={`group relative rounded-xl overflow-hidden border p-2 bg-black/50 aspect-square flex flex-col justify-between ${isPrimary ? 'border-primary/80 shadow-lg shadow-primary/20' : 'border-white/10'}`}>
+                                        <img src={img} alt={`Gallery-${idx}`} className="w-full h-24 object-contain mx-auto" />
+                                        <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                                            {isPrimary ? (
+                                                <span className="text-[9px] font-black text-primary uppercase tracking-wider">Primary</span>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSetPrimaryImage(idx)}
+                                                    className="text-[9px] text-gray-400 hover:text-white underline font-bold"
+                                                >
+                                                    Set Primary
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveImage(idx)}
+                                                className="text-gray-500 hover:text-red-400 p-1"
+                                                title="Remove photo"
+                                            >
+                                                <Trash2 size={12} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* TAB 5: BADGES & RATINGS */}
+            {formTab === 'badges' && (
+                <div className="space-y-4 animate-fadeIn">
+                    {/* Ratings Card */}
+                    <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3">
+                        <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                            <Star size={14} className="text-amber-400" />
+                            Product Rating & Social Proof
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-400 font-bold">Rating Score (1.0 - 5.0)</label>
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    min="1.0"
+                                    max="5.0"
+                                    name="rating"
+                                    value={formData.rating}
+                                    onChange={handleChange}
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60 font-bold"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-400 font-bold">Total Reviews Count</label>
+                                <input
+                                    type="number"
+                                    name="reviewCount"
+                                    value={formData.reviewCount}
+                                    onChange={handleChange}
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60 font-bold"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Warranty Card */}
+                    <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3">
+                        <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                            <Shield size={14} className="text-blue-400" />
+                            Warranty Badge Information
+                        </h4>
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="space-y-1">
+                                <label className="text-[11px] text-gray-400 font-bold">Section Title</label>
+                                <input
+                                    type="text"
+                                    name="warrantyTitle"
+                                    value={formData.warrantyTitle}
+                                    onChange={handleChange}
+                                    placeholder="Warranty"
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[11px] text-gray-400 font-bold">Coverage Period</label>
+                                <input
+                                    type="text"
+                                    name="warrantyCoverage"
+                                    value={formData.warrantyCoverage}
+                                    onChange={handleChange}
+                                    placeholder="1-Year Coverage"
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60 font-bold"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[11px] text-gray-400 font-bold">Subtitle</label>
+                                <input
+                                    type="text"
+                                    name="warrantySubtitle"
+                                    value={formData.warrantySubtitle}
+                                    onChange={handleChange}
+                                    placeholder="Official Factory Protection"
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Shipping Card */}
+                    <div className="bg-white/[0.02] p-4 rounded-xl border border-white/5 space-y-3">
+                        <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                            <Truck size={14} className="text-primary" />
+                            Shipping & Delivery Badge
+                        </h4>
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="space-y-1">
+                                <label className="text-[11px] text-gray-400 font-bold">Section Title</label>
+                                <input
+                                    type="text"
+                                    name="shippingTitle"
+                                    value={formData.shippingTitle}
+                                    onChange={handleChange}
+                                    placeholder="Shipping"
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[11px] text-gray-400 font-bold">ETA / Delivery Speed</label>
+                                <input
+                                    type="text"
+                                    name="shippingEta"
+                                    value={formData.shippingEta}
+                                    onChange={handleChange}
+                                    placeholder="Express 2-3 Days"
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60 font-bold"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[11px] text-gray-400 font-bold">Subtitle</label>
+                                <input
+                                    type="text"
+                                    name="shippingSubtitle"
+                                    value={formData.shippingSubtitle}
+                                    onChange={handleChange}
+                                    placeholder="Tracked Courier Dispatch"
+                                    className="w-full py-2 px-3 bg-black/40 border border-white/10 rounded-xl text-white text-xs outline-none focus:border-primary/60"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Footer Controls */}
+            <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-500 font-mono">
+                        {part ? `ID: ${part.id}` : 'New Catalog Item'}
+                    </span>
+                </div>
+                <div className="flex gap-3">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="px-5 py-2.5 rounded-xl bg-white/5 text-gray-400 font-bold hover:bg-white/10 hover:text-white transition-all text-xs"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={isSaveDisabled}
+                        className="px-7 py-2.5 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:grayscale disabled:scale-100 flex items-center gap-2 text-xs"
+                    >
+                        {isUploading ? <Spinner size="sm" color="text-white" /> : <Check size={16} />}
+                        {part ? 'Update Part & Customizations' : 'Create Part'}
+                    </button>
+                </div>
             </div>
         </form>
     );
@@ -1880,7 +2466,6 @@ const AdminCatalogScreen: React.FC = () => {
     const [isLiaisonModalOpen, setIsLiaisonModalOpen] = useState(false);
     const [editingLiaison, setEditingLiaison] = useState<LiaisonStaff | undefined>(undefined);
     const [viewingLiaison, setViewingLiaison] = useState<LiaisonStaff | undefined>(undefined);
-    const [liaisonSearch, setLiaisonSearch] = useState('');
 
     const requestSort = (key: SortableKeys) => {
         let direction: 'ascending' | 'descending' = 'ascending';
@@ -1909,12 +2494,15 @@ const AdminCatalogScreen: React.FC = () => {
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
     const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
-    const [carSearch, setCarSearch] = useState('');
-    const [driverSearch, setDriverSearch] = useState('');
 
     useEffect(() => {
         // Outside click dropdown close disabled per user request
     }, []);
+
+    const liaisonAgentsList = useMemo(() => {
+        if (!db) return [];
+        return db.liaisonStaff && db.liaisonStaff.length > 0 ? db.liaisonStaff : defaultLiaisonAgents;
+    }, [db]);
 
     const serviceCategories = useMemo(() => {
         const configured = db?.settings?.serviceCategories || [];
@@ -1929,6 +2517,27 @@ const AdminCatalogScreen: React.FC = () => {
         const uniqueCategories = Array.from(new Set([...configured, ...used]));
         return ['all', ...uniqueCategories];
     }, [db]);
+
+    const carCategories = useMemo(() => {
+        const used = db?.rentalCars ? db.rentalCars.map(c => c.type).filter(Boolean) : [];
+        const defaults = ['Sedan', 'SUV', 'Van', 'Hatchback', 'Pickup', 'MPV'];
+        const unique = Array.from(new Set([...used, ...defaults]));
+        return ['all', ...unique];
+    }, [db]);
+
+    const driverCategories = useMemo(() => {
+        const used = db?.hireDrivers ? db.hireDrivers.map(d => d.licenseType).filter(Boolean) : [];
+        const defaults = ['Professional', 'Non-Professional', 'Restriction 1', 'Restriction 2', 'Restriction 3'];
+        const unique = Array.from(new Set([...used, ...defaults]));
+        return ['all', ...unique];
+    }, [db]);
+
+    const liaisonCategories = useMemo(() => {
+        const used = liaisonAgentsList.flatMap(s => s.assignedServices || []).filter(Boolean);
+        const defaults = ['Vehicle Registration Renewal', 'Transfer of Ownership', 'Duplicate OR', 'Duplicate CR', 'Lost Plate', 'Change Engine', 'Change Color'];
+        const unique = Array.from(new Set([...used, ...defaults]));
+        return ['all', ...unique];
+    }, [liaisonAgentsList]);
 
     const filteredServices = useMemo(() => {
         if (!db) return [];
@@ -1994,32 +2603,87 @@ const AdminCatalogScreen: React.FC = () => {
 
     const filteredCars = useMemo(() => {
         if (!db) return [];
-        return (db.rentalCars || []).filter(c =>
-            (c.make || '').toLowerCase().includes(carSearch.toLowerCase()) ||
-            (c.model || '').toLowerCase().includes(carSearch.toLowerCase()) ||
-            (c.plateNumber || '').toLowerCase().includes(carSearch.toLowerCase())
-        );
-    }, [db, carSearch]);
+        let filtered = (db.rentalCars || []).filter(c => {
+            const matchesCategory = categoryFilter === 'all' || (c.type || '').toLowerCase() === categoryFilter.toLowerCase();
+            const q = searchQuery.toLowerCase();
+            const matchesSearch = !q ||
+                (c.make || '').toLowerCase().includes(q) ||
+                (c.model || '').toLowerCase().includes(q) ||
+                (c.plateNumber || '').toLowerCase().includes(q) ||
+                (c.type || '').toLowerCase().includes(q) ||
+                (c.transmission || '').toLowerCase().includes(q);
+            const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? c.isAvailable : !c.isAvailable);
+            return matchesCategory && matchesSearch && matchesStatus;
+        });
+
+        filtered.sort((a, b) => {
+            if (sortConfig.key === 'price') {
+                const aPrice = a.pricePerDay || 0;
+                const bPrice = b.pricePerDay || 0;
+                return sortConfig.direction === 'ascending' ? aPrice - bPrice : bPrice - aPrice;
+            }
+            const aName = `${a.make || ''} ${a.model || ''}`.trim().toLowerCase();
+            const bName = `${b.make || ''} ${b.model || ''}`.trim().toLowerCase();
+            return sortConfig.direction === 'ascending' ? aName.localeCompare(bName) : bName.localeCompare(aName);
+        });
+
+        return filtered;
+    }, [db, searchQuery, categoryFilter, statusFilter, sortConfig]);
 
     const filteredDrivers = useMemo(() => {
         if (!db) return [];
-        return (db.hireDrivers || []).filter(d =>
-            (d.name || '').toLowerCase().includes(driverSearch.toLowerCase()) ||
-            (d.phone || '').toLowerCase().includes(driverSearch.toLowerCase())
-        );
-    }, [db, driverSearch]);
+        let filtered = (db.hireDrivers || []).filter(d => {
+            const matchesCategory = categoryFilter === 'all' || (d.licenseType || '').toLowerCase() === categoryFilter.toLowerCase();
+            const q = searchQuery.toLowerCase();
+            const matchesSearch = !q ||
+                (d.name || '').toLowerCase().includes(q) ||
+                (d.phone || '').toLowerCase().includes(q) ||
+                (d.licenseType || '').toLowerCase().includes(q) ||
+                (d.geoLimit || '').toLowerCase().includes(q);
+            const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? d.isAvailable : !d.isAvailable);
+            return matchesCategory && matchesSearch && matchesStatus;
+        });
 
-    const liaisonAgentsList = useMemo(() => {
-        if (!db) return [];
-        return db.liaisonStaff && db.liaisonStaff.length > 0 ? db.liaisonStaff : defaultLiaisonAgents;
-    }, [db]);
+        filtered.sort((a, b) => {
+            if (sortConfig.key === 'price') {
+                const aPrice = a.pricePerHour || a.pricePerDay || 0;
+                const bPrice = b.pricePerHour || b.pricePerDay || 0;
+                return sortConfig.direction === 'ascending' ? aPrice - bPrice : bPrice - aPrice;
+            }
+            const aName = (a.name || '').toLowerCase();
+            const bName = (b.name || '').toLowerCase();
+            return sortConfig.direction === 'ascending' ? aName.localeCompare(bName) : bName.localeCompare(aName);
+        });
+
+        return filtered;
+    }, [db, searchQuery, categoryFilter, statusFilter, sortConfig]);
 
     const filteredLiaison = useMemo(() => {
-        return liaisonAgentsList.filter(s =>
-            (s.name || '').toLowerCase().includes(liaisonSearch.toLowerCase()) ||
-            (s.phone || '').toLowerCase().includes(liaisonSearch.toLowerCase())
-        );
-    }, [liaisonAgentsList, liaisonSearch]);
+        let filtered = liaisonAgentsList.filter(s => {
+            const matchesCategory = categoryFilter === 'all' || (s.assignedServices || []).some(svc => svc.toLowerCase() === categoryFilter.toLowerCase());
+            const q = searchQuery.toLowerCase();
+            const matchesSearch = !q ||
+                (s.name || '').toLowerCase().includes(q) ||
+                (s.phone || '').toLowerCase().includes(q) ||
+                (s.description || '').toLowerCase().includes(q) ||
+                (s.assignedServices || []).some(svc => svc.toLowerCase().includes(q));
+            const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? s.isAvailable : !s.isAvailable);
+            return matchesCategory && matchesSearch && matchesStatus;
+        });
+
+        filtered.sort((a, b) => {
+            if (sortConfig.key === 'price') {
+                const aJobs = a.totalJobs || 0;
+                const bJobs = b.totalJobs || 0;
+                return sortConfig.direction === 'ascending' ? aJobs - bJobs : bJobs - aJobs;
+            }
+            const aName = (a.name || '').toLowerCase();
+            const bName = (b.name || '').toLowerCase();
+            return sortConfig.direction === 'ascending' ? aName.localeCompare(bName) : bName.localeCompare(aName);
+        });
+
+        return filtered;
+    }, [liaisonAgentsList, searchQuery, categoryFilter, statusFilter, sortConfig]);
 
     const stats = useMemo(() => {
         if (!db) return { totalServices: 0, totalParts: 0, totalValue: 0, lowStock: 0, totalCars: 0, availableCars: 0, totalDrivers: 0, availableDrivers: 0, totalLiaisonAgents: 0, availableLiaisonAgents: 0 };
@@ -2040,20 +2704,25 @@ const AdminCatalogScreen: React.FC = () => {
 
     // Export to CSV
     const exportToCSV = () => {
-        const items = activeTab === 'services' ? filteredServices : filteredParts;
-        const headers = activeTab === 'services'
-            ? ['Name', 'Category', 'Price', 'Estimated Time', 'Description']
-            : ['Name', 'SKU', 'Category', 'Price', 'Sales Price', 'Stock', 'Brand'];
+        let headers: string[] = [];
+        let rows: (string | number)[][] = [];
 
-        const rows = items.map(item => {
-            if (activeTab === 'services') {
-                const s = item as Service;
-                return [s.name, s.category, s.price, s.estimatedTime, s.description];
-            } else {
-                const p = item as Part;
-                return [p.name, p.sku, p.category, p.price, p.salesPrice || '', p.stock, p.brand || ''];
-            }
-        });
+        if (activeTab === 'services') {
+            headers = ['Name', 'Category', 'Price', 'Estimated Time', 'Description'];
+            rows = filteredServices.map(s => [s.name, s.category, s.price, s.estimatedTime, s.description]);
+        } else if (activeTab === 'parts') {
+            headers = ['Name', 'SKU', 'Category', 'Price', 'Sales Price', 'Stock', 'Brand'];
+            rows = filteredParts.map(p => [p.name, p.sku, p.category, p.price, p.salesPrice || '', p.stock, p.brand || '']);
+        } else if (activeTab === 'rental-cars') {
+            headers = ['Make', 'Model', 'Year', 'Type', 'Plate Number', 'Price/Day', 'Transmission', 'Seats', 'Status'];
+            rows = filteredCars.map(c => [c.make, c.model, c.year, c.type, c.plateNumber || '', c.pricePerDay, c.transmission || '', c.seats || '', c.isAvailable ? 'Available' : 'Unavailable']);
+        } else if (activeTab === 'drivers') {
+            headers = ['Name', 'Phone', 'License Type', 'Experience', 'Hourly Rate', 'Daily Rate', 'Geo Limit', 'Status'];
+            rows = filteredDrivers.map(d => [d.name, d.phone, d.licenseType, d.experience, d.pricePerHour || 0, d.pricePerDay || 0, d.geoLimit, d.isAvailable ? 'Available' : 'Unavailable']);
+        } else if (activeTab === 'liaison-agents') {
+            headers = ['Name', 'Phone', 'Rating', 'Total Jobs', 'Assigned Services', 'Status'];
+            rows = filteredLiaison.map(s => [s.name, s.phone || '', s.rating || 5.0, s.totalJobs || 0, (s.assignedServices || []).join('; '), s.isAvailable ? 'Available' : 'Unavailable']);
+        }
 
         const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -2065,7 +2734,7 @@ const AdminCatalogScreen: React.FC = () => {
         window.URL.revokeObjectURL(url);
     };
 
-    const handleTabChange = (tab: 'services' | 'parts' | 'rental-cars' | 'drivers' | 'liaison-agents') => { setActiveTab(tab); setSearchQuery(''); setCategoryFilter('all'); };
+    const handleTabChange = (tab: 'services' | 'parts' | 'rental-cars' | 'drivers' | 'liaison-agents') => { setActiveTab(tab); setSearchQuery(''); setCategoryFilter('all'); setSelectedItems([]); };
 
     if (loading || !db) return <div className="flex items-center justify-center h-full"><Spinner size="lg" color="text-white" /></div>;
 
@@ -2083,9 +2752,7 @@ const AdminCatalogScreen: React.FC = () => {
         handleCloseServiceModal();
     };
     const handleDeleteService = (id: string) => {
-        if (window.confirm('Are you sure you want to delete this service? This action cannot be undone.')) {
-            deleteService(id);
-        }
+        deleteService(id);
     };
 
     const handleOpenPartModal = (part?: Part) => { setEditingPart(part); setIsPartModalOpen(true); };
@@ -2102,9 +2769,7 @@ const AdminCatalogScreen: React.FC = () => {
         handleClosePartModal();
     };
     const handleDeletePart = (id: string) => {
-        if (window.confirm('Are you sure you want to delete this part? This action cannot be undone.')) {
-            deletePart(id);
-        }
+        deletePart(id);
     };
 
     // Car handlers
@@ -2114,7 +2779,7 @@ const AdminCatalogScreen: React.FC = () => {
         if (car.id) { updateRentalCar(car as RentalCar); } else { const { id, ...d } = car; addRentalCar(d); }
         handleCloseCarModal();
     };
-    const handleDeleteCar = (id: string) => { if (window.confirm('Remove this car from the fleet?')) deleteRentalCar(id); };
+    const handleDeleteCar = (id: string) => { deleteRentalCar(id); };
     const handleToggleCar = (car: RentalCar) => updateRentalCar({ ...car, isAvailable: !car.isAvailable });
 
     // Driver handlers
@@ -2124,7 +2789,7 @@ const AdminCatalogScreen: React.FC = () => {
         if (driver.id) { updateHireDriver(driver as HireDriver); } else { const { id, ...d } = driver; addHireDriver(d); }
         handleCloseDriverModal();
     };
-    const handleDeleteDriver = (id: string) => { if (window.confirm('Remove this driver from the pool?')) deleteHireDriver(id); };
+    const handleDeleteDriver = (id: string) => { deleteHireDriver(id); };
     const handleToggleDriver = (driver: HireDriver) => updateHireDriver({ ...driver, isAvailable: !driver.isAvailable });
 
     // Liaison handlers
@@ -2147,12 +2812,10 @@ const AdminCatalogScreen: React.FC = () => {
         handleCloseLiaisonModal();
     };
     const handleDeleteLiaison = async (id: string) => {
-        if (window.confirm('Remove this liaison officer from the pool?')) {
-            try {
-                await deleteDoc(doc(firestore, 'liaisonStaff', id));
-            } catch (err) {
-                console.error("Error deleting liaison staff:", err);
-            }
+        try {
+            await deleteDoc(doc(firestore, 'liaisonStaff', id));
+        } catch (err) {
+            console.error("Error deleting liaison staff:", err);
         }
     };
     const handleToggleLiaison = async (s: LiaisonStaff) => {
@@ -2202,7 +2865,13 @@ const AdminCatalogScreen: React.FC = () => {
     };
 
     const handleSelectAll = () => {
-        const items = activeTab === 'services' ? filteredServices : filteredParts;
+        let items: { id: string }[] = [];
+        if (activeTab === 'services') items = filteredServices;
+        else if (activeTab === 'parts') items = filteredParts;
+        else if (activeTab === 'rental-cars') items = filteredCars;
+        else if (activeTab === 'drivers') items = filteredDrivers;
+        else if (activeTab === 'liaison-agents') items = filteredLiaison;
+
         if (selectedItems.length === items.length) {
             setSelectedItems([]);
         } else {
@@ -2212,16 +2881,20 @@ const AdminCatalogScreen: React.FC = () => {
 
     const handleBulkDelete = () => {
         if (selectedItems.length === 0) return;
-        if (window.confirm(`Are you sure you want to delete ${selectedItems.length} items? This action cannot be undone.`)) {
-            selectedItems.forEach(id => {
-                if (activeTab === 'services') {
-                    deleteService(id);
-                } else {
-                    deletePart(id);
-                }
-            });
-            setSelectedItems([]);
-        }
+        selectedItems.forEach(id => {
+            if (activeTab === 'services') {
+                deleteService(id);
+            } else if (activeTab === 'parts') {
+                deletePart(id);
+            } else if (activeTab === 'rental-cars') {
+                deleteRentalCar(id);
+            } else if (activeTab === 'drivers') {
+                deleteHireDriver(id);
+            } else if (activeTab === 'liaison-agents') {
+                handleDeleteLiaison(id);
+            }
+        });
+        setSelectedItems([]);
     };
 
     const clearFilters = () => {
@@ -2286,11 +2959,9 @@ const AdminCatalogScreen: React.FC = () => {
 
                 {/* Action Buttons */}
                 <div className="flex gap-3">
+                    <button onClick={exportToCSV} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black tracking-widest text-[10px] border border-white/5 transition-all flex items-center gap-2 active:scale-95"><Download size={16} />Export CSV</button>
                     {(activeTab === 'services' || activeTab === 'parts') && (
-                        <>
-                            <button onClick={exportToCSV} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black tracking-widest text-[10px] border border-white/5 transition-all flex items-center gap-2 active:scale-95"><Download size={16} />Export CSV</button>
-                            <button onClick={() => setIsCategoryModalOpen(true)} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black tracking-widest text-[10px] border border-white/5 transition-all flex items-center gap-2 active:scale-95"><Tag size={16} />Categories</button>
-                        </>
+                        <button onClick={() => setIsCategoryModalOpen(true)} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black tracking-widest text-[10px] border border-white/5 transition-all flex items-center gap-2 active:scale-95"><Tag size={16} />Categories</button>
                     )}
                     {activeTab === 'services' && <button onClick={() => handleOpenServiceModal()} className="px-4 py-2 bg-primary hover:bg-orange-600 text-white rounded-xl font-black tracking-widest text-[10px] transition-all shadow-2xl shadow-primary/20 flex items-center gap-2 active:scale-95 hover:scale-105"><Plus size={16} strokeWidth={3} />Add Service</button>}
                     {activeTab === 'parts' && <button onClick={() => handleOpenPartModal()} className="px-4 py-2 bg-primary hover:bg-orange-600 text-white rounded-xl font-black tracking-widest text-[10px] transition-all shadow-2xl shadow-primary/20 flex items-center gap-2 active:scale-95 hover:scale-105"><Plus size={16} strokeWidth={3} />Add Part</button>}
@@ -2300,209 +2971,9 @@ const AdminCatalogScreen: React.FC = () => {
                 </div>
             </div>
 
-            {/* Car Rent Tab Content */}
-            {activeTab === 'rental-cars' && (
-                <div className="animate-fadeIn">
-                    {/* Car Search */}
-                    <div className="bg-[#121212]/80 border border-white/10 p-2.5 rounded-2xl mb-4">
-                        <div className="relative">
-                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-                            <input type="text" id="car-search" name="car-search" placeholder="Search by make, model, plate..." value={carSearch} onChange={e => setCarSearch(e.target.value)} className="w-full h-10 pl-10 pr-4 bg-white/5 border border-white/5 rounded-xl text-white text-xs font-bold placeholder-gray-600 focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all" />
-                        </div>
-                    </div>
-                    {filteredCars.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-24 text-gray-600">
-                            <Car size={56} className="mb-4 opacity-20" />
-                            <p className="text-lg font-bold">No rental cars yet</p>
-                            <p className="text-sm mt-1">Click "Add Car" to add your first vehicle to the fleet.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                            {filteredCars.map((car: RentalCar) => (
-                                <div key={car.id} className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-cyan-500/40 transition-all duration-300 group shadow-xl">
-                                    <div className="relative h-40 overflow-hidden">
-                                        <img src={car.imageUrl || '/placeholder.svg'} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                                        <div className="absolute top-2.5 right-2.5">
-                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full backdrop-blur-sm ${car.isAvailable ? 'bg-green-500/90 text-white' : 'bg-red-500/80 text-white'}`}>{car.isAvailable ? '● Available' : '● Unavailable'}</span>
-                                        </div>
-                                        <div className="absolute bottom-2.5 left-3">
-                                            <p className="font-black text-white text-sm drop-shadow">{car.year} {car.make} {car.model}</p>
-                                            <p className="text-[10px] text-gray-300">{car.type} · {car.seats} seats · {car.transmission || 'Auto'}</p>
-                                        </div>
-                                    </div>
-                                    <div className="p-4">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div>
-                                                <p className="text-cyan-400 font-black text-xl">₱{(car.pricePerDay || 0).toLocaleString()}<span className="text-xs font-normal text-gray-500">/day</span></p>
-                                                {car.plateNumber && <p className="text-[10px] text-gray-500 mt-0.5">🚗 {car.plateNumber}</p>}
-                                            </div>
-                                            {car.color && <span className="text-xs px-2 py-1 bg-white/5 text-gray-400 rounded-lg border border-white/5">{car.color}</span>}
-                                        </div>
-                                        {car.features && car.features.length > 0 && (
-                                            <div className="flex flex-wrap gap-1 mb-3">
-                                                {car.features.slice(0, 3).map((f, i) => <span key={i} className="text-[9px] px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20">{f}</span>)}
-                                                {car.features.length > 3 && <span className="text-[9px] px-2 py-0.5 bg-white/5 text-gray-500 rounded-full">+{car.features.length - 3}</span>}
-                                            </div>
-                                        )}
-                                        <div className="flex items-center gap-1.5 pt-2.5 border-t border-white/5">
-                                            <button onClick={() => handleToggleCar(car)} className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${car.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'}`}>
-                                                {car.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{car.isAvailable ? 'Mark Unavailable' : 'Mark Available'}
-                                            </button>
-                                            <button onClick={() => handleOpenCarModal(car)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={13} /></button>
-                                            <button onClick={() => handleDeleteCar(car.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={13} /></button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
 
-            {/* Drivers Tab Content */}
-            {activeTab === 'drivers' && (
-                <div className="animate-fadeIn">
-                    {/* Driver Search */}
-                    <div className="bg-[#121212]/80 border border-white/10 p-2.5 rounded-2xl mb-4">
-                        <div className="relative">
-                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-                            <input type="text" id="driver-search" name="driver-search" placeholder="Search by name or phone..." value={driverSearch} onChange={e => setDriverSearch(e.target.value)} className="w-full h-10 pl-10 pr-4 bg-white/5 border border-white/5 rounded-xl text-white text-xs font-bold placeholder-gray-600 focus:ring-1 focus:ring-violet-500 focus:border-violet-500 outline-none transition-all" />
-                        </div>
-                    </div>
-                    {filteredDrivers.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-24 text-gray-600">
-                            <UserCheck size={56} className="mb-4 opacity-20" />
-                            <p className="text-lg font-bold">No hire drivers yet</p>
-                            <p className="text-sm mt-1">Click "Add Driver" to add your first driver to the pool.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                            {filteredDrivers.map((driver: HireDriver) => (
-                                <div key={driver.id} className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-violet-500/40 transition-all duration-300 group shadow-xl">
-                                    <div className="relative h-36 bg-gradient-to-br from-violet-900/40 to-black flex items-center justify-center overflow-hidden">
-                                        <img src={driver.imageUrl || '/placeholder.svg'} alt={driver.name} className="w-20 h-20 rounded-full object-cover border-4 border-violet-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
-                                        <div className="absolute top-2.5 right-2.5">
-                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full backdrop-blur-sm ${driver.isAvailable ? 'bg-green-500/90 text-white' : 'bg-gray-600/90 text-white'}`}>{driver.isAvailable ? '● Available' : '● Not Available'}</span>
-                                        </div>
-                                    </div>
-                                    <div className="p-4">
-                                        <div className="mb-2">
-                                            <p className="font-black text-white text-base">{driver.name}</p>
-                                            <p className="text-[10px] text-gray-400 mt-0.5">{driver.licenseType} · {driver.experience}</p>
-                                            <p className="text-[10px] text-gray-500">📍 {driver.geoLimit}</p>
-                                        </div>
-                                        {(driver.rating || driver.totalTrips) && (
-                                            <div className="flex gap-3 mb-2">
-                                                {driver.rating && <span className="text-[10px] text-yellow-400">⭐ {Number(driver.rating).toFixed(1)}</span>}
-                                                {driver.totalTrips ? <span className="text-[10px] text-gray-500">{driver.totalTrips} trips</span> : null}
-                                            </div>
-                                        )}
-                                        <div className="flex gap-2 mb-3">
-                                            <div className="flex-1 bg-violet-500/10 border border-violet-500/20 rounded-xl p-2 text-center">
-                                                <p className="text-violet-400 font-black text-sm">₱{(driver.pricePerHour || 0).toLocaleString()}</p>
-                                                <p className="text-[9px] text-gray-500">/hour</p>
-                                            </div>
-                                            <div className="flex-1 bg-violet-500/10 border border-violet-500/20 rounded-xl p-2 text-center">
-                                                <p className="text-violet-400 font-black text-sm">₱{(driver.pricePerDay || 0).toLocaleString()}</p>
-                                                <p className="text-[9px] text-gray-500">/day</p>
-                                            </div>
-                                        </div>
-                                        {driver.phone && <p className="text-[10px] text-gray-500 mb-3">📞 {driver.phone}</p>}
-                                        <div className="flex items-center gap-1.5 pt-2.5 border-t border-white/5">
-                                            <button onClick={() => handleToggleDriver(driver)} className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${driver.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-gray-500/10 text-gray-400 hover:bg-gray-500/20'}`}>
-                                                {driver.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{driver.isAvailable ? 'Available' : 'Not Available'}
-                                            </button>
-                                            <button onClick={() => handleOpenDriverModal(driver)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={13} /></button>
-                                            <button onClick={() => handleDeleteDriver(driver.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={13} /></button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
 
-            {activeTab === 'liaison-agents' && (
-                <div className="animate-fadeIn">
-                    {/* Liaison Search */}
-                    <div className="bg-[#121212]/80 border border-white/10 p-2.5 rounded-2xl mb-4">
-                        <div className="relative">
-                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
-                            <input type="text" placeholder="Search by name or phone..." value={liaisonSearch} onChange={e => setLiaisonSearch(e.target.value)} className="w-full h-10 pl-10 pr-4 bg-white/5 border border-white/5 rounded-xl text-white text-xs font-bold placeholder-gray-600 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all" />
-                        </div>
-                    </div>
-                    {filteredLiaison.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-24 text-gray-600">
-                            <UserCheck size={56} className="mb-4 opacity-20 text-emerald-500" />
-                            <p className="text-lg font-bold">No liaison agents yet</p>
-                            <p className="text-sm mt-1">Click "Add Liaison" to add your first liaison agent.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                            {filteredLiaison.map((staff: LiaisonStaff) => {
-                                return (
-                                    <div 
-                                        key={staff.id} 
-                                        onClick={() => setViewingLiaison(staff)}
-                                        className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 group shadow-xl flex flex-col justify-between cursor-pointer"
-                                    >
-                                        <div className="relative h-32 bg-gradient-to-br from-emerald-950/40 to-black flex items-center justify-center overflow-hidden">
-                                            <img src={staff.imageUrl || '/placeholder.svg'} alt={staff.name} className="w-16 h-16 rounded-full object-cover border-4 border-emerald-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
-                                            <div className="absolute top-2.5 right-2.5">
-                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full backdrop-blur-sm ${staff.isAvailable ? 'bg-green-500/90 text-white animate-pulse' : 'bg-gray-600/90 text-white'}`}>
-                                                    {staff.isAvailable ? '● Available' : '● Inactive'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="p-4 flex-1 flex flex-col justify-between">
-                                            <div className="mb-3">
-                                                <p className="font-black text-white text-sm group-hover:text-emerald-400 transition-colors truncate">{staff.name}</p>
-                                                {staff.description && <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">{staff.description}</p>}
-                                                
-                                                {staff.assignedServices && staff.assignedServices.length > 0 && (
-                                                    <div className="mt-2.5">
-                                                        <p className="text-[8px] font-black text-gray-500 uppercase tracking-wider mb-1">Service Areas</p>
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {staff.assignedServices.slice(0, 2).map((svc, i) => (
-                                                                <span key={i} className="text-[8px] bg-emerald-500/10 border border-emerald-500/10 rounded px-1.5 py-0.5 text-emerald-400 font-bold truncate max-w-[120px]">{svc}</span>
-                                                            ))}
-                                                            {staff.assignedServices.length > 2 && (
-                                                                <span className="text-[8px] bg-white/5 border border-white/5 rounded px-1.5 py-0.5 text-gray-400 font-bold">+{staff.assignedServices.length - 2} more</span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div>
-                                                <div className="flex items-center justify-between text-[10px] mb-2 text-gray-500 border-t border-white/5 pt-2.5">
-                                                    <div className="flex gap-2">
-                                                        <span className="text-yellow-400 font-bold">⭐ {Number(staff.rating || 5.0).toFixed(1)}</span>
-                                                        <span>•</span>
-                                                        <span>{staff.totalJobs || 0} jobs</span>
-                                                    </div>
-                                                    {staff.phone && <span className="font-mono">{staff.phone}</span>}
-                                                </div>
-                                                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                                    <button onClick={() => handleToggleLiaison(staff)} className={`flex-1 text-[9px] py-1.5 rounded-lg font-black transition-all ${staff.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-gray-500/10 text-gray-400 hover:bg-gray-500/20'}`}>
-                                                        {staff.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{staff.isAvailable ? 'Available' : 'Unavailable'}
-                                                    </button>
-                                                    <button onClick={() => handleOpenLiaisonModal(staff)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={12} /></button>
-                                                    <button onClick={() => handleDeleteLiaison(staff.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={12} /></button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Filters — only for services/parts tabs */}
-            {(activeTab === 'services' || activeTab === 'parts') && (
+            {/* Universal Filters & View Control Bar */}
             <div className="bg-[#121212]/80 backdrop-blur-2xl border border-white/10 p-2.5 rounded-2xl mb-4 relative group">
                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl blur opacity-5 group-hover:opacity-10 transition duration-1000"></div>
                 <div className="flex flex-col lg:flex-row gap-2.5 relative z-10">
@@ -2512,7 +2983,13 @@ const AdminCatalogScreen: React.FC = () => {
                             type="text"
                             id="catalog-search"
                             name="catalogSearch"
-                            placeholder={activeTab === 'services' ? "Search services..." : "Search parts or SKU..."}
+                            placeholder={
+                                activeTab === 'services' ? "Search services..." :
+                                activeTab === 'parts' ? "Search parts or SKU..." :
+                                activeTab === 'rental-cars' ? "Search by make, model, plate, or type..." :
+                                activeTab === 'drivers' ? "Search by name, phone, license, or area..." :
+                                "Search by name, phone, or service..."
+                            }
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                             autoComplete="off"
@@ -2528,10 +3005,11 @@ const AdminCatalogScreen: React.FC = () => {
                             className="w-full bg-white/5 border border-white/5 rounded-xl pl-3 pr-10 h-10 text-white text-xs font-bold outline-none focus:border-primary appearance-none cursor-pointer hover:bg-white/10 transition-colors"
                         >
                             <option value="all">All Categories</option>
-                            {activeTab === 'services'
-                                ? serviceCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)
-                                : partCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)
-                            }
+                            {activeTab === 'services' && serviceCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)}
+                            {activeTab === 'parts' && partCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)}
+                            {activeTab === 'rental-cars' && carCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)}
+                            {activeTab === 'drivers' && driverCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)}
+                            {activeTab === 'liaison-agents' && liaisonCategories.map(cat => cat !== 'all' && <option key={cat} value={cat}>{cat}</option>)}
                         </select>
                         <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                     </div>
@@ -2544,8 +3022,8 @@ const AdminCatalogScreen: React.FC = () => {
                             className="w-full bg-white/5 border border-white/5 rounded-xl pl-3 pr-10 h-10 text-white text-xs font-bold outline-none focus:border-primary appearance-none cursor-pointer hover:bg-white/10 transition-colors"
                         >
                             <option value="all">All Status</option>
-                            <option value="active">Active Only</option>
-                            <option value="inactive">Inactive Only</option>
+                            <option value="active">Active / Available</option>
+                            <option value="inactive">Inactive / Unavailable</option>
                         </select>
                         <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                     </div>
@@ -2580,17 +3058,15 @@ const AdminCatalogScreen: React.FC = () => {
                     {activeFiltersCount > 0 && (
                         <button
                             onClick={clearFilters}
-                            className="px-4 h-10 bg-red-500/10 text-red-500 rounded-xl font-black  tracking-widest text-[10px] hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
+                            className="px-4 h-10 bg-red-500/10 text-red-500 rounded-xl font-black tracking-widest text-[10px] hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
                         >
                             Clear
                         </button>
                     )}
                 </div>
             </div>
-            )}
 
-            {/* Content Area — only for services/parts */}
-            {(activeTab === 'services' || activeTab === 'parts') && (
+            {/* Universal Content Area */}
             <div className="flex-1 overflow-auto custom-scrollbar">
                 {/* Bulk Actions Bar */}
                 <div className="p-4 border-b border-white/5 flex items-center justify-between bg-black/20">
@@ -2616,8 +3092,19 @@ const AdminCatalogScreen: React.FC = () => {
                             </>
                         )}
                     </div>
-                    <p className="text-xs font-bold text-gray-500  tracking-widest">
-                        Showing {activeTab === 'services' ? filteredServices.length : filteredParts.length} {activeTab}
+                    <p className="text-xs font-bold text-gray-500 tracking-widest">
+                        Showing {
+                            activeTab === 'services' ? filteredServices.length :
+                            activeTab === 'parts' ? filteredParts.length :
+                            activeTab === 'rental-cars' ? filteredCars.length :
+                            activeTab === 'drivers' ? filteredDrivers.length :
+                            filteredLiaison.length
+                        } {
+                            activeTab === 'rental-cars' ? 'cars' :
+                            activeTab === 'drivers' ? 'drivers' :
+                            activeTab === 'liaison-agents' ? 'liaison agents' :
+                            activeTab
+                        }
                     </p>
                 </div>
 
@@ -2625,7 +3112,7 @@ const AdminCatalogScreen: React.FC = () => {
                 {viewMode === 'list' ? (
                     // TABLE/LIST VIEW
                     <div className="overflow-x-auto min-h-[260px]">
-                        {activeTab === 'services' ? (
+                        {activeTab === 'services' && (
                             filteredServices.length > 0 ? (
                                 <table className="w-full">
                                     <thead className="bg-black/40 sticky top-0 z-10">
@@ -2759,7 +3246,9 @@ const AdminCatalogScreen: React.FC = () => {
                                     <p className="text-sm text-gray-500 mt-1">Try adjusting your filters or add a new service</p>
                                 </div>
                             )
-                        ) : (
+                        )}
+
+                        {activeTab === 'parts' && (
                             filteredParts.length > 0 ? (
                                 <table className="w-full">
                                     <thead className="bg-black/40 sticky top-0 z-10">
@@ -2919,11 +3408,298 @@ const AdminCatalogScreen: React.FC = () => {
                                 </div>
                             )
                         )}
+
+                        {activeTab === 'rental-cars' && (
+                            filteredCars.length > 0 ? (
+                                <table className="w-full">
+                                    <thead className="bg-black/40 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="py-2 px-3 text-left">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedItems.length === filteredCars.length && filteredCars.length > 0}
+                                                    onChange={handleSelectAll}
+                                                    className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-cyan-500"
+                                                />
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Image</th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-cyan-400" onClick={() => requestSort('name')}>
+                                                <div className="flex items-center gap-1.5">Vehicle / Make & Model {getSortIndicator('name')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-cyan-400" onClick={() => requestSort('category')}>
+                                                <div className="flex items-center gap-1.5">Type {getSortIndicator('category')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-cyan-400" onClick={() => requestSort('price')}>
+                                                <div className="flex items-center gap-1.5">Rate/Day {getSortIndicator('price')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Capacity & Specs</th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Status</th>
+                                            <th className="py-2 px-3 text-right text-xs font-black text-gray-400 tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredCars.map((car, idx) => (
+                                            <tr
+                                                key={car.id}
+                                                className={`border-b border-white/5 hover:bg-white/5 transition-colors ${idx % 2 === 0 ? 'bg-black/20' : 'bg-transparent'}`}
+                                            >
+                                                <td className="py-2 px-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedItems.includes(car.id)}
+                                                        onChange={() => handleSelectItem(car.id)}
+                                                        className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-cyan-500"
+                                                    />
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <img src={car.imageUrl || '/placeholder.svg'} alt={`${car.make} ${car.model}`} className="w-12 h-10 object-cover rounded-lg" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <div className="font-bold text-white text-sm">{car.year} {car.make} {car.model}</div>
+                                                    <div className="text-[10px] text-gray-500">{car.plateNumber ? `🚗 ${car.plateNumber}` : 'No plate set'}{car.color ? ` · ${car.color}` : ''}</div>
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <span className="px-2 py-0.5 bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 text-[10px] font-bold rounded-lg whitespace-nowrap inline-block">
+                                                        {car.type || 'Sedan'}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 px-3 font-bold text-cyan-400 text-sm">₱{(car.pricePerDay || 0).toLocaleString()} <span className="text-[10px] font-normal text-gray-500">/day</span></td>
+                                                <td className="py-2 px-3 text-gray-300 text-xs">
+                                                    {car.seats || 4} seats · {car.transmission || 'Auto'}
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <button
+                                                        onClick={() => handleToggleCar(car)}
+                                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 transition-all ${car.isAvailable
+                                                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                                                            : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                                                            }`}
+                                                    >
+                                                        {car.isAvailable ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+                                                        {car.isAvailable ? 'Available' : 'Unavailable'}
+                                                    </button>
+                                                </td>
+                                                <td className="py-2 px-3 text-right">
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <button onClick={() => handleOpenCarModal(car)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit">
+                                                            <Edit2 size={13} />
+                                                        </button>
+                                                        <button onClick={() => handleDeleteCar(car.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete">
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="text-center py-16">
+                                    <Car size={64} className="text-gray-600 mx-auto mb-4" />
+                                    <p className="text-xl font-semibold text-gray-400">No rental cars found</p>
+                                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters or add a new vehicle</p>
+                                </div>
+                            )
+                        )}
+
+                        {activeTab === 'drivers' && (
+                            filteredDrivers.length > 0 ? (
+                                <table className="w-full">
+                                    <thead className="bg-black/40 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="py-2 px-3 text-left">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedItems.length === filteredDrivers.length && filteredDrivers.length > 0}
+                                                    onChange={handleSelectAll}
+                                                    className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-violet-500"
+                                                />
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Photo</th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-violet-400" onClick={() => requestSort('name')}>
+                                                <div className="flex items-center gap-1.5">Driver Name {getSortIndicator('name')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-violet-400" onClick={() => requestSort('category')}>
+                                                <div className="flex items-center gap-1.5">License {getSortIndicator('category')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-violet-400" onClick={() => requestSort('price')}>
+                                                <div className="flex items-center gap-1.5">Rates (Hr / Day) {getSortIndicator('price')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Coverage Area</th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Status</th>
+                                            <th className="py-2 px-3 text-right text-xs font-black text-gray-400 tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredDrivers.map((driver, idx) => (
+                                            <tr
+                                                key={driver.id}
+                                                className={`border-b border-white/5 hover:bg-white/5 transition-colors ${idx % 2 === 0 ? 'bg-black/20' : 'bg-transparent'}`}
+                                            >
+                                                <td className="py-2 px-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedItems.includes(driver.id)}
+                                                        onChange={() => handleSelectItem(driver.id)}
+                                                        className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-violet-500"
+                                                    />
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <img src={driver.imageUrl || '/placeholder.svg'} alt={driver.name} className="w-10 h-10 object-cover rounded-full border border-violet-500/30" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <div className="font-bold text-white text-sm">{driver.name}</div>
+                                                    <div className="text-[10px] text-gray-500">{driver.phone || 'No phone'}{driver.experience ? ` · ${driver.experience}` : ''}</div>
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <span className="px-2 py-0.5 bg-violet-500/20 border border-violet-500/30 text-violet-400 text-[10px] font-bold rounded-lg whitespace-nowrap inline-block">
+                                                        {driver.licenseType || 'Professional'}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <div className="font-bold text-violet-400 text-xs">₱{(driver.pricePerHour || 0).toLocaleString()}<span className="text-[9px] text-gray-500 font-normal">/hr</span></div>
+                                                    <div className="font-bold text-white text-xs">₱{(driver.pricePerDay || 0).toLocaleString()}<span className="text-[9px] text-gray-500 font-normal">/day</span></div>
+                                                </td>
+                                                <td className="py-2 px-3 text-gray-300 text-xs">
+                                                    📍 {driver.geoLimit || 'Metro Manila'}
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <button
+                                                        onClick={() => handleToggleDriver(driver)}
+                                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 transition-all ${driver.isAvailable
+                                                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                                                            : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                                                            }`}
+                                                    >
+                                                        {driver.isAvailable ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+                                                        {driver.isAvailable ? 'Available' : 'Unavailable'}
+                                                    </button>
+                                                </td>
+                                                <td className="py-2 px-3 text-right">
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <button onClick={() => handleOpenDriverModal(driver)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit">
+                                                            <Edit2 size={13} />
+                                                        </button>
+                                                        <button onClick={() => handleDeleteDriver(driver.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete">
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="text-center py-16">
+                                    <UserCheck size={64} className="text-gray-600 mx-auto mb-4" />
+                                    <p className="text-xl font-semibold text-gray-400">No hire drivers found</p>
+                                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters or add a new driver</p>
+                                </div>
+                            )
+                        )}
+
+                        {activeTab === 'liaison-agents' && (
+                            filteredLiaison.length > 0 ? (
+                                <table className="w-full">
+                                    <thead className="bg-black/40 sticky top-0 z-10">
+                                        <tr>
+                                            <th className="py-2 px-3 text-left">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedItems.length === filteredLiaison.length && filteredLiaison.length > 0}
+                                                    onChange={handleSelectAll}
+                                                    className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-emerald-500"
+                                                />
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Photo</th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-emerald-400" onClick={() => requestSort('name')}>
+                                                <div className="flex items-center gap-1.5">Liaison Agent {getSortIndicator('name')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider cursor-pointer hover:text-emerald-400" onClick={() => requestSort('price')}>
+                                                <div className="flex items-center gap-1.5">Rating & Jobs {getSortIndicator('price')}</div>
+                                            </th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Assigned Services</th>
+                                            <th className="py-2 px-3 text-left text-xs font-black text-gray-400 tracking-wider">Status</th>
+                                            <th className="py-2 px-3 text-right text-xs font-black text-gray-400 tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filteredLiaison.map((agent, idx) => (
+                                            <tr
+                                                key={agent.id}
+                                                className={`border-b border-white/5 hover:bg-white/5 transition-colors ${idx % 2 === 0 ? 'bg-black/20' : 'bg-transparent'}`}
+                                            >
+                                                <td className="py-2 px-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedItems.includes(agent.id)}
+                                                        onChange={() => handleSelectItem(agent.id)}
+                                                        className="w-4 h-4 rounded border-white/20 bg-white/5 checked:bg-emerald-500"
+                                                    />
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <img src={agent.imageUrl || '/placeholder.svg'} alt={agent.name} className="w-10 h-10 object-cover rounded-full border border-emerald-500/30" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <div className="font-bold text-white text-sm hover:text-emerald-400 cursor-pointer" onClick={() => setViewingLiaison(agent)}>{agent.name}</div>
+                                                    <div className="text-[10px] text-gray-500">{agent.phone || 'No phone'}</div>
+                                                </td>
+                                                <td className="py-2 px-3 text-xs">
+                                                    <div className="text-yellow-400 font-bold">⭐ {Number(agent.rating || 5.0).toFixed(1)}</div>
+                                                    <div className="text-[10px] text-gray-500">{agent.totalJobs || 0} jobs completed</div>
+                                                </td>
+                                                <td className="py-2 px-3 max-w-[280px]">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(agent.assignedServices || []).slice(0, 2).map((svc, i) => (
+                                                            <span key={i} className="text-[9px] bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold truncate max-w-[120px]">{svc}</span>
+                                                        ))}
+                                                        {(agent.assignedServices || []).length > 2 && (
+                                                            <span className="text-[9px] bg-white/5 text-gray-400 px-1.5 py-0.5 rounded font-bold">+{agent.assignedServices.length - 2}</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <button
+                                                        onClick={() => handleToggleLiaison(agent)}
+                                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1.5 transition-all ${agent.isAvailable
+                                                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                                                            : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                                                            }`}
+                                                    >
+                                                        {agent.isAvailable ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+                                                        {agent.isAvailable ? 'Available' : 'Unavailable'}
+                                                    </button>
+                                                </td>
+                                                <td className="py-2 px-3 text-right">
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <button onClick={() => setViewingLiaison(agent)} className="p-1.5 rounded-lg bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 transition-all" title="View Profile">
+                                                            <Eye size={13} />
+                                                        </button>
+                                                        <button onClick={() => handleOpenLiaisonModal(agent)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit">
+                                                            <Edit2 size={13} />
+                                                        </button>
+                                                        <button onClick={() => handleDeleteLiaison(agent.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete">
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="text-center py-16">
+                                    <UserCheck size={64} className="text-gray-600 mx-auto mb-4 text-emerald-500" />
+                                    <p className="text-xl font-semibold text-gray-400">No liaison agents found</p>
+                                    <p className="text-sm text-gray-500 mt-1">Try adjusting your filters or add a new agent</p>
+                                </div>
+                            )
+                        )}
                     </div>
                 ) : (
                     // GRID VIEW (Original Card Layout)
                     <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-fadeIn transition-all">
-                        {activeTab === 'services' ? (
+                        {activeTab === 'services' && (
                             filteredServices.length > 0 ? (
                                 filteredServices.map(service =>
                                     <ItemCard
@@ -2940,7 +3716,9 @@ const AdminCatalogScreen: React.FC = () => {
                                     <p className="text-sm text-gray-500 mt-1">Try adjusting your filters or add a new service</p>
                                 </div>
                             )
-                        ) : (
+                        )}
+
+                        {activeTab === 'parts' && (
                             filteredParts.length > 0 ? (
                                 filteredParts.map(part =>
                                     <ItemCard
@@ -2958,16 +3736,181 @@ const AdminCatalogScreen: React.FC = () => {
                                 </div>
                             )
                         )}
+
+                        {activeTab === 'rental-cars' && (
+                            filteredCars.length > 0 ? (
+                                filteredCars.map((car: RentalCar) => (
+                                    <div key={car.id} className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-cyan-500/40 transition-all duration-300 group shadow-xl">
+                                        <div className="relative h-40 overflow-hidden">
+                                            <img src={car.imageUrl || '/placeholder.svg'} alt={`${car.make} ${car.model}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                                            <div className="absolute top-2.5 right-2.5">
+                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full backdrop-blur-sm ${car.isAvailable ? 'bg-green-500/90 text-white' : 'bg-red-500/80 text-white'}`}>{car.isAvailable ? '● Available' : '● Unavailable'}</span>
+                                            </div>
+                                            <div className="absolute bottom-2.5 left-3">
+                                                <p className="font-black text-white text-sm drop-shadow">{car.year} {car.make} {car.model}</p>
+                                                <p className="text-[10px] text-gray-300">{car.type} · {car.seats} seats · {car.transmission || 'Auto'}</p>
+                                            </div>
+                                        </div>
+                                        <div className="p-4">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div>
+                                                    <p className="text-cyan-400 font-black text-xl">₱{(car.pricePerDay || 0).toLocaleString()}<span className="text-xs font-normal text-gray-500">/day</span></p>
+                                                    {car.plateNumber && <p className="text-[10px] text-gray-500 mt-0.5">🚗 {car.plateNumber}</p>}
+                                                </div>
+                                                {car.color && <span className="text-xs px-2 py-1 bg-white/5 text-gray-400 rounded-lg border border-white/5">{car.color}</span>}
+                                            </div>
+                                            {car.features && car.features.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mb-3">
+                                                    {car.features.slice(0, 3).map((f, i) => <span key={i} className="text-[9px] px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20">{f}</span>)}
+                                                    {car.features.length > 3 && <span className="text-[9px] px-2 py-0.5 bg-white/5 text-gray-500 rounded-full">+{car.features.length - 3}</span>}
+                                                </div>
+                                            )}
+                                            <div className="flex items-center gap-1.5 pt-2.5 border-t border-white/5">
+                                                <button onClick={() => handleToggleCar(car)} className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${car.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'}`}>
+                                                    {car.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{car.isAvailable ? 'Mark Unavailable' : 'Mark Available'}
+                                                </button>
+                                                <button onClick={() => handleOpenCarModal(car)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={13} /></button>
+                                                <button onClick={() => handleDeleteCar(car.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={13} /></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="col-span-full text-center py-16">
+                                    <Car size={56} className="mb-4 opacity-20 text-gray-600 mx-auto" />
+                                    <p className="text-xl font-bold text-gray-400">No rental cars found</p>
+                                    <p className="text-sm mt-1 text-gray-500">Try adjusting your filters or click "Add Car".</p>
+                                </div>
+                            )
+                        )}
+
+                        {activeTab === 'drivers' && (
+                            filteredDrivers.length > 0 ? (
+                                filteredDrivers.map((driver: HireDriver) => (
+                                    <div key={driver.id} className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-violet-500/40 transition-all duration-300 group shadow-xl">
+                                        <div className="relative h-36 bg-gradient-to-br from-violet-900/40 to-black flex items-center justify-center overflow-hidden">
+                                            <img src={driver.imageUrl || '/placeholder.svg'} alt={driver.name} className="w-20 h-20 rounded-full object-cover border-4 border-violet-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                                            <div className="absolute top-2.5 right-2.5">
+                                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full backdrop-blur-sm ${driver.isAvailable ? 'bg-green-500/90 text-white' : 'bg-gray-600/90 text-white'}`}>{driver.isAvailable ? '● Available' : '● Not Available'}</span>
+                                            </div>
+                                        </div>
+                                        <div className="p-4">
+                                            <div className="mb-2">
+                                                <p className="font-black text-white text-base">{driver.name}</p>
+                                                <p className="text-[10px] text-gray-400 mt-0.5">{driver.licenseType} · {driver.experience}</p>
+                                                <p className="text-[10px] text-gray-500">📍 {driver.geoLimit}</p>
+                                            </div>
+                                            {(driver.rating || driver.totalTrips) && (
+                                                <div className="flex gap-3 mb-2">
+                                                    {driver.rating && <span className="text-[10px] text-yellow-400">⭐ {Number(driver.rating).toFixed(1)}</span>}
+                                                    {driver.totalTrips ? <span className="text-[10px] text-gray-500">{driver.totalTrips} trips</span> : null}
+                                                </div>
+                                            )}
+                                            <div className="flex gap-2 mb-3">
+                                                <div className="flex-1 bg-violet-500/10 border border-violet-500/20 rounded-xl p-2 text-center">
+                                                    <p className="text-violet-400 font-black text-sm">₱{(driver.pricePerHour || 0).toLocaleString()}</p>
+                                                    <p className="text-[9px] text-gray-500">/hour</p>
+                                                </div>
+                                                <div className="flex-1 bg-violet-500/10 border border-violet-500/20 rounded-xl p-2 text-center">
+                                                    <p className="text-violet-400 font-black text-sm">₱{(driver.pricePerDay || 0).toLocaleString()}</p>
+                                                    <p className="text-[9px] text-gray-500">/day</p>
+                                                </div>
+                                            </div>
+                                            {driver.phone && <p className="text-[10px] text-gray-500 mb-3">📞 {driver.phone}</p>}
+                                            <div className="flex items-center gap-1.5 pt-2.5 border-t border-white/5">
+                                                <button onClick={() => handleToggleDriver(driver)} className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${driver.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-gray-500/10 text-gray-400 hover:bg-gray-500/20'}`}>
+                                                    {driver.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{driver.isAvailable ? 'Available' : 'Not Available'}
+                                                </button>
+                                                <button onClick={() => handleOpenDriverModal(driver)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={13} /></button>
+                                                <button onClick={() => handleDeleteDriver(driver.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={13} /></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="col-span-full text-center py-16">
+                                    <UserCheck size={56} className="mb-4 opacity-20 text-gray-600 mx-auto" />
+                                    <p className="text-xl font-bold text-gray-400">No hire drivers found</p>
+                                    <p className="text-sm mt-1 text-gray-500">Try adjusting your filters or click "Add Driver".</p>
+                                </div>
+                            )
+                        )}
+
+                        {activeTab === 'liaison-agents' && (
+                            filteredLiaison.length > 0 ? (
+                                filteredLiaison.map((staff: LiaisonStaff) => {
+                                    return (
+                                        <div 
+                                            key={staff.id} 
+                                            onClick={() => setViewingLiaison(staff)}
+                                            className="bg-[#121212] rounded-2xl overflow-hidden border border-white/5 hover:border-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 group shadow-xl flex flex-col justify-between cursor-pointer"
+                                        >
+                                            <div className="relative h-32 bg-gradient-to-br from-emerald-950/40 to-black flex items-center justify-center overflow-hidden">
+                                                <img src={staff.imageUrl || '/placeholder.svg'} alt={staff.name} className="w-16 h-16 rounded-full object-cover border-4 border-emerald-500/30 group-hover:scale-105 transition-transform duration-500 shadow-xl" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }} />
+                                                <div className="absolute top-2.5 right-2.5">
+                                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full backdrop-blur-sm ${staff.isAvailable ? 'bg-green-500/90 text-white animate-pulse' : 'bg-gray-600/90 text-white'}`}>
+                                                        {staff.isAvailable ? '● Available' : '● Inactive'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="p-4 flex-1 flex flex-col justify-between">
+                                                <div className="mb-3">
+                                                    <p className="font-black text-white text-sm group-hover:text-emerald-400 transition-colors truncate">{staff.name}</p>
+                                                    {staff.description && <p className="text-[10px] text-gray-400 mt-1 line-clamp-2 leading-relaxed">{staff.description}</p>}
+                                                    
+                                                    {staff.assignedServices && staff.assignedServices.length > 0 && (
+                                                        <div className="mt-2.5">
+                                                            <p className="text-[8px] font-black text-gray-500 uppercase tracking-wider mb-1">Service Areas</p>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {staff.assignedServices.slice(0, 2).map((svc, i) => (
+                                                                    <span key={i} className="text-[8px] bg-emerald-500/10 border border-emerald-500/10 rounded px-1.5 py-0.5 text-emerald-400 font-bold truncate max-w-[120px]">{svc}</span>
+                                                                ))}
+                                                                {staff.assignedServices.length > 2 && (
+                                                                    <span className="text-[8px] bg-white/5 border border-white/5 rounded px-1.5 py-0.5 text-gray-400 font-bold">+{staff.assignedServices.length - 2} more</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <div className="flex items-center justify-between text-[10px] mb-2 text-gray-500 border-t border-white/5 pt-2.5">
+                                                        <div className="flex gap-2">
+                                                            <span className="text-yellow-400 font-bold">⭐ {Number(staff.rating || 5.0).toFixed(1)}</span>
+                                                            <span>•</span>
+                                                            <span>{staff.totalJobs || 0} jobs</span>
+                                                        </div>
+                                                        {staff.phone && <span className="font-mono">{staff.phone}</span>}
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                                        <button onClick={() => handleToggleLiaison(staff)} className={`flex-1 text-[9px] py-1.5 rounded-lg font-black transition-all ${staff.isAvailable ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20' : 'bg-gray-500/10 text-gray-400 hover:bg-gray-500/20'}`}>
+                                                            {staff.isAvailable ? <ToggleRight size={12} className="inline mr-1" /> : <ToggleLeft size={12} className="inline mr-1" />}{staff.isAvailable ? 'Available' : 'Unavailable'}
+                                                        </button>
+                                                        <button onClick={() => handleOpenLiaisonModal(staff)} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Edit"><Edit2 size={12} /></button>
+                                                        <button onClick={() => handleDeleteLiaison(staff.id)} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all" title="Delete"><Trash2 size={12} /></button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="col-span-full text-center py-16">
+                                    <UserCheck size={56} className="mb-4 opacity-20 text-gray-600 mx-auto text-emerald-500" />
+                                    <p className="text-xl font-bold text-gray-400">No liaison agents found</p>
+                                    <p className="text-sm mt-1 text-gray-500">Try adjusting your filters or click "Add Liaison".</p>
+                                </div>
+                            )
+                        )}
                     </div>
                 )}
             </div>
-            )}
 
             {isCategoryModalOpen && <CategoryManagerModal onClose={() => setIsCategoryModalOpen(false)} />}
             <Modal title={editingService ? 'Edit Service' : 'Add Service'} isOpen={isServiceModalOpen} onClose={handleCloseServiceModal} compact={true}>
                 <ServiceForm service={editingService} onSave={handleSaveService} onCancel={handleCloseServiceModal} categories={(db?.settings?.serviceCategories || []).filter(c => c !== 'all')} />
             </Modal>
-            <Modal title={editingPart ? 'Edit Part' : 'Add Part'} isOpen={isPartModalOpen} onClose={handleClosePartModal} compact={true}>
+            <Modal title={editingPart ? 'Edit Part & Customizations' : 'Add Part & Customizations'} isOpen={isPartModalOpen} onClose={handleClosePartModal} sizeClass="max-w-3xl" compact={true}>
                 <PartForm part={editingPart} onSave={handleSavePart} onCancel={handleClosePartModal} categories={(db?.settings?.partCategories || []).filter(c => c !== 'all')} />
             </Modal>
             <Modal

@@ -87,7 +87,6 @@ const AdminSatisfactionScreen: React.FC = () => {
 
     // Delete feedback record
     const handleDeleteFeedback = async (id: string) => {
-        if (!window.confirm("Are you sure you want to delete this satisfaction review record?")) return;
         try {
             await deleteDoc(doc(firestoreDB, 'support_satisfaction', id));
             addNotification({

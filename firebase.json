@@ -6,16 +6,44 @@
             "**/.*",
             "**/node_modules/**"
         ],
+        "headers": [
+            {
+                "source": "/**",
+                "headers": [
+                    {
+                        "key": "Access-Control-Allow-Origin",
+                        "value": "*"
+                    },
+                    {
+                        "key": "Access-Control-Allow-Methods",
+                        "value": "GET, OPTIONS"
+                    },
+                    {
+                        "key": "Access-Control-Allow-Headers",
+                        "value": "Content-Type, Authorization"
+                    }
+                ]
+            }
+        ],
         "rewrites": [
             {
                 "source": "/api/hitpay-proxy",
                 "function": "hitpayProxy"
             },
             {
+                "source": "/api/hitpay-webhook",
+                "function": "hitpayWebhook"
+            },
+            {
+                "source": "/api/smtp-bridge",
+                "function": "smtpHandler"
+            },
+            {
                 "source": "**",
                 "destination": "/index.html"
             }
         ]
+
     },
     "functions": {
         "source": "functions"

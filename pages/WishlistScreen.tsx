@@ -5,6 +5,7 @@ import { useDatabase } from '../context/DatabaseContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { Part } from '../types';
 import { getProductImage } from '../utils/imageConstants';
+import { getPartImage } from '../utils/fallbackImages';
 import CustomerHeader from '../components/CustomerHeader';
 import { Heart, Trash2, Eye, ShoppingBag, ShoppingCart, Tag, CheckCircle2, ArrowRight } from 'lucide-react';
 import Tooltip from '../components/ui/Tooltip';
@@ -90,10 +91,10 @@ const WishlistScreen: React.FC = () => {
                                         >
                                             <div className="w-full aspect-square rounded-xl bg-white/5 overflow-hidden relative">
                                                 <img 
-                                                    src={getProductImage(partImg)} 
+                                                    src={getPartImage(part)} 
                                                     alt={part.name} 
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                                    onError={(e) => { (e.target as HTMLImageElement).src = getProductImage(''); }}
+                                                    onError={(e) => { (e.target as HTMLImageElement).src = getPartImage(null); }}
                                                 />
                                                 <button
                                                     onClick={(e) => {
@@ -175,12 +176,12 @@ const WishlistScreen: React.FC = () => {
                                     {/* Image */}
                                     <div className="w-24 h-24 bg-white/5 rounded-xl flex-shrink-0 overflow-hidden relative border border-white/5">
                                         <img
-                                            src={getProductImage(imageUrl)}
+                                            src={getPartImage(item)}
                                             alt={item.name}
                                             onError={(event) => {
                                                 const target = event.target as HTMLImageElement;
                                                 target.onerror = null;
-                                                target.src = getProductImage('');
+                                                target.src = getPartImage(null);
                                             }}
                                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                         />

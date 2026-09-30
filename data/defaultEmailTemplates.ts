@@ -408,15 +408,36 @@ export const DEFAULT_EMAIL_TEMPLATES: Record<string, EmailTemplate> = {
  * Wraps raw email HTML inside a clean, modern, responsive email layout with custom brand accent colors
  */
 export const wrapInEmailLayout = (content: string, settings?: Settings, subjectTitle?: string): string => {
-    const appName = settings?.appName || 'RidersBUD';
-    const accentColor = settings?.accentColor || '#FF7900';
+    const appName = settings?.appName || 'RidersBud';
+    const accentColor = settings?.accentColor || '#FE7803';
     const contactEmail = settings?.contactEmail || 'support@ridersbud.com';
     const contactPhone = settings?.contactPhone || '0917-123-4567';
 
-    const emailLogo = settings?.emailLogoUrl || settings?.appLogoUrl;
-    const headerLogoHtml = emailLogo
-        ? `<img src="${emailLogo}" alt="${appName}" style="max-height: 52px; max-width: 220px; object-fit: contain; display: block; margin: 0 auto;" />`
-        : `<div class="logo-text">${appName.slice(0, -3)}<span>${appName.slice(-3)}</span></div>`;
+    // Bulletproof brand logo with pristine vector SVG fallback
+    const configuredLogo = settings?.emailLogoUrl || settings?.appLogoUrl;
+    
+    // Normalize relative paths to absolute URLs for email clients
+    let resolvedLogoUrl = configuredLogo || '';
+    if (resolvedLogoUrl && resolvedLogoUrl.startsWith('/')) {
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://ridersbud-10806.web.app';
+        resolvedLogoUrl = `${baseUrl}${resolvedLogoUrl}`;
+    }
+
+    const headerLogoHtml = resolvedLogoUrl
+        ? `<div style="text-align: center;">
+            <img src="${resolvedLogoUrl}" alt="${appName}" style="max-height: 54px; max-width: 240px; height: auto; object-fit: contain; display: inline-block; vertical-align: middle; border: 0;" />
+           </div>`
+        : `<div style="text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 10px;">
+            <svg width="36" height="36" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle;">
+                <circle cx="50" cy="50" r="44" fill="${accentColor}" fill-opacity="0.2" stroke="${accentColor}" stroke-width="4"/>
+                <path d="M50 22C44 22 39 25 36 30L44 38C46 36 48 35 50 35C57 35 63 41 63 48C63 52 61 56 57 58L65 66C71 62 75 55 75 48C75 34 64 22 50 22Z" fill="${accentColor}"/>
+                <path d="M33 46L24 55C22 57 22 61 24 63L37 76C39 78 43 78 45 76L54 67L42 55L33 46Z" fill="#FFFFFF"/>
+            </svg>
+            <div style="display: inline-block; vertical-align: middle; text-align: left;">
+                <span style="font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: ${accentColor}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">Riders</span><span style="font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">BUD</span>
+                <span style="display: block; font-size: 9px; font-weight: 800; letter-spacing: 2px; color: #9ca3af; text-transform: uppercase;">Automotive & Mobility</span>
+            </div>
+          </div>`;
 
     return `
 <!DOCTYPE html>

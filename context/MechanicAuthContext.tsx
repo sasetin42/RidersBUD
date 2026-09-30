@@ -23,6 +23,8 @@ interface MechanicAuthContextType {
     isMechanicAuthenticated: boolean;
     mechanic: Mechanic | null;
     loading: boolean;
+    autoOfflineNotice: string | null;
+    clearAutoOfflineNotice: () => void;
     login: (email: string, pass: string) => Promise<void>;
     loginWithGoogle: () => Promise<void>;
     logout: () => void;
@@ -40,6 +42,8 @@ export const useMechanicAuth = () => {
             isMechanicAuthenticated: false,
             mechanic: null,
             loading: true,
+            autoOfflineNotice: null,
+            clearAutoOfflineNotice: () => {},
             login: async () => {},
             loginWithGoogle: async () => {},
             logout: async () => {},
@@ -84,6 +88,106 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     const [firebaseUser, setFirebaseUser] = useState<FirebaseAuthUser | null>(null);
     const [isBypassed, setIsBypassed] = useState<boolean>(() => initialSession.isBypassed);
     const isLocationUpdatingRef = useRef<boolean>(false);
+    const [autoOfflineNotice, setAutoOfflineNotice] = useState<string | null>(() => {
+        return sessionStorage.getItem('ridersbud_mechanic_auto_offline_notice');
+    });
+    const lastUserActivityRef = useRef<number>(Date.now());
+
+    const clearAutoOfflineNotice = () => {
+        setAutoOfflineNotice(null);
+        sessionStorage.removeItem('ridersbud_mechanic_auto_offline_notice');
+    };
+
+    // Listen for mechanic user interactions to update last active timestamp
+    useEffect(() => {
+        const handleActivity = () => {
+            lastUserActivityRef.current = Date.now();
+        };
+
+        const events = ['mousedown', 'mousemove', 'keydown', 'touchstart', 'scroll', 'click'];
+        events.forEach(evt => window.addEventListener(evt, handleActivity, { passive: true }));
+
+        return () => {
+            events.forEach(evt => window.removeEventListener(evt, handleActivity));
+        };
+    }, []);
+
+    // Inactivity Auto-Offline Watcher:
+    // If enabled in Admin Settings, automatically switches mechanic to OFFLINE
+    // when inactive for greater than mechanicInactivityThresholdHours (default: 1 hour).
+    useEffect(() => {
+        if (!isMechanicAuthenticated || !mechanic || !mechanic.isOnline) return;
+
+        // Reset activity baseline when mechanic goes online
+        lastUserActivityRef.current = Date.now();
+
+        const checkInactivity = async () => {
+            try {
+                // Read settings from localStorage cache or Firestore doc
+                let autoOfflineEnabled = true;
+                let thresholdHours = 1;
+
+                const cachedSettingsStr = localStorage.getItem('ridersbud_settings_cache');
+                if (cachedSettingsStr) {
+                    try {
+                        const parsed = JSON.parse(cachedSettingsStr);
+                        if (parsed.mechanicAutoOfflineEnabled !== undefined) {
+                            autoOfflineEnabled = parsed.mechanicAutoOfflineEnabled;
+                        }
+                        if (parsed.mechanicInactivityThresholdHours !== undefined) {
+                            thresholdHours = Math.max(0.1, Number(parsed.mechanicInactivityThresholdHours));
+                        }
+                    } catch (_) {}
+                }
+
+                if (!autoOfflineEnabled) return;
+
+                const thresholdMs = thresholdHours * 60 * 60 * 1000;
+                const idleDuration = Date.now() - lastUserActivityRef.current;
+
+                if (idleDuration >= thresholdMs) {
+                    // Check if mechanic currently has an active ongoing job (En Route or In Progress)
+                    // Ongoing jobs should NOT be interrupted
+                    try {
+                        const activeJobsSnap = await getDocs(
+                            query(
+                                collection(firestore, 'bookings'),
+                                where('status', 'in', ['En Route', 'In Progress'])
+                            )
+                        );
+                        const hasActiveJob = activeJobsSnap.docs.some(d => {
+                            const data = d.data();
+                            return data?.mechanic?.id === mechanic.id || data?.mechanicId === mechanic.id;
+                        });
+
+                        if (hasActiveJob) {
+                            // Defer auto-offline while actively servicing an on-going job
+                            lastUserActivityRef.current = Date.now();
+                            return;
+                        }
+                    } catch (e) {
+                        // If query fails, proceed with auto-offline check
+                    }
+
+                    console.warn(`[Auto-Offline] Mechanic inactive for ${Math.round(idleDuration / 60000)}m (threshold: ${thresholdHours}h). Switching to OFFLINE.`);
+                    
+                    // Trigger auto-offline in Firestore and local state
+                    await updateOnlineStatus(false);
+
+                    const hourDisplay = thresholdHours === 1 ? '1 hour' : `${thresholdHours} hours`;
+                    const noticeMsg = `You were automatically set to OFFLINE due to ${hourDisplay} of inactivity. Tap Online to resume receiving jobs.`;
+                    setAutoOfflineNotice(noticeMsg);
+                    sessionStorage.setItem('ridersbud_mechanic_auto_offline_notice', noticeMsg);
+                }
+            } catch (err) {
+                console.error("[Auto-Offline] Error checking inactivity:", err);
+            }
+        };
+
+        // Check inactivity every 30 seconds
+        const intervalId = setInterval(checkInactivity, 30000);
+        return () => clearInterval(intervalId);
+    }, [isMechanicAuthenticated, mechanic?.id, mechanic?.isOnline]);
 
     useEffect(() => {
         const savedSession = loadMechanicSessionFromStorage();
@@ -487,9 +591,21 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     const updateOnlineStatus = async (isOnline: boolean) => {
         if (!mechanic) return;
         try {
-            await setDoc(doc(firestore, 'mechanics', mechanic.id), { isOnline }, { merge: true });
+            // Optimistically update local state
+            const updatedMech = { ...mechanic, isOnline };
+            setMechanic(updatedMech);
+            saveMechanicSessionToStorage(updatedMech, isBypassed);
+
+            // Write to Firestore with lastActive timestamp
+            await setDoc(doc(firestore, 'mechanics', mechanic.id), { 
+                isOnline,
+                lastActive: new Date().toISOString()
+            }, { merge: true });
         } catch (error) {
             console.error("Error updating online status:", error);
+            // Revert state if error occurred
+            setMechanic(mechanic);
+            throw error;
         }
     };
 
@@ -502,13 +618,16 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         }
     };
 
-    usePresence(isMechanicAuthenticated ? mechanic?.id || null : null, 'mechanics');
+    // Mechanics presence: update lastActive heartbeat ONLY, NEVER auto-force isOnline to true
+    usePresence(isMechanicAuthenticated ? mechanic?.id || null : null, 'mechanics', false);
 
     return (
         <MechanicAuthContext.Provider value={{ 
             isMechanicAuthenticated, 
             mechanic, 
             loading, 
+            autoOfflineNotice,
+            clearAutoOfflineNotice,
             login, 
             loginWithGoogle,
             logout, 

@@ -32,8 +32,22 @@ export const MOCKUPS = {
  */
 export const getProfileImage = (url?: string, name?: string) => {
     if (url && url.trim() !== '' && !url.includes('placeholder') && !url.startsWith('blob:') && !url.startsWith('file:') && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) return addCacheBuster(url);
-    return '/riders-logo.png';
+    return MOCKUPS.DEFAULT_AVATAR;
 };
+
+/**
+ * Robust helper for customer avatars that returns a verified image URL, or falls back to standard avatar
+ */
+export const getCustomerAvatar = (url?: string, name?: string): string => {
+    if (url && url.trim() !== '' && !url.includes('placeholder') && !url.startsWith('blob:') && !url.startsWith('file:') && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))) {
+        return addCacheBuster(url);
+    }
+    if (name && name.trim()) {
+        return `https://ui-avatars.com/api/?name=${encodeURIComponent(name.trim())}&background=3B82F6&color=fff&bold=true&size=128`;
+    }
+    return MOCKUPS.DEFAULT_AVATAR;
+};
+
 
 /**
  * Helper to get a vehicle image URL with a fallback based on type
