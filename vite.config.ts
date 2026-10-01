@@ -1,4 +1,5 @@
 import path from 'path';
+import https from 'https';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -193,6 +194,14 @@ export default defineConfig(({ mode }) => {
 
 
           // Native Node.js HitPay Payment Gateway Proxy to bypass CORS during development
+          const hitpayDevAgent = new https.Agent({
+            keepAlive: true,
+            maxSockets: 50,
+            maxFreeSockets: 10,
+            timeout: 60000,
+            keepAliveMsecs: 30000
+          });
+
           server.middlewares.use(async (req, res, next) => {
               if (req.url?.startsWith('/api/hitpay-proxy')) {
                 // Support GET /api/hitpay-proxy?action=status&id=...
@@ -200,7 +209,9 @@ export default defineConfig(({ mode }) => {
                   const urlObj = new URL(req.url, 'http://localhost');
                   const id = urlObj.searchParams.get('id');
                   const isSandbox = urlObj.searchParams.get('sandbox') !== 'false';
-                  const apiKey = req.headers['x-business-api-key'] || '';
+                  const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
+                  const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
+                  const apiKey = req.headers['x-business-api-key'] || (isSandbox ? defaultSandboxKey : defaultLiveKey);
 
                   if (!id) {
                     res.statusCode = 400;
@@ -209,11 +220,11 @@ export default defineConfig(({ mode }) => {
                   }
 
                   const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
-                  const https = await import('https');
                   const proxyReq = https.request({
                     hostname,
                     path: `/v1/payment-requests/${encodeURIComponent(id)}`,
                     method: 'GET',
+                    agent: hitpayDevAgent,
                     headers: {
                       'X-Requested-With': 'XMLHttpRequest',
                       'X-BUSINESS-API-KEY': apiKey as string
@@ -241,18 +252,20 @@ export default defineConfig(({ mode }) => {
                   req.on('data', chunk => { rawBody += chunk; });
                   req.on('end', async () => {
                     try {
-                      const https = await import('https');
                       const parsed = JSON.parse(rawBody || '{}');
                       const isSandbox = parsed.isSandbox !== false;
-                      const apiKey = parsed.apiKey || '';
+                      const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
+                      const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
+                      const apiKey = parsed.apiKey || (isSandbox ? defaultSandboxKey : defaultLiveKey);
                       const payload = JSON.stringify(parsed.payload || {});
 
                       const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
-                      console.log(`[HitPay Proxy] Forwarding to https://${hostname}/v1/payment-requests...`);
+                      console.log(`[HitPay Proxy] Forwarding to https://${hostname}/v1/payment-requests (${isSandbox ? 'SANDBOX' : 'LIVE'})...`);
                       const proxyReq = https.request({
                         hostname,
                         path: '/v1/payment-requests',
                         method: 'POST',
+                        agent: hitpayDevAgent,
                         headers: {
                           'Content-Type': 'application/json',
                           'X-Requested-With': 'XMLHttpRequest',

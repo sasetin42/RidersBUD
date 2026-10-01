@@ -24,6 +24,7 @@ import { useLocation } from 'react-router-dom';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import { geocodeAddressOrCity, resolveOrderTrackingLocations } from '../utils/locationHelper';
 import { HitPayService } from '../services/HitPayService';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
@@ -117,6 +118,17 @@ const HomeScreen: React.FC = () => {
     const [balanceBookingForModal, setBalanceBookingForModal] = useState<any | null>(null);
     const [isInitiatingHitPayBalance, setIsInitiatingHitPayBalance] = useState(false);
     const [showBalanceGCashModal, setShowBalanceGCashModal] = useState(false);
+
+    // Native: resume pending payment watch (custom tab re-entry / process death)
+    useEffect(() => {
+        if (!isNative()) return;
+        const stop = resumePendingPaymentVerification(
+            (marker) => navigate(marker.returnRoute, { state: { payment_completed: '1' } }),
+            () => {}
+        );
+        return () => { stop?.(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const popularServices = useMemo(() => {
         const targetKeys = [
@@ -407,7 +419,16 @@ const HomeScreen: React.FC = () => {
             if (url.startsWith('/')) {
                 navigate(url);
             } else {
-                window.location.href = url;
+                const balKind: PaymentEntityKind = isRental ? 'rental' : isLiaison ? 'liaison' : isDriver ? 'service-request' : 'booking';
+                setPendingPaymentMarker({
+                    entityKind: balKind,
+                    entityId: targetTx.id,
+                    returnRoute: `/customer-portal/`,
+                    startedAt: Date.now(),
+                    purpose: 'balance-settlement'
+                });
+                startPaymentWatcher(balKind, targetTx.id, `/customer-portal/`);
+                openPaymentUrl(url);
             }
         } catch (err) {
             console.error("Failed to initiate HitPay for balance, navigating to service payment screen:", err);

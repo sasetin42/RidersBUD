@@ -162,21 +162,54 @@ export const HitPayInAppModal: React.FC<HitPayInAppModalProps> = ({
                 </div>
             </div>
 
+            {/* High-Speed Connection Progress Bar */}
+            {isLoading && (
+                <div className="w-full h-1 bg-white/5 overflow-hidden flex-shrink-0">
+                    <div className="w-full h-full bg-gradient-to-r from-[#FE7803] via-amber-400 to-emerald-400 animate-pulse origin-left" />
+                </div>
+            )}
+
             {/* In-App Sheet Viewport */}
             <div className="flex-1 relative w-full h-full bg-[#0A0B0E] overflow-hidden">
+                {/* Instant Shimmer Skeleton UI matching HitPay checkout structure */}
                 {isLoading && (
-                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#0D0E14] text-center p-6 space-y-4">
-                        <div className="relative">
-                            <div className="w-14 h-14 rounded-full border-4 border-white/10 border-t-[#FE7803] animate-spin" />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <Lock size={18} className="text-[#FE7803]" />
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-start bg-[#0D0E14] p-5 sm:p-8 space-y-6 overflow-hidden animate-in fade-in duration-150">
+                        {/* Shimmer Header Card */}
+                        <div className="w-full max-w-md bg-[#161822] border border-white/5 rounded-2xl p-5 space-y-3 relative overflow-hidden">
+                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite] bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
+                            <div className="flex justify-between items-center">
+                                <div className="h-4 w-32 bg-white/10 rounded-lg" />
+                                <div className="h-5 w-16 bg-emerald-500/20 rounded-full" />
                             </div>
+                            <div className="h-8 w-44 bg-white/20 rounded-xl" />
+                            <div className="h-3 w-48 bg-white/5 rounded-md" />
                         </div>
-                        <div>
-                            <p className="text-sm font-bold text-white">Connecting to Secure Payment Gateway...</p>
-                            <p className="text-xs text-gray-400 mt-1 max-w-xs">
-                                Loading official HitPay payment channels inside your RidersBUD app.
-                            </p>
+
+                        {/* Shimmer Payment Methods List */}
+                        <div className="w-full max-w-md space-y-3">
+                            <div className="flex justify-between items-center px-1">
+                                <div className="h-3.5 w-36 bg-white/10 rounded" />
+                                <div className="h-3 w-20 bg-white/5 rounded" />
+                            </div>
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="w-full h-16 bg-[#161822] border border-white/5 rounded-2xl p-4 flex items-center justify-between relative overflow-hidden">
+                                    <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite] bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-xl bg-white/10" />
+                                        <div className="space-y-1.5">
+                                            <div className="h-3.5 w-24 bg-white/15 rounded" />
+                                            <div className="h-2.5 w-36 bg-white/5 rounded" />
+                                        </div>
+                                    </div>
+                                    <div className="w-4 h-4 rounded-full bg-white/10" />
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Security reassurance badge */}
+                        <div className="flex items-center gap-2 text-xs text-gray-400 bg-white/5 px-4 py-2 rounded-xl border border-white/5 mt-auto">
+                            <Lock size={13} className="text-[#FE7803] animate-pulse" />
+                            <span className="text-[11px] font-medium">Securing direct 256-bit encrypted gateway connection...</span>
                         </div>
                     </div>
                 )}
@@ -186,7 +219,9 @@ export const HitPayInAppModal: React.FC<HitPayInAppModalProps> = ({
                     ref={iframeRef}
                     src={checkoutUrl}
                     title="HitPay Checkout Portal"
-                    className="w-full h-full border-0 bg-[#0F0F12]"
+                    className={`w-full h-full border-0 bg-[#0F0F12] transition-opacity duration-300 ${
+                        isLoading ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                    }`}
                     onLoad={() => {
                         setIsLoading(false);
                         checkIframeNavigation();

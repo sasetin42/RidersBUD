@@ -251,7 +251,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             defaultCustomerImageUrl: '/assets/logo.png',
             defaultMechanicImageUrl: '/assets/logo.png',
             hitpayEnabled: true,
-            hitpaySandboxMode: true,
+            hitpaySandboxMode: false,
             hitpayApiKey: 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb',
             hitpaySalt: 'Wj5xX1V5DmDJ4hZOlvR9GrTWrgZi8OAJImleDzSMsB7xOlYgK74QlsoCTSetXAAM',
             hitpaySandboxApiKey: 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8',
@@ -275,12 +275,12 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             mechanicInactivityThresholdHours: 1,
             // Android In-App APK Update Controls
             appUpdateConfig: {
-                versionCode: 2,
-                versionName: '1.0.1',
+                versionCode: 4,
+                versionName: '1.0.3',
                 apkUrl: 'https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk',
-                releaseNotes: '• Auto updates added\n• High precision GPS fix\n• Improved driver dispatching',
+                releaseNotes: '• Payments auto-return to the app\n• 70/30 mechanic commission\n• True fullscreen on Android\n• Works offline (bundled app)',
                 mandatory: false,
-                fileSizeMb: '27.3 MB',
+                fileSizeMb: '24.4 MB',
                 showUpdateModal: true,
                 targetAudience: 'all',
                 externalDownloadUrl: '',
@@ -2221,20 +2221,34 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
             // Phase 3: Live Payments & Escrow Release
             if (status === 'Completed' && booking.mechanicId) {
-                const totalJobRevenue = getJobTotalAmount(booking);
-                // Calculate dynamic platform service fee cut (default 10% or from settings)
-                const feePercentage = db?.settings?.serviceFeePercentage ?? 10;
-                const platformCut = Math.round(totalJobRevenue * (feePercentage / 100));
-                // Mechanic receives net revenue (job total minus platform commission)
-                const mechanicShare = Math.max(0, totalJobRevenue - platformCut);
+                // Double-credit guard: mark the booking FIRST so re-entering 'Completed' never pays twice.
+                if (!booking.earningsReleased) {
+                    try {
+                        await updateDoc(doc(firestore, 'bookings', id), {
+                            earningsReleased: true,
+                            earningsReleasedAt: new Date().toISOString()
+                        });
+                    } catch (e) {
+                        console.warn(`[Firestore Write Failed] earningsReleased flag for booking ${id} failed:`, e);
+                    }
 
-                try {
-                    const mechanicRef = doc(firestore, 'mechanics', booking.mechanicId);
-                    await updateDoc(mechanicRef, {
-                        walletBalance: increment(mechanicShare),
-                        totalEarnings: increment(mechanicShare)
-                    });
-                } catch (e) {
+                    const totalJobRevenue = getJobTotalAmount(booking);
+                    // Platform commission: 30% by default (mechanic receives 70%). Configurable via settings.
+                    const feePercentage = db?.settings?.serviceFeePercentage ?? 30;
+                    const platformCut = Math.round(totalJobRevenue * (feePercentage / 100));
+                    // Mechanic receives net revenue (job total minus platform commission)
+                    const mechanicShare = Math.max(0, totalJobRevenue - platformCut);
+
+                    try {
+                        const mechanicRef = doc(firestore, 'mechanics', booking.mechanicId);
+                        await updateDoc(mechanicRef, {
+                            walletBalance: increment(mechanicShare),
+                            totalEarnings: increment(mechanicShare)
+                        });
+                        await updateDoc(doc(firestore, 'bookings', id), {
+                            earningsAmount: mechanicShare
+                        }).catch(() => {});
+                    } catch (e) {
                     console.warn(`[Firestore Write Failed] updateMechanic for mechanic ${booking.mechanicId} failed, falling back to local update:`, e);
                     setDb(prev => {
                         if (!prev) return null;
@@ -2252,15 +2266,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     });
                 }
 
-                await sendNotification({
-                    recipientId: `mechanic-${booking.mechanicId}`,
-                    title: 'Payment Released',
-                    message: `Earnings (₱${mechanicShare.toLocaleString()}) for job #${booking.id.slice(-5).toUpperCase()} have been credited to your available balance.`,
-                    type: 'success',
-                    date: new Date().toISOString(),
-                    read: false,
-                    link: '/mechanic-portal/earnings'
-                });
+                    await sendNotification({
+                        recipientId: `mechanic-${booking.mechanicId}`,
+                        title: 'Payment Released',
+                        message: `Earnings (₱${mechanicShare.toLocaleString()}) for job #${booking.id.slice(-5).toUpperCase()} have been credited to your available balance.`,
+                        type: 'success',
+                        date: new Date().toISOString(),
+                        read: false,
+                        link: '/mechanic-portal/earnings'
+                    });
+                }
             }
 
             if (status === 'Completed' || status === 'Cancelled') {
@@ -3065,7 +3080,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const addPayoutRequest = async (request: { mechanicId: string; mechanicName: string; amount: number; paymentMethod: string; accountDetails: string; notes?: string }) => {
         const mechanic = db?.mechanics.find(m => m.id === request.mechanicId);
-        const feePercentage = db?.settings?.serviceFeePercentage ?? 10;
+        const feePercentage = db?.settings?.serviceFeePercentage ?? 30;
         // Authoritative real-time wallet ledger calculation
         const walletLedger = calculateMechanicWalletLedger(
             request.mechanicId,

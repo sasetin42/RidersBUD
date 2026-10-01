@@ -9,6 +9,7 @@ import { RentalCar } from '../types';
 import { useAuth } from '../context/AuthContext';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import { HitPayService } from '../services/HitPayService';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
 import { getAccurateLivePosition, safeWatchPosition, safeClearWatch, reverseGeocodeCoordinates } from '../utils/locationHelper';
@@ -1198,6 +1199,18 @@ const RentalCarCard: React.FC<{
 const RentCarScreen: React.FC = () => {
     const { db, addRentalBooking, updateRentalBooking, loading } = useDatabase();
     const { user } = useAuth();
+    const navigate = useNavigate();
+
+    // Native: resume pending payment watch (custom tab re-entry / process death)
+    useEffect(() => {
+        if (!isNative()) return;
+        const stop = resumePendingPaymentVerification(
+            (marker) => navigate(marker.returnRoute, { state: { payment_completed: '1' } }),
+            () => {}
+        );
+        return () => { stop?.(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const [selectedCar, setSelectedCar] = useState<RentalCar | null>(null);
     const [locatingCar, setLocatingCar] = useState<RentalCar | null>(null);
     const [confirmedLocation, setConfirmedLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
@@ -1211,7 +1224,6 @@ const RentCarScreen: React.FC = () => {
     const [totalPriceState, setTotalPriceState] = useState<number>(0);
     const [showSuccessView, setShowSuccessView] = useState(false);
 
-    const navigate = useNavigate();
     const accentColor = db?.settings?.accentColor || '#FE7803';
 
     // Note: Do not abort or cancel bookings on background page load/refresh during normal flow
@@ -1298,7 +1310,15 @@ const RentCarScreen: React.FC = () => {
         if (url.startsWith('/')) {
             navigate(url);
         } else {
-            window.location.href = url;
+            setPendingPaymentMarker({
+                entityKind: 'rental',
+                entityId: createdRental.id,
+                returnRoute: `/customer-portal/`,
+                startedAt: Date.now(),
+                purpose: 'rental-downpayment'
+            });
+            startPaymentWatcher('rental', createdRental.id, `/customer-portal/`);
+            openPaymentUrl(url);
         }
         return;
     };

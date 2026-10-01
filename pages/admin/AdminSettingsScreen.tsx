@@ -172,15 +172,22 @@ const AdminSettingsScreen: React.FC = () => {
         setHasChanges(true);
     };
 
+    const defaultOperationalModules = [
+        { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
+        { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
+        { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
+        { id: 'towing', name: 'Emergency Towing Service', enabled: true, bannerMessage: '' },
+        { id: 'parts-store', name: 'Parts & Tools Store', enabled: true, bannerMessage: '' }
+    ];
+
     const handleToggleModule = (moduleId: string) => {
         if (!localSettings) return;
-        const currentModules = localSettings.modules || [
-            { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
-            { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
-            { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
-            { id: 'towing', name: 'Towing Service', enabled: true, bannerMessage: '' }
-        ];
-        const updatedModules = currentModules.map((m) =>
+        const currentSaved = localSettings.modules || [];
+        const fullModules = defaultOperationalModules.map(defMod => {
+            const match = currentSaved.find(m => m.id === defMod.id);
+            return match ? { ...defMod, ...match } : defMod;
+        });
+        const updatedModules = fullModules.map((m) =>
             m.id === moduleId ? { ...m, enabled: !m.enabled } : m
         );
         setLocalSettings((prev) => (prev ? { ...prev, modules: updatedModules } : null));
@@ -189,8 +196,12 @@ const AdminSettingsScreen: React.FC = () => {
 
     const handleModuleBannerChange = (moduleId: string, bannerMessage: string) => {
         if (!localSettings) return;
-        const currentModules = localSettings.modules || [];
-        const updatedModules = currentModules.map((m) =>
+        const currentSaved = localSettings.modules || [];
+        const fullModules = defaultOperationalModules.map(defMod => {
+            const match = currentSaved.find(m => m.id === defMod.id);
+            return match ? { ...defMod, ...match } : defMod;
+        });
+        const updatedModules = fullModules.map((m) =>
             m.id === moduleId ? { ...m, bannerMessage } : m
         );
         setLocalSettings((prev) => (prev ? { ...prev, modules: updatedModules } : null));

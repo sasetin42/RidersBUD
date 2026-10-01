@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, CheckCircle, Car, Calendar, MapPin, FileText
 import Spinner from '../../components/Spinner';
 import { ServiceRequest } from '../../types';
 import { HitPayService } from '../../services/HitPayService';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 
 const ServiceBookingFlow: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
@@ -116,23 +117,23 @@ const ServiceBookingFlow: React.FC = () => {
                     }
                 }));
 
-                const { url } = await hitPay.createPaymentRequest({
-                    amount: downpaymentAmount,
+                const refNumber = `TOW-${createdRequest.id || Date.now()}`;
+                const purpose = `RidersBUD — Emergency Towing 50% Deposit (${service.name})`;
+
+                const checkoutParams = new URLSearchParams({
+                    amount: String(downpaymentAmount),
                     currency: db?.settings?.currency || 'PHP',
-                    reference_number: `TOW-${createdRequest.id || Date.now()}`,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    reference_number: refNumber,
+                    reference: refNumber,
                     redirect_url: returnUrl,
                     email: user.email || 'customer@example.com',
                     name: user.name || 'Customer',
-                    phone: user.phone || undefined,
-                    purpose: `RidersBUD — Emergency Towing 50% Deposit (${service.name})`
+                    phone: user.phone || '',
+                    purpose: purpose,
+                    sandbox: hitPay.getIsSandbox() ? 'true' : 'false'
                 });
 
-                if (url.startsWith('/')) {
-                    navigate(url);
-                } else {
-                    window.location.href = url;
-                }
+                navigate(`/hitpay-checkout?${checkoutParams.toString()}`);
                 return;
             }
 

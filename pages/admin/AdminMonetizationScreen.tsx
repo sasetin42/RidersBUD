@@ -28,6 +28,7 @@ import {
     ExternalLink,
     Copy,
     Shield,
+    ShieldCheck,
     Wrench
 } from 'lucide-react';
 
@@ -260,9 +261,6 @@ const AdminMonetizationScreen: React.FC = () => {
                             const hasLiveKeys = !!(settings?.hitpayApiKey && settings?.hitpaySalt);
                             const hasSandboxKeys = !!(settings?.hitpaySandboxApiKey && settings?.hitpaySandboxSalt);
                             const isConnected = isSandbox ? hasSandboxKeys : hasLiveKeys;
-                            const activeKeyPreview = isSandbox
-                                ? (settings?.hitpaySandboxApiKey || '').slice(0, 12) + '...'
-                                : (settings?.hitpayApiKey || '').slice(0, 12) + '...';
 
                             return (
                                 <>

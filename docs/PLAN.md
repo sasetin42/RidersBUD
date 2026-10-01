@@ -1,46 +1,47 @@
-# Inspection & Remediation Plan: Booking Services Mechanics & E-Commerce Products
+# Payment Audit Screen Remediation & Full Functional Enhancement Plan
 
-**Goal:** Ensure the end-to-end Booking Services Mechanics flow and Products E-Commerce ordering/checkout system are bug-free, fully responsive, error-tolerant, and launch-ready with real-time Firestore persistence and stock controls.
-
----
-
-### Phase 1: Mechanics Booking Services Flow Hardening
-- [x] **Task 1: Strict Availability & Real-Time Job Limitation in `pages/BookingScreen.tsx`**
-  - **Issue:** Mechanics with active jobs (`Mechanic Assigned`, `En Route`, `In Progress`) could previously be selected if filters shifted or card clicks bypassed styling.
-  - **Fix:** In `handleSelectMechanic` and `handleSelectTimeSlot`, strictly block any busy mechanic (`isMechanicBusy(mechanic.id)` returns true) with a descriptive error message. Enforce active job limit and ensure mechanics with `isOnline: false` are strictly disallowed for today's bookings.
-  - **Verification:** Both TypeScript check and production build verified cleanly.
-
-- [x] **Task 2: Robust Booking Confirmation & Blank Screen Prevention in `pages/BookingConfirmationScreen.tsx`**
-  - **Issue:** Network latency when navigating to booking confirmation caused immediate redirects back to `/customer-portal/` if Firestore document propagation had slight lag.
-  - **Fix:** Implemented a resilient multi-tier fallback: check `locationState.bookings`, then active cached `database.bookings`, then direct `getDoc` with graceful retry and cache fallback before navigating away.
-  - **Verification:** Immediate transition to booking confirmation screen without flickering or missing data.
+**Goal:** Resolve the critical blocker causing an infinite loading spinner on the Admin Payment Audit Screen (`/admin-portal/payment-audit`), and upgrade the screen into a fully functional, production-ready Payment Audit & Financial Reconciliation suite.
 
 ---
 
-### Phase 2: E-Commerce Products & Cart/Checkout Hardening
-- [x] **Task 3: Dynamic Stock Boundary & Out-of-Stock Protection in `context/CartContext.tsx` & `pages/CartScreen.tsx`**
-  - **Issue:** `addToCart` incremented quantity indefinitely without checking item stock limit, allowing overselling.
-  - **Fix:** Checked `item.stock` in `addToCart` in `CartContext.tsx` with ceiling capping. In `CartScreen.tsx`, disabled "Proceed to Checkout" if any item in cart exceeds current stock or is sold out, displaying a dedicated notice banner.
-  - **Verification:** Validated across CartContext and CartScreen.
+## 🔍 Root Cause Analysis
 
-- [x] **Task 4: Comprehensive Multi-Payment & COD / GCash / HitPay Support in `pages/PaymentScreen.tsx`**
-  - **Issue:** Cash on Delivery (COD) was missing from the payment method options in `PaymentScreen.tsx`, and stock was not automatically deducted upon order creation.
-  - **Fix:**
-    1. Added Cash on Delivery (COD) as a first-class payment method option in `PaymentScreen.tsx`.
-    2. Supported HitPay, Manual GCash, and COD with dedicated order statuses (`Pending` for COD/GCash, `Processing` for HitPay).
-    3. Added automatic inventory stock deduction in `DatabaseContext.tsx` (`addOrder`) for both local state and Firestore.
-  - **Verification:** Verified full flow and database synchronization.
+1. **Fatal Auth Mismatch Blocker:**
+   - In `AdminPaymentAuditScreen.tsx`, `const { user } = useAuth()` imported Customer Authentication (`user`), while the Admin Portal operates under Admin Authentication (`useAdminAuth()` and localStorage `ridersbud_admin_session`).
+   - Line 192 executed `if (!user) return <Spinner fullScreen />;`. Because `user` was `null` for logged-in administrators, the component was trapped in an infinite loading spinner.
+2. **Webhook Query & Payload Inconsistencies:**
+   - `functions/index.js` writes camelCase fields (`paymentId`, `referenceNumber`, `rawPayload`, `receivedAt` Timestamp), whereas the audit screen was only reading snake_case (`payment_id`, `reference_number`, `raw`).
+   - If the Firestore index for `orderBy('receivedAt', 'desc')` was building or missing, direct queries would fail without a resilient fallback.
+3. **Missing Interactive Operations & Audit Tools:**
+   - Lack of anomaly-only filtering, manual earnings release for unreleased completed bookings, and payment-channel breakdown across HitPay, Manual GCash, and COD.
 
 ---
 
-### Phase 3: Comprehensive Verification & Lint Audit
-- [x] **Task 5: End-to-End Build & Type Verification**
-  - `npm run typecheck` (`tsc --noEmit`) passed with 0 errors.
-  - `npm run build` completed successfully with all bundles and assets cleanly created in 13.82s.
+## 📋 Remediation & Implementation Steps
+
+### Phase 1: Authentication & Loading Blocker Resolution
+- [x] **Removed customer `useAuth` dependency:** Switched to `useAdminAuth` and session context. Removed blocking `if (!user)` check.
+- [x] **Responsive Loading & Empty States:** Added graceful loading indicator only while `dbLoading && !db`.
+
+### Phase 2: Gateway Webhook Audit Hardening
+- [x] **Field Normalization:** Standardized both camelCase and snake_case properties (`paymentId`/`payment_id`, `referenceNumber`/`reference_number`, `rawPayload`/`raw`).
+- [x] **Resilient Firestore Fetching:** Implemented index-fallback query for `paymentWebhookLogs`, 20s auto-refresh, and manual refresh button with spinner.
+- [x] **Payload Inspection & Search:** Expandable JSON inspector with 1-click copy-to-clipboard, HMAC verification badge, reference copy button, and status filters (`All`, `Completed`, `Failed`, `Pending`, `Unmatched`).
+
+### Phase 3: Mechanic Earnings & Platform Split Audit Hardening
+- [x] **Ledger Verification Engine:** Real-time reconciliation of completed bookings against the 70/30 (or custom configured) platform split.
+- [x] **Anomaly Detection:** Surfaced discrepancies (over-credited, under-credited, unreleased earnings on completed jobs).
+- [x] **Direct Remediation Action:** Added "Release Share" trigger directly from the audit row with instant Firestore booking update and toast notification.
+- [x] **Comprehensive Financial KPI Header:** Gross completed volume, platform commission, mechanic net payouts, pending escrow, and live anomaly counter.
+- [x] **Channel Reconciliation Tab:** Added Tab 3 with volume and transaction breakdowns for HitPay Online Gateway, Manual GCash P2P receipts, and Cash on Delivery.
+
+### Phase 4: Verification & Multi-Agent Audit
+- [x] **TypeScript Typecheck:** `npm run typecheck` (`tsc --noEmit`) completed with 0 errors.
+- [x] **Vite Production Build:** `npm run build` completed successfully in 20.39s with `dist/assets/AdminPaymentAuditScreen-D4AkYH59.js` cleanly bundled.
 
 ---
 
-### Phase 4: Plain English & Layman's Terms UI Polish
-- [x] **Task 6: User-Friendly Customer Copy & Protection Guarantees**
-  - Replaced technical jargon like *"256-bit encrypted HitPay gateway with escrow coverage"* with clear, reassuring everyday language: *"100% Safe & Protected Payment — Your money is held safely until your mechanic arrives and completes the job. If you cancel, you get a quick and hassle-free refund."* in [BookingPaymentBreakdownModal.tsx](file:///c:/Users/User/OneDrive/Desktop/SASE%20PROJECT/RIDERSBUD%20APP/RidersBUD%20App/components/BookingPaymentBreakdownModal.tsx).
-  - Production build re-verified cleanly in 26.21s.
+## 👥 Assigned Agent Roles
+- **Phase 1 & 2:** `frontend-specialist` + `backend-specialist` (UI restoration, field normalization, Firestore resilience)
+- **Phase 3:** `database-architect` + `frontend-specialist` (Ledger calculations, anomaly flagging, CSV export)
+- **Phase 4:** `test-engineer` (Typecheck, build validation)

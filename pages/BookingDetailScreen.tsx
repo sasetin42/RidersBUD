@@ -10,6 +10,7 @@ import ReviewModal from '../components/ReviewModal';
 import ReviewDeclinedModal from '../components/ReviewDeclinedModal';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import { HitPayService } from '../services/HitPayService';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
 import { CallButton } from '../components/CallUI';
 import { useCall } from '../context/CallContext';
 import {
@@ -495,6 +496,17 @@ const BookingDetailScreen: React.FC = () => {
     const locationState = useLocation();
     const navPassedBooking = (locationState.state as any)?.booking;
 
+    // Native: resume pending payment watch (custom tab re-entry / process death)
+    useEffect(() => {
+        if (!isNative()) return;
+        const stop = resumePendingPaymentVerification(
+            (marker) => navigate(marker.returnRoute, { state: { payment_completed: '1' } }),
+            () => {}
+        );
+        return () => { stop?.(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const { 
         db, 
         updateBookingStatus, 
@@ -814,7 +826,16 @@ const BookingDetailScreen: React.FC = () => {
             if (url.startsWith('/')) {
                 navigate(url);
             } else {
-                window.location.href = url;
+                const entityKind: PaymentEntityKind = isRentalTarget ? 'rental' : isLiaisonTarget ? 'liaison' : isDriverTarget ? 'service-request' : 'booking';
+                setPendingPaymentMarker({
+                    entityKind,
+                    entityId: targetBooking.id,
+                    returnRoute: `/customer-portal/booking-detail/${targetBooking.id}`,
+                    startedAt: Date.now(),
+                    purpose: 'balance-settlement'
+                });
+                startPaymentWatcher(entityKind, targetBooking.id, `/customer-portal/booking-detail/${targetBooking.id}`);
+                openPaymentUrl(url);
             }
         } catch (err: any) {
             console.info("ℹ️ Online gateway requires manual/service payment verification. Redirecting to payment screen.");

@@ -1184,7 +1184,7 @@ const AdminMechanicsScreen: React.FC = () => {
                                                 {mechanic.reviews || 0}
                                             </td>
                                             <td className="p-4 text-sm font-bold text-green-400">
-                                                ₱{calculateMechanicWalletLedger(mechanic.id, mechanic, db.bookings || [], db.payouts || [], db?.settings?.serviceFeePercentage ?? 10).availableBalance.toLocaleString()}
+                                                ₱{calculateMechanicWalletLedger(mechanic.id, mechanic, db.bookings || [], db.payouts || [], db?.settings?.serviceFeePercentage ?? 30).availableBalance.toLocaleString()}
                                             </td>
                                             <td className="p-4 text-right relative">
                                                 <div className="flex items-center justify-end gap-2">
@@ -1367,7 +1367,7 @@ const AdminMechanicsScreen: React.FC = () => {
                                 </div>
                                 <div className="bg-white/5 rounded-lg p-2 text-center">
                                     <p className="text-[8px] text-gray-500 font-medium">Balance</p>
-                                    <p className="text-xs font-bold text-green-400 mt-0.5">₱{calculateMechanicWalletLedger(mechanic.id, mechanic, db.bookings || [], db.payouts || [], db?.settings?.serviceFeePercentage ?? 10).availableBalance.toLocaleString()}</p>
+                                    <p className="text-xs font-bold text-green-400 mt-0.5">₱{calculateMechanicWalletLedger(mechanic.id, mechanic, db.bookings || [], db.payouts || [], db?.settings?.serviceFeePercentage ?? 30).availableBalance.toLocaleString()}</p>
                                 </div>
                             </div>
 

@@ -1192,7 +1192,7 @@ export const seedSettings: Settings = {
 
     // Financials
     currency: 'PHP',
-    serviceFeePercentage: 5,
+    serviceFeePercentage: 30,
     minimumPayout: 500,
     maximumPayout: 50000,
     payoutSchedule: 'Weekly',

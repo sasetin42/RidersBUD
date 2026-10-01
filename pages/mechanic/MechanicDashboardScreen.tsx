@@ -216,7 +216,7 @@ const MechanicDashboardScreen: React.FC = () => {
             };
         }
         const currentMechanicDoc = db.mechanics.find(m => m.id === mechanic.id) || mechanic;
-        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 10;
+        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 30;
         return calculateMechanicWalletLedger(mechanic.id, currentMechanicDoc, db.bookings || [], db.payouts || [], serviceFeePercentage);
     }, [db, mechanic]);
 

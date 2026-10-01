@@ -28,6 +28,11 @@ export interface AppUpdateCheckResult {
 const UPDATE_METADATA_URL = 'https://ridersbud-10806.web.app/version.json';
 export const DEFAULT_LATEST_APK_URL = 'https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk';
 
+// Web/PWA builds can never be updated via APK download. A huge sentinel
+// versionCode guarantees `remoteInfo.versionCode > currentVersionCode` is
+// always false on web, so the update modal can never appear there.
+const WEB_SENTINEL_VERSION_CODE = 999999;
+
 export class AppUpdateService {
   /**
    * Check if a newer version of RidersBUD is available remotely
@@ -48,12 +53,21 @@ export class AppUpdateService {
         } catch {
           // Native getInfo fallback
         }
+      } else {
+        // Web/PWA: APK updates are meaningless — suppress via sentinel
+        currentVersionCode = WEB_SENTINEL_VERSION_CODE;
+        try {
+          currentVersionName = import.meta.env.VITE_APP_VERSION || 'web';
+        } catch {
+          currentVersionName = 'web';
+        }
       }
 
-      let remoteInfo: AppVersionInfo | null = null;
+      // 2. Gather ALL candidate sources: Firestore settings/main + settings/app + version.json.
+      //    Trust the HIGHEST versionCode among them so a stale config can never
+      //    suppress a newer release announcement.
+      const candidates: AppVersionInfo[] = [];
 
-      // 2. First check realtime Firestore `settings` doc if accessible (Realtime Admin Control)
-      // Check both 'settings/main' (where AdminSettingsScreen saves) and fallback to 'settings/app'
       try {
         if (db) {
           const mainSettingsRef = doc(db, 'settings', 'main');
@@ -61,28 +75,26 @@ export class AppUpdateService {
           if (mainSettingsSnap.exists()) {
             const data = mainSettingsSnap.data();
             if (data?.appUpdateConfig && data.appUpdateConfig.versionCode) {
-              remoteInfo = data.appUpdateConfig as AppVersionInfo;
+              candidates.push(data.appUpdateConfig as AppVersionInfo);
             }
           }
 
-          if (!remoteInfo) {
-            const appSettingsRef = doc(db, 'settings', 'app');
-            const appSettingsSnap = await getDoc(appSettingsRef);
-            if (appSettingsSnap.exists()) {
-              const data = appSettingsSnap.data();
-              if (data?.appUpdateConfig && data.appUpdateConfig.versionCode) {
-                remoteInfo = data.appUpdateConfig as AppVersionInfo;
-              }
+          const appSettingsRef = doc(db, 'settings', 'app');
+          const appSettingsSnap = await getDoc(appSettingsRef);
+          if (appSettingsSnap.exists()) {
+            const data = appSettingsSnap.data();
+            if (data?.appUpdateConfig && data.appUpdateConfig.versionCode) {
+              candidates.push(data.appUpdateConfig as AppVersionInfo);
             }
           }
         }
       } catch (firestoreErr) {
-        // Firestore read failed, will fallback to version.json
+        // Firestore read failed, will rely on version.json
       }
 
-      // 3. Fallback to /version.json if Firestore didn't provide update metadata
-      if (!remoteInfo) {
-        const isLocalWeb = typeof window !== 'undefined' && 
+      // 3. version.json fallback / additional candidate
+      {
+        const isLocalWeb = typeof window !== 'undefined' &&
           (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
         const targetUrl = isLocalWeb ? `/version.json?t=${Date.now()}` : `${UPDATE_METADATA_URL}?t=${Date.now()}`;
@@ -101,36 +113,46 @@ export class AppUpdateService {
         }
 
         if (response && response.ok) {
-          remoteInfo = await response.json();
+          try {
+            const json = await response.json();
+            if (json?.versionCode) candidates.push(json as AppVersionInfo);
+          } catch {
+            // malformed json — skip
+          }
         }
       }
 
-      if (!remoteInfo) {
+      if (candidates.length === 0) {
         return { updateAvailable: false, currentVersion: currentVersionName, shouldShowModal: false };
       }
 
-      // Normalize apkUrl if relative or empty
-      if (!remoteInfo.apkUrl) {
-        remoteInfo.apkUrl = remoteInfo.externalDownloadUrl || DEFAULT_LATEST_APK_URL;
-      } else if (remoteInfo.apkUrl.startsWith('/')) {
-        const base = typeof window !== 'undefined' ? window.location.origin : 'https://ridersbud-10806.web.app';
-        remoteInfo.apkUrl = `${base}${remoteInfo.apkUrl}`;
+      // Normalize each candidate's apkUrl
+      for (const remoteInfo of candidates) {
+        if (!remoteInfo.apkUrl) {
+          remoteInfo.apkUrl = remoteInfo.externalDownloadUrl || DEFAULT_LATEST_APK_URL;
+        } else if (remoteInfo.apkUrl.startsWith('/')) {
+          const base = typeof window !== 'undefined' ? window.location.origin : 'https://ridersbud-10806.web.app';
+          remoteInfo.apkUrl = `${base}${remoteInfo.apkUrl}`;
+        }
       }
 
+      // Trust the highest versionCode candidate
+      const best = candidates.reduce((a, b) => ((b.versionCode || 0) > (a.versionCode || 0) ? b : a));
+
       // 4. Compare version code
-      const isNewer = remoteInfo.versionCode > currentVersionCode;
+      const isNewer = best.versionCode > currentVersionCode;
 
       // 5. Evaluate Customizable Visibility & Target Audience
       // If admin explicitly set showUpdateModal to false, or targetAudience is 'none', modal is hidden
       let shouldShowModal = isNewer;
-      if (remoteInfo.showUpdateModal === false) {
+      if (best.showUpdateModal === false) {
         shouldShowModal = false;
-      } else if (remoteInfo.targetAudience === 'none') {
+      } else if (best.targetAudience === 'none') {
         shouldShowModal = false;
-      } else if (remoteInfo.targetAudience && userRole) {
-        if (remoteInfo.targetAudience === 'customers' && userRole !== 'customer') {
+      } else if (best.targetAudience && userRole) {
+        if (best.targetAudience === 'customers' && userRole !== 'customer') {
           shouldShowModal = false;
-        } else if (remoteInfo.targetAudience === 'mechanics' && userRole !== 'mechanic') {
+        } else if (best.targetAudience === 'mechanics' && userRole !== 'mechanic') {
           shouldShowModal = false;
         }
       }
@@ -138,7 +160,7 @@ export class AppUpdateService {
       return {
         updateAvailable: isNewer,
         currentVersion: currentVersionName,
-        latestVersion: isNewer ? remoteInfo : undefined,
+        latestVersion: isNewer ? best : undefined,
         shouldShowModal
       };
     } catch {

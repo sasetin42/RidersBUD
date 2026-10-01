@@ -1,8 +1,9 @@
 {
-  "versionCode": 2,
-  "versionName": "1.0.1",
-  "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-v1.0.1.apk",
-  "releaseNotes": "• New auto-update features added\n• Enhanced real-time location tracking\n• Improved driver dispatch UI & stability",
+  "versionCode": 4,
+  "versionName": "1.0.3",
+  "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk",
+  "releaseNotes": "• Payments auto-return to the app\n• 70/30 mechanic commission\n• True fullscreen on Android\n• Works offline (bundled app)",
   "mandatory": false,
-  "minSupportedVersionCode": 1
+  "minSupportedVersionCode": 1,
+  "generatedAt": "2026-09-30T21:52:27.405Z"
 }

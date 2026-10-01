@@ -15,13 +15,42 @@ const ServicePaymentConfirmationScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { db } = useDatabase();
-    const { booking } = (location.state as { booking: any }) || {};
+    const locationState = (location.state as { booking?: any }) || {};
+    const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const bookingIdFromUrl = queryParams.get('bookingId');
+
+    const bookingFromSession = useMemo(() => {
+        try {
+            const raw = sessionStorage.getItem('pendingHitPayServiceTx');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                return parsed.fullBooking;
+            }
+        } catch {}
+        return null;
+    }, []);
+
+    const booking = useMemo(() => {
+        if (locationState.booking) return locationState.booking;
+        if (bookingFromSession) return bookingFromSession;
+        if (bookingIdFromUrl && db) {
+            const b = db.bookings?.find(x => x.id === bookingIdFromUrl);
+            if (b) return b;
+            const r = db.rentalBookings?.find(x => x.id === bookingIdFromUrl);
+            if (r) return { ...r, isRental: true };
+            const l = db.liaisonBookings?.find(x => x.id === bookingIdFromUrl);
+            if (l) return { ...l, isLiaison: true };
+            const s = db.serviceRequests?.find(x => x.id === bookingIdFromUrl);
+            if (s) return s;
+        }
+        return null;
+    }, [locationState.booking, bookingFromSession, bookingIdFromUrl, db]);
 
     React.useEffect(() => {
-        if (!booking) {
+        if (!booking && !bookingIdFromUrl) {
             navigate('/customer-portal/', { replace: true });
         }
-    }, [booking, navigate]);
+    }, [booking, bookingIdFromUrl, navigate]);
 
     if (!booking) {
         return null;

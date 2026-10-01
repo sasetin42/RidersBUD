@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Calendar, Wrench, ShieldAlert, CheckCircle2, Car, Navigation, DollarSign, UserX, UserCheck, Timer, AlertCircle } from 'lucide-react';
+import { Clock, Calendar, Wrench, ShieldAlert, CheckCircle2, Car, Navigation, DollarSign, UserX, UserCheck, Timer, AlertCircle, ShoppingBag } from 'lucide-react';
 import { Settings, ModuleConfig } from '../../../../types';
 
 interface OperationsSettingsTabProps {
@@ -15,12 +15,20 @@ export const OperationsSettingsTab: React.FC<OperationsSettingsTabProps> = ({
     onToggleModule,
     onModuleBannerChange
 }) => {
-    const modules: ModuleConfig[] = settings.modules || [
+    const defaultModules: ModuleConfig[] = [
         { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
         { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
         { id: 'liaison-assistance', name: 'Liaison Registration Assistance', enabled: true, bannerMessage: '' },
-        { id: 'towing', name: 'Emergency Towing Service', enabled: true, bannerMessage: '' }
+        { id: 'towing', name: 'Emergency Towing Service', enabled: true, bannerMessage: '' },
+        { id: 'parts-store', name: 'Parts & Tools Store', enabled: true, bannerMessage: '' }
     ];
+
+    // Merge saved modules with defaults to ensure all modules (including newly introduced ones) are always displayed
+    const savedModules = settings.modules || [];
+    const modules: ModuleConfig[] = defaultModules.map(defMod => {
+        const existing = savedModules.find(m => m.id === defMod.id);
+        return existing ? { ...defMod, ...existing } : defMod;
+    });
 
     return (
         <div className="space-y-8 animate-fadeIn">
@@ -273,11 +281,28 @@ export const OperationsSettingsTab: React.FC<OperationsSettingsTabProps> = ({
                             }`}
                         >
                             <div className="flex items-center justify-between gap-4 mb-3">
-                                <div>
-                                    <h4 className="text-sm font-bold text-white">{mod.name}</h4>
-                                    <span className={`text-[10px] font-black uppercase tracking-wider ${mod.enabled ? 'text-emerald-400' : 'text-gray-500'}`}>
-                                        {mod.enabled ? '● Active in Portal' : '○ Disabled'}
-                                    </span>
+                                <div className="flex items-center gap-3">
+                                    <div className={`p-2 rounded-xl border ${
+                                        mod.enabled ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-white/5 border-white/5 text-gray-500'
+                                    }`}>
+                                        {mod.id === 'parts-store' ? (
+                                            <ShoppingBag size={18} />
+                                        ) : mod.id === 'rent-a-car' ? (
+                                            <Car size={18} />
+                                        ) : mod.id === 'driver-for-hire' ? (
+                                            <UserCheck size={18} />
+                                        ) : mod.id === 'towing' ? (
+                                            <Navigation size={18} />
+                                        ) : (
+                                            <Wrench size={18} />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-bold text-white">{mod.name}</h4>
+                                        <span className={`text-[10px] font-black uppercase tracking-wider ${mod.enabled ? 'text-emerald-400' : 'text-gray-500'}`}>
+                                            {mod.enabled ? '● Active in Portal' : '○ Disabled'}
+                                        </span>
+                                    </div>
                                 </div>
                                 <button
                                     type="button"

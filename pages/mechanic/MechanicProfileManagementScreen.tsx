@@ -3440,7 +3440,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
     const { totalJobs, lifetimeEarnings, availableForPayout } = useMemo(() => {
         if (!mechanic || !db) return { totalJobs: 0, lifetimeEarnings: 0, availableForPayout: 0 };
 
-        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 10;
+        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 30;
         const currentMechanicDoc = db.mechanics.find(m => m.id === mechanic.id) || mechanic;
 
         const ledger = calculateMechanicWalletLedger(

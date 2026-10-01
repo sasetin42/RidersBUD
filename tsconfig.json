@@ -33,6 +33,10 @@
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "android",
+    "functions",
+    "playstore-release",
+    "**/*.backup.tsx"
   ]
 }

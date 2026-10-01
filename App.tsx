@@ -24,7 +24,7 @@ import TourOverlay from './components/TourOverlay';
 import AppLoadingScreen from './components/AppLoadingScreen';
 import ScrollToTop from './components/ScrollToTop';
 import { Shield } from 'lucide-react';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Geolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
@@ -63,6 +63,7 @@ const AdminPayoutsScreen = React.lazy(() => import('./pages/admin/AdminPayoutsSc
 const AdminMonetizationScreen = React.lazy(() => import('./pages/admin/AdminMonetizationScreen'));
 const AdminChatScreen = React.lazy(() => import('./pages/admin/AdminChatScreen'));
 const AdminGCashPaymentsScreen = React.lazy(() => import('./pages/admin/AdminGCashPaymentsScreen'));
+const AdminPaymentAuditScreen = React.lazy(() => import('./pages/admin/AdminPaymentAuditScreen'));
 const AdminSatisfactionScreen = React.lazy(() => import('./pages/admin/AdminSatisfactionScreen'));
 const AdminNotificationsScreen = React.lazy(() => import('./pages/admin/AdminNotificationsScreen'));
 const ServicePaymentScreen = React.lazy(() => import('./pages/ServicePaymentScreen'));
@@ -90,7 +91,13 @@ const AppServiceDetailScreen = React.lazy(() => import('./pages/services/AppServ
 const ServiceBookingFlow = React.lazy(() => import('./pages/services/ServiceBookingFlow'));
 const LiaisonBookingFlow = React.lazy(() => import('./pages/services/LiaisonBookingFlow'));
 const DriverBookingFlow = React.lazy(() => import('./pages/services/DriverBookingFlow'));
-const HitPayCheckoutScreen = React.lazy(() => import('./pages/HitPayCheckoutScreen'));
+const hitpayLoader = () => import('./pages/HitPayCheckoutScreen');
+const HitPayCheckoutScreen = React.lazy(hitpayLoader);
+export const preloadHitPayCheckout = () => {
+    try {
+        hitpayLoader();
+    } catch {}
+};
 
 import { customerTourSteps, mechanicTourSteps } from './data/tourSteps';
 import { requestNotificationPermission } from './utils/notificationManager';
@@ -238,6 +245,11 @@ const AppContent: React.FC = () => {
         // Prime the geolocation permission cache early so all subsequent checks are synchronous
         initPermissionMonitor();
 
+        // Native: light system-bar icons for the dark theme (edge-to-edge fullscreen)
+        if (Capacitor.isNativePlatform()) {
+            SystemBars.setStyle({ style: SystemBarsStyle.Dark }).catch(() => {});
+        }
+
         // Listen for native deep linking (appUrlOpen from external browser/GCash app redirects)
         let appUrlListener: any = null;
         if (Capacitor.isNativePlatform()) {
@@ -313,6 +325,13 @@ const AppContent: React.FC = () => {
     const isSupport = location.pathname.includes('/support-chat');
     const hideCustomerBottomPadding = isBookingProcess || isDetailView || isSupport;
     const isMapScreen = location.pathname.includes('/booking/') && !location.pathname.includes('-confirmation');
+ 
+    // Ultra-Fast Payment Loading: preload HitPay chunk in background during checkout/booking navigation
+    useEffect(() => {
+        if (isBookingProcess) {
+            preloadHitPayCheckout();
+        }
+    }, [isBookingProcess]);
 
     const prevDb = usePrevious<Database | null>(db);
     const isInitialLoadRef = useRef(true);
@@ -1430,7 +1449,8 @@ const AppContent: React.FC = () => {
                                             <Route path="users" element={<AdminUsersScreen />} />
                                             <Route path="settings" element={<AdminSettingsScreen />} />
                                             <Route path="chat" element={<AdminChatScreen />} />
-                                            <Route path="gcash-payments" element={<AdminGCashPaymentsScreen />} />
+                                            <Route path="gcash-payments" element={<Navigate to="/admin-portal/payment-audit" replace />} />
+                                            <Route path="payment-audit" element={<AdminPaymentAuditScreen />} />
                                             <Route path="satisfaction" element={<AdminSatisfactionScreen />} />
                                             <Route path="notifications" element={<AdminNotificationsScreen />} />
                                             <Route path="*" element={<Navigate to="/admin-portal/dashboard" replace />} />
@@ -1515,13 +1535,13 @@ const AppContent: React.FC = () => {
                                                         <Route path="/app-services/book/:slug" element={<AppServiceSlugGuard><ServiceBookingFlow /></AppServiceSlugGuard>} />
                                                         <Route path="/app-services/liaison-book/:slug" element={<ModuleGuard moduleId="liaison-assistance"><LiaisonBookingFlow /></ModuleGuard>} />
                                                         <Route path="/app-services/driver-book/:slug" element={<ModuleGuard moduleId="driver-for-hire"><DriverBookingFlow /></ModuleGuard>} />
-                                                        <Route path="/parts-store" element={<PartsStoreScreen />} />
-                                                        <Route path="/part/:id" element={<PartDetailScreen />} />
+                                                        <Route path="/parts-store" element={<ModuleGuard moduleId="parts-store"><PartsStoreScreen /></ModuleGuard>} />
+                                                        <Route path="/part/:id" element={<ModuleGuard moduleId="parts-store"><PartDetailScreen /></ModuleGuard>} />
                                                         <Route path="/booking" element={<BookingScreen />} />
                                                         <Route path="/booking/:serviceId" element={<BookingScreen />} />
                                                         <Route path="/booking-confirmation" element={<BookingConfirmationScreen />} />
                                                         <Route path="/booking-detail/:bookingId" element={<BookingDetailScreen />} />
-                                                        <Route path="/cart" element={<CartScreen />} />
+                                                        <Route path="/cart" element={<ModuleGuard moduleId="parts-store"><CartScreen /></ModuleGuard>} />
                                                         <Route path="/payment" element={<PaymentScreen />} />
                                                         <Route path="/hitpay-checkout" element={<HitPayCheckoutScreen />} />
                                                         <Route path="/service-payment" element={<ServicePaymentScreen />} />
@@ -1569,6 +1589,16 @@ const AppContent: React.FC = () => {
 
                     {/* Complete Profile Route */}
                     <Route path="/complete-profile" element={<CompleteProfileScreen />} />
+
+                    {/* Standalone /hitpay-checkout route accessible from anywhere */}
+                    <Route
+                        path="/hitpay-checkout"
+                        element={
+                            <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans flex flex-col">
+                                <HitPayCheckoutScreen />
+                            </div>
+                        }
+                    />
 
                     {/* Standalone /login route */}
                     <Route

@@ -443,7 +443,7 @@ const MechanicEarningsScreen: React.FC = () => {
             });
         }
 
-        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 10;
+        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 30;
 
         // Net Profit computation (paid jobs net of platform commission)
         const paidJobsInPeriod = filteredJobs.filter(job => job.isPaid !== false && job.paymentStatus !== 'failed');

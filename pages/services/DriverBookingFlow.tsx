@@ -8,6 +8,7 @@ import Spinner from '../../components/Spinner';
 import { safeGetCurrentPosition, getAccurateLivePosition, safeWatchPosition, safeClearWatch, reverseGeocodeCoordinates } from '../../utils/locationHelper';
 import { getLeafletTileConfig } from '../../utils/mapTileProviders';
 import { HitPayService } from '../../services/HitPayService';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 import GCashPaymentModal from '../../components/GCashPaymentModal';
 
 declare const L: any;
@@ -1024,7 +1025,15 @@ const DriverBookingFlow: React.FC = () => {
                 if (url.startsWith('/')) {
                     navigate(url);
                 } else {
-                    window.location.href = url;
+                    setPendingPaymentMarker({
+                        entityKind: 'service-request',
+                        entityId: reqId,
+                        returnRoute: '/customer-portal/my-service-requests',
+                        startedAt: Date.now(),
+                        purpose: 'driver-downpayment'
+                    });
+                    startPaymentWatcher('service-request', reqId, '/customer-portal/my-service-requests');
+                    openPaymentUrl(url);
                 }
                 return;
             }

@@ -3,11 +3,26 @@
 @tailwind utilities;
 
 /* Native Mobile App Experience Locks */
+/* Capacitor 8 SystemBars injects --safe-area-inset-* (Android WebView <140 bug);
+   env() is the standard fallback. Order: Capacitor var → CSS env → 0. */
 :root {
-    --safe-top: env(safe-area-inset-top);
-    --safe-bottom: env(safe-area-inset-bottom);
-    --safe-left: env(safe-area-inset-left);
-    --safe-right: env(safe-area-inset-right);
+    --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+    --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+    --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+    --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+
+/* TRUE FULLSCREEN (edge-to-edge): the app canvas spans the entire screen —
+   under the status bar, around punch-holes, and behind the gesture bar.
+   Padding (not margin) keeps the dark canvas painted in the system-bar areas
+   so there are never white bars, while content never sits under them. */
+html {
+    background: #0A0A0A;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    box-sizing: border-box;
 }
 
 html,
@@ -1151,4 +1166,11 @@ button.mechanic-card-btn {
     cursor: pointer;
     opacity: 1 !important;
     filter: none !important;
+}
+
+/* Fast Shimmer Effect for Payment Skeletons */
+@keyframes shimmer {
+    100% {
+        transform: translateX(100%);
+    }
 }

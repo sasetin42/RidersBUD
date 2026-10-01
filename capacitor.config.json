@@ -3,8 +3,16 @@
   "appName": "RidersBUD",
   "webDir": "dist",
   "bundledWebRuntime": false,
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK",
+      "hidden": false,
+      "animation": "NONE"
+    }
+  },
   "server": {
-    "url": "https://ridersbud-10806.web.app",
-    "cleartext": true
+    "cleartext": true,
+    "androidScheme": "https"
   }
 }

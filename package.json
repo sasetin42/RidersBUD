@@ -8,12 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "fetch-live-data": "tsx scripts/fetchLiveData.ts",
+    "release:apk": "node scripts/release-apk.mjs",
     "sync-data": "tsx scripts/syncData.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.0",
     "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
     "@capacitor/geolocation": "^8.2.0",
     "@google/genai": "^1.21.0",
     "browser-image-compression": "^2.0.2",

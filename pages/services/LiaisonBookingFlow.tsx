@@ -7,6 +7,7 @@ import Spinner from '../../components/Spinner';
 import { VehicleFormModal } from '../MyGarageScreen';
 import { Vehicle } from '../../types';
 import { HitPayService } from '../../services/HitPayService';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 import { getAccurateLivePosition, reverseGeocodeCoordinates, safeGetCurrentPosition, safeWatchPosition, safeClearWatch } from '../../utils/locationHelper';
 import { getLeafletTileConfig } from '../../utils/mapTileProviders';
 
@@ -941,7 +942,15 @@ const LiaisonBookingFlow: React.FC = () => {
                 if (url.startsWith('/')) {
                     navigate(url);
                 } else {
-                    window.location.href = url;
+                    setPendingPaymentMarker({
+                        entityKind: 'liaison',
+                        entityId: createdLiaison.id,
+                        returnRoute: '/customer-portal/my-service-requests',
+                        startedAt: Date.now(),
+                        purpose: 'liaison-downpayment'
+                    });
+                    startPaymentWatcher('liaison', createdLiaison.id, '/customer-portal/my-service-requests');
+                    openPaymentUrl(url);
                 }
                 return;
             }

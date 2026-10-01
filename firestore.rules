@@ -130,6 +130,8 @@ service cloud.firestore {
     match /parts/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /banners/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /faqs/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    // SECURITY: payment gateway secrets doc — admins only, never public
+    match /settings/hitpaySecrets { allow read, write: if isAdmin(); }
     match /settings/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /promoCodes/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /smtpLogs/{document=**} { allow read, write: if isAdmin(); }

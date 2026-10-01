@@ -15,11 +15,12 @@ export const getJobTotalAmount = (job: any): number => {
 
 /**
  * Compute the mechanic's net share for a job after deducting the platform service commission fee.
+ * Default commission: 30% platform / 70% mechanic.
  */
-export const getJobMechanicShare = (job: any, serviceFeePercentage: number = 10): number => {
+export const getJobMechanicShare = (job: any, serviceFeePercentage: number = 30): number => {
     const totalRevenue = getJobTotalAmount(job);
     if (totalRevenue <= 0) return 0;
-    const feePct = typeof serviceFeePercentage === 'number' && serviceFeePercentage >= 0 ? serviceFeePercentage : 10;
+    const feePct = typeof serviceFeePercentage === 'number' && serviceFeePercentage >= 0 ? serviceFeePercentage : 30;
     const platformCut = Math.round(totalRevenue * (feePct / 100));
     return Math.max(0, totalRevenue - platformCut);
 };
@@ -44,7 +45,7 @@ export const calculateMechanicWalletLedger = (
     mechanic: Partial<Mechanic> | null | undefined,
     bookings: Booking[] = [],
     payouts: PayoutRequest[] = [],
-    serviceFeePercentage: number = 10
+    serviceFeePercentage: number = 30
 ): MechanicWalletLedger => {
     if (!mechanicId) {
         return {
@@ -75,8 +76,10 @@ export const calculateMechanicWalletLedger = (
         ? Number((mechanic as any).totalEarnings)
         : 0;
 
-    // Authoritative net lifetime earnings (net after platform fee, harmonized with doc totalEarnings if higher)
-    const lifetimeEarnings = Math.max(calculatedNetLifetime, docTotalEarnings);
+    // Authoritative net lifetime earnings: trust the document when present (it is written by the
+    // earnings-release guard with the exact credited amount); otherwise compute from bookings.
+    // NOTE: never Math.max(doc, computed) here — that re-inflates balances after commission corrections.
+    const lifetimeEarnings = docTotalEarnings > 0 ? docTotalEarnings : calculatedNetLifetime;
     const grossLifetimeEarnings = Math.max(calculatedGrossLifetime, lifetimeEarnings);
 
     // 2. Filter payouts for this mechanic

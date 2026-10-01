@@ -13,6 +13,7 @@ import Tooltip from '../components/ui/Tooltip';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
 import { HitPayService } from '../services/HitPayService';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
 import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers } from '../data/mockData';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import BookingPaymentBreakdownModal from '../components/BookingPaymentBreakdownModal';
@@ -442,6 +443,23 @@ const BookingScreen: React.FC = () => {
             });
         }
     }, [location.search, db?.bookings, navigate, cancelBooking]);
+
+    // Native: resume any pending HitPay payment watch from a previous session/Custom Tab.
+    useEffect(() => {
+        if (!isNative()) return;
+        const stop = resumePendingPaymentVerification(
+            (marker) => {
+                navigate(marker.returnRoute, {
+                    state: { payment_completed: '1' }
+                });
+            },
+            () => {
+                // Expired silently — marker TTL already handles cleanup
+            }
+        );
+        return () => { stop?.(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
         new Set(
@@ -1580,39 +1598,27 @@ const BookingScreen: React.FC = () => {
             } catch (e) {}
 
             const hitPay = HitPayService.fromSettings(db?.settings);
-            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${createdBooking.id}`;
             const appTitle = db?.settings?.appName || 'RidersBUD';
+            const returnUrl = `${window.location.origin}/customer-portal/booking-confirmation?bookingId=${createdBooking.id}`;
+            const refNumber = `BOK-${createdBooking.id}-DP-${Date.now()}`;
+            const purpose = `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`;
 
-            try {
-                const { url } = await hitPay.createPaymentRequest({
-                    amount: downpaymentAmount,
-                    currency: db?.settings?.currency || 'PHP',
-                    reference_number: `BOK-${createdBooking.id}-${Date.now()}`,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                    redirect_url: returnUrl,
-                    email: user.email || 'customer@example.com',
-                    name: user.name || 'Customer',
-                    phone: user.phone || undefined,
-                    purpose: `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`
-                });
+            // Route directly into in-app branded HitPay checkout portal
+            const checkoutParams = new URLSearchParams({
+                amount: String(downpaymentAmount),
+                currency: db?.settings?.currency || 'PHP',
+                reference_number: refNumber,
+                reference: refNumber,
+                redirect_url: returnUrl,
+                email: user.email || 'customer@example.com',
+                name: user.name || 'Customer',
+                phone: user.phone || '',
+                purpose: purpose,
+                sandbox: hitPay.getIsSandbox() ? 'true' : 'false'
+            });
 
-                if (url.startsWith('/')) {
-                    navigate(url);
-                } else {
-                    window.location.href = url;
-                }
-                return;
-            } catch (hitpayErr: any) {
-                // If manual GCash is explicitly enabled by the administrator, allow fallback as last resort
-                if (db?.settings?.gcashEnabled) {
-                    console.info('ℹ️ HitPay online gateway unavailable. Transitioning to enabled GCash Payment Modal.');
-                    setPendingBookingId(createdBooking.id);
-                    setShowGCashModal(true);
-                    return;
-                }
-                // Otherwise respect the admin configuration that GCash is deactivated
-                throw new Error(hitpayErr?.message || 'HitPay Payment Gateway is currently unreachable. Please verify your internet connection or contact support.');
-            }
+            navigate(`/hitpay-checkout?${checkoutParams.toString()}`);
+            return;
         } catch (err: any) {
             setShowPaymentBreakdownModal(false);
             const msg = err?.message || 'An error occurred while connecting to Payment Gateway.';

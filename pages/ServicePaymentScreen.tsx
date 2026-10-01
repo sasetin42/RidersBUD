@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import CustomerHeader from '../components/CustomerHeader';
 import { CreditCard } from 'lucide-react';
@@ -10,6 +10,7 @@ import { Booking } from '../types';
 import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import HitPayInAppModal from '../components/HitPayInAppModal';
+import { resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
 
 const ServicePaymentScreen: React.FC = () => {
     const location = useLocation();
@@ -23,6 +24,17 @@ const ServicePaymentScreen: React.FC = () => {
     const bookingState = (location.state as { booking?: Booking })?.booking;
     const { db, updateBookingPayment, updateRentalBooking, updateServiceRequest, updateServiceRequestStatus, updateLiaisonBooking, updateLiaisonBookingStatus, cancelBooking } = useDatabase();
     const { user } = useAuth();
+
+    // Native: resume pending payment watch (custom tab re-entry / process death)
+    useEffect(() => {
+        if (!isNative()) return;
+        const stop = resumePendingPaymentVerification(
+            (marker) => navigate(marker.returnRoute, { state: { payment_completed: '1' } }),
+            () => {}
+        );
+        return () => { stop?.(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const bookingFromQuery = useMemo(() => {
         if (!bookingIdParam || !db) return undefined;

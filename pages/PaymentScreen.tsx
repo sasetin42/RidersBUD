@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import CustomerHeader from '../components/CustomerHeader';
 import { useCart } from '../context/CartContext';
@@ -12,6 +12,7 @@ import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import HitPayInAppModal from '../components/HitPayInAppModal';
 import { getPartImage } from '../utils/fallbackImages';
+import { resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
 
 const PaymentScreen: React.FC = () => {
     const location = useLocation();
@@ -23,6 +24,17 @@ const PaymentScreen: React.FC = () => {
 
     const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
     const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+
+    // Native: resume pending payment watch (custom tab re-entry / process death)
+    useEffect(() => {
+        if (!isNative()) return;
+        const stop = resumePendingPaymentVerification(
+            (marker) => navigate(marker.returnRoute, { state: { payment_completed: '1' } }),
+            () => {}
+        );
+        return () => { stop?.(); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const [selectedMethod, setSelectedMethod] = useState(() => {
         if (!isManualGcashEnabled && isHitPayActive) return 'Credit Card';

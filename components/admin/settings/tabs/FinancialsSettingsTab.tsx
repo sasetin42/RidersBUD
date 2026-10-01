@@ -54,7 +54,7 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
                             min={0}
                             max={100}
                             step={0.5}
-                            value={settings.serviceFeePercentage ?? 10}
+                            value={settings.serviceFeePercentage ?? 30}
                             onChange={(e) => onChange('serviceFeePercentage', parseFloat(e.target.value) || 0)}
                             className="w-full bg-black/50 border border-white/10 focus:border-primary rounded-2xl px-4 py-3 text-xs text-white outline-none"
                         />
@@ -194,7 +194,7 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
                                 </div>
                             </div>
 
-                            {/* API Credentials */}
+                            {/* API Credentials — editable, stored in settings/main */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 {/* Live Keys Card */}
                                 <div className={`space-y-4 p-5 rounded-2xl border transition-all ${

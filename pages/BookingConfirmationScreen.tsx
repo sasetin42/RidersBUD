@@ -18,7 +18,7 @@ const BookingConfirmationScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { user: customer } = useAuth();
-    const { db: database, cancelBooking } = useDatabase();
+    const { db: database, cancelBooking, updateBookingPayment } = useDatabase();
     const locationState = (location.state as { bookings?: Booking[]; bookingId?: string }) || {};
     const [bookings, setBookings] = useState<Booking[]>(locationState.bookings || []);
     const [isChatOpen, setIsChatOpen] = useState(false);
@@ -101,12 +101,53 @@ const BookingConfirmationScreen: React.FC = () => {
             return;
         }
 
-        if (locationState.bookings?.length) {
+        const isCompleted = status === 'completed' || status === 'success';
+        const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
+        let parsedTx: any = null;
+        if (pendingTx) {
+            try {
+                parsedTx = JSON.parse(pendingTx);
+            } catch (e) {}
+        }
+
+        const targetBookingId = bookingId || locationState.bookingId || parsedTx?.bookingId;
+
+        // Reconcile payment if returning with success/completed from HitPay
+        if (isCompleted && targetBookingId && updateBookingPayment) {
+            try {
+                const dpAmount = parsedTx?.amount || Number(queryParams.get('amount')) || 0;
+                const totAmount = parsedTx?.totalAmount || (dpAmount > 0 ? dpAmount * 2 : 0);
+                const dpRef = queryParams.get('reference') || queryParams.get('payment_request_id') || `HITPAY-${Date.now()}`;
+                const reqId = queryParams.get('payment_request_id') || '';
+                const remBalance = Math.max(0, totAmount - dpAmount);
+
+                sessionStorage.removeItem('pendingHitPayBookingTx');
+                localStorage.removeItem('last_hitpay_booking_tx');
+
+                updateBookingPayment(targetBookingId, dpAmount, 'downpayment_paid', {
+                    paidAmount: dpAmount,
+                    downpaymentAmount: dpAmount,
+                    remainingBalance: remBalance,
+                    isVerified: true,
+                    isPaid: false,
+                    paymentMethod: 'Online (HitPay)',
+                    downpaymentRef: dpRef,
+                    downpaymentPaidAt: new Date().toISOString(),
+                    hitpayPaymentRequestId: reqId,
+                    hitpayReference: dpRef,
+                    hitpayStatus: 'completed',
+                    status: 'Upcoming'
+                }).catch(console.warn);
+            } catch (e) {
+                console.warn('Reconcile HitPay Booking payment error in confirmation screen:', e);
+            }
+        }
+
+        if (locationState.bookings?.length && !isCompleted) {
             setBookings(locationState.bookings);
             setIsLoading(false);
             return;
         }
-        const targetBookingId = bookingId || locationState.bookingId;
         if (!targetBookingId) {
             navigate('/customer-portal/');
             return;
@@ -119,7 +160,7 @@ const BookingConfirmationScreen: React.FC = () => {
 
         // 1. Check in-memory/context cache first
         const cachedBooking = database?.bookings?.find(b => b.id === targetBookingId);
-        if (cachedBooking) {
+        if (cachedBooking && !isCompleted) {
             if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(cachedBooking.status)) {
                 navigate(`/customer-portal/booking-detail/${cachedBooking.id}`, { replace: true });
                 return;

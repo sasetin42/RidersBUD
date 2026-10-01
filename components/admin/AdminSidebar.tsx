@@ -66,7 +66,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isSidebarOpen, onClose, isC
                 { path: '/admin-portal/catalog', name: 'Service Catalog', icon: Package, module: 'catalog' },
                 { path: '/admin-portal/orders', name: 'Orders', icon: ShoppingBag, module: 'orders' },
                 { path: '/admin-portal/payouts', name: 'Payouts', icon: CreditCard, module: 'payouts' },
-                { path: '/admin-portal/gcash-payments', name: 'GCash Payments', icon: CreditCard, module: 'gcash-payments' },
+                { path: '/admin-portal/payment-audit', name: 'Payment Audit', icon: ShieldCheck, module: 'gcash-payments' },
                 { path: '/admin-portal/monetization', name: 'Monetization', icon: Banknote, module: 'monetization' },
             ]
         },

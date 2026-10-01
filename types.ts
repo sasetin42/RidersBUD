@@ -147,11 +147,11 @@ export interface Settings {
 
     // HitPay Payment Gateway
     hitpayEnabled?: boolean;
+    hitpaySandboxMode?: boolean;
     hitpayApiKey?: string;
     hitpaySalt?: string;
     hitpaySandboxApiKey?: string;
     hitpaySandboxSalt?: string;
-    hitpaySandboxMode?: boolean;
 
     // Manual GCash
     gcashEnabled?: boolean;
@@ -233,6 +233,7 @@ export interface Settings {
 
     // Mobile App & APK Live Updates
     appUpdateConfig?: AppUpdateSettings;
+    appUpdateConfigApp?: AppUpdateSettings; // settings/app fallback copy (highest versionCode wins)
 
     // Specialized Services Customization (Car Rental, Driver for Hire, Liaison, Towing)
     serviceCustomizations?: ServiceCustomizationSettings;
@@ -421,7 +422,7 @@ export interface AppUpdateSettings {
 }
 
 export interface ModuleConfig {
-    id: string; // 'rent-a-car' | 'driver-for-hire' | 'liaison-assistance' | 'towing'
+    id: string; // 'rent-a-car' | 'driver-for-hire' | 'liaison-assistance' | 'towing' | 'parts-store'
     name: string;
     enabled: boolean;
     bannerMessage?: string;
@@ -836,6 +837,7 @@ export interface Mechanic {
     unavailableDates?: { startDate: string; endDate: string; reason?: string }[];
     payoutDetails?: PayoutDetails;
     savedPayoutDestinations?: PayoutDetails[];
+    earningsRecomputedAt?: string;
     documents?: string[];
     registrationDate?: string;
     verificationDocuments?: {
@@ -919,6 +921,10 @@ export interface Booking {
     gcashBalanceReceiptUrl?: string;
     gcashBalanceReference?: string;
     gcashDownpaymentReference?: string;
+    // Mechanic earnings release guard (prevents double-crediting on status re-entry)
+    earningsReleased?: boolean;
+    earningsReleasedAt?: string;
+    earningsAmount?: number;
     paymentIntentId?: string;
     checkoutUrl?: string;
     gcashPaymentStatus?: 'awaiting_payment' | 'receipt_uploaded' | 'balance_receipt_uploaded' | 'verified' | 'declined';

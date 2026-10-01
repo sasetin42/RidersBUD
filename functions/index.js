@@ -8,61 +8,166 @@ const nodemailer = require('nodemailer');
 admin.initializeApp();
 
 /**
- * Cloud Function HTTP Proxy for HitPay API requests.
- * Allows frontend web client to generate payment requests without browser CORS errors.
+ * HitPay credentials are edited in Admin → Settings → Financials and stored in
+ * Firestore settings/main. Resolution order (FIRST MATCH WINS):
+ *   1. settings/main (admin-editable via the settings panel)
+ *   2. settings/hitpaySecrets (admin-only legacy doc)
+ *   3. Cloud Functions env (functions/.env, last-resort fallback)
  */
-exports.hitpayProxy = functions.https.onRequest((req, res) => {
-  return cors(req, res, () => {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
+async function resolveHitpayCredentials(isSandbox) {
+  // 1. Admin-editable settings/main (authoritative)
+  try {
+    const mainSnap = await admin.firestore().collection('settings').doc('main').get();
+    if (mainSnap.exists) {
+      const s = mainSnap.data() || {};
+      const apiKey = isSandbox ? s.hitpaySandboxApiKey : s.hitpayApiKey;
+      const salt = isSandbox ? s.hitpaySandboxSalt : s.hitpaySalt;
+      if (apiKey && salt) {
+        return { apiKey, salt, source: 'settings/main' };
+      }
     }
+  } catch (e) {
+    console.warn('settings/main read failed:', e && e.message);
+  }
 
+  // 2. Firestore secrets document (admin-only, legacy)
+  try {
+    const secretsSnap = await admin.firestore().collection('settings').doc('hitpaySecrets').get();
+    if (secretsSnap.exists) {
+      const s = secretsSnap.data() || {};
+      const apiKey = isSandbox ? (s.hitpaySandboxApiKey || s.sandboxApiKey) : (s.hitpayApiKey || s.liveApiKey);
+      const salt = isSandbox ? (s.hitpaySandboxSalt || s.sandboxSalt) : (s.hitpaySalt || s.liveSalt);
+      if (apiKey && salt) {
+        return { apiKey, salt, source: 'firestore:hitpaySecrets' };
+      }
+    }
+  } catch (e) {
+    console.warn('hitpaySecrets read failed:', e && e.message);
+  }
+
+  // 3. Environment variables (last-resort fallback)
+  const envKey = isSandbox ? process.env.HITPAY_SANDBOX_API_KEY : process.env.HITPAY_LIVE_API_KEY;
+  const envSalt = isSandbox ? process.env.HITPAY_SANDBOX_SALT : process.env.HITPAY_SALT;
+  if (envKey && envSalt) {
+    return { apiKey: envKey, salt: envSalt, source: 'env' };
+  }
+
+  return null;
+}
+
+// Persistent Keep-Alive agent to eliminate repeated TLS handshake latency
+const hitpayAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000,
+  keepAliveMsecs: 30000
+});
+
+function hitpayRequest(options, body) {
+  return new Promise((resolve, reject) => {
+    const optsWithAgent = Object.assign({ agent: hitpayAgent }, options);
+    const req = https.request(optsWithAgent, (proxyRes) => {
+      let respData = '';
+      proxyRes.on('data', (chunk) => { respData += chunk; });
+      proxyRes.on('end', () => {
+        resolve({ statusCode: proxyRes.statusCode || 200, body: respData });
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(25000, () => req.destroy(new Error('HitPay request timeout')));
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+/**
+ * Cloud Function HTTP Proxy for HitPay API requests.
+ * The client sends NO credentials — everything is resolved server-side.
+ * POST /hitpayProxy { isSandbox, payload }             -> create payment request
+ * GET  /hitpayProxy?action=status&id=...&sandbox=true  -> payment request status
+ */
+exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
+  return cors(req, res, async () => {
     try {
-      const body = req.body || {};
-      const isSandbox = body.isSandbox !== false;
-      const apiKey = body.apiKey;
-      const payload = JSON.stringify(body.payload || {});
+      const isSandbox = req.method === 'GET'
+        ? String(req.query.sandbox || 'false') === 'true'
+        : ((req.body || {}).isSandbox !== false);
 
-      if (!apiKey) {
-        return res.status(400).json({ error: 'Missing HitPay API key.' });
+      const creds = await resolveHitpayCredentials(isSandbox);
+      if (!creds || !creds.apiKey) {
+        return res.status(200).json({
+          fallbackToPortal: true,
+          reason: 'credentials_not_configured',
+          message: 'HitPay credentials are not provisioned server-side yet.'
+        });
       }
 
       const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
-      const path = '/v1/payment-requests';
 
+      // ---- GET status ----
+      if (req.method === 'GET') {
+        const action = String(req.query.action || '');
+        const paymentRequestId = String(req.query.id || '');
+        if (action !== 'status' || !paymentRequestId) {
+          return res.status(400).json({ error: 'Use ?action=status&id=<payment_request_id>' });
+        }
+        const options = {
+          hostname,
+          port: 443,
+          path: `/v1/payment-requests/${encodeURIComponent(paymentRequestId)}`,
+          method: 'GET',
+          headers: {
+            'X-BUSINESS-API-KEY': creds.apiKey,
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        };
+        try {
+          const result = await hitpayRequest(options, null);
+          res.status(result.statusCode);
+          res.setHeader('Content-Type', 'application/json');
+          return res.send(result.body);
+        } catch (err) {
+          return res.status(200).json({
+            fallbackToPortal: true,
+            reason: 'upstream_unreachable',
+            error: err.message || 'HitPay connection failed'
+          });
+        }
+      }
+
+      // ---- POST create ----
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method Not Allowed. Use POST or GET?action=status.' });
+      }
+
+      const payload = JSON.stringify((req.body || {}).payload || {});
       const options = {
-        hostname: hostname,
+        hostname,
         port: 443,
-        path: path,
+        path: '/v1/payment-requests',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
-          'X-BUSINESS-API-KEY': apiKey,
+          'X-BUSINESS-API-KEY': creds.apiKey,
           'Content-Length': Buffer.byteLength(payload)
         }
       };
 
-      const proxyReq = https.request(options, (proxyRes) => {
-        let respData = '';
-        proxyRes.on('data', (chunk) => {
-          respData += chunk;
+      try {
+        const result = await hitpayRequest(options, payload);
+        res.status(result.statusCode);
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(result.body);
+      } catch (err) {
+        // Upstream unreachable — client routes to the in-app checkout portal.
+        return res.status(200).json({
+          fallbackToPortal: true,
+          reason: 'upstream_unreachable',
+          error: err.message || 'HitPay connection failed'
         });
-
-        proxyRes.on('end', () => {
-          res.status(proxyRes.statusCode || 200);
-          res.setHeader('Content-Type', 'application/json');
-          return res.send(respData);
-        });
-      });
-
-      proxyReq.on('error', (err) => {
-        console.error('HitPay Proxy Request Error:', err);
-        return res.status(502).json({ error: err.message || 'HitPay connection failed' });
-      });
-
-      proxyReq.write(payload);
-      proxyReq.end();
+      }
     } catch (e) {
       console.error('HitPay Proxy General Error:', e);
       return res.status(500).json({ error: e.message || 'Internal proxy error' });
@@ -295,13 +400,41 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
     const payload = req.body || {};
     const receivedHmac = req.headers['hmac'] || req.headers['x-hitpay-signature'] || payload.hmac || '';
 
-    // Retrieve HitPay Salt from Firestore system settings
-    const settingsDoc = await admin.firestore().collection('settings').doc('general').get();
-    const settings = settingsDoc.exists ? settingsDoc.data() : {};
     const isSandbox = payload.status === 'completed' && String(payload.payment_id || '').includes('sandbox');
-    const salt = (isSandbox ? settings.hitpaySandboxSalt : settings.hitpaySalt) || settings.hitpaySalt || settings.hitpaySandboxSalt;
+
+    // Resolve webhook salt: settings/main (admin-editable) → settings/hitpaySecrets → env
+    let salt = '';
+    {
+      try {
+        const mainSnap = await admin.firestore().collection('settings').doc('main').get();
+        if (mainSnap.exists) {
+          const s = mainSnap.data() || {};
+          salt = (isSandbox ? s.hitpaySandboxSalt : s.hitpaySalt) || s.hitpaySalt || s.hitpaySandboxSalt || '';
+        }
+      } catch (e) {
+        console.warn('settings/main salt read failed:', e && e.message);
+      }
+      if (!salt) {
+        try {
+          const secretsSnap = await admin.firestore().collection('settings').doc('hitpaySecrets').get();
+          if (secretsSnap.exists) {
+            const s = secretsSnap.data() || {};
+            salt = (isSandbox ? (s.hitpaySandboxSalt || s.sandboxSalt) : (s.hitpaySalt || s.liveSalt)) || '';
+          }
+        } catch (e) {
+          console.warn('hitpaySecrets salt read failed:', e && e.message);
+        }
+      }
+      if (!salt) {
+        const envSalt = isSandbox ? process.env.HITPAY_SANDBOX_SALT : process.env.HITPAY_SALT;
+        if (envSalt) {
+          salt = envSalt;
+        }
+      }
+    }
 
     // Verify HMAC-SHA256 signature if salt is configured
+    let computedSignatureValid = null;
     if (salt && receivedHmac) {
       // HitPay signs payload fields in alphabetical order (excluding hmac)
       const values = [];
@@ -313,9 +446,10 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
       const computedHmac = crypto.createHmac('sha256', salt).update(message).digest('hex');
 
       if (computedHmac !== receivedHmac) {
-        console.warn('⚠️ HitPay Webhook HMAC signature mismatch. Received:', receivedHmac, 'Computed:', computedHmac);
+        console.warn('HitPay Webhook HMAC signature mismatch. Received:', receivedHmac, 'Computed:', computedHmac);
         return res.status(401).send('Invalid signature');
       }
+      computedSignatureValid = true;
     }
 
     const paymentId = payload.payment_id || payload.id;
@@ -345,32 +479,45 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
       amount: amount || 0,
       currency,
       paymentMethod,
+      signatureValid: salt && receivedHmac ? computedSignatureValid : null,
+      matched: false,
       receivedAt: admin.firestore.FieldValue.serverTimestamp(),
       rawPayload: payload
     });
 
-    // If payment was completed, atomically update the target Booking or Order
+    // If payment was completed, atomically update the target entity
     if (status === 'completed' && referenceNumber) {
-      // Check if reference points to a booking (e.g. BOK-xxx-DP-timestamp or BOK-xxx)
-      let bookingId = '';
+      // Reference formats: BOK-<id>[-DP], RNT-<id>, LIA-<id>, TOW-<id>, DRV-<id>
+      let entityId = '';
+      let collectionName = '';
       let isDeposit = false;
 
       if (referenceNumber.startsWith('BOK-')) {
         const parts = referenceNumber.split('-');
-        bookingId = parts[1];
+        entityId = parts[1];
+        collectionName = 'bookings';
         if (parts.includes('DP')) isDeposit = true;
+      } else if (referenceNumber.startsWith('RNT-')) {
+        entityId = referenceNumber.split('-')[1];
+        collectionName = 'rentalBookings';
+      } else if (referenceNumber.startsWith('LIA-')) {
+        entityId = referenceNumber.split('-')[1];
+        collectionName = 'liaisonBookings';
+      } else if (referenceNumber.startsWith('TOW-') || referenceNumber.startsWith('DRV-')) {
+        entityId = referenceNumber.split('-')[1];
+        collectionName = 'serviceRequests';
       }
 
-      if (bookingId) {
-        const bookingRef = admin.firestore().collection('bookings').doc(bookingId);
-        const bookingSnap = await bookingRef.get();
+      if (entityId && collectionName) {
+        const entityRef = admin.firestore().collection(collectionName).doc(entityId);
+        const entitySnap = await entityRef.get();
 
-        if (bookingSnap.exists) {
-          const bookingData = bookingSnap.data();
-          const currentPaid = Number(bookingData.paidAmount || 0);
-          const totalAmount = Number(bookingData.totalAmount || 0);
+        if (entitySnap.exists) {
+          const entityData = entitySnap.data();
+          const currentPaid = Number(entityData.paidAmount || 0);
+          const totalAmount = Number(entityData.totalAmount || entityData.totalPrice || 0);
           const newPaidAmount = currentPaid + amount;
-          const isFullyPaid = newPaidAmount >= (totalAmount - 1);
+          const isFullyPaid = totalAmount > 0 ? newPaidAmount >= (totalAmount - 1) : true;
 
           const txRecord = {
             id: `tx_${Date.now()}_${paymentId || 'hp'}`,
@@ -387,10 +534,10 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
             }
           };
 
-          const existingTxs = bookingData.paymentTransactions || [];
+          const existingTxs = entityData.paymentTransactions || [];
           const updatedTxs = [...existingTxs.filter(t => t.reference !== referenceNumber), txRecord];
 
-          await bookingRef.update({
+          await entityRef.update({
             paidAmount: newPaidAmount,
             remainingBalance: Math.max(0, totalAmount - newPaidAmount),
             paymentStatus: isFullyPaid ? 'paid' : 'partial',
@@ -401,8 +548,10 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
             hitpayReference: referenceNumber,
             hitpayStatus: 'completed',
             paymentTransactions: updatedTxs,
-            status: isFullyPaid && bookingData.status === 'Work Done' ? 'Completed' : (bookingData.status || 'Upcoming'),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            ...(collectionName === 'bookings' ? {
+              status: isFullyPaid && entityData.status === 'Work Done' ? 'Completed' : (entityData.status || 'Upcoming')
+            } : {}),
             ...(isFullyPaid ? {
               balancePaymentRef: referenceNumber,
               balancePaidAt: new Date().toISOString(),
@@ -414,8 +563,27 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
             })
           });
 
-          console.log(`✅ Webhook verified: Booking ${bookingId} marked ${isFullyPaid ? 'FULLY PAID' : 'PARTIAL'}.`);
+          // Audit trail: mark the webhook log as matched
+          await logRef.update({
+            matched: true,
+            matchedCollection: collectionName,
+            matchedId: entityId
+          }).catch(() => {});
+
+          console.log(`Webhook verified: ${collectionName}/${entityId} marked ${isFullyPaid ? 'FULLY PAID' : 'PARTIAL'}.`);
+        } else {
+          // No matching entity — record it for the Payment Audit screen
+          await logRef.update({
+            matched: false,
+            error: `No ${collectionName} document found for id ${entityId}`
+          }).catch(() => {});
         }
+      } else {
+        // Reference format unrecognized
+        await logRef.update({
+          matched: false,
+          error: `Unrecognized reference format: ${referenceNumber}`
+        }).catch(() => {});
       }
     }
 

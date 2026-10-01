@@ -12,7 +12,7 @@ import {
     Download, Plus, Clock, Users, ArrowRight, CheckCircle, AlertCircle,
     ShoppingBag, Map, Activity, Wifi, WifiOff, Server, DollarSign,
     Star, TrendingUp, Calendar, BarChart3, CreditCard, Settings,
-    RefreshCw, Zap, UserCheck, XCircle
+    RefreshCw, Zap, UserCheck, XCircle, ShieldCheck
 } from 'lucide-react';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -394,7 +394,7 @@ const AdminDashboardScreen: React.FC = () => {
         { label: 'New Booking', icon: Plus, onClick: () => navigate('/admin-portal/bookings'), color: 'from-primary to-orange-600' },
         { label: 'Mechanics', icon: Users, onClick: () => navigate('/admin-portal/mechanics'), color: 'from-blue-600 to-blue-800' },
         { label: 'Analytics', icon: BarChart3, onClick: () => navigate('/admin-portal/analytics'), color: 'from-purple-600 to-purple-800' },
-        { label: 'GCash Payments', icon: CreditCard, onClick: () => navigate('/admin-portal/gcash-payments'), color: 'from-emerald-600 to-emerald-800' },
+        { label: 'Payment Audit', icon: ShieldCheck, onClick: () => navigate('/admin-portal/payment-audit'), color: 'from-emerald-600 to-emerald-800' },
     ];
 
     return (
@@ -533,7 +533,7 @@ const AdminDashboardScreen: React.FC = () => {
                     gradient="bg-gradient-to-br from-emerald-600/90 to-emerald-900"
                     subtitle={`${pendingPayments} pending payment`}
                     detail="Bookings that have been fully paid"
-                    onClick={() => navigate('/admin-portal/gcash-payments')}
+                    onClick={() => navigate('/admin-portal/payment-audit')}
                 />
                 <EnhancedKPICard
                     title="Total Orders"
