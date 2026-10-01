@@ -46,6 +46,12 @@ const getClearedAtKey = (recipientId: string | null) => {
     return clean ? `ridersbud_notif_clearedAt_${clean}` : null;
 };
 
+/** Build a localStorage key scoped to the active user for dismissed notification IDs */
+const getDismissedKey = (recipientId: string | null) => {
+    const clean = normalizeRecipientId(recipientId);
+    return clean ? `ridersbud_notif_dismissed_${clean}` : null;
+};
+
 export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const {
         db,
@@ -63,8 +69,10 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     const { isAdminAuthenticated } = useAdminAuth();
 
     // Track the timestamp at which the active user last cleared all notifications.
-    // Any notification with timestamp <= clearedAt is hidden (covers broadcast 'all' docs too).
+    // Any notification with timestamp <= clearedAt is hidden.
     const [clearedAt, setClearedAt] = useState<number>(0);
+    // Track individual dismissed IDs to ensure deleted broadcast/personal notifications never return
+    const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
 
     // Compute the active recipient ID for this session
     const activeRecipientId: string | null = isAdminAuthenticated
@@ -75,7 +83,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         ? user.id
         : null;
 
-    // Load persisted clearedAt from localStorage whenever the recipient changes
+    // Load persisted clearedAt and dismissedIds whenever the recipient changes
     useEffect(() => {
         const key = getClearedAtKey(activeRecipientId);
         if (key) {
@@ -84,12 +92,27 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         } else {
             setClearedAt(0);
         }
+
+        const dismissedKey = getDismissedKey(activeRecipientId);
+        if (dismissedKey) {
+            try {
+                const storedList = JSON.parse(localStorage.getItem(dismissedKey) || '[]');
+                setDismissedIds(new Set(Array.isArray(storedList) ? storedList : []));
+            } catch {
+                setDismissedIds(new Set());
+            }
+        } else {
+            setDismissedIds(new Set());
+        }
     }, [activeRecipientId]);
 
     // Live notifications from Firestore, sorted newest first, filtered strictly by active UID to prevent leakage.
     // Each user ONLY sees notifications that belong to them — NEVER cross-user notifications.
     const notifications = [...(db?.notifications || [])]
         .filter(n => {
+            // Dismissed IDs filter (never display permanently deleted/dismissed notifications)
+            if (n.id && dismissedIds.has(n.id)) return false;
+
             // Filter out system Google Maps API test notifications from regular notification feeds
             const title = (n.title || '').toLowerCase();
             const message = (n.message || '').toLowerCase();
@@ -108,13 +131,15 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
             // Strict role and recipient filtering to prevent notifications leakage across accounts
             if (isAdminAuthenticated) {
-                return n.recipientRole === 'admin' || n.recipientId === 'admin';
+                // Admin Bell: show actionable alerts for Admin (payouts, new bookings, receipts, cancellations, assignments, store orders, etc.)
+                const isForAdmin = n.recipientRole === 'admin' || n.recipientId === 'admin';
+                return isForAdmin;
             }
             if (isMechanicAuthenticated && mechanic) {
-                return n.recipientId === mechanic.id && n.recipientRole === 'mechanic';
+                return (n.recipientId === mechanic.id || n.recipientId === `mechanic-${mechanic.id}`) && n.recipientRole === 'mechanic';
             }
             if (isAuthenticated && user) {
-                return (n.recipientId === user.id && n.recipientRole === 'customer') || (n.recipientId === 'all' && n.recipientRole === 'customer');
+                return (n.recipientId === user.id || n.recipientId === `customer-${user.id}`) && n.recipientRole === 'customer';
             }
 
             return false;
@@ -124,7 +149,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     const unreadCount = notifications.filter(n => n.status === 'unread' || n.read === false).length;
 
     const addNotification = (notificationData: Omit<Notification, 'id' | 'createdAt' | 'createdBy' | 'status'> & { date?: string }) => {
-        let recipientId = notificationData.recipientId || 'all';
+        let recipientId = notificationData.recipientId ? String(notificationData.recipientId).trim() : 'admin';
         let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined = notificationData.recipientRole as any;
 
         if (recipientId.startsWith('mechanic-')) {
@@ -137,8 +162,8 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             recipientRole = 'admin';
         }
 
-        if (recipientId === 'all' && !recipientRole) {
-            recipientRole = 'customer';
+        if (!recipientRole) {
+            recipientRole = recipientId === 'admin' ? 'admin' : 'customer';
         }
 
         dbAddNotification({
@@ -165,6 +190,20 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     };
 
     const deleteNotification = (id: string) => {
+        // Add to dismissedIds state and localStorage so it never comes back
+        setDismissedIds(prev => {
+            const next = new Set(prev);
+            next.add(id);
+            const dismissedKey = getDismissedKey(activeRecipientId);
+            if (dismissedKey) {
+                try {
+                    localStorage.setItem(dismissedKey, JSON.stringify(Array.from(next)));
+                } catch (e) {
+                    console.warn('[NotificationContext] Failed to persist dismissed IDs:', e);
+                }
+            }
+            return next;
+        });
         dbDeleteNotification(id);
     };
 
@@ -174,7 +213,8 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
      * Strategy:
      * 1. Record the current timestamp as `clearedAt` in state + localStorage.
      *    This immediately hides ALL notifications from the UI.
-     * 2. In parallel, delete all matching Firestore documents in batch.
+     * 2. Store all dismissed IDs into localStorage.
+     * 3. In parallel, delete all matching Firestore documents in batch.
      *
      * Result: UI clears INSTANTLY (optimistic), Firestore cleanup follows asynchronously.
      */
@@ -191,7 +231,24 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         // 2. Identify all notification IDs currently displayed/visible to this user
         const targetIds = notifications.map(n => n.id).filter(Boolean);
 
-        // 3. Delete all matching docs from Firestore & local DB
+        // 3. Mark all target IDs as dismissed in local storage
+        if (targetIds.length > 0) {
+            setDismissedIds(prev => {
+                const next = new Set(prev);
+                targetIds.forEach(id => next.add(id));
+                const dismissedKey = getDismissedKey(recipientId);
+                if (dismissedKey) {
+                    try {
+                        localStorage.setItem(dismissedKey, JSON.stringify(Array.from(next)));
+                    } catch (e) {
+                        console.warn('[NotificationContext] Failed to persist dismissed IDs:', e);
+                    }
+                }
+                return next;
+            });
+        }
+
+        // 4. Delete all matching docs from Firestore & local DB
         try {
             await dbClearAllNotifications(recipientId, targetIds);
         } catch (e) {

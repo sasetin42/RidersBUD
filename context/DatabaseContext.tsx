@@ -1157,8 +1157,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     // We just write to Firestore here.
 
     const sendNotification = async (notif: Omit<Notification, 'id' | 'status' | 'createdAt' | 'createdBy' | 'recipientRole'> & Partial<Pick<Notification, 'status' | 'createdAt' | 'createdBy' | 'recipientRole'>>) => {
-        let recipientId = notif.recipientId || 'all';
-        let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined;
+        let recipientId = notif.recipientId ? String(notif.recipientId).trim() : 'admin';
+        let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined = notif.recipientRole as any;
 
         if (recipientId.startsWith('mechanic-')) {
             recipientId = recipientId.replace('mechanic-', '');
@@ -1170,10 +1170,27 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             recipientRole = 'admin';
         }
 
+        // Guard: Never write or store Google Maps test pings as user notifications
+        const lowerTitle = (notif.title || '').toLowerCase();
+        const lowerMsg = (notif.message || '').toLowerCase();
+        if (
+            lowerTitle.includes('google map') ||
+            lowerTitle.includes('google maps') ||
+            lowerTitle.includes('maps api') ||
+            lowerMsg.includes('google maps api') ||
+            lowerMsg.includes('api key connection test')
+        ) {
+            return;
+        }
+
+        if (!recipientRole) {
+            recipientRole = recipientId === 'admin' ? 'admin' : 'customer';
+        }
+
         const newNotif = {
             ...notif,
             recipientId,
-            recipientRole: notif.recipientRole || recipientRole,
+            recipientRole,
             id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             timestamp: Date.now(),
             status: 'unread',
@@ -1197,7 +1214,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             await addDoc(collection(firestore, 'notifications'), {
                 ...notif,
                 recipientId,
-                recipientRole: notif.recipientRole || recipientRole,
+                recipientRole,
                 timestamp: Date.now(),
                 status: 'unread',
                 read: false,
@@ -3329,19 +3346,62 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const addNotification = async (notification: Omit<Notification, 'id'>) => {
+        let recipientId = notification.recipientId ? String(notification.recipientId).trim() : 'admin';
+        let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined = notification.recipientRole as any;
+
+        if (recipientId.startsWith('mechanic-')) {
+            recipientId = recipientId.replace('mechanic-', '');
+            recipientRole = 'mechanic';
+        } else if (recipientId.startsWith('customer-')) {
+            recipientId = recipientId.replace('customer-', '');
+            recipientRole = 'customer';
+        } else if (recipientId === 'admin') {
+            recipientRole = 'admin';
+        }
+
+        // Guard: Never write or store Google Maps test pings as user notifications
+        const lowerTitle = (notification.title || '').toLowerCase();
+        const lowerMsg = (notification.message || '').toLowerCase();
+        if (
+            lowerTitle.includes('google map') ||
+            lowerTitle.includes('google maps') ||
+            lowerTitle.includes('maps api') ||
+            lowerMsg.includes('google maps api') ||
+            lowerMsg.includes('api key connection test')
+        ) {
+            return;
+        }
+
+        if (!recipientRole) {
+            recipientRole = recipientId === 'admin' ? 'admin' : 'customer';
+        }
+
+        const newNotif = {
+            ...notification,
+            recipientId,
+            recipientRole,
+            createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system',
+            id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: notification.timestamp || Date.now(),
+            status: notification.status || 'unread',
+            read: notification.read ?? false,
+            createdAt: notification.createdAt || new Date().toISOString()
+        } as Notification;
+
         try {
             await addDoc(collection(firestore, 'notifications'), {
                 ...notification,
-                createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system'
+                recipientId,
+                recipientRole,
+                createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system',
+                timestamp: notification.timestamp || Date.now(),
+                status: notification.status || 'unread',
+                read: notification.read ?? false,
+                createdAt: notification.createdAt || new Date().toISOString()
             });
         } catch (e) {
             console.warn("[Notification] addNotification failed:", e);
             // Local fallback
-            const newNotif = {
-                ...notification,
-                createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system',
-                id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            } as Notification;
             setDb(prev => {
                 if (!prev) return null;
                 return {
@@ -3435,34 +3495,46 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 return specificIds.includes(n.id);
             }
             if (isAdmin) {
-                return n.recipientRole === 'admin' || n.recipientId === 'admin' || n.recipientId === 'all' || !n.recipientRole;
+                return n.recipientRole === 'admin' || n.recipientId === 'admin';
             }
             if (isMechanic) {
-                return n.recipientId === cleanId || n.recipientId === `mechanic-${cleanId}` || (n.recipientRole === 'mechanic');
+                return (n.recipientId === cleanId || n.recipientId === `mechanic-${cleanId}`) && n.recipientRole === 'mechanic';
             }
-            // Customer or General
-            return n.recipientId === cleanId || n.recipientId === `customer-${cleanId}` || n.recipientRole === 'customer' || n.recipientId === 'all' || !n.recipientRole;
+            // Customer
+            return (n.recipientId === cleanId || n.recipientId === `customer-${cleanId}`) && n.recipientRole === 'customer';
         };
+
+        const targetNotifs = (db?.notifications || []).filter(isMatchingNotification);
+        const targetIds = specificIds && specificIds.length > 0 ? specificIds : targetNotifs.map(n => n.id);
 
         setDb(prev => {
             if (!prev) return null;
             return {
                 ...prev,
-                notifications: (prev.notifications || []).filter(n => !isMatchingNotification(n))
+                notifications: (prev.notifications || []).filter(n => !targetIds.includes(n.id))
             };
         });
 
         try {
-            const batch = writeBatch(firestore);
-            const myNotifs = db?.notifications?.filter(isMatchingNotification) || [];
-            myNotifs.forEach(n => {
-                if (n.id) {
-                    batch.delete(doc(firestore, 'notifications', n.id));
+            const deletePromises: Promise<any>[] = [];
+            let batch = writeBatch(firestore);
+            let bCount = 0;
+
+            for (const docId of targetIds) {
+                if (!docId) continue;
+                batch.delete(doc(firestore, 'notifications', docId));
+                bCount++;
+                if (bCount >= 400) {
+                    deletePromises.push(batch.commit());
+                    batch = writeBatch(firestore);
+                    bCount = 0;
                 }
-            });
-            if (myNotifs.length > 0) {
-                await batch.commit();
             }
+            if (bCount > 0) {
+                deletePromises.push(batch.commit());
+            }
+
+            await Promise.all(deletePromises);
         } catch (e) {
             console.warn("[Notification] clearAllNotifications failed:", e);
         }
@@ -3470,21 +3542,42 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     const clearAllNotificationsByPrefix = async (prefix: string) => {
         try {
-            const batch = writeBatch(firestore);
             const isCustomer = prefix === 'customer-';
             const isMechanic = prefix === 'mechanic-';
             const matched = db?.notifications.filter(n =>
                 (n.recipientId?.startsWith(prefix) || 
                  (isCustomer && n.recipientRole === 'customer') || 
-                 (isMechanic && n.recipientRole === 'mechanic')) && 
-                n.recipientId !== 'all'
+                 (isMechanic && n.recipientRole === 'mechanic'))
             ) || [];
-            matched.forEach(n => {
-                batch.delete(doc(firestore, 'notifications', n.id));
+
+            setDb(prev => {
+                if (!prev) return null;
+                const matchedIds = new Set(matched.map(m => m.id));
+                return {
+                    ...prev,
+                    notifications: (prev.notifications || []).filter(n => !matchedIds.has(n.id))
+                };
             });
-            if (matched.length > 0) {
-                await batch.commit();
+
+            const deletePromises: Promise<any>[] = [];
+            let batch = writeBatch(firestore);
+            let bCount = 0;
+
+            for (const n of matched) {
+                if (!n.id) continue;
+                batch.delete(doc(firestore, 'notifications', n.id));
+                bCount++;
+                if (bCount >= 400) {
+                    deletePromises.push(batch.commit());
+                    batch = writeBatch(firestore);
+                    bCount = 0;
+                }
             }
+            if (bCount > 0) {
+                deletePromises.push(batch.commit());
+            }
+
+            await Promise.all(deletePromises);
         } catch (e) {
             console.warn("[Notification] clearAllNotificationsByPrefix failed:", e);
         }

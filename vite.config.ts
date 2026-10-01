@@ -208,7 +208,7 @@ export default defineConfig(({ mode }) => {
                 if (req.method === 'GET') {
                   const urlObj = new URL(req.url, 'http://localhost');
                   const id = urlObj.searchParams.get('id');
-                  const isSandbox = urlObj.searchParams.get('sandbox') !== 'false';
+                  const isSandbox = urlObj.searchParams.get('sandbox') === 'true';
                   const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
                   const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
                   const apiKey = req.headers['x-business-api-key'] || (isSandbox ? defaultSandboxKey : defaultLiveKey);
@@ -224,8 +224,9 @@ export default defineConfig(({ mode }) => {
                     hostname,
                     path: `/v1/payment-requests/${encodeURIComponent(id)}`,
                     method: 'GET',
-                    agent: hitpayDevAgent,
+                    agent: false,
                     headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                       'X-Requested-With': 'XMLHttpRequest',
                       'X-BUSINESS-API-KEY': apiKey as string
                     }
@@ -253,7 +254,7 @@ export default defineConfig(({ mode }) => {
                   req.on('end', async () => {
                     try {
                       const parsed = JSON.parse(rawBody || '{}');
-                      const isSandbox = parsed.isSandbox !== false;
+                      const isSandbox = parsed.isSandbox === true;
                       const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
                       const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
                       const apiKey = parsed.apiKey || (isSandbox ? defaultSandboxKey : defaultLiveKey);
@@ -265,8 +266,9 @@ export default defineConfig(({ mode }) => {
                         hostname,
                         path: '/v1/payment-requests',
                         method: 'POST',
-                        agent: hitpayDevAgent,
+                        agent: false,
                         headers: {
+                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                           'Content-Type': 'application/json',
                           'X-Requested-With': 'XMLHttpRequest',
                           'X-BUSINESS-API-KEY': apiKey,

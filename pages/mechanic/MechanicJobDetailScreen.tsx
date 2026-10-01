@@ -25,6 +25,7 @@ import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { useCall } from '../../context/CallContext';
 import { Geolocation } from '@capacitor/geolocation';
 import { safeGetCurrentPosition, safeWatchPosition, safeClearWatch, isGeolocationPermissionDenied } from '../../utils/locationHelper';
+import { getJobTotalAmount, getJobMechanicShare } from '../../utils/mechanicLedger';
 
 // Default currency configuration
 const DEFAULT_CURRENCY = 'PHP';
@@ -1120,6 +1121,70 @@ const MechanicJobDetailScreen: React.FC = () => {
                                     <p className="text-xl font-black text-primary tracking-tight">₱{((booking.totalAmount || booking.service?.price || 0) - (booking.paidAmount || 0)).toLocaleString()}</p>
                                 </div>
                             </div>
+
+                            {/* Layman's Terms Payment Breakdown for Mechanic */}
+                            {(() => {
+                                const totalRevenue = getJobTotalAmount(booking);
+                                const serviceFeePct = db?.settings?.serviceFeePercentage ?? 30;
+                                const mechanicTakeHome = getJobMechanicShare(booking, serviceFeePct);
+                                const adminCommission = Math.max(0, totalRevenue - mechanicTakeHome);
+                                const mechanicPct = 100 - serviceFeePct;
+
+                                return (
+                                    <div className="p-4 bg-gradient-to-br from-white/[0.04] to-white/[0.01] border border-white/10 rounded-2xl space-y-3">
+                                        <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                                                    ₱
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-black text-white tracking-wide uppercase">Payment Terms Breakdown</p>
+                                                    <p className="text-[9px] text-gray-400">Malinaw na hatian sa bayad ng serbisyo</p>
+                                                </div>
+                                            </div>
+                                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                                                {mechanicPct}% / {serviceFeePct}% Share
+                                            </span>
+                                        </div>
+
+                                        <div className="space-y-2 text-xs">
+                                            <div className="flex justify-between items-center text-gray-300">
+                                                <span className="flex items-center gap-1.5 font-medium">
+                                                    <span>Customer Total Paid</span>
+                                                    <span className="text-[10px] text-gray-500">(Kabuuang Bayad)</span>
+                                                </span>
+                                                <span className="font-bold text-white tracking-tight">
+                                                    ₱{totalRevenue.toLocaleString()}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex justify-between items-center text-red-400/90">
+                                                <span className="flex items-center gap-1.5 font-medium">
+                                                    <span>Admin Platform Fee ({serviceFeePct}%)</span>
+                                                    <span className="text-[10px] text-red-500/70">(Bawas ng App)</span>
+                                                </span>
+                                                <span className="font-bold tracking-tight">
+                                                    - ₱{adminCommission.toLocaleString()}
+                                                </span>
+                                            </div>
+
+                                            <div className="pt-2 border-t border-dashed border-white/10 flex justify-between items-center">
+                                                <div>
+                                                    <p className="text-xs font-black text-emerald-400 uppercase tracking-wide">
+                                                        Your Take-Home Pay ({mechanicPct}%)
+                                                    </p>
+                                                    <p className="text-[9px] text-gray-400 font-medium">
+                                                        Iyong maiuuwi at papasok sa Wallet
+                                                    </p>
+                                                </div>
+                                                <p className="text-lg font-black text-emerald-400 tracking-tight">
+                                                    ₱{mechanicTakeHome.toLocaleString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {booking.gcashReceiptUrl && (
                                 <button 
@@ -2806,6 +2871,33 @@ const MechanicJobDetailScreen: React.FC = () => {
                                         {formatCurrency(booking.totalAmount || booking.service?.price || 0)}
                                     </span>
                                 </div>
+                                {(() => {
+                                    const totalRev = getJobTotalAmount(booking);
+                                    const feePct = db?.settings?.serviceFeePercentage ?? 30;
+                                    const mechanicNet = getJobMechanicShare(booking, feePct);
+                                    const adminFee = Math.max(0, totalRev - mechanicNet);
+                                    const mechanicPct = 100 - feePct;
+
+                                    return (
+                                        <div className="border-t border-white/10 pt-3 mt-2 space-y-2 bg-black/30 p-3 rounded-xl">
+                                            <div className="flex justify-between items-center text-[11px] text-gray-300">
+                                                <span>Customer Total / Kabuuan:</span>
+                                                <span className="font-bold text-white">₱{totalRev.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-[11px] text-red-400/90">
+                                                <span>Admin Platform Fee ({feePct}%):</span>
+                                                <span className="font-bold">- ₱{adminFee.toLocaleString()}</span>
+                                            </div>
+                                            <div className="pt-2 border-t border-dashed border-white/10 flex justify-between items-center">
+                                                <div>
+                                                    <span className="text-xs font-black text-emerald-400">Your Take-Home Pay ({mechanicPct}%):</span>
+                                                    <p className="text-[9px] text-gray-400">Papasok sa Wallet kapag kinumpirma</p>
+                                                </div>
+                                                <span className="text-base font-black text-emerald-400">₱{mechanicNet.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         )}
 
@@ -2873,6 +2965,34 @@ const MechanicJobDetailScreen: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {(() => {
+                                    const totalRev = getJobTotalAmount(booking);
+                                    const feePct = db?.settings?.serviceFeePercentage ?? 30;
+                                    const mechanicNet = getJobMechanicShare(booking, feePct);
+                                    const adminFee = Math.max(0, totalRev - mechanicNet);
+                                    const mechanicPct = 100 - feePct;
+
+                                    return (
+                                        <div className="border-t border-white/10 pt-3 mt-2 space-y-2 bg-black/30 p-3 rounded-xl">
+                                            <div className="flex justify-between items-center text-[11px] text-gray-300">
+                                                <span>Customer Total / Kabuuan:</span>
+                                                <span className="font-bold text-white">₱{totalRev.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-[11px] text-red-400/90">
+                                                <span>Admin Platform Fee ({feePct}%):</span>
+                                                <span className="font-bold">- ₱{adminFee.toLocaleString()}</span>
+                                            </div>
+                                            <div className="pt-2 border-t border-dashed border-white/10 flex justify-between items-center">
+                                                <div>
+                                                    <span className="text-xs font-black text-emerald-400">Your Take-Home Pay ({mechanicPct}%):</span>
+                                                    <p className="text-[9px] text-gray-400">Pumasok na sa iyong Wallet</p>
+                                                </div>
+                                                <span className="text-base font-black text-emerald-400">₱{mechanicNet.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         )}
 

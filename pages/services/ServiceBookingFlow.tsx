@@ -120,21 +120,37 @@ const ServiceBookingFlow: React.FC = () => {
                 const refNumber = `TOW-${createdRequest.id || Date.now()}`;
                 const purpose = `RidersBUD — Emergency Towing 50% Deposit (${service.name})`;
 
-                const checkoutParams = new URLSearchParams({
-                    amount: String(downpaymentAmount),
+                const { url } = await hitPay.createPaymentRequest({
+                    amount: downpaymentAmount,
                     currency: db?.settings?.currency || 'PHP',
                     reference_number: refNumber,
-                    reference: refNumber,
+                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
                     redirect_url: returnUrl,
                     email: user.email || 'customer@example.com',
                     name: user.name || 'Customer',
                     phone: user.phone || '',
-                    purpose: purpose,
-                    sandbox: hitPay.getIsSandbox() ? 'true' : 'false'
+                    purpose: purpose
                 });
 
-                navigate(`/hitpay-checkout?${checkoutParams.toString()}`);
-                return;
+                if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+                    setPendingPaymentMarker({
+                        entityKind: 'service-request',
+                        entityId: createdRequest.id,
+                        returnRoute: `/customer-portal/service-payment-confirmation?bookingId=${createdRequest.id}`,
+                        startedAt: Date.now(),
+                        purpose: 'towing-downpayment'
+                    });
+                    startPaymentWatcher('service-request', createdRequest.id, `/customer-portal/service-payment-confirmation?bookingId=${createdRequest.id}`);
+                    await openPaymentUrl(url);
+                    return;
+                }
+
+                if (url && url.startsWith('/')) {
+                    navigate(url);
+                    return;
+                }
+
+                throw new Error("Unable to obtain payment gateway URL.");
             }
 
             navigate('/customer-portal/my-service-requests', { replace: true });

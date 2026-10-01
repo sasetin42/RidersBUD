@@ -27,7 +27,7 @@ if (globalDb) {
             localCache: persistentLocalCache({
                 tabManager: persistentMultipleTabManager()
             }),
-            experimentalAutoDetectLongPolling: true,
+            experimentalForceLongPolling: true,
             ignoreUndefinedProperties: true
         } as any);
         (globalThis as any)._firebaseDb = dbInstance;

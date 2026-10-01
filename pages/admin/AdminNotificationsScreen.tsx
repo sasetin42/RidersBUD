@@ -19,7 +19,7 @@ const formatDate = (d?: string | number) => {
 
 const AdminNotificationsScreen: React.FC = () => {
     const { db, clearAllNotificationsByPrefix, markAllNotificationsAsReadByPrefix } = useDatabase();
-    const { addNotification } = useNotification();
+    const { addNotification, deleteNotification } = useNotification();
     const [searchQuery, setSearchQuery] = useState('');
     const [processing, setProcessing] = useState<'customer-clear' | 'customer-mark' | 'mechanic-clear' | 'mechanic-mark' | null>(null);
     const [customerConfirm, setCustomerConfirm] = useState(false);
@@ -120,6 +120,7 @@ const AdminNotificationsScreen: React.FC = () => {
                                 <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Title</th>
                                 <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500 hidden md:table-cell">Message</th>
                                 <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500">Date</th>
+                                <th className="px-4 py-4 text-[10px] font-black tracking-widest text-gray-500 text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
@@ -143,11 +144,20 @@ const AdminNotificationsScreen: React.FC = () => {
                                         <td className="px-4 py-3 text-sm font-bold text-white">{n.title}</td>
                                         <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell max-w-[300px] truncate">{n.message}</td>
                                         <td className="px-4 py-3 text-[11px] text-gray-500 font-mono whitespace-nowrap">{formatDate(n.timestamp ?? n.date)}</td>
+                                        <td className="px-4 py-3 text-right">
+                                            <button
+                                                onClick={() => deleteNotification(n.id)}
+                                                className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                                                title="Delete notification"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </td>
                                     </tr>
                                 );
                             }) : (
                                 <tr>
-                                    <td colSpan={5} className="py-16 text-center">
+                                    <td colSpan={6} className="py-16 text-center">
                                         <div className="flex flex-col items-center gap-3 text-gray-500">
                                             <BellOff size={32} />
                                             <p className="font-bold text-sm">No {type} notifications</p>

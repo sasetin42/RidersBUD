@@ -16,11 +16,14 @@ import {
     ChevronRight,
     ChevronLeft,
     Sparkles,
-    ExternalLink
+    ExternalLink,
+    Copy,
+    Check
 } from 'lucide-react';
 import { HitPayService } from '../services/HitPayService';
 import { useDatabase } from '../context/DatabaseContext';
 import HitPayInAppModal from '../components/HitPayInAppModal';
+import { openPaymentUrl } from '../utils/paymentRedirect';
 
 type PaymentMethodType = 'gcash' | 'qrph' | 'card' | 'maya';
 
@@ -50,7 +53,10 @@ export const HitPayCheckoutScreen: React.FC = () => {
     const name = searchParams.get('name') || locationState.name || 'Valued Customer';
     const phone = searchParams.get('phone') || locationState.phone || '09171234567';
     const purpose = searchParams.get('purpose') || locationState.purpose || 'RidersBUD Service Payment';
-    const isSandbox = searchParams.get('sandbox') !== 'false' && (searchParams.get('sandbox') === 'true' || locationState.isSandbox !== false);
+    // Prioritize authoritative system settings: default to LIVE unless explicitly requested sandbox
+    const isSandbox = searchParams.get('sandbox') === 'true' || 
+        (searchParams.get('sandbox') !== 'false' && locationState.isSandbox === true) || 
+        (db?.settings?.hitpaySandboxMode === true && searchParams.get('sandbox') !== 'false' && locationState.isSandbox !== false);
     const preselectedMethod = searchParams.get('method') as PaymentMethodType | null;
 
     // Checkout Lifecycle States: 'idle' | 'processing' | 'redirecting' | 'verifying' | 'completed' | 'failed' | 'cancelled' | 'expired'
@@ -76,6 +82,17 @@ export const HitPayCheckoutScreen: React.FC = () => {
         paidAt?: string;
     } | null>(null);
     const [inAppModalUrl, setInAppModalUrl] = useState<string | null>(null);
+    const [copiedRef, setCopiedRef] = useState<boolean>(false);
+
+    const handleCopyReference = (refText: string) => {
+        try {
+            navigator.clipboard.writeText(refText);
+            setCopiedRef(true);
+            setTimeout(() => setCopiedRef(false), 2000);
+        } catch (e) {
+            console.warn('Clipboard write error:', e);
+        }
+    };
 
     // High-Performance Pre-warming Cache: silences network latency by pre-creating session in background
     const prewarmedSessions = useRef<Map<string, { url: string; id: string }>>(new Map());
@@ -90,7 +107,7 @@ export const HitPayCheckoutScreen: React.FC = () => {
             if (prewarmedSessions.current.has(methodCode) || isPrewarmingRef.current) return;
             try {
                 isPrewarmingRef.current = true;
-                const hitpay = HitPayService.fromSettings(db?.settings);
+                const hitpay = HitPayService.fromSettings(db?.settings, isSandbox);
                 let returnRedirectUrl = redirectUrl;
                 try {
                     const urlObj = new URL(redirectUrl.startsWith('http') ? redirectUrl : `${window.location.origin}${redirectUrl}`);
@@ -132,19 +149,19 @@ export const HitPayCheckoutScreen: React.FC = () => {
         return () => {
             isCancelled = true;
         };
-    }, [amount, referenceNumber, selectedMethod, db?.settings, email, name, phone, purpose, currency, redirectUrl, checkoutState]);
+    }, [amount, referenceNumber, selectedMethod, db?.settings, isSandbox, email, name, phone, purpose, currency, redirectUrl, checkoutState]);
 
-    // Dynamic Payment Methods list adhering to branding
+    // Dynamic Payment Methods list adhering to branding and high mobile clarity
     const paymentMethods: PaymentMethodOption[] = useMemo(() => [
         {
             id: 'gcash',
             name: 'GCash',
-            description: 'Instant direct e-wallet payment via QR or Mobile app',
+            description: 'Instant mobile e-wallet & QR Ph scan via GCash App',
             badge: 'Most Popular',
-            badgeColor: 'bg-[#005CEE]/20 text-[#005CEE] border-[#005CEE]/30',
+            badgeColor: 'bg-[#005CEE]/20 text-[#2B7FFF] border-[#005CEE]/40',
             hitpayMethodCode: 'gcash',
             icon: (
-                <div className="w-10 h-10 rounded-xl bg-[#005CEE] flex items-center justify-center text-white font-black text-base shadow-md shadow-[#005CEE]/25">
+                <div className="w-11 h-11 rounded-2xl bg-[#005CEE] flex items-center justify-center text-white font-black text-lg shadow-lg shadow-[#005CEE]/30 shrink-0 border border-white/10">
                     G
                 </div>
             )
@@ -154,36 +171,36 @@ export const HitPayCheckoutScreen: React.FC = () => {
             name: 'QR Ph National QR',
             description: 'Scan with BDO, BPI, Maya, UnionBank, RCBC & 40+ banks',
             badge: 'BSP Standard',
-            badgeColor: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+            badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
             hitpayMethodCode: 'qrph',
             icon: (
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold shadow-md shadow-teal-500/25">
-                    <QrCode size={20} />
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold shadow-lg shadow-teal-500/30 shrink-0 border border-white/10">
+                    <QrCode size={22} />
                 </div>
             )
         },
         {
             id: 'card',
             name: 'Credit / Debit Card',
-            description: 'Visa, Mastercard, JCB with 3D Secure bank OTP verification',
+            description: 'Visa, Mastercard, JCB with 3D Secure bank OTP protection',
             badge: 'Zero Surcharge',
-            badgeColor: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+            badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
             hitpayMethodCode: 'card',
             icon: (
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white shadow-md shadow-amber-500/25">
-                    <CreditCard size={20} />
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white shadow-lg shadow-amber-500/30 shrink-0 border border-white/10">
+                    <CreditCard size={22} />
                 </div>
             )
         },
         {
             id: 'maya',
             name: 'Maya Wallet',
-            description: 'Fast digital payment using your Maya app account',
+            description: 'Fast digital payment using your verified Maya balance',
             badge: 'Instant',
-            badgeColor: 'bg-[#00B14F]/20 text-[#00B14F] border-[#00B14F]/30',
+            badgeColor: 'bg-[#00B14F]/20 text-[#00E676] border-[#00B14F]/40',
             hitpayMethodCode: 'paymaya',
             icon: (
-                <div className="w-10 h-10 rounded-xl bg-[#00B14F] flex items-center justify-center text-white font-black text-base shadow-md shadow-[#00B14F]/25">
+                <div className="w-11 h-11 rounded-2xl bg-[#00B14F] flex items-center justify-center text-white font-black text-lg shadow-lg shadow-[#00B14F]/30 shrink-0 border border-white/10">
                     M
                 </div>
             )
@@ -222,7 +239,7 @@ export const HitPayCheckoutScreen: React.FC = () => {
         if ((queryStatus === 'completed' || queryStatus === 'success') && checkoutState === 'verifying') {
             setStatusMessage('Verifying authoritative transaction with HitPay...');
 
-            const hitpay = HitPayService.fromSettings(db?.settings);
+            const hitpay = HitPayService.fromSettings(db?.settings, isSandbox);
 
             // Authoritative server verification check
             const verifyTransaction = async () => {
@@ -289,8 +306,9 @@ export const HitPayCheckoutScreen: React.FC = () => {
         const cachedSession = prewarmedSessions.current.get(channelMethodCode);
         if (cachedSession && cachedSession.url) {
             if (cachedSession.url.startsWith('https://') || cachedSession.url.startsWith('http://')) {
-                setInAppModalUrl(cachedSession.url);
-                setCheckoutState('idle');
+                setCheckoutState('redirecting');
+                setStatusMessage('Opening HitPay checkout...');
+                await openPaymentUrl(cachedSession.url);
                 return;
             }
         }
@@ -300,7 +318,7 @@ export const HitPayCheckoutScreen: React.FC = () => {
         setErrorMessage('');
 
         try {
-            const hitpay = HitPayService.fromSettings(db?.settings);
+            const hitpay = HitPayService.fromSettings(db?.settings, isSandbox);
             const channelMethod = [channelMethodCode];
 
             setStatusMessage(`Creating secure ${selectedOption?.name || 'HitPay'} checkout session...`);
@@ -339,10 +357,10 @@ export const HitPayCheckoutScreen: React.FC = () => {
             setCheckoutState('redirecting');
             setStatusMessage('Opening HitPay checkout...');
 
-            // If an external HitPay checkout URL was generated (live or sandbox hosted), open inside our in-app secure modal
+            // Official HitPay checkout URLs send 'frame-ancestors self ecwid.com' which prohibits iframe framing.
+            // Launch via openPaymentUrl (Chrome Custom Tab on native Android, top-level window redirect on web)
             if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-                setInAppModalUrl(url);
-                setCheckoutState('idle');
+                await openPaymentUrl(url);
                 return;
             }
 
@@ -410,25 +428,42 @@ export const HitPayCheckoutScreen: React.FC = () => {
             {/* Main Checkout Container */}
             <div className="w-full max-w-xl bg-[#13141B] border border-white/10 rounded-3xl shadow-2xl overflow-hidden relative z-10 flex flex-col my-auto animate-fade-in backdrop-blur-xl">
                 
-                {/* 1. Header: SaSe Web Solutions & RidersBUD Branded Bar */}
-                <div className="bg-[#181A24] px-6 py-5 border-b border-white/10 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
+                {/* 1. Header: SaSe Web Solutions & RidersBUD Branded Bar (Responsive Multi-tier Layout) */}
+                <div className="bg-[#181A24] px-4 sm:px-6 py-4 border-b border-white/10 flex flex-col gap-3.5">
+                    {/* Top Utility Row: Back Button + Timer + SSL Badge */}
+                    <div className="flex items-center justify-between w-full">
                         <button
                             type="button"
                             onClick={() => handleReturnToApp('canceled')}
-                            className="flex items-center gap-0.5 text-gray-400 hover:text-white text-xs font-semibold py-1.5 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-colors"
+                            className="inline-flex items-center gap-1.5 text-gray-300 hover:text-white text-xs font-semibold py-1.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 active:scale-95 transition-all"
                             title="Cancel payment and return to app"
                         >
                             <ChevronLeft size={16} />
                             <span>Back</span>
                         </button>
-                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FE7803] via-orange-600 to-orange-700 flex items-center justify-center shadow-lg shadow-[#FE7803]/25 flex-shrink-0 p-2 border border-white/10">
+
+                        <div className="flex items-center gap-2">
+                            {checkoutState === 'idle' && (
+                                <div className="flex items-center gap-1.5 bg-[#0D0E14] border border-white/10 px-2.5 py-1 rounded-xl text-xs font-mono font-bold text-gray-200 shadow-inner">
+                                    <Clock size={13} className="text-[#FE7803] animate-pulse" />
+                                    <span>{formatTime(timeLeft)}</span>
+                                </div>
+                            )}
+                            <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                                <Lock size={11} />
+                                <span>256-Bit SSL</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Brand Row: SaSe Logo + Title + Verified Badge */}
+                    <div className="flex items-center gap-3 pt-0.5">
+                        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-[#FE7803] via-orange-600 to-amber-700 flex items-center justify-center shadow-lg shadow-[#FE7803]/25 shrink-0 p-2 border border-white/15">
                             <img 
                                 src="/ridersbud_logo_white.png" 
                                 alt="RidersBUD" 
                                 className="w-full h-full object-contain"
                                 onError={(e) => {
-                                    // Fallback if image not found
                                     (e.currentTarget as HTMLElement).style.display = 'none';
                                     if (e.currentTarget.parentElement) {
                                         e.currentTarget.parentElement.innerHTML = '<span class="text-white font-black text-xl tracking-tighter">RB</span>';
@@ -436,78 +471,104 @@ export const HitPayCheckoutScreen: React.FC = () => {
                                 }}
                             />
                         </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-base sm:text-lg font-black tracking-tight text-white">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h1 className="text-base sm:text-lg font-black tracking-tight text-white truncate">
                                     SaSe Web Solutions
                                 </h1>
-                                <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 text-[9px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
                                     <CheckCircle2 size={10} /> Verified
                                 </span>
                             </div>
-                            <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5">
-                                <Building2 size={12} className="text-[#FE7803]" />
-                                <span>RidersBUD Automotive Payment</span>
+                            <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5 truncate">
+                                <Building2 size={12} className="text-[#FE7803] shrink-0" />
+                                <span className="truncate">RidersBUD Automotive Official Payment</span>
                             </p>
-                        </div>
-                    </div>
-
-                    {/* Timer & SSL Certificate Badge */}
-                    <div className="flex items-center gap-2 sm:gap-3">
-                        {checkoutState === 'idle' && (
-                            <div className="flex items-center gap-1.5 bg-[#0D0E14] border border-white/10 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-mono font-bold text-gray-300">
-                                <Clock size={13} className="text-[#FE7803] animate-pulse" />
-                                <span>{formatTime(timeLeft)}</span>
-                            </div>
-                        )}
-                        <div className="hidden sm:flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider text-emerald-400">
-                            <Lock size={12} />
-                            <span>256-Bit SSL</span>
                         </div>
                     </div>
                 </div>
 
                 {/* 2. BODY CONTENT (Conditional based on Lifecycle State) */}
-                <div className="p-5 sm:p-7 space-y-6">
+                <div className="p-4 sm:p-7 space-y-5 sm:space-y-6">
 
                     {/* STATE: IDLE (Standard Checkout UI) */}
                     {checkoutState === 'idle' && (
                         <>
-                            {/* Summary Card */}
-                            <div className="bg-gradient-to-br from-[#1B1D29] to-[#141520] border border-white/10 rounded-2xl p-5 relative overflow-hidden shadow-inner">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[11px] font-black text-gray-400 uppercase tracking-wider">Amount to Pay</span>
-                                            {isSandbox && (
-                                                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">
-                                                    HitPay Sandbox
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex items-baseline gap-2 mt-1">
-                                            <span className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-                                                ₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {/* Summary Card with Realtime Details */}
+                            <div className="bg-gradient-to-br from-[#1B1D29] via-[#161722] to-[#12131D] border border-white/10 rounded-2xl p-4 sm:p-5 relative overflow-hidden shadow-xl space-y-4">
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <span className="text-[11px] font-black text-gray-400 uppercase tracking-wider">
+                                            Amount to Pay
+                                        </span>
+                                        {isSandbox ? (
+                                            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                                <AlertCircle size={10} /> HitPay Sandbox
                                             </span>
-                                            <span className="text-sm font-bold text-[#FE7803]">{currency}</span>
-                                        </div>
-                                        <p className="text-xs text-gray-300 font-medium mt-1">{purpose}</p>
+                                        ) : (
+                                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                                <CheckCircle2 size={10} /> HitPay Live
+                                            </span>
+                                        )}
                                     </div>
 
-                                    {/* Order / Reference Details */}
-                                    <div className="bg-[#0D0E14]/80 border border-white/5 rounded-xl p-3 text-left sm:text-right self-stretch sm:self-center">
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Invoice / Ref No.</p>
-                                        <p className="text-xs font-mono font-bold text-white tracking-wider select-all mt-0.5">
-                                            {referenceNumber}
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                                            ₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                        <span className="text-sm font-bold text-[#FE7803]">{currency}</span>
+                                    </div>
+
+                                    <div className="text-xs text-gray-300 font-medium leading-relaxed bg-white/[0.03] border border-white/5 rounded-xl px-3 py-2">
+                                        {purpose}
+                                    </div>
+                                </div>
+
+                                {/* Order / Reference Details Card */}
+                                <div className="bg-[#0D0E14]/90 border border-white/10 rounded-xl p-3.5 space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                            Invoice / Reference No.
                                         </p>
-                                        <p className="text-[10px] text-gray-400 mt-1 truncate max-w-[200px]">{email}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleCopyReference(referenceNumber)}
+                                            className="text-[10px] text-gray-300 hover:text-white flex items-center gap-1 bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded-lg border border-white/10 transition-colors"
+                                            title="Copy invoice reference"
+                                        >
+                                            {copiedRef ? (
+                                                <>
+                                                    <Check size={11} className="text-emerald-400" />
+                                                    <span className="text-emerald-400 font-bold">Copied!</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Copy size={11} />
+                                                    <span>Copy</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    <p className="text-xs font-mono font-bold text-amber-300 tracking-wide break-all select-all">
+                                        {referenceNumber}
+                                    </p>
+
+                                    {/* Realtime Customer Live Details */}
+                                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400 flex-wrap gap-2">
+                                        <span className="truncate max-w-[180px] sm:max-w-none text-gray-300">
+                                            👤 {name}
+                                        </span>
+                                        <span className="truncate text-gray-400">
+                                            ✉️ {email}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Payment Method Selector */}
                             <div>
-                                <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center justify-between mb-3 px-0.5">
                                     <span className="text-xs font-black uppercase tracking-wider text-gray-300">
                                         Select HitPay Payment Method
                                     </span>
@@ -524,26 +585,28 @@ export const HitPayCheckoutScreen: React.FC = () => {
                                                 key={method.id}
                                                 type="button"
                                                 onClick={() => setSelectedMethod(method.id)}
-                                                className={`w-full p-3.5 rounded-2xl border transition-all text-left flex items-center justify-between gap-3 ${
+                                                className={`w-full p-3.5 sm:p-4 rounded-2xl border transition-all text-left flex items-start sm:items-center justify-between gap-3 ${
                                                     isSelected
-                                                        ? 'bg-gradient-to-r from-white/[0.08] to-white/[0.03] border-[#FE7803] shadow-lg shadow-[#FE7803]/10 ring-1 ring-[#FE7803]'
+                                                        ? 'bg-gradient-to-r from-white/[0.08] to-white/[0.03] border-[#FE7803] shadow-lg shadow-[#FE7803]/15 ring-1 ring-[#FE7803]'
                                                         : 'bg-[#181A24] border-white/5 hover:border-white/20 hover:bg-white/[0.04]'
                                                 }`}
                                             >
-                                                <div className="flex items-center gap-3.5 min-w-0">
+                                                <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
                                                     {method.icon}
-                                                    <div className="min-w-0">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-bold text-sm text-white">{method.name}</span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="font-bold text-sm sm:text-base text-white">{method.name}</span>
                                                             <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${method.badgeColor}`}>
                                                                 {method.badge}
                                                             </span>
                                                         </div>
-                                                        <p className="text-xs text-gray-400 truncate mt-0.5">{method.description}</p>
+                                                        <p className="text-xs text-gray-400 mt-1 leading-snug">
+                                                            {method.description}
+                                                        </p>
                                                     </div>
                                                 </div>
 
-                                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-1 sm:mt-0 ${
                                                     isSelected ? 'border-[#FE7803] bg-[#FE7803]' : 'border-white/20'
                                                 }`}>
                                                     {isSelected && <div className="w-2 h-2 rounded-full bg-black" />}
@@ -556,11 +619,11 @@ export const HitPayCheckoutScreen: React.FC = () => {
 
                             {/* Security Notice */}
                             <div className="bg-[#0D0E14] border border-white/5 rounded-2xl p-3.5 flex items-start gap-3">
-                                <ShieldCheck size={18} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+                                <ShieldCheck size={18} className="text-emerald-400 shrink-0 mt-0.5" />
                                 <div className="text-xs text-gray-400 leading-relaxed">
                                     <p className="text-gray-300 font-semibold">End-to-End Encrypted Checkout</p>
                                     <p className="text-[11px] mt-0.5">
-                                        Your payment will be securely processed by HitPay. RidersBUD never collects or stores sensitive card numbers, MPINs, or bank passwords.
+                                        Your payment is securely processed directly with HitPay. RidersBUD never stores confidential card credentials, MPINs, or OTPs.
                                     </p>
                                 </div>
                             </div>

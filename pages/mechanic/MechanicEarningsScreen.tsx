@@ -390,7 +390,8 @@ const MechanicEarningsScreen: React.FC = () => {
         payouts,
         availableBalance,
         lockedBalance,
-        allTimeEarnings
+        allTimeEarnings,
+        serviceFeePercentage
     } = useMemo(() => {
         const defaultReturn = { 
             earningsInPeriod: 0, 
@@ -401,7 +402,8 @@ const MechanicEarningsScreen: React.FC = () => {
             payouts: [] as PayoutRequest[],
             availableBalance: 0,
             lockedBalance: 0,
-            allTimeEarnings: 0
+            allTimeEarnings: 0,
+            serviceFeePercentage: 30
         };
 
         if (!currentMechanic || !db) {
@@ -510,7 +512,8 @@ const MechanicEarningsScreen: React.FC = () => {
             payouts: myPayouts,
             availableBalance: walletLedger.availableBalance,
             lockedBalance: walletLedger.lockedBalance,
-            allTimeEarnings: walletLedger.lifetimeEarnings || calcAllTime
+            allTimeEarnings: walletLedger.lifetimeEarnings || calcAllTime,
+            serviceFeePercentage
         };
     }, [db, currentMechanic, filter]);
 
@@ -730,7 +733,7 @@ const MechanicEarningsScreen: React.FC = () => {
                                                 </div>
                                                 <div className="space-y-2">
                                                     {dateJobs.map(booking => (
-                                                        <CompactEarningItemCard key={booking.id} booking={booking} />
+                                                        <CompactEarningItemCard key={booking.id} booking={booking} serviceFeePercentage={serviceFeePercentage} />
                                                     ))}
                                                 </div>
                                             </div>
@@ -947,8 +950,10 @@ const CompactStatCard: React.FC<{
     </div>
 );
 
-const CompactEarningItemCard: React.FC<{ booking: Booking }> = ({ booking }) => {
-    const amount = booking.totalAmount || (booking.services || []).reduce((sum, s) => sum + s.price, 0) || (booking.price || 0);
+const CompactEarningItemCard: React.FC<{ booking: Booking; serviceFeePercentage?: number }> = ({ booking, serviceFeePercentage = 30 }) => {
+    const grossTotal = getJobTotalAmount(booking);
+    const mechanicShare = getJobMechanicShare(booking, serviceFeePercentage);
+    const adminFee = Math.max(0, grossTotal - mechanicShare);
     const serviceImageUrl = booking.services?.[0]?.imageUrl || booking.service?.imageUrl || '';
     const serviceName = booking.services?.[0]?.name || booking.service?.name || 'Service Booking';
     const vehicleInfo = booking.vehicle 
@@ -977,16 +982,27 @@ const CompactEarningItemCard: React.FC<{ booking: Booking }> = ({ booking }) => 
                             {vehicleInfo}
                         </span>
                         <span className="w-1 h-1 rounded-full bg-white/20" />
-                        <span className="text-[8px] text-gray-500 font-bold">
+                        <span className="text-[8px] text-gray-500 font-bold truncate max-w-[90px]">
                             {booking.customerName}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                        <span className="text-[8px] font-bold text-gray-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                            Customer: ₱{grossTotal.toLocaleString()}
+                        </span>
+                        <span className="text-[8px] font-bold text-red-400/80 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/15">
+                            Admin: -₱{adminFee.toLocaleString()}
                         </span>
                     </div>
                 </div>
             </div>
             <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right">
-                    <p className="font-black text-sm text-white tracking-tight leading-none mb-1">
-                        ₱{amount.toLocaleString()}
+                    <span className="text-[8px] font-black text-emerald-400/80 uppercase tracking-widest block leading-none mb-0.5">
+                        Your Take-Home
+                    </span>
+                    <p className="font-black text-base text-emerald-400 tracking-tight leading-none mb-1">
+                        ₱{mechanicShare.toLocaleString()}
                     </p>
                     <div className="flex items-center justify-end gap-1">
                         <div className="w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"></div>

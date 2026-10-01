@@ -153,6 +153,9 @@
                     joined.includes('BLOCKED_BY_CLIENT') ||
                     joined.includes('network-request-failed') ||
                     joined.includes('ERR_NAME_NOT_RESOLVED') ||
+                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
+                    joined.includes('ERR_NETWORK_CHANGED') ||
+                    joined.includes('cleardot.gif') ||
                     joined.includes('r.stripe.com') ||
                     joined.includes('stripe.com') ||
                     joined.includes('m.stripe.network') ||
@@ -236,6 +239,9 @@
                     joined.includes('QUIC_TOO_MANY_RTOS') ||
                     joined.includes('ERR_CONNECTION_CLOSED') ||
                     joined.includes('ERR_NAME_NOT_RESOLVED') ||
+                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
+                    joined.includes('ERR_NETWORK_CHANGED') ||
+                    joined.includes('cleardot.gif') ||
                     joined.includes('r.stripe.com') ||
                     joined.includes('stripe.com') ||
                     joined.includes('m.stripe.network') ||
@@ -315,7 +321,7 @@
             var originalDebug = console.debug;
             console.debug = function() {};
  
-              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org'];
+              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org'];
             // Protect global PerformanceObserver, PerformanceObserverEntryList, PerformanceEntry prototype & performance entries against buggy extension / DevTools callbacks
             try {
                 if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
@@ -562,6 +568,9 @@
                     msg.includes('QUIC') ||
                     msg.includes('ERR_BLOCKED_BY_CLIENT') ||
                     msg.includes('ERR_CONNECTION_CLOSED') ||
+                    msg.includes('ERR_INTERNET_DISCONNECTED') ||
+                    msg.includes('ERR_NETWORK_CHANGED') ||
+                    msg.includes('ERR_NAME_NOT_RESOLVED') ||
                     msg.includes('TYPE=terminate')
                 ) {
                     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -593,6 +602,9 @@
                     stack.includes('startTime') ||
                     msg.includes('ERR_BLOCKED_BY_CLIENT') ||
                     msg.includes('ERR_CONNECTION_CLOSED') ||
+                    msg.includes('ERR_INTERNET_DISCONNECTED') ||
+                    msg.includes('ERR_NETWORK_CHANGED') ||
+                    msg.includes('ERR_NAME_NOT_RESOLVED') ||
                     msg.includes('TYPE=terminate')
                 ) {
                     if (event.stopImmediatePropagation) event.stopImmediatePropagation();

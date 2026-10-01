@@ -37,9 +37,12 @@ class HitPayService {
 
     /**
      * Creates a HitPayService instance from the app's Firestore Settings.
+     * Optionally accepts an explicit overrideIsSandbox boolean.
      */
-    static fromSettings(settings: Settings | undefined): HitPayService {
-        const isSandbox = settings?.hitpaySandboxMode ?? true;
+    static fromSettings(settings: Settings | undefined, overrideIsSandbox?: boolean): HitPayService {
+        const isSandbox = typeof overrideIsSandbox === 'boolean'
+            ? overrideIsSandbox
+            : (settings?.hitpaySandboxMode ?? false);
         const apiKey = isSandbox 
             ? (settings?.hitpaySandboxApiKey || '') 
             : (settings?.hitpayApiKey || '');
@@ -115,8 +118,29 @@ class HitPayService {
         };
 
         // 8. Payment Methods filter (e.g. ['gcash'], ['qrph'], ['card'], ['paymaya'])
+        // Map UI method codes to valid gateway codes based on HitPay environment
         if (data.payment_methods && Array.isArray(data.payment_methods) && data.payment_methods.length > 0) {
-            payload.payment_methods = data.payment_methods;
+            const mappedMethods: string[] = [];
+            for (const method of data.payment_methods) {
+                const m = String(method).toLowerCase().trim();
+                if (m === 'card' || m === 'card_cybersource') {
+                    mappedMethods.push('card_cybersource');
+                } else if (m === 'qrph' || m === 'qrph_netbank') {
+                    mappedMethods.push('qrph_netbank');
+                } else if (m === 'paymaya' || m === 'maya' || m === 'upay_instapay') {
+                    mappedMethods.push('upay_instapay');
+                } else if (this.isSandbox && (m === 'gcash' || m === 'gcash_qr')) {
+                    mappedMethods.push('gcash');
+                }
+                // For live accounts where GCash is handled via QRPH / InstaPay / HitPay hosted channels,
+                // omitting the restrictive single filter allows HitPay hosted checkout to display all channels
+            }
+
+            // Only attach payment_methods if we have non-empty mapped methods.
+            // If empty, HitPay renders all activated channels on the business account.
+            if (mappedMethods.length > 0) {
+                payload.payment_methods = Array.from(new Set(mappedMethods));
+            }
         }
 
         // 9. Phone: Only include if clean digits/plus exist and not dummy string
@@ -192,8 +216,7 @@ class HitPayService {
                 if (proxyResp.ok && proxyResult && proxyResult.url) {
                     return { url: proxyResult.url, id: proxyResult.id };
                 } else if (proxyResult && proxyResult.fallbackToPortal) {
-                    // Upstream HitPay API is unreachable or credentials are not yet
-                    // provisioned server-side; route to the in-app checkout portal.
+                    // Gateway connection is blocked or unavailable; gracefully route to in-app portal
                     const params = new URLSearchParams({
                         amount: String(payload.amount),
                         currency: payload.currency || 'PHP',
@@ -211,7 +234,7 @@ class HitPayService {
                 } else if (proxyResult) {
                     const errorDetail = proxyResult.errors
                         ? Object.entries(proxyResult.errors).map(([k, v]) => `${k}: ${(v as any[]).join(', ')}`).join('; ')
-                        : (proxyResult.message || proxyResult.error || 'Validation error');
+                        : (proxyResult.message || proxyResult.error || 'Payment request validation error');
                     lastErrorMessage = typeof errorDetail === 'string' ? errorDetail : JSON.stringify(errorDetail);
                 }
             } else {
@@ -221,27 +244,7 @@ class HitPayService {
             lastErrorMessage = proxyErr?.message || 'Proxy network failure';
         }
 
-        // In Sandbox mode, provide in-app HitPay Checkout Portal Fallback so
-        // development/testing flows stay uninterrupted.
-        if (this.isSandbox) {
-            const params = new URLSearchParams({
-                amount: String(payload.amount),
-                currency: payload.currency || 'PHP',
-                reference: payload.reference_number,
-                redirect_url: payload.redirect_url || `${window.location.origin}/customer-portal/`,
-                email: payload.email || 'customer@ridersbud.com',
-                name: payload.name || 'Valued Customer',
-                purpose: payload.purpose || 'RidersBUD Service Payment',
-                sandbox: 'true'
-            });
-            if (payload.phone) params.set('phone', payload.phone);
-            if (payload.payment_methods?.[0]) params.set('method', payload.payment_methods[0]);
-
-            const inAppUrl = `/hitpay-checkout?${params.toString()}`;
-            return { url: inAppUrl, id: `fallback_${Date.now()}` };
-        }
-
-        throw new Error(`Unable to initialize HitPay payment session: ${lastErrorMessage || 'HitPay gateway is currently unreachable.'}`);
+        throw new Error(`Unable to initialize HitPay payment session: ${lastErrorMessage || 'HitPay gateway is currently unreachable. Please verify your internet or try again.'}`);
     }
 }
 

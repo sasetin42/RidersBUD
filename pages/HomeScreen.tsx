@@ -175,13 +175,15 @@ const HomeScreen: React.FC = () => {
         if (searchParams.get('bookedService') === 'driver') {
             const ref = searchParams.get('ref') || '';
             setActiveTransactionTab('driver');
-            addNotification({
-                recipientId: user?.id || 'all',
-                recipientRole: 'customer',
-                title: '🚗 Driver for Hire Request Confirmed',
-                message: `Your booking request #${ref ? ref.slice(-6).toUpperCase() : 'DRV'} has been received and is pending admin dispatch!`,
-                type: 'info'
-            });
+            if (user?.id) {
+                addNotification({
+                    recipientId: user.id,
+                    recipientRole: 'customer',
+                    title: '🚗 Driver for Hire Request Confirmed',
+                    message: `Your booking request #${ref ? ref.slice(-6).toUpperCase() : 'DRV'} has been received and is pending admin dispatch!`,
+                    type: 'info'
+                });
+            }
             window.history.replaceState({}, document.title, window.location.pathname);
         }
 
@@ -215,13 +217,15 @@ const HomeScreen: React.FC = () => {
                     paymentMethod: 'HitPay (Online)',
                     status: 'Completed'
                 }).then(() => {
-                    addNotification({
-                        recipientId: user?.id || 'all',
-                        recipientRole: 'customer',
-                        title: '✅ Rental Balance Settled',
-                        message: `Remaining balance for ${rental.carName || 'Rental Vehicle'} has been fully settled via HitPay online payment!`,
-                        type: 'info'
-                    });
+                    if (user?.id || rental.customerId) {
+                        addNotification({
+                            recipientId: user?.id || rental.customerId,
+                            recipientRole: 'customer',
+                            title: '✅ Rental Balance Settled',
+                            message: `Remaining balance for ${rental.carName || 'Rental Vehicle'} has been fully settled via HitPay online payment!`,
+                            type: 'info'
+                        });
+                    }
                 }).catch(console.error);
 
                 sessionStorage.removeItem('pendingHitPayServiceTx');
@@ -251,13 +255,15 @@ const HomeScreen: React.FC = () => {
                     paymentMethod: 'HitPay (Online)',
                     status: 'Completed'
                 } as any).then(() => {
-                    addNotification({
-                        recipientId: user?.id || 'all',
-                        recipientRole: 'customer',
-                        title: '✅ Liaison Balance Settled',
-                        message: `Remaining balance for LTO Liaison (${liaison.serviceType || 'Registration'}) has been fully settled via HitPay online payment!`,
-                        type: 'info'
-                    });
+                    if (user?.id || liaison.customerId) {
+                        addNotification({
+                            recipientId: user?.id || liaison.customerId,
+                            recipientRole: 'customer',
+                            title: '✅ Liaison Balance Settled',
+                            message: `Remaining balance for LTO Liaison (${liaison.serviceType || 'Registration'}) has been fully settled via HitPay online payment!`,
+                            type: 'info'
+                        });
+                    }
                 }).catch(console.error);
 
                 sessionStorage.removeItem('pendingHitPayServiceTx');
@@ -287,13 +293,15 @@ const HomeScreen: React.FC = () => {
                     paymentMethod: 'HitPay (Online)',
                     status: 'Completed'
                 } as any).then(() => {
-                    addNotification({
-                        recipientId: user?.id || 'all',
-                        recipientRole: 'customer',
-                        title: '✅ Driver Service Balance Settled',
-                        message: `Remaining balance for Driver for Hire has been fully settled via HitPay online payment!`,
-                        type: 'info'
-                    });
+                    if (user?.id || driverReq.customerId) {
+                        addNotification({
+                            recipientId: user?.id || driverReq.customerId,
+                            recipientRole: 'customer',
+                            title: '✅ Driver Service Balance Settled',
+                            message: `Remaining balance for Driver for Hire has been fully settled via HitPay online payment!`,
+                            type: 'info'
+                        });
+                    }
                 }).catch(console.error);
 
                 sessionStorage.removeItem('pendingHitPayServiceTx');
@@ -332,13 +340,15 @@ const HomeScreen: React.FC = () => {
                 };
 
                 const finishServiceReturn = () => {
-                    addNotification({
-                        recipientId: user?.id || 'all',
-                        recipientRole: 'customer',
-                        title: '✅ Service Balance Settled',
-                        message: `Remaining balance for #${targetBookingId.slice(-6).toUpperCase()} has been settled via HitPay online payment!`,
-                        type: 'info'
-                    });
+                    if (user?.id || booking.customerId) {
+                        addNotification({
+                            recipientId: user?.id || booking.customerId,
+                            recipientRole: 'customer',
+                            title: '✅ Service Balance Settled',
+                            message: `Remaining balance for #${targetBookingId.slice(-6).toUpperCase()} has been settled via HitPay online payment!`,
+                            type: 'info'
+                        });
+                    }
                     sessionStorage.removeItem('pendingHitPayServiceTx');
                     window.history.replaceState({}, document.title, window.location.pathname);
                 };
@@ -468,13 +478,15 @@ const HomeScreen: React.FC = () => {
                     message: `Car rental #${tx.refCode} for ${tx.title} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
                     type: 'alert'
                 });
-                addNotification({
-                    recipientId: user?.id || 'all',
-                    recipientRole: 'customer',
-                    title: '❌ Rental Reservation Cancelled',
-                    message: `Your rental reservation for ${tx.title} has been cancelled.`,
-                    type: 'info'
-                });
+                if (user?.id) {
+                    addNotification({
+                        recipientId: user.id,
+                        recipientRole: 'customer',
+                        title: '❌ Rental Reservation Cancelled',
+                        message: `Your rental reservation for ${tx.title} has been cancelled.`,
+                        type: 'info'
+                    });
+                }
             } else if (tx.type === 'driver' || tx.type === 'towing') {
                 await updateServiceRequestStatus(tx.id, 'cancelled', reason);
                 addNotification({
@@ -484,13 +496,15 @@ const HomeScreen: React.FC = () => {
                     message: `${tx.typeLabel} request #${tx.refCode} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
                     type: 'alert'
                 });
-                addNotification({
-                    recipientId: user?.id || 'all',
-                    recipientRole: 'customer',
-                    title: `❌ ${tx.typeLabel} Cancelled`,
-                    message: `Your ${tx.typeLabel.toLowerCase()} request has been cancelled.`,
-                    type: 'info'
-                });
+                if (user?.id) {
+                    addNotification({
+                        recipientId: user.id,
+                        recipientRole: 'customer',
+                        title: `❌ ${tx.typeLabel} Cancelled`,
+                        message: `Your ${tx.typeLabel.toLowerCase()} request has been cancelled.`,
+                        type: 'info'
+                    });
+                }
             } else if (tx.type === 'liaison') {
                 await updateLiaisonBookingStatus(tx.id, 'cancelled', reason);
                 addNotification({
@@ -500,13 +514,15 @@ const HomeScreen: React.FC = () => {
                     message: `LTO Liaison #${tx.refCode} (${tx.title}) was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
                     type: 'alert'
                 });
-                addNotification({
-                    recipientId: user?.id || 'all',
-                    recipientRole: 'customer',
-                    title: '❌ Liaison Request Cancelled',
-                    message: `Your LTO liaison appointment for ${tx.title} has been cancelled.`,
-                    type: 'info'
-                });
+                if (user?.id) {
+                    addNotification({
+                        recipientId: user.id,
+                        recipientRole: 'customer',
+                        title: '❌ Liaison Request Cancelled',
+                        message: `Your LTO liaison appointment for ${tx.title} has been cancelled.`,
+                        type: 'info'
+                    });
+                }
             } else if (tx.type === 'order') {
                 await updateOrderStatus(tx.id, 'Cancelled');
                 addNotification({
@@ -516,13 +532,15 @@ const HomeScreen: React.FC = () => {
                     message: `Order #${tx.refCode} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
                     type: 'alert'
                 });
-                addNotification({
-                    recipientId: user?.id || 'all',
-                    recipientRole: 'customer',
-                    title: '❌ Order Cancelled',
-                    message: `Your parts order #${tx.refCode} has been cancelled.`,
-                    type: 'info'
-                });
+                if (user?.id) {
+                    addNotification({
+                        recipientId: user.id,
+                        recipientRole: 'customer',
+                        title: '❌ Order Cancelled',
+                        message: `Your parts order #${tx.refCode} has been cancelled.`,
+                        type: 'info'
+                    });
+                }
             }
 
             setBookingToCancel(null);
@@ -3129,13 +3147,15 @@ const HomeScreen: React.FC = () => {
                                 } as any);
                             }
                             setBalanceBookingForModal(null);
-                            addNotification({
-                                recipientId: user?.id || 'all',
-                                recipientRole: 'customer',
-                                title: `✅ ${isRental ? 'Rental' : isLiaison ? 'Liaison' : 'Driver'} Balance Payment Received`,
-                                message: `Your manual GCash balance receipt for ${targetBooking.title} was submitted and recorded!`,
-                                type: 'info'
-                            });
+                            if (user?.id || targetBooking.customerId) {
+                                addNotification({
+                                    recipientId: user?.id || targetBooking.customerId,
+                                    recipientRole: 'customer',
+                                    title: `✅ ${isRental ? 'Rental' : isLiaison ? 'Liaison' : 'Driver'} Balance Payment Received`,
+                                    message: `Your manual GCash balance receipt for ${targetBooking.title} was submitted and recorded!`,
+                                    type: 'info'
+                                });
+                            }
                         }}
                         onClose={() => setShowBalanceGCashModal(false)}
                     />

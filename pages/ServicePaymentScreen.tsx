@@ -10,7 +10,7 @@ import { Booking } from '../types';
 import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import HitPayInAppModal from '../components/HitPayInAppModal';
-import { resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
+import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl } from '../utils/paymentRedirect';
 
 const ServicePaymentScreen: React.FC = () => {
     const location = useLocation();
@@ -493,7 +493,8 @@ const ServicePaymentScreen: React.FC = () => {
         setError('');
 
         try {
-            const hitPay = HitPayService.fromSettings(db?.settings);
+            const isSandbox = db?.settings?.hitpaySandboxMode === true;
+            const hitPay = HitPayService.fromSettings(db?.settings, isSandbox);
 
             // Save state before redirect
             sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
@@ -511,21 +512,30 @@ const ServicePaymentScreen: React.FC = () => {
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
             const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`;
 
-            // Route user directly into our modern branded HitPay checkout portal
-            const checkoutParams = new URLSearchParams({
-                amount: String(amountToPay),
+            // Create official HitPay payment request directly (Sandbox or Live based on settings)
+            const { url } = await hitPay.createPaymentRequest({
+                amount: amountToPay,
                 currency: db?.settings?.currency || 'PHP',
                 reference_number: refNumber,
-                reference: refNumber,
+                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
                 redirect_url: returnUrl,
                 email: user.email || 'customer@ridersbud.com',
                 name: user.name || 'Valued Customer',
                 phone: user.phone || '09171234567',
-                purpose: purpose,
-                sandbox: hitPay.getIsSandbox() ? 'true' : 'false'
+                purpose: purpose
             });
 
-            navigate(`/hitpay-checkout?${checkoutParams.toString()}`);
+            if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+                await openPaymentUrl(url);
+                return;
+            }
+
+            if (url && url.startsWith('/')) {
+                navigate(url);
+                return;
+            }
+
+            throw new Error("Unable to obtain payment gateway URL.");
         } catch (err) {
             setError(err instanceof Error ? err.message : "An unexpected error occurred.");
             setIsProcessing(false);

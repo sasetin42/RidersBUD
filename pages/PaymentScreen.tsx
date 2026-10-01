@@ -12,7 +12,7 @@ import { HitPayService } from '../services/HitPayService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import HitPayInAppModal from '../components/HitPayInAppModal';
 import { getPartImage } from '../utils/fallbackImages';
-import { resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
+import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl } from '../utils/paymentRedirect';
 
 const PaymentScreen: React.FC = () => {
     const location = useLocation();
@@ -290,8 +290,8 @@ const PaymentScreen: React.FC = () => {
             }
 
             if (selectedMethod === 'Credit Card' || isHitPayActive) {
-                const hitPay = HitPayService.fromSettings(db?.settings);
-                const isSandbox = db?.settings?.hitpaySandboxMode ?? true;
+                const isSandbox = db?.settings?.hitpaySandboxMode === true;
+                const hitPay = HitPayService.fromSettings(db?.settings, isSandbox);
                 setProcessingStep(isSandbox ? 'Connecting to HitPay Sandbox...' : 'Connecting to HitPay...');
 
                 const returnUrl = `${window.location.origin}${window.location.pathname}`;
@@ -310,21 +310,29 @@ const PaymentScreen: React.FC = () => {
                 }));
 
                 try {
-                    const checkoutParams = new URLSearchParams({
-                        amount: String(total),
+                    const { url } = await hitPay.createPaymentRequest({
+                        amount: total,
                         currency: db?.settings?.currency || 'PHP',
                         reference_number: reference,
-                        reference: reference,
+                        webhook: 'https://ridersbud-10806.web.app/payment/webhook',
                         redirect_url: returnUrl,
                         email: user.email || 'customer@ridersbud.com',
                         name: deliveryDetails.fullName || 'Valued Customer',
                         phone: deliveryDetails.phone || '09171234567',
-                        purpose: `RidersBUD Parts & Services Order #${reference}`,
-                        sandbox: hitPay.getIsSandbox() ? 'true' : 'false'
+                        purpose: `RidersBUD Parts & Services Order #${reference}`
                     });
 
-                    navigate(`/hitpay-checkout?${checkoutParams.toString()}`);
-                    return;
+                    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+                        await openPaymentUrl(url);
+                        return;
+                    }
+
+                    if (url && url.startsWith('/')) {
+                        navigate(url);
+                        return;
+                    }
+
+                    throw new Error("Unable to obtain payment gateway URL.");
                 } catch (hitpayErr) {
                     console.warn('HitPay online checkout unavailable. Falling back to GCash payment modal:', hitpayErr);
                     setPendingOrderId(newOrder.id);

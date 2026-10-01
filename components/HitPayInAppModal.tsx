@@ -170,65 +170,59 @@ export const HitPayInAppModal: React.FC<HitPayInAppModalProps> = ({
             )}
 
             {/* In-App Sheet Viewport */}
-            <div className="flex-1 relative w-full h-full bg-[#0A0B0E] overflow-hidden">
-                {/* Instant Shimmer Skeleton UI matching HitPay checkout structure */}
-                {isLoading && (
-                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-start bg-[#0D0E14] p-5 sm:p-8 space-y-6 overflow-hidden animate-in fade-in duration-150">
-                        {/* Shimmer Header Card */}
-                        <div className="w-full max-w-md bg-[#161822] border border-white/5 rounded-2xl p-5 space-y-3 relative overflow-hidden">
-                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite] bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
-                            <div className="flex justify-between items-center">
-                                <div className="h-4 w-32 bg-white/10 rounded-lg" />
-                                <div className="h-5 w-16 bg-emerald-500/20 rounded-full" />
-                            </div>
-                            <div className="h-8 w-44 bg-white/20 rounded-xl" />
-                            <div className="h-3 w-48 bg-white/5 rounded-md" />
+            <div className="flex-1 relative w-full h-full bg-[#0A0B0E] overflow-hidden flex flex-col items-center justify-center p-6 text-center">
+                {checkoutUrl.startsWith('https://') || checkoutUrl.startsWith('http://') ? (
+                    <div className="w-full max-w-md bg-[#161822] border border-white/10 rounded-2xl p-6 sm:p-8 space-y-5 shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
+                            <ShieldCheck size={32} />
                         </div>
-
-                        {/* Shimmer Payment Methods List */}
-                        <div className="w-full max-w-md space-y-3">
-                            <div className="flex justify-between items-center px-1">
-                                <div className="h-3.5 w-36 bg-white/10 rounded" />
-                                <div className="h-3 w-20 bg-white/5 rounded" />
-                            </div>
-                            {[1, 2, 3].map(i => (
-                                <div key={i} className="w-full h-16 bg-[#161822] border border-white/5 rounded-2xl p-4 flex items-center justify-between relative overflow-hidden">
-                                    <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite] bg-gradient-to-r from-transparent via-white/[0.05] to-transparent" />
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-9 h-9 rounded-xl bg-white/10" />
-                                        <div className="space-y-1.5">
-                                            <div className="h-3.5 w-24 bg-white/15 rounded" />
-                                            <div className="h-2.5 w-36 bg-white/5 rounded" />
-                                        </div>
-                                    </div>
-                                    <div className="w-4 h-4 rounded-full bg-white/10" />
+                        <div>
+                            <h3 className="text-lg font-black text-white tracking-tight">HitPay Secure Gateway</h3>
+                            <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                                To comply with international banking security & CSP protection protocols, HitPay processes transactions in a dedicated secure session window.
+                            </p>
+                            {amount && amount > 0 && (
+                                <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5">
+                                    <span className="text-xs text-gray-400 block mb-0.5">Amount to Pay</span>
+                                    <span className="text-xl font-mono font-black text-[#FE7803]">
+                                        ₱{amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    </span>
                                 </div>
-                            ))}
+                            )}
                         </div>
-
-                        {/* Security reassurance badge */}
-                        <div className="flex items-center gap-2 text-xs text-gray-400 bg-white/5 px-4 py-2 rounded-xl border border-white/5 mt-auto">
-                            <Lock size={13} className="text-[#FE7803] animate-pulse" />
-                            <span className="text-[11px] font-medium">Securing direct 256-bit encrypted gateway connection...</span>
+                        <div className="pt-2 flex flex-col gap-3">
+                            <a
+                                href={checkoutUrl}
+                                target="_self"
+                                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#FE7803] to-[#FF9033] hover:from-[#E06600] hover:to-[#FE7803] text-white font-bold text-sm uppercase tracking-wider transition-all duration-200 shadow-lg shadow-[#FE7803]/25 flex items-center justify-center gap-2"
+                            >
+                                <span>Continue to HitPay Checkout</span>
+                                <ExternalLink size={16} />
+                            </a>
+                            <button
+                                type="button"
+                                onClick={() => setShowCancelConfirm(true)}
+                                className="w-full py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-xs font-bold transition-colors"
+                            >
+                                Cancel Payment
+                            </button>
                         </div>
                     </div>
+                ) : (
+                    <iframe
+                        key={iframeKey}
+                        ref={iframeRef}
+                        src={checkoutUrl}
+                        title="HitPay Checkout Portal"
+                        className={`w-full h-full border-0 bg-[#0F0F12] transition-opacity duration-300 ${
+                            isLoading ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                        }`}
+                        onLoad={() => {
+                            setIsLoading(false);
+                            checkIframeNavigation();
+                        }}
+                    />
                 )}
-
-                <iframe
-                    key={iframeKey}
-                    ref={iframeRef}
-                    src={checkoutUrl}
-                    title="HitPay Checkout Portal"
-                    className={`w-full h-full border-0 bg-[#0F0F12] transition-opacity duration-300 ${
-                        isLoading ? 'opacity-0 pointer-events-none' : 'opacity-100'
-                    }`}
-                    onLoad={() => {
-                        setIsLoading(false);
-                        checkIframeNavigation();
-                    }}
-                    allow="payment; camera; microphone; geolocation"
-                    sandbox="allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
-                />
             </div>
 
             {/* Cancel Confirmation Dialog */}

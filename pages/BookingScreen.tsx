@@ -1603,22 +1603,38 @@ const BookingScreen: React.FC = () => {
             const refNumber = `BOK-${createdBooking.id}-DP-${Date.now()}`;
             const purpose = `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`;
 
-            // Route directly into in-app branded HitPay checkout portal
-            const checkoutParams = new URLSearchParams({
-                amount: String(downpaymentAmount),
+            // Create official HitPay payment request directly (Sandbox or Live based on settings)
+            const { url } = await hitPay.createPaymentRequest({
+                amount: downpaymentAmount,
                 currency: db?.settings?.currency || 'PHP',
                 reference_number: refNumber,
-                reference: refNumber,
+                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
                 redirect_url: returnUrl,
                 email: user.email || 'customer@example.com',
                 name: user.name || 'Customer',
                 phone: user.phone || '',
-                purpose: purpose,
-                sandbox: hitPay.getIsSandbox() ? 'true' : 'false'
+                purpose: purpose
             });
 
-            navigate(`/hitpay-checkout?${checkoutParams.toString()}`);
-            return;
+            if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+                setPendingPaymentMarker({
+                    entityKind: 'booking',
+                    entityId: createdBooking.id,
+                    returnRoute: `/customer-portal/booking-confirmation?bookingId=${createdBooking.id}`,
+                    startedAt: Date.now(),
+                    purpose: 'booking-downpayment'
+                });
+                startPaymentWatcher('booking', createdBooking.id, `/customer-portal/booking-confirmation?bookingId=${createdBooking.id}`);
+                await openPaymentUrl(url);
+                return;
+            }
+
+            if (url && url.startsWith('/')) {
+                navigate(url);
+                return;
+            }
+
+            throw new Error("Unable to obtain payment gateway URL.");
         } catch (err: any) {
             setShowPaymentBreakdownModal(false);
             const msg = err?.message || 'An error occurred while connecting to Payment Gateway.';

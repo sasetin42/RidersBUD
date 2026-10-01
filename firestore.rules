@@ -114,15 +114,21 @@ service cloud.firestore {
         (
           isMechanic() && 
           resource.data.recipientRole == "mechanic" && 
-          (resource.data.recipientId == request.auth.uid || resource.data.recipientId == "all")
+          (resource.data.recipientId == request.auth.uid || resource.data.recipientId == "all" || resource.data.recipientId == "mechanic-" + request.auth.uid)
         ) ||
         (
           isCustomer() && 
-          (resource.data.recipientId == request.auth.uid || resource.data.recipientId == "all") && 
+          (resource.data.recipientId == request.auth.uid || resource.data.recipientId == "all" || resource.data.recipientId == "customer-" + request.auth.uid) && 
           (!("recipientRole" in resource.data) || resource.data.recipientRole == "customer" || resource.data.recipientRole == null || resource.data.recipientRole == "")
         )
       );
-      allow write: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isAuth() && (
+        isAdmin() || 
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.recipientId == "customer-" + request.auth.uid ||
+        resource.data.recipientId == "mechanic-" + request.auth.uid
+      );
     }
 
     // Public readable collections (Services, Parts, Banners, FAQs, Settings, etc.)
