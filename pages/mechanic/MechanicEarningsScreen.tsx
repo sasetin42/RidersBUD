@@ -341,9 +341,9 @@ const MechanicEarningsScreen: React.FC = () => {
     // Saved payout destinations
     const savedDestinations: PayoutDetails[] = useMemo(() => {
         if (!currentMechanic) return [];
-        const list = currentMechanic.savedPayoutDestinations || [];
+        const list = (currentMechanic.savedPayoutDestinations || []).filter(d => !!d?.accountNumber);
         if (list.length > 0) return list;
-        if (currentMechanic.payoutDetails) {
+        if (currentMechanic.payoutDetails && currentMechanic.payoutDetails.accountNumber) {
             return [{ id: 'legacy-payout', ...currentMechanic.payoutDetails, isDefault: true }];
         }
         return [];

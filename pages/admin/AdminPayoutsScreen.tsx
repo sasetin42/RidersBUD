@@ -14,18 +14,33 @@ const PayoutDetailsModal: React.FC<{
     request: PayoutRequest;
     onClose: () => void;
     onProcess: (payoutId: string, status: 'Approved' | 'Rejected' | 'Paid', details?: { notes?: string; transactionId?: string }) => void;
-    onDelete?: (payoutId: string) => void;
+    onDelete?: (payoutId: string, alsoClearDestination?: boolean) => void;
 }> = ({ request, onClose, onProcess, onDelete }) => {
-    const { db } = useDatabase();
+    const { db, clearMechanicPayoutDetails } = useDatabase();
     const [processing, setProcessing] = useState(false);
+    const [clearingDest, setClearingDest] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [transactionId, setTransactionId] = useState('');
     const [showRejectionInput, setShowRejectionInput] = useState(false);
     const [showPaidInput, setShowPaidInput] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [alsoClearDestination, setAlsoClearDestination] = useState(true);
 
     const mechanic = db?.mechanics?.find((m: any) => m.id === request.mechanicId || m.name === request.mechanicName);
     const profilePic = mechanic?.imageUrl || mechanic?.profilePicture || '/riders-logo.png';
+
+    const handleDirectClearDestination = async () => {
+        if (!mechanic?.id) return;
+        if (!window.confirm(`Are you sure you want to remove the registered payout destination details for ${request.mechanicName}? This will reset their registered payout account to empty.`)) return;
+        setClearingDest(true);
+        try {
+            await clearMechanicPayoutDetails(mechanic.id);
+        } catch (err) {
+            console.error('Failed to clear destination:', err);
+        } finally {
+            setClearingDest(false);
+        }
+    };
 
     const handleProcess = async (status: 'Approved' | 'Rejected' | 'Paid') => {
         if (status === 'Rejected' && !rejectionReason.trim()) {
@@ -50,7 +65,7 @@ const PayoutDetailsModal: React.FC<{
         if (!onDelete) return;
         setProcessing(true);
         try {
-            await onDelete(request.id);
+            await onDelete(request.id, alsoClearDestination);
             onClose();
         } finally {
             setProcessing(false);
@@ -107,7 +122,21 @@ const PayoutDetailsModal: React.FC<{
                     </div>
 
                     <div className="bg-white/5 p-4 rounded-[1.2rem] border border-white/5 space-y-3">
-                        <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase">Payment Destination</p>
+                        <div className="flex items-center justify-between">
+                            <p className="text-[9px] font-bold tracking-wider text-gray-500 uppercase">Payment Destination</p>
+                            {mechanic?.payoutDetails?.accountNumber && (
+                                <button
+                                    type="button"
+                                    disabled={clearingDest}
+                                    onClick={handleDirectClearDestination}
+                                    className="text-[9px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-2 py-0.5 rounded-lg border border-red-500/20 transition flex items-center gap-1 disabled:opacity-50"
+                                    title="Clear mechanic's saved payout account details"
+                                >
+                                    <Trash2 size={10} />
+                                    Clear Destination
+                                </button>
+                            )}
+                        </div>
                         <div className="flex items-center gap-2.5">
                             <div className="p-1.5 bg-primary/10 rounded-lg text-primary shrink-0">
                                 {request.paymentMethod.toLowerCase().includes('bank') ? <Building2 size={15} /> : <Smartphone size={15} />}
@@ -275,6 +304,15 @@ const PayoutDetailsModal: React.FC<{
                                 <p className="text-[10px] text-gray-400 leading-relaxed">
                                     This will completely delete this payout from Firestore in real-time and automatically restore the mechanic's wallet balance.
                                 </p>
+                                <label className="flex items-center gap-2 text-[10px] text-gray-300 font-semibold cursor-pointer select-none bg-black/30 p-2 rounded-lg border border-red-500/10">
+                                    <input
+                                        type="checkbox"
+                                        checked={alsoClearDestination}
+                                        onChange={(e) => setAlsoClearDestination(e.target.checked)}
+                                        className="rounded border-gray-600 text-red-500 focus:ring-red-500 bg-black/40"
+                                    />
+                                    <span>Also remove mechanic's registered Payout Destination</span>
+                                </label>
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
@@ -371,6 +409,7 @@ const AdminPayoutsScreen: React.FC = () => {
     const [dateFilter, setDateFilter] = useState({ start: '', end: '' });
     const [viewingRequest, setViewingRequest] = useState<PayoutRequest | null>(null);
     const [payoutToDelete, setPayoutToDelete] = useState<PayoutRequest | null>(null);
+    const [deletePayoutDestination, setDeletePayoutDestination] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' }>({ key: 'requestDate', direction: 'descending' });
@@ -496,11 +535,11 @@ const AdminPayoutsScreen: React.FC = () => {
         }
     };
 
-    const handleDeleteRequest = async (payoutId: string) => {
+    const handleDeleteRequest = async (payoutId: string, alsoClearDestination?: boolean) => {
         const request = db?.payouts.find(p => p.id === payoutId);
         setIsDeleting(true);
         try {
-            await deletePayoutRequest(payoutId);
+            await deletePayoutRequest(payoutId, alsoClearDestination);
             setPayoutToDelete(null);
             if (viewingRequest?.id === payoutId) {
                 setViewingRequest(null);
@@ -508,7 +547,7 @@ const AdminPayoutsScreen: React.FC = () => {
             addNotification({
                 type: 'success',
                 title: 'Payout Removed',
-                message: `Payout #${payoutId.slice(-6).toUpperCase()}${request ? ` for ${request.mechanicName}` : ''} has been completely deleted.`,
+                message: `Payout #${payoutId.slice(-6).toUpperCase()}${request ? ` for ${request.mechanicName}` : ''} has been completely deleted.${alsoClearDestination ? ' Payout destination details also cleared.' : ''}`,
                 recipientId: 'admin'
             });
         } catch (e) {
@@ -830,6 +869,15 @@ const AdminPayoutsScreen: React.FC = () => {
                             <p className="text-[10px] text-gray-400 pt-1">
                                 Removing this record will permanently erase it from Firestore and update the mechanic's balance in real time.
                             </p>
+                            <label className="flex items-center gap-2 text-[10px] text-gray-300 font-semibold cursor-pointer select-none bg-black/30 p-2.5 rounded-lg border border-red-500/10 mt-1">
+                                <input
+                                    type="checkbox"
+                                    checked={deletePayoutDestination}
+                                    onChange={(e) => setDeletePayoutDestination(e.target.checked)}
+                                    className="rounded border-gray-600 text-red-500 focus:ring-red-500 bg-black/40"
+                                />
+                                <span>Also remove mechanic's registered Payout Destination</span>
+                            </label>
                         </div>
 
                         <div className="flex gap-3 pt-2">
@@ -843,7 +891,7 @@ const AdminPayoutsScreen: React.FC = () => {
                             </button>
                             <button
                                 type="button"
-                                onClick={() => handleDeleteRequest(payoutToDelete.id)}
+                                onClick={() => handleDeleteRequest(payoutToDelete.id, deletePayoutDestination)}
                                 disabled={isDeleting}
                                 className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-900/40"
                             >

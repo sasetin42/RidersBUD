@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useRef } from 'react';
 import { Mechanic } from '../types';
 import { db as firestore, auth } from '../firebase';
-import { doc, setDoc, onSnapshot, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, getDoc, collection, query, where, getDocs, deleteDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { 
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword, 
@@ -646,7 +646,28 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     const updateMechanicProfile = async (updatedMechanic: Mechanic) => {
         try {
-            await setDoc(doc(firestore, 'mechanics', updatedMechanic.id), updatedMechanic, { merge: true });
+            const docRef = doc(firestore, 'mechanics', updatedMechanic.id);
+            const { id, ...data } = updatedMechanic;
+            const hasNoPayoutDetails = !updatedMechanic.payoutDetails || 
+                Object.keys(updatedMechanic.payoutDetails).length === 0 || 
+                !updatedMechanic.payoutDetails.accountNumber;
+
+            if (hasNoPayoutDetails) {
+                await updateDoc(docRef, {
+                    ...data,
+                    payoutDetails: deleteField(),
+                    savedPayoutDestinations: updatedMechanic.savedPayoutDestinations || []
+                });
+            } else {
+                await setDoc(docRef, updatedMechanic, { merge: true });
+            }
+
+            const cleanMechState: Mechanic = {
+                ...updatedMechanic,
+                ...(hasNoPayoutDetails ? { payoutDetails: undefined as any, savedPayoutDestinations: [] } : {})
+            };
+            setMechanic(cleanMechState);
+            saveMechanicSessionToStorage(cleanMechState, isBypassed);
         } catch (error) {
             console.error("Mechanic Profile Update Error:", error);
             throw error;

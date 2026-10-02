@@ -19,7 +19,8 @@ import {
     Timestamp,
     query,
     where,
-    getDoc
+    getDoc,
+    deleteField
 } from 'firebase/firestore';
 import { auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -41,6 +42,7 @@ interface DatabaseContextType {
     updateMechanic: (updatedMechanic: Mechanic) => Promise<void>;
     updateMechanicOnlineStatus: (mechanicId: string, isOnline: boolean) => Promise<void>;
     deleteMechanic: (mechanicId: string) => Promise<void>;
+    clearMechanicPayoutDetails: (mechanicId: string) => Promise<void>;
     addBooking: (booking: Omit<Booking, 'id'>) => Promise<Booking | null>;
     updateBooking: (bookingId: string, updates: Partial<Booking>) => Promise<void>;
     updateBookingPayment: (bookingId: string, amount: number, status: 'pending' | 'partial' | 'paid' | 'downpayment_paid', extraData?: Partial<Booking>) => Promise<void>;
@@ -84,7 +86,7 @@ interface DatabaseContextType {
     purgeGoogleMapsApiNotifications: () => Promise<number>;
     addPayoutRequest: (request: { mechanicId: string; mechanicName: string; amount: number; paymentMethod: string; accountDetails: string; notes?: string }) => Promise<void>;
     updatePayoutStatus: (payoutId: string, status: 'Pending' | 'Approved' | 'Paid' | 'Rejected', mechanicId: string, amount: number, adminDetails?: { id: string; name: string; notes?: string; transactionId?: string }) => Promise<void>;
-    deletePayoutRequest: (payoutId: string) => Promise<void>;
+    deletePayoutRequest: (payoutId: string, alsoClearDestination?: boolean) => Promise<void>;
     addReview: (bookingId: string, review: Omit<Review, 'id' | 'date'>) => Promise<void>;
     updateReview: (bookingId: string, review: Review) => Promise<void>;
     verifyBookingPayment: (bookingId: string) => Promise<void>;
@@ -1919,6 +1921,29 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
 
         const cleanedData = cleanObject(data);
+        if (data.payoutDetails === null || data.payoutDetails === undefined || (typeof data.payoutDetails === 'object' && Object.keys(data.payoutDetails || {}).length === 0)) {
+            cleanedData.payoutDetails = deleteField();
+            cleanedData.savedPayoutDestinations = [];
+        }
+
+        // Optimistic state update
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                mechanics: (prev.mechanics || []).map(m => {
+                    if (m.id === id) {
+                        return {
+                            ...m,
+                            ...data,
+                            ...(data.payoutDetails === null || data.payoutDetails === undefined ? { payoutDetails: undefined as any, savedPayoutDestinations: [] } : {})
+                        };
+                    }
+                    return m;
+                })
+            };
+        });
+
         const batch = writeBatch(firestore);
         
         // 1. Update the mechanic document
@@ -1941,6 +1966,39 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         await batch.commit();
         console.log(`[DatabaseContext] Updated mechanic ${id} and propagated to ${relatedBookings.length} bookings.`);
+    };
+
+    const clearMechanicPayoutDetails = async (mechanicId: string) => {
+        // Optimistic local update
+        setDb(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                mechanics: (prev.mechanics || []).map(m => {
+                    if (m.id === mechanicId) {
+                        return {
+                            ...m,
+                            payoutDetails: undefined as any,
+                            savedPayoutDestinations: []
+                        };
+                    }
+                    return m;
+                })
+            };
+        });
+
+        // Live persistence in Firestore
+        try {
+            const mechRef = doc(firestore, 'mechanics', mechanicId);
+            await updateDoc(mechRef, {
+                payoutDetails: deleteField(),
+                savedPayoutDestinations: []
+            });
+            console.log(`[DatabaseContext] Successfully cleared payout details for mechanic ${mechanicId}`);
+        } catch (err) {
+            console.error('[DatabaseContext] Failed to clear mechanic payout details in Firestore:', err);
+            throw err;
+        }
     };
 
     const deleteMechanic = async (id: string) => {
@@ -3266,7 +3324,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         });
     };
 
-    const deletePayoutRequest = async (payoutId: string) => {
+    const deletePayoutRequest = async (payoutId: string, alsoClearDestination?: boolean) => {
         const targetPayout = db?.payouts.find(p => p.id === payoutId);
         if (!targetPayout) return;
 
@@ -3298,7 +3356,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         return {
                             ...m,
                             walletBalance: newWalletBalance,
-                            lockedBalance: newLockedBalance
+                            lockedBalance: newLockedBalance,
+                            ...(alsoClearDestination ? { payoutDetails: undefined as any, savedPayoutDestinations: [] } : {})
                         };
                     }
                     return m;
@@ -3311,10 +3370,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             const batch = writeBatch(firestore);
             batch.delete(doc(firestore, 'payouts', payoutId));
             if (mechanicId) {
-                batch.update(doc(firestore, 'mechanics', mechanicId), {
+                const updatePayload: any = {
                     walletBalance: newWalletBalance,
                     lockedBalance: newLockedBalance
-                });
+                };
+                if (alsoClearDestination) {
+                    updatePayload.payoutDetails = deleteField();
+                    updatePayload.savedPayoutDestinations = [];
+                }
+                batch.update(doc(firestore, 'mechanics', mechanicId), updatePayload);
             }
             await batch.commit();
         } catch (err) {
@@ -4221,6 +4285,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             updateMechanicOnlineStatus,
             updateMechanicLocation,
             deleteMechanic,
+            clearMechanicPayoutDetails,
             addBooking,
             updateBooking,
             updateBookingPayment,

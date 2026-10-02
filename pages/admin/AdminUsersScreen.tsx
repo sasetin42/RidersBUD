@@ -36,11 +36,12 @@ const AdminUsersScreen: React.FC = () => {
     const { 
         db, addAdminUser, updateAdminUser, deleteAdminUser, 
         addCustomer, updateCustomer, deleteCustomer,
-        addMechanic, updateMechanic, deleteMechanic, loading 
+        addMechanic, updateMechanic, deleteMechanic, clearMechanicPayoutDetails, loading 
     } = useDatabase();
     const { adminUser } = useAdminAuth();
     const { addNotification } = useNotification();
     const [isSaving, setIsSaving] = useState(false);
+    const [clearingPayoutDest, setClearingPayoutDest] = useState(false);
 
     // Navigation Tabs
     const [activeTab, setActiveTab] = useState<'users' | 'permissions' | 'audit'>('users');
@@ -633,6 +634,40 @@ const AdminUsersScreen: React.FC = () => {
             } finally {
                 setIsSaving(false);
             }
+        }
+    };
+
+    const handleClearMechanicPayout = async (mechanicId: string, mechanicName: string) => {
+        if (!window.confirm(`Are you sure you want to remove the payout destination details for ${mechanicName}? This will reset their registered payout account to empty.`)) {
+            return;
+        }
+        setClearingPayoutDest(true);
+        try {
+            await clearMechanicPayoutDetails(mechanicId);
+            setViewingUserDetail(prev => prev ? {
+                ...prev,
+                originalData: {
+                    ...prev.originalData,
+                    payoutDetails: undefined,
+                    savedPayoutDestinations: []
+                }
+            } : null);
+            addNotification({
+                type: 'success',
+                title: 'Payout Details Removed',
+                message: `Payout destination details for ${mechanicName} have been completely removed.`,
+                recipientId: 'admin'
+            });
+        } catch (err: any) {
+            console.error("Failed to clear payout details:", err);
+            addNotification({
+                type: 'error',
+                title: 'Action Failed',
+                message: err?.message || 'Failed to remove payout destination details.',
+                recipientId: 'admin'
+            });
+        } finally {
+            setClearingPayoutDest(false);
         }
     };
 
@@ -1776,55 +1811,86 @@ const AdminUsersScreen: React.FC = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="bg-[#111113]/40 p-6 rounded-2xl border border-white/5 space-y-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <h4 className="text-[10px] font-black text-amber-400 tracking-widest uppercase flex items-center gap-1.5">
-                                                            {viewingUserDetail.originalData?.payoutDetails?.method === 'Bank Transfer' ? (
-                                                                <Landmark size={12} className="text-amber-400" />
-                                                            ) : (
-                                                                <Smartphone size={12} className="text-amber-400" />
-                                                            )}
-                                                            Payout Destination
-                                                        </h4>
-                                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                                            {viewingUserDetail.originalData?.payoutDetails?.method || 'Direct'}
-                                                        </span>
-                                                    </div>
-                                                    <div className="space-y-2 text-xs font-bold text-gray-300">
-                                                        <div className="flex justify-between border-b border-white/5 pb-1.5">
-                                                            <span className="text-gray-500">Channel / Bank</span>
-                                                            <span className="text-white">
-                                                                {viewingUserDetail.originalData?.payoutDetails?.method === 'Bank Transfer'
-                                                                    ? (viewingUserDetail.originalData?.payoutDetails?.bankName || 'Bank Transfer')
-                                                                    : (viewingUserDetail.originalData?.payoutDetails?.walletName || 'GCash E-Wallet')}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex justify-between border-b border-white/5 pb-1.5">
-                                                            <span className="text-gray-500">Account Name</span>
-                                                            <span className="text-white">{viewingUserDetail.originalData?.payoutDetails?.accountName || 'N/A'}</span>
-                                                        </div>
-                                                        <div className="flex justify-between border-b border-white/5 pb-1.5">
-                                                            <span className="text-gray-500">Account Number</span>
-                                                            <span className="text-primary font-mono">{viewingUserDetail.originalData?.payoutDetails?.accountNumber || 'N/A'}</span>
-                                                        </div>
-                                                        {viewingUserDetail.originalData?.payoutDetails?.qrCodeUrl && (
-                                                            <div className="flex justify-between items-center pt-1">
-                                                                <span className="text-gray-500 flex items-center gap-1">
-                                                                    <QrCode size={12} className="text-amber-400" />
-                                                                    QR Code
+                                                {/* Payout Destination Card */}
+                                                {viewingUserDetail.originalData?.payoutDetails?.accountNumber || (viewingUserDetail.originalData?.savedPayoutDestinations && viewingUserDetail.originalData.savedPayoutDestinations.length > 0) ? (
+                                                    <div className="bg-[#111113]/40 p-6 rounded-2xl border border-white/5 space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <h4 className="text-[10px] font-black text-amber-400 tracking-widest uppercase flex items-center gap-1.5">
+                                                                {viewingUserDetail.originalData?.payoutDetails?.method === 'Bank Transfer' ? (
+                                                                    <Landmark size={12} className="text-amber-400" />
+                                                                ) : (
+                                                                    <Smartphone size={12} className="text-amber-400" />
+                                                                )}
+                                                                Payout Destination
+                                                            </h4>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                                    {viewingUserDetail.originalData?.payoutDetails?.method || 'Direct'}
                                                                 </span>
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => setQrModalUrl(viewingUserDetail.originalData?.payoutDetails?.qrCodeUrl)}
-                                                                    className="text-[10px] font-bold text-primary hover:text-orange-400 underline flex items-center gap-1"
+                                                                    disabled={clearingPayoutDest}
+                                                                    onClick={() => handleClearMechanicPayout(viewingUserDetail.id, viewingUserDetail.name)}
+                                                                    className="text-[9px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-2 py-0.5 rounded-lg border border-red-500/20 transition flex items-center gap-1 disabled:opacity-50"
+                                                                    title="Remove all registered payout details for this mechanic"
                                                                 >
-                                                                    <Eye size={11} />
-                                                                    View Scan QR
+                                                                    <Trash2 size={10} />
+                                                                    Remove Details
                                                                 </button>
                                                             </div>
-                                                        )}
+                                                        </div>
+                                                        <div className="space-y-2 text-xs font-bold text-gray-300">
+                                                            <div className="flex justify-between border-b border-white/5 pb-1.5">
+                                                                <span className="text-gray-500">Channel / Bank</span>
+                                                                <span className="text-white">
+                                                                    {viewingUserDetail.originalData?.payoutDetails?.method === 'Bank Transfer'
+                                                                        ? (viewingUserDetail.originalData?.payoutDetails?.bankName || 'Bank Transfer')
+                                                                        : (viewingUserDetail.originalData?.payoutDetails?.walletName || 'GCash E-Wallet')}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex justify-between border-b border-white/5 pb-1.5">
+                                                                <span className="text-gray-500">Account Name</span>
+                                                                <span className="text-white">{viewingUserDetail.originalData?.payoutDetails?.accountName || 'N/A'}</span>
+                                                            </div>
+                                                            <div className="flex justify-between border-b border-white/5 pb-1.5">
+                                                                <span className="text-gray-500">Account Number</span>
+                                                                <span className="text-primary font-mono">{viewingUserDetail.originalData?.payoutDetails?.accountNumber || 'N/A'}</span>
+                                                            </div>
+                                                            {viewingUserDetail.originalData?.payoutDetails?.qrCodeUrl && (
+                                                                <div className="flex justify-between items-center pt-1">
+                                                                    <span className="text-gray-500 flex items-center gap-1">
+                                                                        <QrCode size={12} className="text-amber-400" />
+                                                                        QR Code
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setQrModalUrl(viewingUserDetail.originalData?.payoutDetails?.qrCodeUrl)}
+                                                                        className="text-[10px] font-bold text-primary hover:text-orange-400 underline flex items-center gap-1"
+                                                                    >
+                                                                        <Eye size={11} />
+                                                                        View Scan QR
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                ) : (
+                                                    <div className="bg-[#111113]/40 p-6 rounded-2xl border border-white/5 space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <h4 className="text-[10px] font-black text-gray-500 tracking-widest uppercase flex items-center gap-1.5">
+                                                                <Smartphone size={12} className="text-gray-500" />
+                                                                Payout Destination
+                                                            </h4>
+                                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
+                                                                Unconfigured
+                                                            </span>
+                                                        </div>
+                                                        <div className="p-3 bg-red-500/5 rounded-xl border border-red-500/10">
+                                                            <p className="text-xs text-red-300/80 font-medium">No bank or e-wallet account details registered.</p>
+                                                            <p className="text-[10px] text-gray-500 mt-0.5">The mechanic must set up their payout destination in their profile before requesting withdrawals.</p>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 

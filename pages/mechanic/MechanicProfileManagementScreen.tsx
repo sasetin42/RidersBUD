@@ -1597,7 +1597,7 @@ const PayoutRequestModal: React.FC<{
     const estimatedRemaining = Math.max(0, safeWithdrawable - (isNaN(requestAmount) ? 0 : requestAmount));
     const payoutDestinations = useMemo<PayoutDetails[]>(() => {
         const list: PayoutDetails[] = [];
-        if (mechanic.payoutDetails && mechanic.payoutDetails.accountName) {
+        if (mechanic.payoutDetails && mechanic.payoutDetails.accountName && mechanic.payoutDetails.accountNumber) {
             list.push({ ...mechanic.payoutDetails, isDefault: true });
         }
         if (mechanic.savedPayoutDestinations && mechanic.savedPayoutDestinations.length > 0) {
@@ -1632,7 +1632,7 @@ const PayoutRequestModal: React.FC<{
         setSelectedDestinationIndex(defaultIndex);
     }, [defaultIndex]);
 
-    const activeDestination = payoutDestinations[selectedDestinationIndex] || mechanic.payoutDetails;
+    const activeDestination = payoutDestinations[selectedDestinationIndex] || (mechanic.payoutDetails?.accountNumber ? mechanic.payoutDetails : undefined);
 
     const hasPayoutDetails = !!activeDestination && !!activeDestination.accountName && !!activeDestination.accountNumber;
 
@@ -2330,10 +2330,6 @@ const PayoutDetailsModal: React.FC<{
     // Remove a saved destination
     const handleDeleteDestination = (id?: string) => {
         if (!id) return;
-        if (destinations.length <= 1) {
-            setError('You must keep at least one payout destination.');
-            return;
-        }
         setDestinations(prev => {
             const remaining = prev.filter(d => d.id !== id);
             // If the deleted one was default, make the first remaining the new default
@@ -2343,6 +2339,7 @@ const PayoutDetailsModal: React.FC<{
             }
             return remaining;
         });
+        setError('');
     };
 
     // Add new destination to state
@@ -2408,12 +2405,12 @@ const PayoutDetailsModal: React.FC<{
 
     // Save all changes to database
     const handleCommitAll = () => {
+        setIsSaving(true);
         if (destinations.length === 0) {
-            setError('Please add at least one payout destination.');
+            onSave(null as any, []);
             return;
         }
 
-        setIsSaving(true);
         const defaultDest = destinations.find(d => d.isDefault) || destinations[0];
         const primaryToSave: PayoutDetails = {
             ...defaultDest,
@@ -2545,16 +2542,14 @@ const PayoutDetailsModal: React.FC<{
                                                         </button>
                                                     )}
 
-                                                    {destinations.length > 1 && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleDeleteDestination(dest.id)}
-                                                            className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-                                                            title="Delete Destination"
-                                                        >
-                                                            <Trash2 size={13} />
-                                                        </button>
-                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteDestination(dest.id)}
+                                                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
+                                                        title="Delete Destination"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -2869,7 +2864,23 @@ const PayoutDetailsModal: React.FC<{
             </div>
 
             {/* Modal Bottom Save Action */}
-            <div className="mt-4 flex items-center justify-end border-t border-white/5 pt-3.5">
+            <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3.5">
+                <div>
+                    {destinations.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (window.confirm('Are you sure you want to clear all payout destinations?')) {
+                                    setDestinations([]);
+                                }
+                            }}
+                            className="text-[10px] font-bold text-red-400 hover:text-red-300 hover:underline flex items-center gap-1 py-1"
+                        >
+                            <Trash2 size={11} />
+                            Clear All Destinations
+                        </button>
+                    )}
+                </div>
                 <div className="flex gap-2.5">
                     <button
                         type="button"
@@ -2886,7 +2897,7 @@ const PayoutDetailsModal: React.FC<{
                         className="px-6 py-2.5 bg-primary hover:bg-orange-600 active:scale-95 text-white font-black rounded-xl transition-all text-xs shadow-lg shadow-primary/25 flex items-center gap-1.5"
                     >
                         <ShieldCheck size={14} />
-                        <span>{isSaving ? 'Saving...' : 'Save & Sync All'}</span>
+                        <span>{isSaving ? 'Saving...' : destinations.length === 0 ? 'Clear & Save Empty' : 'Save & Sync All'}</span>
                     </button>
                 </div>
             </div>
@@ -3437,15 +3448,21 @@ const MechanicProfileManagementScreen: React.FC = () => {
     const [previousModal, setPreviousModal] = useState<string | null>(null);
     const navigate = useNavigate();
 
+    const currentMechanicDoc = useMemo(() => {
+        if (!mechanic || !db?.mechanics) return null;
+        return db.mechanics.find(m => m.id === mechanic.id) || mechanic;
+    }, [db?.mechanics, mechanic]);
+
+    const activeMechanic = currentMechanicDoc || mechanic;
+
     const { totalJobs, lifetimeEarnings, availableForPayout } = useMemo(() => {
-        if (!mechanic || !db) return { totalJobs: 0, lifetimeEarnings: 0, availableForPayout: 0 };
+        if (!activeMechanic || !db) return { totalJobs: 0, lifetimeEarnings: 0, availableForPayout: 0 };
 
         const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 30;
-        const currentMechanicDoc = db.mechanics.find(m => m.id === mechanic.id) || mechanic;
 
         const ledger = calculateMechanicWalletLedger(
-            mechanic.id,
-            currentMechanicDoc,
+            activeMechanic.id,
+            activeMechanic,
             db.bookings || [],
             db.payouts || [],
             serviceFeePercentage
@@ -3456,9 +3473,9 @@ const MechanicProfileManagementScreen: React.FC = () => {
             lifetimeEarnings: ledger.lifetimeEarnings,
             availableForPayout: ledger.availableBalance,
         };
-    }, [db.bookings, db.payouts, db.settings, db.mechanics, mechanic]);
+    }, [db.bookings, db.payouts, db.settings, db.mechanics, activeMechanic]);
 
-    if (loading || !db || !mechanic) {
+    if (loading || !db || !activeMechanic) {
         return (
             <div className="flex flex-col h-full bg-secondary">
                 <div className="p-4 bg-[#1D1D1D] border-b border-dark-gray"><h1 className="text-2xl font-bold text-white text-center">My Profile</h1></div>
@@ -3473,24 +3490,24 @@ const MechanicProfileManagementScreen: React.FC = () => {
     };
 
     const handleAvailabilitySave = (availability: Required<Mechanic>['availability']) => {
-        updateMechanicProfile({ ...mechanic, availability });
+        updateMechanicProfile({ ...activeMechanic, availability });
         setActiveModal(null);
     };
 
     const handleTimeOffSave = (dates: Array<{ startDate: string; endDate: string; reason?: string }>) => {
-        updateMechanicProfile({ ...mechanic, unavailableDates: dates });
+        updateMechanicProfile({ ...activeMechanic, unavailableDates: dates });
         setActiveModal(null);
     };
 
     const handlePasswordSave = (newPass: string) => {
-        updateMechanicProfile({ ...mechanic, password: newPass });
+        updateMechanicProfile({ ...activeMechanic, password: newPass });
     };
 
-    const handlePayoutDetailsSave = (payoutDetails: PayoutDetails, savedDestinations?: PayoutDetails[]) => {
+    const handlePayoutDetailsSave = (payoutDetails: PayoutDetails | null, savedDestinations?: PayoutDetails[]) => {
         updateMechanicProfile({ 
-            ...mechanic, 
-            payoutDetails,
-            savedPayoutDestinations: savedDestinations !== undefined ? savedDestinations : (mechanic.savedPayoutDestinations || [])
+            ...activeMechanic, 
+            payoutDetails: payoutDetails || null as any,
+            savedPayoutDestinations: savedDestinations !== undefined ? savedDestinations : []
         });
         if (previousModal) {
             setActiveModal(previousModal);
@@ -3515,20 +3532,20 @@ const MechanicProfileManagementScreen: React.FC = () => {
                 <div className="bg-gradient-to-br from-[#1A1A1A] to-[#121212] rounded-[2.5rem] p-6 border border-white/5 shadow-2xl flex items-center gap-6 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-[50px] rounded-full translate-x-10 -translate-y-10 group-hover:bg-primary/20 transition-all duration-700"></div>
                     <div className="relative shrink-0">
-                        <img src={mechanic.imageUrl} alt={mechanic.name} className="w-20 sm:w-24 h-20 sm:h-24 rounded-3xl object-cover border-4 border-white/5 shadow-2xl group-hover:scale-105 transition-transform duration-500" />
-                        {mechanic.verificationDocuments?.verificationStatus === 'approved' && (
+                        <img src={activeMechanic.imageUrl} alt={activeMechanic.name} className="w-20 sm:w-24 h-20 sm:h-24 rounded-3xl object-cover border-4 border-white/5 shadow-2xl group-hover:scale-105 transition-transform duration-500" />
+                        {activeMechanic.verificationDocuments?.verificationStatus === 'approved' && (
                             <div className="absolute -bottom-2 -right-2 bg-green-500 text-white p-1.5 rounded-xl shadow-lg border-2 border-[#121212]">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
                             </div>
                         )}
                     </div>
                     <div className="relative z-10 min-w-0">
-                        <h2 className="text-xl sm:text-2xl font-black text-white tracking-tighter leading-none truncate">{mechanic.name}</h2>
-                        <p className="text-[10px] sm:text-xs text-gray-500 font-bold  tracking-widest mt-1 opacity-70 truncate">{mechanic.email}</p>
-                        {mechanic.registrationDate && (
+                        <h2 className="text-xl sm:text-2xl font-black text-white tracking-tighter leading-none truncate">{activeMechanic.name}</h2>
+                        <p className="text-[10px] sm:text-xs text-gray-500 font-bold  tracking-widest mt-1 opacity-70 truncate">{activeMechanic.email}</p>
+                        {activeMechanic.registrationDate && (
                             <div className="flex items-center gap-1.5 mt-3 opacity-50">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                <p className="text-[9px] font-black  tracking-widest">Since {new Date(mechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</p>
+                                <p className="text-[9px] font-black  tracking-widest">Since {new Date(activeMechanic.registrationDate.replace(/-/g, '/')).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</p>
                             </div>
                         )}
                     </div>
@@ -3649,14 +3666,14 @@ const MechanicProfileManagementScreen: React.FC = () => {
                 </div>
             </div>
 
-            {activeModal === 'profile' && <ProfileDetailsModal mechanic={mechanic} onClose={() => setActiveModal(null)} onSave={handleProfileSave} />}
-            {activeModal === 'availability' && <AvailabilityEditorModal availability={mechanic.availability} onClose={() => setActiveModal(null)} onSave={handleAvailabilitySave} />}
-            {activeModal === 'timeOff' && <TimeOffModal unavailableDates={mechanic.unavailableDates || []} onClose={() => setActiveModal(null)} onSave={handleTimeOffSave} />}
-            {activeModal === 'password' && <ChangePasswordModal currentPass={mechanic.password} onClose={() => setActiveModal(null)} onSave={handlePasswordSave} />}
-            {activeModal === 'reviews' && <ReviewsModal reviews={mechanic.reviewsList || []} onClose={() => setActiveModal(null)} />}
+            {activeModal === 'profile' && <ProfileDetailsModal mechanic={activeMechanic} onClose={() => setActiveModal(null)} onSave={handleProfileSave} />}
+            {activeModal === 'availability' && <AvailabilityEditorModal availability={activeMechanic.availability} onClose={() => setActiveModal(null)} onSave={handleAvailabilitySave} />}
+            {activeModal === 'timeOff' && <TimeOffModal unavailableDates={activeMechanic.unavailableDates || []} onClose={() => setActiveModal(null)} onSave={handleTimeOffSave} />}
+            {activeModal === 'password' && <ChangePasswordModal currentPass={activeMechanic.password} onClose={() => setActiveModal(null)} onSave={handlePasswordSave} />}
+            {activeModal === 'reviews' && <ReviewsModal reviews={activeMechanic.reviewsList || []} onClose={() => setActiveModal(null)} />}
             {activeModal === 'payoutRequest' && (
                 <PayoutRequestModal 
-                    mechanic={mechanic} 
+                    mechanic={activeMechanic} 
                     availableBalance={availableForPayout} 
                     onClose={() => setActiveModal(null)} 
                     onEditPayoutDetails={() => {
@@ -3667,8 +3684,8 @@ const MechanicProfileManagementScreen: React.FC = () => {
             )}
             {activeModal === 'payouts' && (
                 <PayoutDetailsModal 
-                    payoutDetails={mechanic.payoutDetails}
-                    savedPayoutDestinations={mechanic.savedPayoutDestinations || []}
+                    payoutDetails={activeMechanic.payoutDetails}
+                    savedPayoutDestinations={activeMechanic.savedPayoutDestinations || []}
                     onClose={() => {
                         if (previousModal) {
                             setActiveModal(previousModal);
@@ -3681,8 +3698,8 @@ const MechanicProfileManagementScreen: React.FC = () => {
                 />
             )}
             {activeModal === 'support' && <HelpSupportModal contactEmail={db.settings.contactEmail} contactPhone={db.settings.contactPhone} onClose={() => setActiveModal(null)} />}
-            {activeModal === 'legal' && <LegalDocsModal mechanic={mechanic} onClose={() => setActiveModal(null)} onSave={handleProfileSave} />}
-            {activeModal === 'notifications' && mechanic && <MechanicNotificationSettingsModal user={mechanic} onClose={() => setActiveModal(null)} onSave={(s) => updateMechanicNotificationSettings(mechanic.id, s)} />}
+            {activeModal === 'legal' && <LegalDocsModal mechanic={activeMechanic} onClose={() => setActiveModal(null)} onSave={handleProfileSave} />}
+            {activeModal === 'notifications' && activeMechanic && <MechanicNotificationSettingsModal user={activeMechanic} onClose={() => setActiveModal(null)} onSave={(s) => updateMechanicNotificationSettings(activeMechanic.id, s)} />}
         </div>
     );
 };
