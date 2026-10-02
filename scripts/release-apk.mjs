@@ -75,7 +75,23 @@ if (existsSync(distReleases)) {
     rmSync(distReleases, { recursive: true, force: true });
     ok('dist/releases removed (prevents nested-APK bug)');
 }
-sh('npx cap sync android');
+// Ensure dist/index.html exists and retry sync if Windows file lock is active
+let synced = false;
+for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+        if (!existsSync(path.join(ROOT, 'dist/index.html'))) {
+            execSync('timeout /t 1 /nobreak >nul', { shell: 'cmd.exe' });
+        }
+        sh('npx cap sync android');
+        synced = true;
+        break;
+    } catch (e) {
+        if (attempt === 3) throw e;
+        console.log(`Cap sync attempt ${attempt} failed, retrying in 1s...`);
+        execSync('timeout /t 1 /nobreak >nul', { shell: 'cmd.exe' });
+    }
+}
+if (!synced) fail('Failed to sync Capacitor');
 ok('Capacitor sync complete');
 
 // ---------------------------------------------------------------------------
@@ -109,11 +125,14 @@ ok('Signature verified');
 // ---------------------------------------------------------------------------
 log('Staging APKs…');
 mkdirSync(distReleases, { recursive: true });
+mkdirSync(path.join(ROOT, 'public/releases'), { recursive: true });
 mkdirSync(path.join(ROOT, 'playstore-release/apk'), { recursive: true });
 copyFileSync(apkPath, path.join(distReleases, 'RidersBUD-latest.apk'));
 copyFileSync(apkPath, path.join(distReleases, `RidersBUD-v${VERSION_NAME}.apk`));
+copyFileSync(apkPath, path.join(ROOT, 'public/releases/RidersBUD-latest.apk'));
+copyFileSync(apkPath, path.join(ROOT, `public/releases/RidersBUD-v${VERSION_NAME}.apk`));
 copyFileSync(apkPath, path.join(ROOT, 'playstore-release/apk/app-release.apk'));
-ok('Staged: dist/releases + playstore-release/apk');
+ok('Staged: dist/releases + public/releases + playstore-release/apk');
 
 // ---------------------------------------------------------------------------
 // 8. Deploy hosting
