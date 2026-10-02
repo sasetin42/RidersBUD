@@ -1587,7 +1587,7 @@ const PayoutRequestModal: React.FC<{
     const safeWithdrawable = (availableBalance != null && availableBalance >= 0)
         ? availableBalance
         : 0;
-    const requestAmount = parseFloat(amount || '0');
+    const requestAmount = parseFloat(String(amount || '0').replace(/,/g, ''));
     const initialHasPayoutDetails = mechanic.payoutDetails && mechanic.payoutDetails.accountName && mechanic.payoutDetails.accountNumber;
 
     const processingTimeline = settings.payoutSchedule || 'Processed within 3–5 business days';
@@ -1645,9 +1645,24 @@ const PayoutRequestModal: React.FC<{
         return '';
     }, [hasPayoutDetails, requestAmount, minPayout, maxPayout, safeWithdrawable]);
 
+    const formatAmountWithCommas = (val: string): string => {
+        // Strip everything except digits and decimal point
+        const clean = val.replace(/[^\d.]/g, '');
+        if (!clean) return '';
+        const parts = clean.split('.');
+        const integerPart = parts[0];
+        const decimalPart = parts.length > 1 ? `.${parts[1].slice(0, 2)}` : '';
+        const formattedInteger = integerPart ? parseInt(integerPart, 10).toLocaleString('en-US') : '0';
+        return `${formattedInteger}${decimalPart}`;
+    };
+
     const applyQuickAmount = (ratio: number) => {
         const computed = Math.floor((safeWithdrawable * ratio) * 100) / 100;
-        setAmount(computed > 0 ? computed.toFixed(2) : '0');
+        if (computed > 0) {
+            setAmount(computed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        } else {
+            setAmount('0.00');
+        }
         setError('');
     };
 
@@ -2062,7 +2077,7 @@ const PayoutRequestModal: React.FC<{
                         <button
                             type="button"
                             onClick={() => {
-                                setAmount(safeWithdrawable.toFixed(2));
+                                setAmount(safeWithdrawable.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
                                 setError('');
                             }}
                             className="text-[10px] font-black text-primary hover:text-orange-400 bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg transition"
@@ -2076,11 +2091,14 @@ const PayoutRequestModal: React.FC<{
                         <input
                             id="payout-amount"
                             name="payoutAmount"
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             value={amount}
-                            onChange={e => { setAmount(e.target.value); setError(''); }}
+                            onChange={e => {
+                                const formatted = formatAmountWithCommas(e.target.value);
+                                setAmount(formatted);
+                                setError('');
+                            }}
                             disabled={!hasPayoutDetails}
                             className={`w-full p-3 pl-9 bg-black/50 border rounded-xl text-base font-bold text-white outline-none transition-all placeholder:text-gray-600 disabled:opacity-40 ${
                                 validationError && requestAmount > 0 ? 'border-red-500/60 focus:border-red-500' : 'border-white/10 focus:border-primary/50'

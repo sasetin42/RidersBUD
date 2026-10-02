@@ -7,6 +7,13 @@ const nodemailer = require('nodemailer');
 
 admin.initializeApp();
 
+// In-memory credential caching with 5-minute TTL to avoid redundant Firestore reads
+const cachedCreds = {
+  sandbox: null,
+  live: null,
+  expiresAt: 0
+};
+
 /**
  * HitPay credentials are edited in Admin → Settings → Financials and stored in
  * Firestore settings/main. Resolution order (FIRST MATCH WINS):
@@ -15,51 +22,67 @@ admin.initializeApp();
  *   3. Cloud Functions env (functions/.env, last-resort fallback)
  */
 async function resolveHitpayCredentials(isSandbox) {
-  // 1. Admin-editable settings/main (authoritative)
-  try {
-    const mainSnap = await admin.firestore().collection('settings').doc('main').get();
-    if (mainSnap.exists) {
-      const s = mainSnap.data() || {};
-      const apiKey = isSandbox ? s.hitpaySandboxApiKey : s.hitpayApiKey;
-      const salt = isSandbox ? s.hitpaySandboxSalt : s.hitpaySalt;
-      if (apiKey && salt) {
-        return { apiKey, salt, source: 'settings/main' };
+  const now = Date.now();
+  const cacheKey = isSandbox ? 'sandbox' : 'live';
+
+  if (cachedCreds[cacheKey] && cachedCreds.expiresAt > now) {
+    return cachedCreds[cacheKey];
+  }
+
+  const resolve = async () => {
+    // 1. Admin-editable settings/main (authoritative)
+    try {
+      const mainSnap = await admin.firestore().collection('settings').doc('main').get();
+      if (mainSnap.exists) {
+        const s = mainSnap.data() || {};
+        const apiKey = isSandbox ? s.hitpaySandboxApiKey : s.hitpayApiKey;
+        const salt = isSandbox ? s.hitpaySandboxSalt : s.hitpaySalt;
+        if (apiKey && salt) {
+          return { apiKey, salt, source: 'settings/main' };
+        }
       }
+    } catch (e) {
+      console.warn('settings/main read failed:', e && e.message);
     }
-  } catch (e) {
-    console.warn('settings/main read failed:', e && e.message);
-  }
 
-  // 2. Firestore secrets document (admin-only, legacy)
-  try {
-    const secretsSnap = await admin.firestore().collection('settings').doc('hitpaySecrets').get();
-    if (secretsSnap.exists) {
-      const s = secretsSnap.data() || {};
-      const apiKey = isSandbox ? (s.hitpaySandboxApiKey || s.sandboxApiKey) : (s.hitpayApiKey || s.liveApiKey);
-      const salt = isSandbox ? (s.hitpaySandboxSalt || s.sandboxSalt) : (s.hitpaySalt || s.liveSalt);
-      if (apiKey && salt) {
-        return { apiKey, salt, source: 'firestore:hitpaySecrets' };
+    // 2. Firestore secrets document (admin-only, legacy)
+    try {
+      const secretsSnap = await admin.firestore().collection('settings').doc('hitpaySecrets').get();
+      if (secretsSnap.exists) {
+        const s = secretsSnap.data() || {};
+        const apiKey = isSandbox ? (s.hitpaySandboxApiKey || s.sandboxApiKey) : (s.hitpayApiKey || s.liveApiKey);
+        const salt = isSandbox ? (s.hitpaySandboxSalt || s.sandboxSalt) : (s.hitpaySalt || s.liveSalt);
+        if (apiKey && salt) {
+          return { apiKey, salt, source: 'firestore:hitpaySecrets' };
+        }
       }
+    } catch (e) {
+      console.warn('hitpaySecrets read failed:', e && e.message);
     }
-  } catch (e) {
-    console.warn('hitpaySecrets read failed:', e && e.message);
-  }
 
-  // 3. Environment variables (last-resort fallback)
-  const envKey = isSandbox ? process.env.HITPAY_SANDBOX_API_KEY : process.env.HITPAY_LIVE_API_KEY;
-  const envSalt = isSandbox ? process.env.HITPAY_SANDBOX_SALT : process.env.HITPAY_SALT;
-  if (envKey && envSalt) {
-    return { apiKey: envKey, salt: envSalt, source: 'env' };
-  }
+    // 3. Environment variables (last-resort fallback)
+    const envKey = isSandbox ? process.env.HITPAY_SANDBOX_API_KEY : process.env.HITPAY_LIVE_API_KEY;
+    const envSalt = isSandbox ? process.env.HITPAY_SANDBOX_SALT : process.env.HITPAY_SALT;
+    if (envKey && envSalt) {
+      return { apiKey: envKey, salt: envSalt, source: 'env' };
+    }
 
-  // 4. Default provisioned keys fallback
-  const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
-  const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
-  return {
-    apiKey: isSandbox ? defaultSandboxKey : defaultLiveKey,
-    salt: isSandbox ? 'test_salt_default' : 'live_salt_default',
-    source: 'default_provisioned'
+    // 4. Default provisioned keys fallback
+    const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
+    const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
+    return {
+      apiKey: isSandbox ? defaultSandboxKey : defaultLiveKey,
+      salt: isSandbox ? 'test_salt_default' : 'live_salt_default',
+      source: 'default_provisioned'
+    };
   };
+
+  const resolved = await resolve();
+  if (resolved && resolved.apiKey) {
+    cachedCreds[cacheKey] = resolved;
+    cachedCreds.expiresAt = Date.now() + 5 * 60 * 1000; // 5-minute TTL
+  }
+  return resolved;
 }
 
 // Persistent Keep-Alive agent to eliminate repeated TLS handshake latency

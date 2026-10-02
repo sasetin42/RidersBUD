@@ -32,16 +32,18 @@ interface DetailRowProps {
 
 const DetailRow: React.FC<DetailRowProps> = ({ icon, label, value, onClick, isLink }) => (
     <div 
-        className={`flex items-center gap-2.5 py-1.5 border-b border-white/[0.05] last:border-0 ${onClick ? 'cursor-pointer hover:bg-white/[0.04] active:bg-white/[0.08] transition-all rounded-md px-1 -mx-1' : ''}`}
+        className={`flex items-center justify-between gap-2 py-1.5 border-b border-white/[0.05] last:border-0 ${onClick ? 'cursor-pointer hover:bg-white/[0.04] active:bg-white/[0.08] transition-all rounded-md px-1' : ''}`}
         onClick={onClick}
     >
-        <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-white/[0.05] flex items-center justify-center">
-            {icon}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-white/[0.05] flex items-center justify-center">
+                {icon}
+            </div>
+            <span className="text-[9px] font-black text-gray-500 tracking-wider uppercase truncate leading-none">
+                {label}
+            </span>
         </div>
-        <span className="text-[9px] font-black text-gray-500 tracking-wider uppercase flex-1 leading-none">
-            {label}
-        </span>
-        <span className={`text-[11px] font-bold text-right leading-snug tracking-tight max-w-[65%] break-words ${isLink ? 'text-primary underline hover:text-orange-400' : 'text-gray-200'}`}>
+        <span className={`text-[11px] font-bold text-right leading-snug tracking-tight max-w-[62%] break-words line-clamp-2 ${isLink ? 'text-primary underline hover:text-orange-400' : 'text-gray-200'}`}>
             {value}
         </span>
     </div>
@@ -187,16 +189,16 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
 
             {/* Backdrop */}
             <div
-                className="ag-fadeIn fixed inset-0 z-[200] flex items-center justify-center p-4"
+                className="ag-fadeIn fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto overflow-x-hidden"
                 style={{
-                    backgroundColor: 'rgba(0,0,0,0.90)',
+                    backgroundColor: 'rgba(0,0,0,0.88)',
                     backdropFilter: 'blur(16px)',
                     WebkitBackdropFilter: 'blur(16px)',
                 }}
             >
                 {/* Ambient radial glow */}
                 <div
-                    className="pointer-events-none absolute inset-0"
+                    className="pointer-events-none absolute inset-0 overflow-hidden"
                     style={{
                         background:
                             'radial-gradient(ellipse 50% 40% at 50% 40%, rgba(254,120,3,0.08) 0%, transparent 70%)',
@@ -205,12 +207,12 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
 
                 {/* Modal Card */}
                 <div
-                    className="ag-scaleUp relative w-full max-w-[348px] max-h-[92vh] flex flex-col overflow-y-auto custom-scrollbar"
+                    className="ag-scaleUp relative w-full max-w-[340px] xs:max-w-[360px] max-h-[92vh] flex flex-col overflow-y-auto overflow-x-hidden custom-scrollbar mx-auto my-auto"
                     style={{
                         background: '#121212',
                         border: '1.5px solid rgba(254,120,3,0.35)',
                         borderRadius: '1.75rem',
-                        padding: '1.25rem',
+                        padding: '1.15rem 1rem',
                         boxShadow:
                             '0 0 40px rgba(254,120,3,0.12), 0 24px 48px rgba(0,0,0,0.7)',
                     }}
@@ -220,7 +222,7 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                 >
                     {/* Top-right decorative glow blob */}
                     <div
-                        className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full"
+                        className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full overflow-hidden"
                         style={{
                             background: 'rgba(254,120,3,0.10)',
                             filter: 'blur(32px)',
@@ -231,99 +233,102 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                     <button
                         onClick={onClose}
                         aria-label="Dismiss notification"
-                        className="absolute top-4 right-4 w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90"
+                        className="absolute top-3.5 right-3.5 w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 z-20"
                         style={{
-                            background: 'rgba(255,255,255,0.04)',
-                            border: '1px solid rgba(255,255,255,0.06)',
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.08)',
                         }}
                     >
                         <X size={12} color="#9CA3AF" />
                     </button>
 
-                    {/* ── HEADER ── */}
-                    <div className="relative z-10 flex flex-col items-center text-center mb-4">
+                    {/* ── HEADER (Inline Avatar + Title + Description) ── */}
+                    <div className="relative z-10 flex flex-col items-center mb-3">
                         {/* Subtitle badge */}
                         <div
-                            className="mb-3 flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black tracking-widest"
+                            className="mb-3 self-center flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase"
                             style={{
                                 background: 'rgba(254,120,3,0.12)',
                                 border: '1px solid rgba(254,120,3,0.25)',
                                 color: '#FE7803',
                             }}
                         >
-                            <span>🔔</span>
+                            <span className="text-[10px] leading-none">🔔</span>
                             <span>INCOMING REQUEST</span>
                         </div>
 
-                        {/* Pulsing icon ring */}
-                        <div className="relative flex items-center justify-center mb-3">
-                            {/* Ping ring 1 */}
-                            <span
-                                className="ag-ping-ring absolute inline-flex w-14 h-14 rounded-2xl"
-                                style={{ background: 'rgba(254,120,3,0.20)' }}
-                            />
-                            {/* Ping ring 2 — delayed */}
-                            <span
-                                className="ag-ping-ring absolute inline-flex w-14 h-14 rounded-2xl"
-                                style={{
-                                    background: 'rgba(254,120,3,0.10)',
-                                    animationDelay: '0.6s',
-                                }}
-                            />
-                            {/* Icon container */}
-                            <div
-                                className="relative w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden"
-                                style={{
-                                    background:
-                                        'linear-gradient(135deg, rgba(254,120,3,0.20), rgba(254,120,3,0.08))',
-                                    border: '1.2px solid rgba(254,120,3,0.35)',
-                                    boxShadow: '0 0 20px rgba(254,120,3,0.15)',
-                                }}
-                            >
-                                {hasImage ? (
-                                    <img
-                                        src={imageUrl}
-                                        alt={booking.customerName || 'Customer'}
-                                        className="w-full h-full object-cover rounded-2xl"
-                                        onError={(e) => {
-                                            if ((e.currentTarget as HTMLImageElement).src !== defaultUiAvatar) {
-                                                (e.currentTarget as HTMLImageElement).src = defaultUiAvatar;
-                                            } else {
-                                                setImageError(true);
-                                            }
-                                        }}
-                                    />
-                                ) : (
-                                    <User size={24} color="#FE7803" strokeWidth={1.8} />
-                                )}
+                        {/* Inline Image & Text Row */}
+                        <div className="flex items-center gap-3 w-full px-1">
+                            {/* Pulsing icon ring & Image */}
+                            <div className="relative flex-shrink-0 flex items-center justify-center">
+                                {/* Ping ring 1 */}
+                                <span
+                                    className="ag-ping-ring absolute inline-flex w-14 h-14 rounded-2xl"
+                                    style={{ background: 'rgba(254,120,3,0.20)' }}
+                                />
+                                {/* Ping ring 2 — delayed */}
+                                <span
+                                    className="ag-ping-ring absolute inline-flex w-14 h-14 rounded-2xl"
+                                    style={{
+                                        background: 'rgba(254,120,3,0.10)',
+                                        animationDelay: '0.6s',
+                                    }}
+                                />
+                                {/* Icon container */}
+                                <div
+                                    className="relative w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden bg-white/[0.04]"
+                                    style={{
+                                        border: '1.2px solid rgba(254,120,3,0.35)',
+                                        boxShadow: '0 0 20px rgba(254,120,3,0.15)',
+                                    }}
+                                >
+                                    {hasImage ? (
+                                        <img
+                                            src={imageUrl}
+                                            alt={booking.customerName || 'Customer'}
+                                            className="w-full h-full object-cover rounded-2xl"
+                                            onError={(e) => {
+                                                if ((e.currentTarget as HTMLImageElement).src !== defaultUiAvatar) {
+                                                    (e.currentTarget as HTMLImageElement).src = defaultUiAvatar;
+                                                } else {
+                                                    setImageError(true);
+                                                }
+                                            }}
+                                        />
+                                    ) : (
+                                        <User size={24} color="#FE7803" strokeWidth={1.8} />
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Title & Description to the right of image */}
+                            <div className="flex flex-col text-left min-w-0 flex-1 justify-center">
+                                <h2
+                                    id="agn-title"
+                                    className="text-lg xs:text-xl font-black tracking-tight leading-tight mb-0.5 truncate"
+                                    style={{
+                                        background: 'linear-gradient(135deg, #FE7803 0%, #FFB347 100%)',
+                                        WebkitBackgroundClip: 'text',
+                                        WebkitTextFillColor: 'transparent',
+                                        backgroundClip: 'text',
+                                    }}
+                                >
+                                    New Job Assigned!
+                                </h2>
+                                <p className="text-[10px] text-gray-400 font-medium tracking-normal leading-snug line-clamp-2">
+                                    A customer has booked your services
+                                </p>
                             </div>
                         </div>
-
-                        {/* Title */}
-                        <h2
-                            id="agn-title"
-                            className="text-xl font-black tracking-tight leading-none mb-1"
-                            style={{
-                                background: 'linear-gradient(135deg, #FE7803 0%, #FFB347 100%)',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text',
-                            }}
-                        >
-                            New Job Assigned!
-                        </h2>
-                        <p className="text-[9px] text-gray-500 font-semibold tracking-wider">
-                            A customer has booked your services
-                        </p>
                     </div>
 
                     {/* ── JOB DETAILS CARD ── */}
                     <div
-                        className="relative z-10 rounded-2xl mb-3"
+                        className="relative z-10 rounded-2xl mb-3 overflow-hidden"
                         style={{
                             background: 'rgba(255,255,255,0.02)',
                             border: '1px solid rgba(255,255,255,0.06)',
-                            padding: '0.75rem 1rem',
+                            padding: '0.65rem 0.85rem',
                         }}
                     >
                         <DetailRow
@@ -335,21 +340,25 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                                 'Service'
                             }
                         />
-                        <div className="flex items-center justify-between py-1.5 border-b border-white/[0.04]">
-                            <div className="flex items-center gap-2">
-                                <User size={11} color="#60A5FA" strokeWidth={2.2} />
-                                <span className="text-[11px] text-gray-400 font-medium">Customer</span>
+                        <div className="flex items-center justify-between gap-2 py-1.5 border-b border-white/[0.04]">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                                <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-white/[0.05] flex items-center justify-center">
+                                    <User size={11} color="#60A5FA" strokeWidth={2.2} />
+                                </div>
+                                <span className="text-[9px] font-black text-gray-500 tracking-wider uppercase truncate leading-none">
+                                    Customer
+                                </span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0 max-w-[62%] justify-end">
                                 <img
                                     src={imageUrl}
                                     alt={booking.customerName || 'Customer'}
-                                    className="w-4 h-4 rounded-full object-cover border border-white/10"
+                                    className="w-4 h-4 rounded-full object-cover flex-shrink-0 border border-white/10"
                                     onError={(e) => {
                                         (e.currentTarget as HTMLImageElement).src = defaultUiAvatar;
                                     }}
                                 />
-                                <span className="text-[11px] font-semibold text-white tracking-wide">
+                                <span className="text-[11px] font-semibold text-white tracking-wide truncate">
                                     {booking.customerName || 'Customer'}
                                 </span>
                             </div>
@@ -380,12 +389,12 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
 
                     {/* ── PAYMENT BREAKDOWN CARD ── */}
                     <div
-                        className="relative z-10 rounded-2xl mb-4 overflow-hidden"
+                        className="relative z-10 rounded-2xl mb-3.5 overflow-hidden"
                         style={{
                             background:
                                 'linear-gradient(145deg, rgba(16,185,129,0.12) 0%, rgba(5,150,105,0.06) 100%)',
                             border: '1px solid rgba(52,211,153,0.22)',
-                            padding: '0.75rem 0.85rem',
+                            padding: '0.65rem 0.85rem',
                         }}
                     >
                         {/* Subtle glow */}
@@ -398,14 +407,14 @@ const AssignedJobNotificationModal: React.FC<AssignedJobNotificationModalProps> 
                         />
 
                         {/* Top Header of Breakdown */}
-                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-emerald-500/15">
-                            <div className="flex items-center gap-1.5">
-                                <Receipt size={12} className="text-emerald-400" />
-                                <span className="text-[9px] font-black text-emerald-400 tracking-wider uppercase">
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-emerald-500/15 gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                                <Receipt size={12} className="text-emerald-400 flex-shrink-0" />
+                                <span className="text-[9px] font-black text-emerald-400 tracking-wider uppercase truncate">
                                     Payment Breakdown
                                 </span>
                             </div>
-                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border flex-shrink-0 ${
                                 isDownpaymentPaid
                                     ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                                     : 'bg-amber-500/15 text-amber-400 border-amber-500/30'

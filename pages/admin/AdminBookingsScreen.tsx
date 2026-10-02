@@ -708,8 +708,13 @@ const BookingLocationModal: React.FC<{ booking: Booking; onClose: () => void }> 
     const [activeViewMode, setActiveViewMode] = useState<'both' | 'mechanic' | 'customer'>('both');
 
     const customerObj = useMemo(() => {
-        return db.customers.find(c => c.name === booking.customerName || c.id === booking.customerId);
-    }, [db.customers, booking.customerName, booking.customerId]);
+        return (booking as any).customerObj || db.customers.find(c => 
+            (booking.customerId && c.id === booking.customerId) ||
+            (c.email && (booking as any).customerEmail && c.email.toLowerCase() === (booking as any).customerEmail.toLowerCase()) ||
+            (c.name && booking.customerName && c.name.toLowerCase() === booking.customerName.toLowerCase()) ||
+            ((booking as any).customerPhone && c.phone === (booking as any).customerPhone)
+        );
+    }, [db.customers, booking.customerName, booking.customerId, (booking as any).customerEmail, (booking as any).customerPhone, (booking as any).customerObj]);
 
     const mechanicObj = useMemo(() => {
         return db.mechanics.find(m => m.id === booking.mechanicId || (booking.mechanic && m.id === booking.mechanic.id));
@@ -2267,12 +2272,20 @@ const AdminBookingsScreen: React.FC = () => {
         
         if (activeAdminTab === 'Services') {
             return (db.bookings || []).map(b => {
-                // Ensure customer details are populated if available
-                const customer = db.customers?.find(c => c.id === b.customerId || c.name === b.customerName);
+                // Ensure customer details are populated live if available
+                const customer = db.customers?.find(c => 
+                    (b.customerId && c.id === b.customerId) || 
+                    (b.customerEmail && c.email && c.email.toLowerCase() === b.customerEmail.toLowerCase()) ||
+                    (b.customerName && c.name && c.name.toLowerCase() === b.customerName.toLowerCase()) ||
+                    (b.customerPhone && c.phone === b.customerPhone)
+                );
                 return {
                     ...b,
+                    customerName: customer?.name || b.customerName,
                     customerEmail: customer?.email || b.customerEmail || 'No email',
                     customerPhone: customer?.phone || b.customerPhone || 'No phone',
+                    customerPhoto: customer?.picture || (b as any).customerPhoto || '',
+                    customerObj: customer
                 };
             });
         } else if (activeAdminTab === 'Car Rental') {
@@ -4184,12 +4197,14 @@ const AdminBookingsScreen: React.FC = () => {
                                             </td>
                                             <td className="py-2 px-3">
                                                 {(() => {
-                                                    const customerObj = db.customers.find(c => 
+                                                    const customerObj = (booking as any).customerObj || db.customers.find(c => 
                                                         (booking.customerId && c.id === booking.customerId) || 
+                                                        (c.email && (booking as any).customerEmail && c.email.toLowerCase() === (booking as any).customerEmail.toLowerCase()) ||
                                                         (c.name && booking.customerName && c.name.toLowerCase() === booking.customerName.toLowerCase()) ||
-                                                        (booking.customerPhone && c.phone === booking.customerPhone)
+                                                        ((booking as any).customerPhone && c.phone === (booking as any).customerPhone)
                                                     );
                                                     const avatarUrl = customerObj?.picture || (booking as any).customerPhoto;
+                                                    const displayName = customerObj?.name || booking.customerName;
                                                     return (
                                                         <div className="flex items-center gap-2.5 max-w-[160px]">
                                                             {avatarUrl ? (
@@ -4483,18 +4498,23 @@ const AdminBookingsScreen: React.FC = () => {
                                                                 </h4>
                                                                 <div className="space-y-4 flex-1 flex flex-col">
                                                                     {(() => {
-                                                                        const customerObj = db.customers.find(c => 
+                                                                        const customerObj = (booking as any).customerObj || db.customers.find(c => 
                                                                             (booking.customerId && c.id === booking.customerId) || 
+                                                                            (c.email && (booking as any).customerEmail && c.email.toLowerCase() === (booking as any).customerEmail.toLowerCase()) ||
                                                                             (c.name && booking.customerName && c.name.toLowerCase() === booking.customerName.toLowerCase()) ||
-                                                                            (booking.customerPhone && c.phone === booking.customerPhone)
+                                                                            ((booking as any).customerPhone && c.phone === (booking as any).customerPhone)
                                                                         );
                                                                         const avatarUrl = customerObj?.picture || (booking as any).customerPhoto;
+                                                                        const phoneDisplay = customerObj?.phone || (booking as any).customerPhone || 'No phone';
+                                                                        const emailDisplay = customerObj?.email || (booking as any).customerEmail || 'No email';
+                                                                        const nameDisplay = customerObj?.name || booking.customerName || 'Valued Customer';
+
                                                                         return (
                                                                             <div className="flex items-center gap-3">
                                                                                 {avatarUrl ? (
                                                                                     <img 
                                                                                         src={avatarUrl} 
-                                                                                        alt={booking.customerName} 
+                                                                                        alt={nameDisplay} 
                                                                                         className="w-12 h-12 rounded-lg object-cover border border-white/10 shrink-0" 
                                                                                         onError={(e) => {
                                                                                             const img = e.currentTarget;
@@ -4505,13 +4525,13 @@ const AdminBookingsScreen: React.FC = () => {
                                                                                     />
                                                                                 ) : (
                                                                                     <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center text-lg font-black text-white shadow-lg shadow-primary/20 shrink-0">
-                                                                                        {booking.customerName.charAt(0).toUpperCase()}
+                                                                                        {nameDisplay.charAt(0).toUpperCase()}
                                                                                     </div>
                                                                                 )}
                                                                                 <div className="min-w-0 flex-1">
-                                                                                    <p className="text-white font-black text-sm leading-tight truncate">{booking.customerName}</p>
-                                                                                    <p className="text-[10px] text-gray-500 font-bold mt-1">{db.customers.find(c => c.name === booking.customerName)?.phone || 'No phone'}</p>
-                                                                                    <p className="text-[9px] text-gray-600 font-bold mt-0.5 truncate">{customerObj?.email || 'No email'}</p>
+                                                                                    <p className="text-white font-black text-sm leading-tight truncate">{nameDisplay}</p>
+                                                                                    <p className="text-[10px] text-gray-400 font-bold mt-1">{phoneDisplay}</p>
+                                                                                    <p className="text-[9px] text-gray-500 font-medium mt-0.5 truncate">{emailDisplay}</p>
                                                                                 </div>
                                                                             </div>
                                                                         );

@@ -35,28 +35,28 @@ const NotificationToasts: React.FC = () => {
         }
     }, [notifications]);
 
-    // Auto-dismiss the current (first) toast after 5 seconds
-    useEffect(() => {
-        if (toastQueue.length === 0) return;
-        const timer = setTimeout(() => {
-            markAsRead(toastQueue[0].id);
-            setToastQueue(prev => prev.slice(1));
-        }, 5000);
-        return () => clearTimeout(timer);
-    }, [toastQueue, markAsRead]);
-
-    const handleDismiss = (id: string) => {
+    const handleDismiss = React.useCallback((id: string) => {
         markAsRead(id);
         setToastQueue(prev => prev.filter(n => n.id !== id));
-    };
+    }, [markAsRead]);
 
-    // Only show the first (most recent) toast in the queue
+    // Safety fallback auto-dismiss after 3.4s to guarantee queue never stalls
+    useEffect(() => {
+        if (toastQueue.length === 0) return;
+        const currentId = toastQueue[0].id;
+        const timer = setTimeout(() => {
+            handleDismiss(currentId);
+        }, 3400);
+        return () => clearTimeout(timer);
+    }, [toastQueue, handleDismiss]);
+
+    // Only show the first (most recent) toast in the queue — zero overlaying
     const currentToast = toastQueue[0];
     if (!currentToast) return null;
 
     return (
-        <div className="fixed inset-x-0 top-4 sm:top-6 z-[60] flex flex-col items-center px-4 sm:px-6 pointer-events-none">
-            <div className="pointer-events-auto w-full max-w-md">
+        <div className="fixed inset-x-0 top-3 sm:top-4 z-[9999] flex flex-col items-center px-3 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-[360px]">
                 <NotificationToast
                     key={currentToast.id}
                     notification={currentToast}

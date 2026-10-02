@@ -1,44 +1,51 @@
-# Plan: Mechanic Job Detail "Payment Details" Fully Responsive Mobile Layout
+# Implementation Plan: Update APK Version & Deploy Downloadable Release
 
-## 1. Overview
-The user provided a screenshot of the **Payment Details** card in the Mechanic Portal (`pages/mechanic/MechanicJobDetailScreen.tsx`). The card displays:
-1. **Gateway / Reference Header**: Payment Gateway, Reference Number with copy button, Paid Timestamp.
-2. **Total Amount Services (Kabuuan)**: ₱2,500 with a "100% PAID" badge (or 50% Initial DP / Remaining Balance split when not completed).
-3. **Payment Terms Breakdown**:
-   - Customer Total Paid (Kabuuang Bayad)
-   - Admin Platform Fee (30%) (Bawas ng App)
-   - Your Take-Home Pay (70%) (Pumasok na sa iyong Wallet)
-
-### Issue / Goal
-On narrow mobile screens (320px–390px, iPhone SE, standard Android devices):
-- Reference number text and label can overflow or squish the copy button.
-- "100% PAID" badge and amount can wrap awkwardly on smaller mobile viewports.
-- The 70%/30% share pill and "Payment Terms Breakdown" title can collide or force ugly line breaks.
-- Row items with parentheses `(Kabuuang Bayad)` and `(Bawas ng App)` need fluid responsive typography (`text-xs sm:text-sm`, `text-[10px] sm:text-xs`) with flexible flex wrapping so numbers never clip or wrap into illegible fragments.
+## Goal
+Update the RidersBUD Android APK to version 1.0.4 (versionCode 5), compile and sign the production release APK with the latest codebase improvements (HitPay loading speed optimization, mechanic job timeline payment gate, celebration modal, responsive layouts), stage the APK files, deploy to Firebase Hosting, and generate live downloadable links.
 
 ---
 
-## 2. Key Proposed Enhancements
-
-### A. Reference Information Grid
-- Allow Reference No row to adaptively wrap on extra small screens (`flex-col sm:flex-row items-start sm:items-center`).
-- Keep font mono and add max-width truncation with an easily tappable copy button (min 36x36 touch target).
-- Format timestamps cleanly so it never line-breaks awkwardly on narrow viewports.
-
-### B. Total Amount Services Card
-- Ensure flex container adjusts responsively: `flex-col sm:flex-row gap-3 sm:gap-4`.
-- Big bold currency display: `text-2xl sm:text-3xl font-black text-white`.
-- Make the "100% PAID" or "50% DP" badge self-align and scale gracefully on mobile.
-
-### C. Payment Terms Breakdown
-- Top header: Use `flex flex-col sm:flex-row sm:items-center justify-between gap-2`.
-- Share badge (`70% / 30% SHARE`): Cleanly placed without clipping the title.
-- Item rows: Ensure amount (`₱2,500`, `- ₱750`) has `shrink-0` and doesn't get squeezed by long Filipino/English bilingual explanatory labels.
-- "Your Take-Home Pay (70%)": High visual prominence with emerald glow, responsive text sizing, and clear spacing.
+## Proposed Version Changes
+- **Previous:** `versionName: "1.0.3"`, `versionCode: 4`
+- **Target:** `versionName: "1.0.4"`, `versionCode: 5`
+- **Release Notes:**
+  - Fast HitPay payment connection (<100ms instant redirect via pre-warming)
+  - Mandatory customer 2nd payment verification gate on mechanic job timeline
+  - Service completion celebration modal with confetti and auto-redirect to home
+  - Mobile layout & responsive notification enhancements
 
 ---
 
-## 3. Verification Plan
-- `npm run typecheck`
-- `npm run build`
-- Inspect mobile responsiveness across screen widths (320px, 375px, 414px, and desktop).
+## Tasks
+
+### Phase 1: Planning & Setup (`project-planner`)
+- [ ] Create structured implementation plan in `docs/PLAN.md`.
+- [ ] Review Android build configuration and JDK 21 environment.
+
+### Phase 2: Implementation (`mobile-developer`, `devops-engineer`, `test-engineer`)
+- [ ] **Task 1: Version Updates (`mobile-developer`)**
+  - Update `android/app/build.gradle` (`versionCode 5`, `versionName "1.0.4"`).
+  - Update `package.json` (`"version": "1.0.4"`).
+  - Update `public/version.json` with new release metadata and notes.
+- [ ] **Task 2: Build & Capacitor Sync (`mobile-developer`)**
+  - Run web production build: `npm run build`.
+  - Remove stale `dist/releases` to prevent nested APK packaging bug.
+  - Run `npx cap sync android` to copy the fresh web assets into native Android project.
+- [ ] **Task 3: Compile Signed Release APK (`devops-engineer`)**
+  - Execute `gradlew.bat assembleRelease` using the local bundled JDK 21 (`.gradle_jdk21/jdk-21.0.2+13`).
+  - Verify release APK signature and v2 scheme with `apksigner`.
+  - Stage the generated APK to `dist/releases/`, `public/releases/`, and `playstore-release/apk/`.
+- [ ] **Task 4: Deploy & Verify Downloadable Link (`devops-engineer` & `test-engineer`)**
+  - Deploy hosting bundle to Firebase Hosting (`firebase deploy --only hosting`).
+  - Verify live availability of download links:
+    - `https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk`
+    - `https://ridersbud-10806.web.app/releases/RidersBUD-v1.0.4.apk`
+    - `https://ridersbud-10806.web.app/version.json`
+  - Run project security and lint checks.
+
+---
+
+## Done When
+- [ ] `android/app/build.gradle` and `public/version.json` show `versionCode 5` and `versionName "1.0.4"`.
+- [ ] Signed release APK is compiled without errors.
+- [ ] APK is deployed to Firebase Hosting and directly downloadable via public HTTPS URLs.

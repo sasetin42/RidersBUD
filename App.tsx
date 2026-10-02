@@ -18,6 +18,7 @@ import { DatabaseProvider, useDatabase } from './context/DatabaseContext';
 import { MechanicAuthProvider, useMechanicAuth } from './context/MechanicAuthContext';
 import MechanicBottomNav from './components/mechanic/MechanicBottomNav';
 import { GlobalPayoutApprovalListener } from './components/mechanic/GlobalPayoutApprovalListener';
+import GlobalMechanicJobListener from './components/mechanic/GlobalMechanicJobListener';
 import { ChatNotificationProvider, useChatNotification } from './context/ChatNotificationContext';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import NotificationToasts from './components/NotificationToasts';
@@ -1549,7 +1550,7 @@ const AppContent: React.FC = () => {
                             mechLoading && localStorage.getItem('ridersbud_mechanic_session') === 'true' ? (
                                 <AppLoadingScreen />
                             ) : isMechanicAuthenticated ? (
-                                <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20">
+                                <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20 overflow-x-hidden relative">
                                     <ErrorBoundary fallback={
                                         <div className="flex flex-col items-center justify-center h-screen p-8 text-center gap-6">
                                             <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center border border-red-500/20">
@@ -1577,6 +1578,7 @@ const AppContent: React.FC = () => {
                                     </ErrorBoundary>
                                     <MechanicBottomNav />
                                     <GlobalPayoutApprovalListener />
+                                    <GlobalMechanicJobListener />
                                 </div>
                             ) : (
                                 <Navigate to="/login" replace state={{ from: 'mechanic' }} />

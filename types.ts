@@ -1114,7 +1114,7 @@ export interface Notification {
     bookingId?: string;
     title: string;
     message: string;
-    type: 'booking_status' | 'payment' | 'assignment' | 'system' | 'info' | 'success' | 'warning' | 'alert';
+    type: 'booking_status' | 'payment' | 'assignment' | 'system' | 'info' | 'success' | 'warning' | 'alert' | 'job';
     status: 'unread' | 'read';
     createdAt: any;
     createdBy: string;

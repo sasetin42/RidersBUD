@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Database, Download, Upload, FileText, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useDatabase } from '../../../../context/DatabaseContext';
 import { settingsService } from '../../../../services/settingsService';
@@ -24,7 +24,7 @@ export const DataManagementTab: React.FC<DataManagementTabProps> = ({ adminEmail
         const items = dataMap[dataset] || [];
         settingsService.exportData(exportFormat, dataset.toUpperCase(), items, adminEmail);
         setFeedback(`Exported ${items.length} records from ${dataset.toUpperCase()} as ${exportFormat.toUpperCase()}.`);
-        setTimeout(() => setFeedback(null), 4000);
+        setTimeout(() => setFeedback(null), 3000);
     };
 
     return (

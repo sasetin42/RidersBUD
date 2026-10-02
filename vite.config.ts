@@ -196,14 +196,35 @@ export default defineConfig(({ mode }) => {
           // Native Node.js HitPay Payment Gateway Proxy to bypass CORS during development
           const hitpayDevAgent = new https.Agent({
             keepAlive: true,
-            maxSockets: 50,
-            maxFreeSockets: 10,
+            maxSockets: 100,
+            maxFreeSockets: 20,
             timeout: 60000,
-            keepAliveMsecs: 30000
+            keepAliveMsecs: 60000
           });
+
+          // Pre-warm TCP & TLS connection to HitPay sandbox and live domains in background
+          try {
+            const prewarmReq = https.request({
+              hostname: 'api.sandbox.hit-pay.com',
+              path: '/v1/payment-requests',
+              method: 'OPTIONS',
+              agent: hitpayDevAgent,
+              timeout: 5000
+            });
+            prewarmReq.on('error', () => {});
+            prewarmReq.end();
+          } catch (_) {}
 
           server.middlewares.use(async (req, res, next) => {
               if (req.url?.startsWith('/api/hitpay-proxy')) {
+                // Instantly reply to OPTIONS preflight
+                if (req.method === 'OPTIONS') {
+                  res.statusCode = 204;
+                  res.setHeader('Access-Control-Allow-Origin', '*');
+                  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+                  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-BUSINESS-API-KEY, X-Requested-With');
+                  return res.end();
+                }
                 // Support GET /api/hitpay-proxy?action=status&id=...
                 if (req.method === 'GET') {
                   const urlObj = new URL(req.url, 'http://localhost');
@@ -224,7 +245,7 @@ export default defineConfig(({ mode }) => {
                     hostname,
                     path: `/v1/payment-requests/${encodeURIComponent(id)}`,
                     method: 'GET',
-                    agent: false,
+                    agent: hitpayDevAgent,
                     headers: {
                       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                       'X-Requested-With': 'XMLHttpRequest',
@@ -266,7 +287,7 @@ export default defineConfig(({ mode }) => {
                         hostname,
                         path: '/v1/payment-requests',
                         method: 'POST',
-                        agent: false,
+                        agent: hitpayDevAgent,
                         headers: {
                           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                           'Content-Type': 'application/json',

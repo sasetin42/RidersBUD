@@ -176,7 +176,7 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
                     onChange('address', resolvedAddr);
                     onChange('storeAddress', resolvedAddr);
                     setStatusFeedback(`Location set: ${resolvedAddr}`);
-                    setTimeout(() => setStatusFeedback(null), 4000);
+                    setTimeout(() => setStatusFeedback(null), 3000);
                 }
             } catch (_) {
                 setStatusFeedback(`Coordinates locked: (${lat}, ${lng})`);
@@ -207,11 +207,11 @@ export const GeneralSettingsTab: React.FC<GeneralSettingsTabProps> = ({
                     }
                 }
                 setStatusFeedback(`Pinned to: ${result.displayName.slice(0, 45)}...`);
-                setTimeout(() => setStatusFeedback(null), 4000);
+                setTimeout(() => setStatusFeedback(null), 3000);
             }
         } catch (_) {
             setStatusFeedback('Could not pin address. Please click on the map directly.');
-            setTimeout(() => setStatusFeedback(null), 4000);
+            setTimeout(() => setStatusFeedback(null), 3000);
         } finally {
             setIsSearchingAddress(false);
         }

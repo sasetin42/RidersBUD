@@ -13,7 +13,7 @@ import {
     User, Phone, MessageSquare, MapPin, Star, Package, Activity, X, UserCheck, Truck, 
     Layers, Clock, ShieldCheck, CheckCircle2, AlertCircle, ShoppingBag, Eye, Navigation, 
     ArrowRight, Check, Sparkles, ExternalLink, KeyRound, AlertOctagon, Trash2,
-    Copy, Receipt, CreditCard, Mail, Info, Award, Compass, CheckCircle, Shield
+    Copy, Receipt, CreditCard, Mail, Info, Award, Compass, CheckCircle, Shield, Loader2
 } from 'lucide-react';
 import Spinner from '../components/Spinner';
 import NotificationBell from '../components/NotificationBell';
@@ -2894,6 +2894,36 @@ const HomeScreen: React.FC = () => {
                                     🔒 <strong>Mandatory Payment:</strong> Balance payment is required to finalize and release your {isRental ? 'car rental booking' : isLiaison ? 'documents' : 'chauffeur booking'}.
                                 </p>
                             </div>
+
+                            {/* Simple Loading Sequence Overlay when connecting to payment gateway */}
+                            {isInitiatingHitPayBalance && (
+                                <div className="absolute inset-0 bg-[#161618]/95 backdrop-blur-md rounded-3xl z-30 flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
+                                    <div className="relative mb-4">
+                                        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                            <CreditCard size={28} className="text-emerald-400 animate-pulse" />
+                                        </div>
+                                        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#161618] border border-emerald-500/40 flex items-center justify-center">
+                                            <Loader2 size={13} className="text-emerald-400 animate-spin" />
+                                        </div>
+                                    </div>
+                                    <h4 className="text-sm font-black text-white uppercase tracking-wider mb-1">
+                                        Connecting to Payment Gateway...
+                                    </h4>
+                                    <p className="text-xs text-gray-300 max-w-xs leading-relaxed mb-4">
+                                        Inihahanda ang inyong transaksyon. Huwag isara ang window na ito habang naglo-load ang HitPay checkout.
+                                    </p>
+                                    <div className="w-full max-w-xs bg-black/40 border border-white/5 rounded-xl p-3 text-left space-y-2">
+                                        <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-semibold">
+                                            <CheckCircle size={13} className="text-emerald-400 flex-shrink-0" />
+                                            <span>Booking details verified</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[11px] text-amber-400 font-semibold animate-pulse">
+                                            <Loader2 size={13} className="animate-spin flex-shrink-0" />
+                                            <span>Opening secure payment window...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );

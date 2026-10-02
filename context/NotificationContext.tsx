@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, ReactNode, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Notification } from '../types';
 import { useDatabase } from './DatabaseContext';
 
@@ -108,47 +108,57 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     // Live notifications from Firestore, sorted newest first, filtered strictly by active UID to prevent leakage.
     // Each user ONLY sees notifications that belong to them — NEVER cross-user notifications.
-    const notifications = [...(db?.notifications || [])]
-        .filter(n => {
-            // Dismissed IDs filter (never display permanently deleted/dismissed notifications)
-            if (n.id && dismissedIds.has(n.id)) return false;
+    const notifications = useMemo(() => {
+        return [...(db?.notifications || [])]
+            .filter(n => {
+                // Dismissed IDs filter (never display permanently deleted/dismissed notifications)
+                if (n.id && dismissedIds.has(n.id)) return false;
 
-            // Filter out system Google Maps API test notifications from regular notification feeds
-            const title = (n.title || '').toLowerCase();
-            const message = (n.message || '').toLowerCase();
-            if (
-                title.includes('google maps api') ||
-                title.includes('google map api') ||
-                title.includes('google maps api key') ||
-                message.includes('api key connection test succeeded') ||
-                message.includes('api key connection test')
-            ) {
+                // Filter out system Google Maps API test notifications from regular notification feeds
+                const title = (n.title || '').toLowerCase();
+                const message = (n.message || '').toLowerCase();
+                if (
+                    title.includes('google maps api') ||
+                    title.includes('google map api') ||
+                    title.includes('google maps api key') ||
+                    message.includes('api key connection test succeeded') ||
+                    message.includes('api key connection test')
+                ) {
+                    return false;
+                }
+
+                // Hide notifications that were cleared (by timestamp)
+                if (clearedAt > 0 && (n.timestamp ?? 0) <= clearedAt) return false;
+
+                // Strict role and recipient filtering to prevent notifications leakage across accounts
+                if (isAdminAuthenticated) {
+                    // Admin Bell: show actionable alerts for Admin (payouts, new bookings, receipts, cancellations, assignments, store orders, etc.)
+                    const isForAdmin = n.recipientRole === 'admin' || n.recipientId === 'admin';
+                    return isForAdmin;
+                }
+                if (isMechanicAuthenticated && mechanic) {
+                    return (n.recipientId === mechanic.id || n.recipientId === `mechanic-${mechanic.id}`) && n.recipientRole === 'mechanic';
+                }
+                if (isAuthenticated && user) {
+                    return (n.recipientId === user.id || n.recipientId === `customer-${user.id}`) && n.recipientRole === 'customer';
+                }
+
                 return false;
-            }
+            })
+            .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    }, [db?.notifications, dismissedIds, clearedAt, isAdminAuthenticated, isMechanicAuthenticated, mechanic, isAuthenticated, user]);
 
-            // Hide notifications that were cleared (by timestamp)
-            if (clearedAt > 0 && (n.timestamp ?? 0) <= clearedAt) return false;
+    const unreadCount = useMemo(
+        () => notifications.filter(n => n.status === 'unread' || n.read === false).length,
+        [notifications]
+    );
 
-            // Strict role and recipient filtering to prevent notifications leakage across accounts
-            if (isAdminAuthenticated) {
-                // Admin Bell: show actionable alerts for Admin (payouts, new bookings, receipts, cancellations, assignments, store orders, etc.)
-                const isForAdmin = n.recipientRole === 'admin' || n.recipientId === 'admin';
-                return isForAdmin;
-            }
-            if (isMechanicAuthenticated && mechanic) {
-                return (n.recipientId === mechanic.id || n.recipientId === `mechanic-${mechanic.id}`) && n.recipientRole === 'mechanic';
-            }
-            if (isAuthenticated && user) {
-                return (n.recipientId === user.id || n.recipientId === `customer-${user.id}`) && n.recipientRole === 'customer';
-            }
+    const notificationsRef = useRef(notifications);
+    useEffect(() => {
+        notificationsRef.current = notifications;
+    }, [notifications]);
 
-            return false;
-        })
-        .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
-
-    const unreadCount = notifications.filter(n => n.status === 'unread' || n.read === false).length;
-
-    const addNotification = (notificationData: Omit<Notification, 'id' | 'createdAt' | 'createdBy' | 'status'> & { date?: string }) => {
+    const addNotification = useCallback((notificationData: Omit<Notification, 'id' | 'createdAt' | 'createdBy' | 'status'> & { date?: string; type?: any }) => {
         let recipientId = notificationData.recipientId ? String(notificationData.recipientId).trim() : 'admin';
         let recipientRole: 'customer' | 'mechanic' | 'admin' | undefined = notificationData.recipientRole as any;
 
@@ -166,30 +176,37 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             recipientRole = recipientId === 'admin' ? 'admin' : 'customer';
         }
 
+        const validTypes = ['booking_status', 'payment', 'assignment', 'system', 'info', 'success', 'warning', 'alert', 'job'];
+        const type = validTypes.includes(notificationData.type as string) ? notificationData.type : 'info';
+        const now = Date.now();
+
         dbAddNotification({
             ...notificationData,
+            type,
             recipientId,
             recipientRole,
-            timestamp: Date.now(),
+            timestamp: notificationData.timestamp || now,
             status: 'unread',
             read: false, // Legacy
-            date: notificationData.date || new Date().toISOString()
+            date: notificationData.date || new Date(now).toISOString(),
+            createdAt: new Date(now).toISOString()
         } as any);
-    };
+    }, [dbAddNotification]);
 
-    const markAsRead = (id: string) => {
+    const markAsRead = useCallback((id: string) => {
         markNotificationAsRead(id);
-    };
+    }, [markNotificationAsRead]);
 
-    const markAllAsRead = (recipientId?: string) => {
-        if (recipientId) {
-            markAllNotificationsAsRead(recipientId);
+    const markAllAsRead = useCallback((recipientId?: string) => {
+        const targetRecipient = recipientId || activeRecipientId;
+        if (targetRecipient) {
+            markAllNotificationsAsRead(targetRecipient);
         } else {
             console.warn("markAllAsRead called without recipientId. Ignoring.");
         }
-    };
+    }, [activeRecipientId, markAllNotificationsAsRead]);
 
-    const deleteNotification = (id: string) => {
+    const deleteNotification = useCallback((id: string) => {
         // Add to dismissedIds state and localStorage so it never comes back
         setDismissedIds(prev => {
             const next = new Set(prev);
@@ -205,7 +222,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             return next;
         });
         dbDeleteNotification(id);
-    };
+    }, [activeRecipientId, dbDeleteNotification]);
 
     /**
      * Clear ALL notifications for the active user.
@@ -229,7 +246,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         }
 
         // 2. Identify all notification IDs currently displayed/visible to this user
-        const targetIds = notifications.map(n => n.id).filter(Boolean);
+        const targetIds = notificationsRef.current.map(n => n.id).filter(Boolean);
 
         // 3. Mark all target IDs as dismissed in local storage
         if (targetIds.length > 0) {
@@ -254,7 +271,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         } catch (e) {
             console.warn('[NotificationContext] clearAllNotifications Firestore delete failed:', e);
         }
-    }, [dbClearAllNotifications, notifications]);
+    }, [dbClearAllNotifications]);
 
     // --- Sound and Voice Announcements ---
     const [lastNotifiedId, setLastNotifiedId] = useState<string | null>(null);
@@ -375,7 +392,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         }
     }, [notifications, isAdminAuthenticated, lastNotifiedId, playNotificationChime, speakNotification]);
 
-    const value = {
+    const value = useMemo(() => ({
         notifications,
         addNotification,
         markAsRead,
@@ -384,7 +401,16 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         clearAllNotifications,
         purgeGoogleMapsApiNotifications: dbPurgeGoogleMapsApiNotifications,
         unreadCount,
-    };
+    }), [
+        notifications,
+        addNotification,
+        markAsRead,
+        markAllAsRead,
+        deleteNotification,
+        clearAllNotifications,
+        dbPurgeGoogleMapsApiNotifications,
+        unreadCount,
+    ]);
 
     return (
         <NotificationContext.Provider value={value}>

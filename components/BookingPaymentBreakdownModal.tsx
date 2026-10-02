@@ -17,6 +17,7 @@ interface Props {
     onClose: () => void;
     onProceed: () => void;
     isProcessing?: boolean;
+    processingStage?: string;
     currency?: string;
     services: ServiceItem[];
     totalAmount: number;
@@ -41,6 +42,7 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
     onClose,
     onProceed,
     isProcessing = false,
+    processingStage,
     currency = '₱',
     services,
     totalAmount,
@@ -255,12 +257,16 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
                         type="button"
                         onClick={onProceed}
                         disabled={isProcessing}
-                        className="w-full h-14 rounded-2xl bg-gradient-to-r from-primary via-orange-500 to-orange-600 hover:from-orange-600 hover:to-primary text-white font-black text-sm sm:text-base uppercase tracking-wider transition shadow-lg shadow-primary/25 flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 disabled:grayscale"
+                        className={`w-full h-14 rounded-2xl text-white font-black text-sm sm:text-base uppercase tracking-wider transition-all duration-300 shadow-lg flex items-center justify-center gap-2 ${
+                            isProcessing
+                                ? 'bg-gradient-to-r from-orange-500 via-primary to-orange-600 shadow-primary/40 animate-pulse cursor-wait'
+                                : 'bg-gradient-to-r from-primary via-orange-500 to-orange-600 hover:from-orange-600 hover:to-primary shadow-primary/25 active:scale-98'
+                        }`}
                     >
                         {isProcessing ? (
                             <>
                                 <Spinner size="sm" color="text-white" />
-                                <span>Connecting to Gateway...</span>
+                                <span className="font-extrabold tracking-wide">{processingStage || 'Connecting to HitPay...'}</span>
                             </>
                         ) : (
                             <>

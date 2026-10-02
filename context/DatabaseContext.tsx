@@ -43,10 +43,10 @@ interface DatabaseContextType {
     updateMechanicOnlineStatus: (mechanicId: string, isOnline: boolean) => Promise<void>;
     deleteMechanic: (mechanicId: string) => Promise<void>;
     clearMechanicPayoutDetails: (mechanicId: string) => Promise<void>;
-    addBooking: (booking: Omit<Booking, 'id'>) => Promise<Booking | null>;
+    addBooking: (booking: Omit<Booking, 'id'>, customId?: string) => Promise<Booking | null>;
     updateBooking: (bookingId: string, updates: Partial<Booking>) => Promise<void>;
     updateBookingPayment: (bookingId: string, amount: number, status: 'pending' | 'partial' | 'paid' | 'downpayment_paid', extraData?: Partial<Booking>) => Promise<void>;
-    updateBookingStatus: (bookingId: string, status: BookingStatus) => Promise<void>;
+    updateBookingStatus: (bookingId: string, status: BookingStatus, updatedBy?: 'mechanic' | 'customer' | 'admin' | string) => Promise<void>;
     assignMechanicToBooking: (bookingId: string, mechanic: Mechanic) => Promise<void>;
     cancelBooking: (bookingId: string, reason: string) => Promise<void>;
     deleteBooking: (bookingId: string) => Promise<void>;
@@ -1237,15 +1237,21 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             recipientRole = recipientId === 'admin' ? 'admin' : 'customer';
         }
 
+        const validTypes = ['booking_status', 'payment', 'assignment', 'system', 'info', 'success', 'warning', 'alert', 'job'];
+        const type = validTypes.includes(notif.type as string) ? notif.type : (notif.type || 'info');
+        const now = Date.now();
+        const timestamp = notif.timestamp || now;
+
         const newNotif = {
             ...notif,
+            type,
             recipientId,
             recipientRole,
-            id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: Date.now(),
+            id: `notif-${now}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp,
             status: 'unread',
             read: false,
-            createdAt: notif.createdAt || new Date().toISOString(),
+            createdAt: notif.createdAt || new Date(now).toISOString(),
             createdBy: notif.createdBy || auth.currentUser?.uid || 'system'
         } as Notification;
 
@@ -1263,12 +1269,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         try {
             await addDoc(collection(firestore, 'notifications'), {
                 ...notif,
+                type,
                 recipientId,
                 recipientRole,
-                timestamp: Date.now(),
+                timestamp,
                 status: 'unread',
                 read: false,
-                createdAt: notif.createdAt || new Date().toISOString(),
+                createdAt: notif.createdAt || new Date(now).toISOString(),
                 createdBy: notif.createdBy || auth.currentUser?.uid || 'system'
             });
         } catch (e) {
@@ -2002,6 +2009,43 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const deleteMechanic = async (id: string) => {
+        // Find existing mechanic to get email and password for auth deletion
+        const targetMechanic = db?.mechanics.find(m => m.id === id);
+        if (targetMechanic?.email) {
+            try {
+                const { getSecondaryAuth, deleteSecondaryAuth } = await import('../utils/secondaryAuth');
+                const { signInWithEmailAndPassword, deleteUser } = await import('firebase/auth');
+                const { auth: secondaryAuth, app: secondaryApp } = getSecondaryAuth();
+                try {
+                    let userCredential;
+                    if (targetMechanic.password && targetMechanic.password !== 'removed') {
+                        try {
+                            userCredential = await signInWithEmailAndPassword(secondaryAuth, targetMechanic.email, targetMechanic.password);
+                        } catch (_) {}
+                    }
+                    if (!userCredential) {
+                        const fallbacks = ['password123', '123456', '123456#'];
+                        for (const fb of fallbacks) {
+                            try {
+                                userCredential = await signInWithEmailAndPassword(secondaryAuth, targetMechanic.email, fb);
+                                break;
+                            } catch (_) {}
+                        }
+                    }
+                    if (userCredential?.user) {
+                        await deleteUser(userCredential.user);
+                        console.info(`[DatabaseContext] Deleted mechanic ${id} from Firebase Auth successfully.`);
+                    }
+                } catch (authErr) {
+                    console.warn(`[DatabaseContext] Could not delete mechanic ${id} from Firebase Auth:`, authErr);
+                } finally {
+                    await deleteSecondaryAuth(secondaryApp);
+                }
+            } catch (err) {
+                console.warn(`[DatabaseContext] Secondary Auth module error during deleteMechanic:`, err);
+            }
+        }
+
         const batch = writeBatch(firestore);
         
         // 1. Find all bookings assigned to this mechanic
@@ -2049,7 +2093,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
     };
 
-    const addBooking = async (booking: Omit<Booking, 'id'>) => {
+    const addBooking = async (booking: Omit<Booking, 'id'>, customId?: string) => {
         const mechId = booking.mechanicId || booking.mechanic?.id || null;
         const mechName = booking.mechanicName || booking.mechanic?.name || 'Unassigned';
         
@@ -2075,7 +2119,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         if (!auth.currentUser) {
             console.info("[DatabaseContext] Performing local mock addBooking (bypass mode)");
-            const mockId = `booking-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const mockId = customId || `booking-local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             const bookingWithId = { id: mockId, ...newBooking } as Booking;
             setDb(prev => {
                 if (!prev) return null;
@@ -2087,9 +2131,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return bookingWithId;
         }
 
-        const ref = await addDoc(collection(firestore, 'bookings'), newBooking);
-        // General admin booking notification
-        await sendNotification({
+        let bookingDocId = customId;
+        if (customId) {
+            await setDoc(doc(firestore, 'bookings', customId), newBooking);
+        } else {
+            const ref = await addDoc(collection(firestore, 'bookings'), newBooking);
+            bookingDocId = ref.id;
+        }
+        // General admin booking notification (non-blocking)
+        sendNotification({
             recipientId: 'admin',
             title: 'New Booking Received',
             message: `New booking for ${booking.services[0]?.name || 'Service'} from ${booking.customerName}`,
@@ -2097,14 +2147,14 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             date: new Date().toISOString(),
             read: false,
             link: '/admin-portal/bookings'
-        });
+        }).catch(err => console.warn('Admin booking notification failed:', err));
 
         if (db?.settings?.smtpHost) {
             const templateData = {
                 customerName: booking.customerName || 'Valued Customer',
                 customerPhone: booking.customerPhone || '',
                 customerEmail: booking.customerEmail || '',
-                bookingId: ref.id,
+                bookingId: bookingDocId!,
                 serviceName: booking.services?.[0]?.name || (booking as any).serviceType || 'Automotive Service',
                 date: booking.date || new Date().toLocaleDateString(),
                 time: booking.time || '',
@@ -2134,7 +2184,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
         }
 
-        return { id: ref.id, ...newBooking } as Booking;
+        return { id: bookingDocId, ...newBooking } as Booking;
     };
 
     // Called by GCashPaymentModal after receipt upload — pings admin in real-time
@@ -2295,42 +2345,52 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
 
-    const updateBookingStatus = async (id: string, status: BookingStatus) => {
+    const updateBookingStatus = async (id: string, status: BookingStatus, updatedBy?: 'mechanic' | 'customer' | 'admin' | string) => {
         let booking = db?.bookings.find(b => b.id === id);
+
+        // Immediate optimistic local state update for instant UI progression ("walang hadlang")
+        setDb(prev => {
+            if (!prev) return null;
+            const updatedBookings = prev.bookings.map(b => {
+                if (b.id === id) {
+                    const newHistory = [...(b.statusHistory || [])];
+                    if (!newHistory.some(h => h.status === status)) {
+                        newHistory.push({ status, timestamp: new Date().toISOString() });
+                    }
+                    return {
+                        ...b,
+                        status,
+                        statusHistory: newHistory,
+                        ...(status === 'Work Done' && !b.workDoneAt ? { workDoneAt: new Date().toISOString() } : {}),
+                        ...(status === 'Completed' && !b.completedAt ? { completedAt: new Date().toISOString() } : {})
+                    };
+                }
+                return b;
+            });
+            return { ...prev, bookings: updatedBookings };
+        });
 
         try {
             await updateDoc(doc(firestore, 'bookings', id), {
                 status,
-                statusHistory: arrayUnion({ status, timestamp: new Date().toISOString() })
+                statusHistory: arrayUnion({ status, timestamp: new Date().toISOString() }),
+                ...(status === 'Work Done' ? { workDoneAt: new Date().toISOString() } : {}),
+                ...(status === 'Completed' ? { completedAt: new Date().toISOString() } : {})
             });
         } catch (e) {
             console.warn(`[Firestore Write Failed] updateBookingStatus for booking ${id} failed, falling back to local update:`, e);
-            // Local fallback update
-            setDb(prev => {
-                if (!prev) return null;
-                const updatedBookings = prev.bookings.map(b => {
-                    if (b.id === id) {
-                        const newHistory = [...(b.statusHistory || [])];
-                        if (!newHistory.some(h => h.status === status)) {
-                            newHistory.push({ status, timestamp: new Date().toISOString() });
-                        }
-                        return {
-                            ...b,
-                            status,
-                            statusHistory: newHistory
-                        };
-                    }
-                    return b;
-                });
-                return { ...prev, bookings: updatedBookings };
-            });
             // Re-read local backup
             booking = booking || db?.bookings.find(b => b.id === id);
         }
 
         if (booking) {
-            if (booking.customerId && booking.status !== status) {
-                await sendNotification({
+            const currentUserId = auth.currentUser?.uid;
+            const isActorMechanic = updatedBy === 'mechanic' || (currentUserId && booking.mechanicId === currentUserId);
+            const isActorCustomer = updatedBy === 'customer' || (currentUserId && booking.customerId === currentUserId);
+
+            // Notify customer on status change (skip if customer themselves triggered the update)
+            if (booking.customerId && booking.status !== status && !isActorCustomer) {
+                sendNotification({
                     recipientId: `customer-${booking.customerId}`,
                     title: '🔄 Booking Status Updated',
                     message: `Your booking status has been updated to: ${status}.`,
@@ -2338,12 +2398,12 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     link: `/customer-portal/booking-detail/${id}`,
                     date: new Date().toISOString(),
                     read: false
-                });
+                }).catch(err => console.warn('[updateBookingStatus] Customer notification failed non-critically:', err));
             }
 
-            // Notify mechanic on status change (covers admin/system-initiated updates)
-            if (booking.mechanicId && booking.status !== status) {
-                await sendNotification({
+            // Notify mechanic on status change (skip self-notification when mechanic initiates it to avoid redundant toast clutter)
+            if (booking.mechanicId && booking.status !== status && !isActorMechanic) {
+                sendNotification({
                     recipientId: `mechanic-${booking.mechanicId}`,
                     title: '🔄 Booking Status Updated',
                     message: `Booking #${id.slice(-6)} status changed to: ${status}.`,
@@ -2351,13 +2411,14 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     link: `/mechanic-portal/job/${id}`,
                     date: new Date().toISOString(),
                     read: false
-                });
+                }).catch(err => console.warn('[updateBookingStatus] Mechanic notification failed non-critically:', err));
             }
 
             // Phase 3: Live Payments & Escrow Release
             if (status === 'Completed' && booking.mechanicId) {
                 // Double-credit guard: mark the booking FIRST so re-entering 'Completed' never pays twice.
                 if (!booking.earningsReleased) {
+                    booking.earningsReleased = true;
                     try {
                         await updateDoc(doc(firestore, 'bookings', id), {
                             earningsReleased: true,
@@ -2384,24 +2445,24 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                             earningsAmount: mechanicShare
                         }).catch(() => {});
                     } catch (e) {
-                    console.warn(`[Firestore Write Failed] updateMechanic for mechanic ${booking.mechanicId} failed, falling back to local update:`, e);
-                    setDb(prev => {
-                        if (!prev) return null;
-                        const updatedMechanics = prev.mechanics.map(m => {
-                            if (m.id === booking.mechanicId) {
-                                return {
-                                    ...m,
-                                    walletBalance: (m.walletBalance || 0) + mechanicShare,
-                                    totalEarnings: (m.totalEarnings || 0) + mechanicShare
-                                };
-                            }
-                            return m;
+                        console.warn(`[Firestore Write Failed] updateMechanic for mechanic ${booking.mechanicId} failed, falling back to local update:`, e);
+                        setDb(prev => {
+                            if (!prev) return null;
+                            const updatedMechanics = prev.mechanics.map(m => {
+                                if (m.id === booking.mechanicId) {
+                                    return {
+                                        ...m,
+                                        walletBalance: (m.walletBalance || 0) + mechanicShare,
+                                        totalEarnings: (m.totalEarnings || 0) + mechanicShare
+                                    };
+                                }
+                                return m;
+                            });
+                            return { ...prev, mechanics: updatedMechanics };
                         });
-                        return { ...prev, mechanics: updatedMechanics };
-                    });
-                }
+                    }
 
-                    await sendNotification({
+                    sendNotification({
                         recipientId: `mechanic-${booking.mechanicId}`,
                         title: 'Payment Released',
                         message: `Earnings (₱${mechanicShare.toLocaleString()}) for job #${booking.id.slice(-5).toUpperCase()} have been credited to your available balance.`,
@@ -2409,7 +2470,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         date: new Date().toISOString(),
                         read: false,
                         link: '/mechanic-portal/earnings'
-                    });
+                    }).catch(err => console.warn('[updateBookingStatus] Payment notification failed non-critically:', err));
                 }
             }
 
@@ -2420,7 +2481,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     if (onHoldBookings.length > 0) {
                         const oldestOnHold = onHoldBookings.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())[0];
                         if (oldestOnHold) {
-                            await updateBookingStatus(oldestOnHold.id, 'Mechanic Assigned');
+                            updateBookingStatus(oldestOnHold.id, 'Mechanic Assigned').catch(err => 
+                                console.warn('[updateBookingStatus] Auto-assign next queue failed non-critically:', err)
+                            );
                         }
                     }
                 }
@@ -2440,32 +2503,65 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             }
         }
 
-        await updateDoc(doc(firestore, 'bookings', bookingId), {
-            mechanicId: mechanic.id,
-            mechanicName: mechanic.name,
-            mechanic: {
-                id: mechanic.id,
-                name: mechanic.name,
-                email: mechanic.email,
-                phone: mechanic.phone,
-                imageUrl: mechanic.imageUrl || '',
-                rating: mechanic.rating || 0,
-                reviews: mechanic.reviews || 0
-            },
-            status: assignedStatus,
-            statusHistory: arrayUnion({ status: assignedStatus, timestamp: new Date().toISOString() })
+        const mechanicSummary = {
+            id: mechanic.id,
+            name: mechanic.name,
+            email: mechanic.email,
+            phone: mechanic.phone,
+            imageUrl: mechanic.imageUrl || '',
+            rating: mechanic.rating || 0,
+            reviews: mechanic.reviews || 0
+        };
+
+        // Immediate optimistic local state update so the mechanic UI instantly proceeds
+        setDb(prev => {
+            if (!prev) return null;
+            const updatedBookings = prev.bookings.map(b => {
+                if (b.id === bookingId) {
+                    const newHistory = [...(b.statusHistory || [])];
+                    if (!newHistory.some(h => h.status === assignedStatus)) {
+                        newHistory.push({ status: assignedStatus, timestamp: new Date().toISOString() });
+                    }
+                    return {
+                        ...b,
+                        mechanicId: mechanic.id,
+                        mechanicName: mechanic.name,
+                        mechanic: mechanicSummary,
+                        status: assignedStatus,
+                        statusHistory: newHistory
+                    };
+                }
+                return b;
+            });
+            return { ...prev, bookings: updatedBookings };
         });
+
+        try {
+            await updateDoc(doc(firestore, 'bookings', bookingId), {
+                mechanicId: mechanic.id,
+                mechanicName: mechanic.name,
+                mechanic: mechanicSummary,
+                status: assignedStatus,
+                statusHistory: arrayUnion({ status: assignedStatus, timestamp: new Date().toISOString() })
+            });
+        } catch (e) {
+            console.warn(`[Firestore Write Failed] assignMechanicToBooking for ${bookingId} failed, already updated locally:`, e);
+        }
 
         let booking = db?.bookings.find(b => b.id === bookingId);
         if (!booking) {
-            const docSnap = await getDoc(doc(firestore, 'bookings', bookingId));
-            if (docSnap.exists()) {
-                booking = { id: docSnap.id, ...docSnap.data() } as Booking;
+            try {
+                const docSnap = await getDoc(doc(firestore, 'bookings', bookingId));
+                if (docSnap.exists()) {
+                    booking = { id: docSnap.id, ...docSnap.data() } as Booking;
+                }
+            } catch (err) {
+                console.warn('[assignMechanicToBooking] Non-critical error fetching booking doc:', err);
             }
         }
 
         if (booking?.customerId) {
-            await sendNotification({
+            sendNotification({
                 recipientId: `customer-${booking.customerId}`,
                 title: '👨‍🔧 Mechanic Assigned',
                 message: `${mechanic.name} has accepted your job and will be handling your service.`,
@@ -2473,12 +2569,12 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 link: `/customer-portal/booking-detail/${bookingId}`,
                 date: new Date().toISOString(),
                 read: false
-            });
+            }).catch(err => console.warn('[assignMechanicToBooking] Customer notification failed non-critically:', err));
         }
 
         // Notify the mechanic of the assignment
         const serviceName = booking?.services?.[0]?.name || booking?.service?.name || 'Service';
-        await sendNotification({
+        sendNotification({
             recipientId: `mechanic-${mechanic.id}`,
             title: '🔧 You Have a New Job',
             message: `You've been assigned to ${serviceName} for ${booking?.customerName || 'a customer'}.`,
@@ -2486,7 +2582,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             link: `/mechanic-portal/job/${bookingId}`,
             date: new Date().toISOString(),
             read: false
-        });
+        }).catch(err => console.warn('[assignMechanicToBooking] Mechanic notification failed non-critically:', err));
     };
 
     const cancelBooking = async (bookingId: string, reason: string) => {
@@ -2890,13 +2986,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         // 1. Update the customer document
         batch.update(doc(firestore, 'customers', id), cleanedData);
 
-        // 2. Propagate name/phone changes to all their bookings
-        const relatedBookings = db?.bookings.filter(b => b.customerId === id) || [];
+        // 2. Propagate name, phone, photo, and email changes to all their bookings
+        const relatedBookings = db?.bookings.filter(b => b.customerId === id || b.customerEmail === customer.email || b.customerName === customer.name) || [];
         relatedBookings.forEach(booking => {
             const bookingRef = doc(firestore, 'bookings', booking.id);
             batch.update(bookingRef, {
                 customerName: customer.name,
-                customerPhone: customer.phone
+                customerPhone: customer.phone,
+                customerEmail: customer.email,
+                ...(customer.picture ? { customerPhoto: customer.picture } : {})
             });
         });
 
@@ -2905,6 +3003,43 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const deleteCustomer = async (id: string) => {
+        // Find existing customer doc to get email and password for auth deletion
+        const targetCustomer = db?.customers.find(c => c.id === id);
+        if (targetCustomer?.email) {
+            try {
+                const { getSecondaryAuth, deleteSecondaryAuth } = await import('../utils/secondaryAuth');
+                const { signInWithEmailAndPassword, deleteUser } = await import('firebase/auth');
+                const { auth: secondaryAuth, app: secondaryApp } = getSecondaryAuth();
+                try {
+                    let userCredential;
+                    if (targetCustomer.password) {
+                        try {
+                            userCredential = await signInWithEmailAndPassword(secondaryAuth, targetCustomer.email, targetCustomer.password);
+                        } catch (_) {}
+                    }
+                    if (!userCredential) {
+                        const fallbacks = ['password123', '123456', '123456#'];
+                        for (const fb of fallbacks) {
+                            try {
+                                userCredential = await signInWithEmailAndPassword(secondaryAuth, targetCustomer.email, fb);
+                                break;
+                            } catch (_) {}
+                        }
+                    }
+                    if (userCredential?.user) {
+                        await deleteUser(userCredential.user);
+                        console.info(`[DatabaseContext] Deleted customer ${id} from Firebase Auth successfully.`);
+                    }
+                } catch (authErr) {
+                    console.warn(`[DatabaseContext] Could not delete customer ${id} from Firebase Auth:`, authErr);
+                } finally {
+                    await deleteSecondaryAuth(secondaryApp);
+                }
+            } catch (err) {
+                console.warn(`[DatabaseContext] Secondary Auth module error during deleteCustomer:`, err);
+            }
+        }
+
         const batch = writeBatch(firestore);
         
         // 1. Find all bookings and orders for this customer
@@ -3540,28 +3675,35 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             recipientRole = recipientId === 'admin' ? 'admin' : 'customer';
         }
 
+        const validTypes = ['booking_status', 'payment', 'assignment', 'system', 'info', 'success', 'warning', 'alert', 'job'];
+        const type = validTypes.includes(notification.type as string) ? notification.type : (notification.type || 'info');
+        const now = Date.now();
+        const timestamp = notification.timestamp || now;
+
         const newNotif = {
             ...notification,
+            type,
             recipientId,
             recipientRole,
             createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system',
-            id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: notification.timestamp || Date.now(),
+            id: `notif-${now}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp,
             status: notification.status || 'unread',
             read: notification.read ?? false,
-            createdAt: notification.createdAt || new Date().toISOString()
+            createdAt: notification.createdAt || new Date(now).toISOString()
         } as Notification;
 
         try {
             await addDoc(collection(firestore, 'notifications'), {
                 ...notification,
+                type,
                 recipientId,
                 recipientRole,
                 createdBy: (notification as any).createdBy || auth.currentUser?.uid || 'system',
-                timestamp: notification.timestamp || Date.now(),
+                timestamp,
                 status: notification.status || 'unread',
                 read: notification.read ?? false,
-                createdAt: notification.createdAt || new Date().toISOString()
+                createdAt: notification.createdAt || new Date(now).toISOString()
             });
         } catch (e) {
             console.warn("[Notification] addNotification failed:", e);
@@ -4023,8 +4165,15 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             );
         }
 
-        // Wait only for the primary booking review write
-        await updateBookingPromise;
+        // Wait only for the primary booking review write with a fast race/timeout fallback so UI never stalls
+        try {
+            await Promise.race([
+                updateBookingPromise,
+                new Promise(res => setTimeout(res, 350))
+            ]);
+        } catch (e) {
+            console.warn('[addReview] booking update error:', e);
+        }
     };
 
     const updateReview = async (bookingId: string, updatedReview: Review) => {

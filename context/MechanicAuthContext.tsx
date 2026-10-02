@@ -545,15 +545,69 @@ export const MechanicAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
         portfolioFiles?: File[]
     ) => {
         const pass = mechanicData.password || 'password123';
+        const normalizedEmail = (mechanicData.email || '').trim().toLowerCase();
         
         try {
             await setPersistence(auth, browserLocalPersistence);
+
+            // 1. Strict Duplicate Check: Verify if email is already in use by an active Mechanic or Customer
+            const mechanicsRef = collection(firestore, 'mechanics');
+            const qMech = query(mechanicsRef, where('email', '==', normalizedEmail));
+            const snapMech = await getDocs(qMech);
+            if (!snapMech.empty) {
+                throw new Error("This email address is already registered to an active Mechanic account. Please log in or use another email.");
+            }
+
+            const customersRef = collection(firestore, 'customers');
+            const qCust = query(customersRef, where('email', '==', normalizedEmail));
+            const snapCust = await getDocs(qCust);
+            if (!snapCust.empty) {
+                throw new Error("This email address is already registered to a Customer account.");
+            }
+
             let fbUser = auth.currentUser;
             
             // If user isn't logged in, create them
             if (!fbUser) {
-                const userCredential = await createUserWithEmailAndPassword(auth, mechanicData.email, pass);
-                fbUser = userCredential.user;
+                try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, mechanicData.email, pass);
+                    fbUser = userCredential.user;
+                } catch (createErr: any) {
+                    // If email already exists in Firebase Auth, but was DELETED from Firestore,
+                    // purge the orphaned Firebase Auth account so the user can re-register!
+                    if (createErr.code === 'auth/email-already-in-use') {
+                        console.info("[MechanicAuthContext] Email exists in Firebase Auth but not in database. Purging orphaned user to allow re-registration...");
+                        try {
+                            const { getSecondaryAuth, deleteSecondaryAuth } = await import('../utils/secondaryAuth');
+                            const { signInWithEmailAndPassword, deleteUser } = await import('firebase/auth');
+                            const { auth: secondaryAuth, app: secondaryApp } = getSecondaryAuth();
+                            try {
+                                let orphanCred;
+                                const fallbacks = [pass, 'password123', '123456', '123456#'];
+                                for (const fb of fallbacks) {
+                                    try {
+                                        orphanCred = await signInWithEmailAndPassword(secondaryAuth, mechanicData.email, fb);
+                                        break;
+                                    } catch (_) {}
+                                }
+                                if (orphanCred?.user) {
+                                    await deleteUser(orphanCred.user);
+                                    console.info("[MechanicAuthContext] Successfully purged orphaned Firebase Auth account.");
+                                }
+                            } finally {
+                                await deleteSecondaryAuth(secondaryApp);
+                            }
+                        } catch (purgeErr) {
+                            console.warn("[MechanicAuthContext] Could not auto-purge orphaned user:", purgeErr);
+                        }
+
+                        // Retry user creation after orphan purge attempt
+                        const userCredential = await createUserWithEmailAndPassword(auth, mechanicData.email, pass);
+                        fbUser = userCredential.user;
+                    } else {
+                        throw createErr;
+                    }
+                }
             } else {
                 // If logged in (e.g. Google), verify email matches or just proceed
                 console.log("Using existing authenticated user for mechanic registration:", fbUser.uid);

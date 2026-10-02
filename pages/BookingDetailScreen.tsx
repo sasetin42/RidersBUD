@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useDatabase } from '../context/DatabaseContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,7 +19,7 @@ import {
     ArrowRight, Map as MapIcon, Mail, Hash, Palette, Gauge,
     FileText, Wrench, DollarSign, Timer, Upload, X, Image as ImageIcon, Bell,
     CreditCard, Eye, ClipboardList, Star, Copy, ExternalLink, Check, Wallet,
-    Navigation2, Building2
+    Navigation2, Building2, Lock, Loader2
 } from 'lucide-react';
 
 import { ref, onValue, set, get } from 'firebase/database';
@@ -551,7 +551,10 @@ const BookingDetailScreen: React.FC = () => {
     const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
     const [activeModalTab, setActiveModalTab] = useState<'info' | 'reviews'>('info');
     const [isInitiatingHitPay, setIsInitiatingHitPay] = useState(false);
+    const [hitPayLoadingStage, setHitPayLoadingStage] = useState<string>('Preparing Balance Settlement...');
+    const [isVerifyingFinalPayment, setIsVerifyingFinalPayment] = useState(false);
     const [showVehicleDetails, setShowVehicleDetails] = useState(false);
+    const [selectedProgressPhoto, setSelectedProgressPhoto] = useState<string | null>(null);
     
     // Live Location & ETA Tracking States
     const [mechanicLiveLocation, setMechanicLiveLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -652,6 +655,7 @@ const BookingDetailScreen: React.FC = () => {
 
             if (targetBookingId && activeBooking && !activeBooking.isPaid) {
                 finalizeRun.current = true;
+                setIsVerifyingFinalPayment(true);
                 const totalAmt = activeBooking.totalAmount || activeBooking.service?.price || sessionBookingData?.totalAmount || 0;
                 const addCosts = (activeBooking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
                 const initialDp = activeBooking.downpaymentAmount 
@@ -696,6 +700,7 @@ const BookingDetailScreen: React.FC = () => {
                 const completeFinalization = () => {
                     sessionStorage.removeItem('pendingHitPayServiceTx');
                     window.history.replaceState({}, document.title, window.location.pathname);
+                    setIsVerifyingFinalPayment(false);
                     setShowCompleteTransactionModal(true);
                     setFetchedBooking(prev => prev ? ({ ...prev, ...finalPayload } as Booking) : ({ ...activeBooking, ...finalPayload } as Booking));
                 };
@@ -766,9 +771,111 @@ const BookingDetailScreen: React.FC = () => {
                             .catch(completeFinalization);
                     }
                 }
+            } else if (activeBooking && (activeBooking.isPaid || activeBooking.paymentStatus === 'paid')) {
+                // If activeBooking was already marked as paid (e.g. from realtime Firestore), clean up immediately
+                finalizeRun.current = true;
+                sessionStorage.removeItem('pendingHitPayServiceTx');
+                window.history.replaceState({}, document.title, window.location.pathname);
+                setIsVerifyingFinalPayment(false);
             }
         }
     }, [bookingId, fetchedBooking, initialBookingSeed, navPassedBooking, updateBookingPayment, updateServiceRequest, updateRentalBooking, updateLiaisonBooking]);
+
+    // Safety watchdog: ensure verification loader is NEVER stuck on screen
+    useEffect(() => {
+        if (!isVerifyingFinalPayment) return;
+        const safetyTimer = setTimeout(() => {
+            console.log('[BookingDetailScreen] Safety auto-dismissing payment verification loader');
+            setIsVerifyingFinalPayment(false);
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }, 4000);
+        return () => clearTimeout(safetyTimer);
+    }, [isVerifyingFinalPayment]);
+
+    // Pre-warming ref for instant final balance payment checkout
+    const prewarmedBalanceHitPayRef = useRef<{
+        bookingId: string;
+        amount: number;
+        promise: Promise<{ url: string; reference_number: string }>;
+        readyResult?: { url: string; reference_number: string };
+    } | null>(null);
+
+    // Pre-warm HitPay balance payment as soon as work is done and balance is unpaid
+    useEffect(() => {
+        const activeB = fetchedBooking || initialBookingSeed || navPassedBooking;
+        if (!activeB || !user || !db?.settings) return;
+
+        const isFinished = activeB.status === 'Work Done' || 
+            activeB.status === 'Completed' ||
+            (activeB as any).workStatus === 'completed' ||
+            (activeB as any).status === 'Ready for Release';
+        const isPaid = activeB.isPaid || activeB.paymentStatus === 'paid' || (activeB as any).balancePaid === true;
+
+        if (!isFinished || isPaid) return;
+
+        const originalServicesFee = activeB.services && activeB.services.length > 0
+            ? activeB.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+            : (Number(activeB.service?.price) || Number(activeB.totalAmount) || 0);
+        const paidDownpayment = Number(activeB.paidAmount) || (originalServicesFee * 0.5);
+        const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+        const additionalCostsTotal = ((activeB as any).additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+        const finalBalanceAmount = Math.max(0, serviceBalance + additionalCostsTotal);
+
+        if (finalBalanceAmount <= 0) return;
+
+        // If already pre-warmed for this exact booking & amount, avoid duplicates
+        if (
+            prewarmedBalanceHitPayRef.current &&
+            prewarmedBalanceHitPayRef.current.bookingId === activeB.id &&
+            prewarmedBalanceHitPayRef.current.amount === finalBalanceAmount
+        ) {
+            return;
+        }
+
+        const isRentalTarget = (activeB as any).isRental === true || 
+            (activeB as any).serviceName?.toLowerCase().includes('rental') ||
+            activeB.id.startsWith('RNT-') || 
+            activeB.id.startsWith('RN-');
+        const isDriverTarget = (activeB as any).isDriverHire || (activeB as any).serviceName === 'Driver for Hire';
+        const isLiaisonTarget = (activeB as any).isLiaison || (activeB as any).serviceName?.toLowerCase().includes('liaison') || activeB.id.startsWith('LIA-');
+
+        const hitPay = HitPayService.fromSettings(db?.settings);
+        const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${activeB.id}${isRentalTarget ? '&isRental=true' : ''}${isDriverTarget ? '&isDriver=true' : ''}${isLiaisonTarget ? '&isLiaison=true' : ''}`;
+        const appTitle = db?.settings?.appName || 'RidersBUD';
+        const purposePrefix = isRentalTarget 
+            ? 'Car Rental Balance Settlement' 
+            : isDriverTarget 
+            ? 'Driver for Hire Balance Settlement' 
+            : isLiaisonTarget
+            ? 'LTO Liaison Balance Settlement'
+            : 'Final Balance Settlement';
+
+        const paymentPromise = hitPay.createPaymentRequest({
+            amount: finalBalanceAmount,
+            currency: db?.settings?.currency || 'PHP',
+            reference_number: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${activeB.id}-BAL-${Date.now()}`,
+            webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+            redirect_url: returnUrl,
+            email: user.email || 'customer@example.com',
+            name: user.name || 'Customer',
+            purpose: `${appTitle} — ${purposePrefix} (#${activeB.id.slice(-6).toUpperCase()})`
+        }).then(res => {
+            if (prewarmedBalanceHitPayRef.current?.bookingId === activeB.id) {
+                prewarmedBalanceHitPayRef.current.readyResult = res;
+            }
+            return res;
+        }).catch(err => {
+            console.warn('[Prewarm] HitPay balance pre-warm notice:', err?.message || err);
+            throw err;
+        });
+
+        prewarmedBalanceHitPayRef.current = {
+            bookingId: activeB.id,
+            amount: finalBalanceAmount,
+            promise: paymentPromise
+        };
+    }, [fetchedBooking?.status, fetchedBooking?.paidAmount, (fetchedBooking as any)?.additionalCosts, initialBookingSeed?.status, user?.email, db?.settings]);
 
     const handleInitiateHitPayBalance = async (targetBooking: Booking) => {
         if (!targetBooking || !user) return;
@@ -813,16 +920,38 @@ const BookingDetailScreen: React.FC = () => {
                 ? 'LTO Liaison Balance Settlement'
                 : 'Final Balance Settlement';
 
-            const { url } = await hitPay.createPaymentRequest({
-                amount: finalBalanceAmount,
-                currency: db?.settings?.currency || 'PHP',
-                reference_number: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${targetBooking.id}-BAL-${Date.now()}`,
-                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                redirect_url: returnUrl,
-                email: user.email || 'customer@example.com',
-                name: user.name || 'Customer',
-                purpose: `${appTitle} — ${purposePrefix} (#${targetBooking.id.slice(-6).toUpperCase()})`
-            });
+            setHitPayLoadingStage('Connecting to HitPay Gateway...');
+
+            // Check if we have an active pre-warmed payment session for instant launch
+            let paymentRes: { url: string; reference_number?: string } | null = null;
+            const prewarmed = prewarmedBalanceHitPayRef.current;
+            if (prewarmed && prewarmed.bookingId === targetBooking.id && prewarmed.amount === finalBalanceAmount) {
+                if (prewarmed.readyResult?.url) {
+                    paymentRes = prewarmed.readyResult;
+                } else {
+                    try {
+                        paymentRes = await prewarmed.promise;
+                    } catch (_) {
+                        paymentRes = null;
+                    }
+                }
+            }
+
+            if (!paymentRes) {
+                paymentRes = await hitPay.createPaymentRequest({
+                    amount: finalBalanceAmount,
+                    currency: db?.settings?.currency || 'PHP',
+                    reference_number: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${targetBooking.id}-BAL-${Date.now()}`,
+                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    redirect_url: returnUrl,
+                    email: user.email || 'customer@example.com',
+                    name: user.name || 'Customer',
+                    purpose: `${appTitle} — ${purposePrefix} (#${targetBooking.id.slice(-6).toUpperCase()})`
+                });
+            }
+
+            const { url } = paymentRes;
+            setHitPayLoadingStage('Opening Checkout...');
 
             if (url.startsWith('/')) {
                 navigate(url);
@@ -836,7 +965,7 @@ const BookingDetailScreen: React.FC = () => {
                     purpose: 'balance-settlement'
                 });
                 startPaymentWatcher(entityKind, targetBooking.id, `/customer-portal/booking-detail/${targetBooking.id}`);
-                openPaymentUrl(url);
+                await openPaymentUrl(url);
             }
         } catch (err: any) {
             console.info("ℹ️ Online gateway requires manual/service payment verification. Redirecting to payment screen.");
@@ -845,6 +974,7 @@ const BookingDetailScreen: React.FC = () => {
             navigate(`/customer-portal/service-payment/${targetBooking.id}${isRentalTarget ? '?isRental=true' : isLiaisonTarget ? '?isLiaison=true' : ''}`);
         } finally {
             setIsInitiatingHitPay(false);
+            setHitPayLoadingStage('Preparing Balance Settlement...');
         }
     };
 
@@ -1703,12 +1833,8 @@ const BookingDetailScreen: React.FC = () => {
                 mechanicName: targetProviderName,
             };
 
-            await addReview(booking.id, reviewPayload);
-            console.log('Review submitted successfully');
+            // Optimistically update current screen booking state instantly
             setReviewSubmitted(true);
-            setShowReviewModal(false);
-
-            // Optimistically update current screen booking state
             setFetchedBooking(prev => prev ? ({
                 ...prev,
                 isReviewed: true,
@@ -1718,8 +1844,18 @@ const BookingDetailScreen: React.FC = () => {
                     date: new Date().toISOString()
                 }
             } as Booking) : null);
+
+            setShowReviewModal(false);
+            setShowCompleteTransactionModal(false);
+            setIsVerifyingFinalPayment(false);
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            // Execute addReview asynchronously
+            await addReview(booking.id, reviewPayload);
+            console.log('Review submitted successfully');
             
-            // Redirect based on remaining unreviewed bookings
+            // Redirect smoothly
             navigate(getRedirectRoute());
         } catch (error) {
             console.error('Error submitting review:', error);
@@ -1730,6 +1866,11 @@ const BookingDetailScreen: React.FC = () => {
     };
 
     const handleReviewClose = () => {
+        setIsVerifyingFinalPayment(false);
+        setShowCompleteTransactionModal(false);
+        sessionStorage.removeItem('pendingHitPayServiceTx');
+        window.history.replaceState({}, document.title, window.location.pathname);
+
         if (!reviewSubmitted) {
             setShowReviewModal(false);
             setShowDeclineModal(true);
@@ -1741,7 +1882,11 @@ const BookingDetailScreen: React.FC = () => {
 
     const handleDeclineSubmit = async (reason: string, details?: string) => {
         console.log('Review declined reason:', { reason, details });
+        setIsVerifyingFinalPayment(false);
+        setShowCompleteTransactionModal(false);
         setShowDeclineModal(false);
+        sessionStorage.removeItem('pendingHitPayServiceTx');
+        window.history.replaceState({}, document.title, window.location.pathname);
         navigate(getRedirectRoute());
     };
 
@@ -1878,7 +2023,7 @@ const BookingDetailScreen: React.FC = () => {
                                     className="flex-1 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-green-600/30 active:scale-95 transition-all cursor-pointer"
                                 >
                                     <CreditCard size={15} />
-                                    <span>{isInitiatingHitPay ? 'Redirecting...' : 'Pay Balance (HitPay)'}</span>
+                                    <span>{isInitiatingHitPay ? hitPayLoadingStage : 'Pay Balance (HitPay)'}</span>
                                 </button>
                                 {isManualGcashEnabled && (
                                     <button
@@ -2874,7 +3019,111 @@ const BookingDetailScreen: React.FC = () => {
                     </div>
                 )}
 
-                {/* Split Timeline and Controls Section */}
+                {/* Live Repair Progress & Diagnostic Report Card (Customer View) */}
+                {booking.progressHistory && booking.progressHistory.length > 0 && (
+                    <div className="bg-[#161618] rounded-2xl p-3.5 sm:p-4 border border-primary/20 relative overflow-hidden shadow-xl space-y-3 animate-fadeIn">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-center text-primary flex-shrink-0">
+                                    <FileText size={15} />
+                                </div>
+                                <div>
+                                    <h2 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5 leading-tight">
+                                        Repair Progress & Diagnostics
+                                        <span className="text-[9px] uppercase font-mono font-bold tracking-widest px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                            Live
+                                        </span>
+                                    </h2>
+                                    <p className="text-[10px] text-gray-400">Inspected & logged directly by your assigned mechanic</p>
+                                </div>
+                            </div>
+                            <span className="text-[10px] font-mono text-primary font-black bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                                {booking.progressHistory.length} Log{booking.progressHistory.length > 1 ? 's' : ''}
+                            </span>
+                        </div>
+
+                        {/* Reports List */}
+                        <div className="space-y-3">
+                            {booking.progressHistory.map((report: any, idx: number) => (
+                                <div key={idx} className="bg-black/40 rounded-xl p-3 border border-white/5 space-y-2.5">
+                                    <div className="flex items-center justify-between text-[10px] pb-2 border-b border-white/5">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                            <span className="font-bold text-white uppercase tracking-wider font-mono">Report #{idx + 1}</span>
+                                            {report.mechanicName && (
+                                                <span className="text-gray-400">by {report.mechanicName}</span>
+                                            )}
+                                        </div>
+                                        <span className="font-mono text-gray-500 text-[9px]">{new Date(report.timestamp).toLocaleDateString()} {new Date(report.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+
+                                    {/* Before / After Compare Grid */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                        {/* Before Condition */}
+                                        <div className="p-2.5 rounded-xl bg-red-500/5 border border-red-500/15">
+                                            <div className="flex items-center gap-1 text-[10px] font-black text-red-400 uppercase tracking-wider font-mono mb-1">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                                Initial Issue / Before
+                                            </div>
+                                            <p className="text-gray-300 text-[11px] leading-relaxed">
+                                                {report.before}
+                                            </p>
+                                            {report.beforeImages && report.beforeImages.length > 0 && (
+                                                <div className="grid grid-cols-3 gap-1.5 mt-2 pt-2 border-t border-red-500/10">
+                                                    {report.beforeImages.map((img: string, i: number) => (
+                                                        <div 
+                                                            key={i} 
+                                                            onClick={() => setSelectedProgressPhoto(img)}
+                                                            className="aspect-square rounded-lg overflow-hidden border border-red-500/20 cursor-pointer active:scale-95 transition-transform"
+                                                        >
+                                                            <img src={img} alt="Before" className="w-full h-full object-cover" />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* After Fix */}
+                                        <div className="p-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
+                                            <div className="flex items-center gap-1 text-[10px] font-black text-emerald-400 uppercase tracking-wider font-mono mb-1">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                Completed Fix / After
+                                            </div>
+                                            <p className="text-gray-300 text-[11px] leading-relaxed">
+                                                {report.after}
+                                            </p>
+                                            {report.afterImages && report.afterImages.length > 0 && (
+                                                <div className="grid grid-cols-3 gap-1.5 mt-2 pt-2 border-t border-emerald-500/10">
+                                                    {report.afterImages.map((img: string, i: number) => (
+                                                        <div 
+                                                            key={i} 
+                                                            onClick={() => setSelectedProgressPhoto(img)}
+                                                            className="aspect-square rounded-lg overflow-hidden border border-emerald-500/20 cursor-pointer active:scale-95 transition-transform"
+                                                        >
+                                                            <img src={img} alt="After" className="w-full h-full object-cover" />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Mechanic Notes */}
+                                    {report.notes && (
+                                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 text-[11px] text-gray-300 flex items-start gap-1.5">
+                                            <Wrench size={12} className="text-primary mt-0.5 flex-shrink-0" />
+                                            <div>
+                                                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block font-mono">Mechanic Recommendation:</span>
+                                                <span>{report.notes}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 <div className="bg-[#151515] rounded-[1.5rem] py-5 px-3.5 border border-white/5 flex flex-col min-h-[300px]">
                     <h2 className="text-[10px] font-bold tracking-widest text-gray-500 mb-4 flex items-center gap-2 px-1">
                         <Clock size={14} />
@@ -3704,7 +3953,7 @@ const BookingDetailScreen: React.FC = () => {
                                     {isInitiatingHitPay ? (
                                         <>
                                             <Spinner size="sm" color="text-white" />
-                                            <span>Redirecting to Payment Gateway...</span>
+                                            <span className="animate-pulse">{hitPayLoadingStage}</span>
                                         </>
                                     ) : (
                                         <>
@@ -3737,10 +3986,91 @@ const BookingDetailScreen: React.FC = () => {
                                     💡 <strong>Balance Settlement Required:</strong> Final release and receipt generation requires full settlement. You can also settle anytime from the booking screen.
                                 </p>
                             </div>
+
+                            {/* Simple Loading Sequence Overlay when connecting to payment gateway */}
+                            {isInitiatingHitPay && (
+                                <div className="absolute inset-0 bg-[#161618]/95 backdrop-blur-md rounded-3xl z-30 flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
+                                    <div className="relative mb-4">
+                                        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                            <CreditCard size={28} className="text-emerald-400 animate-pulse" />
+                                        </div>
+                                        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#161618] border border-emerald-500/40 flex items-center justify-center">
+                                            <Loader2 size={13} className="text-emerald-400 animate-spin" />
+                                        </div>
+                                    </div>
+                                    <h4 className="text-sm font-black text-white uppercase tracking-wider mb-1 animate-pulse">
+                                        {hitPayLoadingStage}
+                                    </h4>
+                                    <p className="text-xs text-gray-300 max-w-xs leading-relaxed mb-4">
+                                        Inihahanda ang inyong transaksyon. Huwag isara ang window na ito habang naglo-load ang HitPay checkout.
+                                    </p>
+                                    <div className="w-full max-w-xs bg-black/40 border border-white/5 rounded-xl p-3 text-left space-y-2">
+                                        <div className="flex items-center gap-2 text-[11px] text-emerald-400 font-semibold">
+                                            <CheckCircle size={13} className="text-emerald-400 flex-shrink-0" />
+                                            <span>Booking details & balance verified</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[11px] font-semibold">
+                                            {hitPayLoadingStage === 'Opening Checkout...' ? (
+                                                <>
+                                                    <CheckCircle size={13} className="text-emerald-400 flex-shrink-0" />
+                                                    <span className="text-emerald-400">Gateway connection confirmed</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Loader2 size={13} className="text-amber-400 animate-spin flex-shrink-0" />
+                                                    <span className="text-amber-400 animate-pulse">Securing HitPay payment channel...</span>
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[11px] font-semibold">
+                                            {hitPayLoadingStage === 'Opening Checkout...' ? (
+                                                <>
+                                                    <Loader2 size={13} className="text-emerald-400 animate-spin flex-shrink-0" />
+                                                    <span className="text-emerald-300 animate-pulse">Opening secure checkout window...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Clock size={13} className="text-gray-500 flex-shrink-0" />
+                                                    <span className="text-gray-500">Redirecting to checkout</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );
             })()}
+
+            {/* Verifying Settlement Return Loading Sequence */}
+            {isVerifyingFinalPayment && (
+                <div className="fixed inset-0 z-[9995] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fadeIn text-center">
+                    <div className="w-full max-w-sm bg-[#161618] border border-emerald-500/30 rounded-3xl p-6 shadow-2xl space-y-4">
+                        <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+                            <Loader2 size={32} className="text-emerald-400 animate-spin" />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-black text-white uppercase tracking-wider">
+                                Kinukumpirma ang Bayad...
+                            </h3>
+                            <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                                Verifying your final balance settlement and updating records. Sandali lamang po...
+                            </p>
+                        </div>
+                        <div className="p-3 bg-black/40 border border-white/5 rounded-xl text-left space-y-2 text-[11px]">
+                            <div className="flex items-center gap-2 text-emerald-400">
+                                <CheckCircle size={13} />
+                                <span>Payment gateway confirmed</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-amber-400 animate-pulse">
+                                <Loader2 size={13} className="animate-spin" />
+                                <span>Releasing completed booking status...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Complete Transaction Success Modal with Confetti Overlay */}
             {showCompleteTransactionModal && (
@@ -3840,7 +4170,12 @@ const BookingDetailScreen: React.FC = () => {
                                 {isRental ? "Review Car Rental" : isLiaison ? "Review Liaison Service" : isDriverHire ? "Review Driver Service" : "Review Service & Mechanic"}
                             </button>
                             <button
-                                onClick={() => setShowCompleteTransactionModal(false)}
+                                onClick={() => {
+                                    setShowCompleteTransactionModal(false);
+                                    setIsVerifyingFinalPayment(false);
+                                    sessionStorage.removeItem('pendingHitPayServiceTx');
+                                    window.history.replaceState({}, document.title, window.location.pathname);
+                                }}
                                 className="w-full bg-white/5 hover:bg-white/10 text-gray-300 font-black py-4 rounded-xl text-xs tracking-widest uppercase border border-white/5 transition-all active:scale-95"
                             >
                                 Got it, Close
@@ -4089,6 +4424,32 @@ const BookingDetailScreen: React.FC = () => {
                 }}
                 appLogoUrl={db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}
             />
+
+            {/* Progress Photo Zoom Modal */}
+            {selectedProgressPhoto && (
+                <div 
+                    onClick={() => setSelectedProgressPhoto(null)}
+                    className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fadeIn cursor-zoom-out"
+                >
+                    <div className="relative max-w-2xl w-full max-h-[90vh] flex flex-col items-center">
+                        <button
+                            onClick={() => setSelectedProgressPhoto(null)}
+                            className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                            title="Close Preview"
+                        >
+                            <X size={20} />
+                        </button>
+                        <img 
+                            src={selectedProgressPhoto} 
+                            alt="Progress Photo Inspection" 
+                            className="w-full h-auto max-h-[85vh] object-contain rounded-2xl border border-white/10 shadow-2xl"
+                        />
+                        <div className="mt-3 flex items-center gap-2">
+                            <span className="text-[11px] text-gray-400 font-mono">Tap anywhere to close preview</span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

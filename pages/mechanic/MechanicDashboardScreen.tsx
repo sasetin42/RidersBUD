@@ -6,7 +6,6 @@ import { useDatabase } from '../../context/DatabaseContext';
 import { Booking } from '../../types';
 import { useNavigate } from 'react-router-dom';
 import MechanicCalendar from '../../components/mechanic/MechanicCalendar';
-import AssignedJobNotificationModal from '../../components/mechanic/AssignedJobNotificationModal';
 import MechanicVerificationModal from '../../components/MechanicVerificationModal';
 import NotificationBell from '../../components/NotificationBell';
 import Header from '../../components/Header';
@@ -95,7 +94,6 @@ const MechanicDashboardScreen: React.FC = () => {
 
     const isOnline = mechanic?.isOnline ?? false;
     const [newJobRequest, setNewJobRequest] = useState<Booking | null>(null);
-    const [newAssignedJob, setNewAssignedJob] = useState<Booking | null>(null);
     const [customerProfile, setCustomerProfile] = useState<any>(null);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
@@ -309,37 +307,6 @@ const MechanicDashboardScreen: React.FC = () => {
 
     }, [db, isOnline, ongoingJob, mechanic, newJobRequest, isBookingApprovedForMechanicView]);
 
-    // Real-time check for new ASSIGNED job requests
-    useEffect(() => {
-        if (!mechanic || !db) return;
-
-        const sessionNotifiedKey = `notifiedBookings_${mechanic.id}`;
-        const notifiedBookingIds: Set<string> = new Set(
-            JSON.parse(sessionStorage.getItem(sessionNotifiedKey) || '[]')
-        );
-
-        const myUnseenBookings = db.bookings.filter(b =>
-            (b.mechanic?.id === mechanic.id || b.mechanicId === mechanic.id) &&
-            isBookingApprovedForMechanicView(b) &&
-            b.status !== 'Completed' &&
-            b.status !== 'Cancelled' &&
-            b.status !== 'Work Done' &&
-            !notifiedBookingIds.has(b.id)
-        );
-
-        if (myUnseenBookings.length > 0) {
-            // Show the newest unseen booking.
-            const newestUnseenBooking = myUnseenBookings.sort((a, b) => b.id.localeCompare(a.id))[0];
-            if (newestUnseenBooking.id !== newAssignedJob?.id) {
-                setNewAssignedJob(newestUnseenBooking);
-            }
-
-            // Update the session storage to mark all found unseen bookings as seen.
-            myUnseenBookings.forEach(b => notifiedBookingIds.add(b.id));
-            sessionStorage.setItem(sessionNotifiedKey, JSON.stringify(Array.from(notifiedBookingIds)));
-        }
-    }, [db, mechanic, newAssignedJob, isBookingApprovedForMechanicView]);
-
     const handleAcceptJob = useCallback(() => {
         if (newJobRequest && mechanic) {
             acceptJobRequest(newJobRequest.id, mechanic);
@@ -389,12 +356,6 @@ const MechanicDashboardScreen: React.FC = () => {
                     booking={newJobRequest}
                     onAccept={handleAcceptJob}
                     onDecline={handleDeclineJob}
-                />
-            )}
-            {newAssignedJob && (
-                <AssignedJobNotificationModal
-                    booking={newAssignedJob}
-                    onClose={() => setNewAssignedJob(null)}
                 />
             )}
 

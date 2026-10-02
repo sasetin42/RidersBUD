@@ -50,10 +50,20 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
         return savedDestinations.find(d => d.id === selectedDestId) || null;
     }, [selectedDestId, savedDestinations]);
 
+    const formatAmountWithCommas = (val: string): string => {
+        const clean = val.replace(/[^\d.]/g, '');
+        if (!clean) return '';
+        const parts = clean.split('.');
+        const integerPart = parts[0];
+        const decimalPart = parts.length > 1 ? `.${parts[1].slice(0, 2)}` : '';
+        const formattedInteger = integerPart ? parseInt(integerPart, 10).toLocaleString('en-US') : '0';
+        return `${formattedInteger}${decimalPart}`;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
-        const numAmount = parseFloat(amount);
+        const numAmount = parseFloat(String(amount || '0').replace(/,/g, ''));
         if (isNaN(numAmount) || numAmount < 100) {
             setError('Minimum withdrawal is ₱100.');
             return;
@@ -154,7 +164,7 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
                                     <label htmlFor="withdrawal-amount">Withdrawal Amount</label>
                                     <button 
                                         type="button" 
-                                        onClick={() => setAmount(availableBalance.toString())}
+                                        onClick={() => setAmount(availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
                                         className="text-primary hover:underline"
                                     >
                                         Withdraw Max
@@ -165,13 +175,16 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
                                     <input
                                         id="withdrawal-amount"
                                         name="withdrawal-amount"
-                                        type="number"
+                                        type="text"
+                                        inputMode="decimal"
                                         value={amount}
-                                        onChange={(e) => { setAmount(e.target.value); setError(''); }}
+                                        onChange={(e) => { 
+                                            const formatted = formatAmountWithCommas(e.target.value);
+                                            setAmount(formatted); 
+                                            setError(''); 
+                                        }}
                                         placeholder="0.00"
                                         className="w-full bg-[#1C1C1F] border border-white/10 rounded-2xl p-4 pl-10 text-xl font-black text-white focus:outline-none focus:border-primary/50 transition-all placeholder:text-gray-600"
-                                        min="100"
-                                        max={availableBalance}
                                         required
                                     />
                                 </div>
@@ -180,7 +193,7 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
                                         <button
                                             key={val}
                                             type="button"
-                                            onClick={() => { setAmount(val.toString()); setError(''); }}
+                                            onClick={() => { setAmount(val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setError(''); }}
                                             className="flex-1 py-1.5 rounded-xl bg-white/5 border border-white/5 text-[10px] font-bold text-gray-400 hover:border-primary/40 hover:text-primary transition-all"
                                         >
                                             ₱{val.toLocaleString()}

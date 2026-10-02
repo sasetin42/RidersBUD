@@ -159,9 +159,69 @@ const ServicePaymentScreen: React.FC = () => {
     const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '' });
     const [cardErrors, setCardErrors] = useState<{ [key: string]: string }>({});
     const [isProcessing, setIsProcessing] = useState(false);
+    const [processingStage, setProcessingStage] = useState('Connecting to HitPay...');
     const [error, setError] = useState('');
 
     const finalizeRun = React.useRef(false);
+    const prewarmedSessionRef = React.useRef<{
+        bookingId: string;
+        amount: number;
+        promise: Promise<{ url: string; id: string }>;
+        readyResult?: { url: string; id: string };
+    } | null>(null);
+
+    // Eagerly pre-warm HitPay payment session as soon as booking details load
+    useEffect(() => {
+        if (!booking || amountToPay <= 0 || !user || !db?.settings) return;
+        const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+        if (!isHitPayActive) return;
+
+        if (
+            prewarmedSessionRef.current &&
+            prewarmedSessionRef.current.bookingId === booking.id &&
+            prewarmedSessionRef.current.amount === amountToPay
+        ) {
+            return;
+        }
+
+        try {
+            const isSandbox = db?.settings?.hitpaySandboxMode === true;
+            const hitPay = HitPayService.fromSettings(db?.settings, isSandbox);
+            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${booking.id}`;
+            const purpose = isDeposit
+                ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
+                : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
+            const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`;
+
+            const paymentPromise = hitPay.createPaymentRequest({
+                amount: amountToPay,
+                currency: db?.settings?.currency || 'PHP',
+                reference_number: refNumber,
+                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                redirect_url: returnUrl,
+                email: user.email || 'customer@ridersbud.com',
+                name: user.name || 'Valued Customer',
+                phone: user.phone || '09171234567',
+                purpose: purpose
+            }).then(res => {
+                if (prewarmedSessionRef.current?.bookingId === booking.id) {
+                    prewarmedSessionRef.current.readyResult = res;
+                }
+                return res;
+            }).catch(err => {
+                console.warn('[ServicePaymentScreen] Pre-warm notice:', err?.message || err);
+                throw err;
+            });
+
+            prewarmedSessionRef.current = {
+                bookingId: booking.id,
+                amount: amountToPay,
+                promise: paymentPromise
+            };
+        } catch (e) {
+            console.warn('[ServicePaymentScreen] Pre-warm exception:', e);
+        }
+    }, [booking?.id, amountToPay, user?.email, db?.settings, isDeposit]);
 
     const processBookingPaymentSuccess = async (successData: {
         targetBookingId: string;
@@ -434,9 +494,10 @@ const ServicePaymentScreen: React.FC = () => {
 
     if (isProcessing) {
         return (
-            <div className="flex flex-col items-center justify-center h-full bg-secondary space-y-4">
+            <div className="flex flex-col items-center justify-center h-full bg-secondary space-y-4 px-4 text-center">
                 <Spinner size="lg" />
-                <p className="text-white font-medium">Verifying your payment, please wait...</p>
+                <p className="text-white font-bold text-base tracking-wide animate-pulse">{processingStage || 'Processing payment...'}</p>
+                <p className="text-gray-400 text-xs">Securing your transaction with HitPay Gateway...</p>
             </div>
         );
     }
@@ -490,6 +551,7 @@ const ServicePaymentScreen: React.FC = () => {
         }
 
         setIsProcessing(true);
+        setProcessingStage('Connecting to HitPay Gateway...');
         setError('');
 
         try {
@@ -512,18 +574,36 @@ const ServicePaymentScreen: React.FC = () => {
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
             const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`;
 
-            // Create official HitPay payment request directly (Sandbox or Live based on settings)
-            const { url } = await hitPay.createPaymentRequest({
-                amount: amountToPay,
-                currency: db?.settings?.currency || 'PHP',
-                reference_number: refNumber,
-                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                redirect_url: returnUrl,
-                email: user.email || 'customer@ridersbud.com',
-                name: user.name || 'Valued Customer',
-                phone: user.phone || '09171234567',
-                purpose: purpose
-            });
+            let paymentRes: { url: string; id: string } | null = null;
+            const prewarmed = prewarmedSessionRef.current;
+            if (prewarmed && prewarmed.bookingId === booking.id && prewarmed.amount === amountToPay) {
+                if (prewarmed.readyResult?.url) {
+                    paymentRes = prewarmed.readyResult;
+                } else {
+                    try {
+                        paymentRes = await prewarmed.promise;
+                    } catch (_) {
+                        paymentRes = null;
+                    }
+                }
+            }
+
+            if (!paymentRes) {
+                paymentRes = await hitPay.createPaymentRequest({
+                    amount: amountToPay,
+                    currency: db?.settings?.currency || 'PHP',
+                    reference_number: refNumber,
+                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    redirect_url: returnUrl,
+                    email: user.email || 'customer@ridersbud.com',
+                    name: user.name || 'Valued Customer',
+                    phone: user.phone || '09171234567',
+                    purpose: purpose
+                });
+            }
+
+            setProcessingStage('Opening Payment Gateway...');
+            const { url } = paymentRes;
 
             if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
                 await openPaymentUrl(url);

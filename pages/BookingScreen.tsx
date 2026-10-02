@@ -14,7 +14,7 @@ import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
 import { HitPayService } from '../services/HitPayService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
-import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers } from '../data/mockData';
+import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers, seedServices } from '../data/mockData';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import BookingPaymentBreakdownModal from '../components/BookingPaymentBreakdownModal';
 import { 
@@ -533,6 +533,7 @@ const BookingScreen: React.FC = () => {
 
     const [notes, setNotes] = useState(initialState?.notes || '');
     const [isBooking, setIsBooking] = useState(false);
+    const [bookingProcessingStage, setBookingProcessingStage] = useState<string>('');
     const [userHasGoneBack, setUserHasGoneBack] = useState(false);
     const [showGCashModal, setShowGCashModal] = useState(false);
     const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
@@ -591,6 +592,17 @@ const BookingScreen: React.FC = () => {
     const [endSuggestions, setEndSuggestions] = useState<any[]>([]);
     const [showStartSuggestions, setShowStartSuggestions] = useState(false);
     const [showEndSuggestions, setShowEndSuggestions] = useState(false);
+
+    // High-performance HitPay Payment Pre-warming Cache
+    const prewarmedHitPaySessionRef = useRef<{
+        bookingId: string;
+        paymentResultPromise: Promise<{ url: string; id: string }>;
+        readyResult?: { url: string; id: string };
+        error?: any;
+        downpaymentAmount: number;
+        computedTotalPrice: number;
+        createdAt: number;
+    } | null>(null);
 
     useEffect(() => {
         if (user && user.vehicles.length > 0 && !selectedVehiclePlate) {
@@ -889,7 +901,10 @@ const BookingScreen: React.FC = () => {
         }
     }, [waitingBookingId, db?.bookings, navigate]);
 
-    const { services, bookings, mechanics } = db || { services: [], bookings: [], mechanics: [] };
+    const services = useMemo(() => {
+        return (db?.services && db.services.length > 0) ? db.services : seedServices;
+    }, [db?.services]);
+    const { bookings, mechanics } = db || { bookings: [], mechanics: [] };
 
     const selectedServices = useMemo(() => {
         return services.filter(s => selectedServiceIds.has(s.id));
@@ -1296,6 +1311,69 @@ const BookingScreen: React.FC = () => {
         return price;
     }, [selectedServiceIds, services, db, isCarRental, selectedCar, isDriverHire, selectedDriver, rentalDays]);
 
+    // Aggressive Background Pre-warm HitPay Session as early as Step 2 (Date/Time selection) or Step 3 (Mechanic)
+    useEffect(() => {
+        const isEligibleStep = step >= 2 || showPaymentBreakdownModal || (step === 1 && selectedServiceIds.size > 0);
+        if (!isEligibleStep || totalPrice <= 0 || !user) return;
+        const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+        if (!isHitPayActive) return;
+
+        const downpaymentAmount = Math.round(totalPrice * 0.5);
+        if (
+            prewarmedHitPaySessionRef.current &&
+            !prewarmedHitPaySessionRef.current.error &&
+            prewarmedHitPaySessionRef.current.downpaymentAmount === downpaymentAmount &&
+            prewarmedHitPaySessionRef.current.computedTotalPrice === totalPrice &&
+            Date.now() - prewarmedHitPaySessionRef.current.createdAt < 10 * 60 * 1000
+        ) {
+            return;
+        }
+
+        try {
+            const hitPay = HitPayService.fromSettings(db?.settings);
+            const appTitle = db?.settings?.appName || 'RidersBUD';
+            const bookingId = doc(collection(firestore, 'bookings')).id;
+            const returnUrl = `${window.location.origin}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
+            const refNumber = `BOK-${bookingId}-DP-${Date.now()}`;
+            const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
+
+            const paymentPromise = hitPay.createPaymentRequest({
+                amount: downpaymentAmount,
+                currency: db?.settings?.currency || 'PHP',
+                reference_number: refNumber,
+                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                redirect_url: returnUrl,
+                email: user.email || 'customer@example.com',
+                name: user.name || 'Customer',
+                phone: user.phone || '',
+                purpose: purpose
+            }).then(res => {
+                if (prewarmedHitPaySessionRef.current?.bookingId === bookingId) {
+                    prewarmedHitPaySessionRef.current.readyResult = res;
+                    console.log('⚡ [BookingScreen] HitPay checkout session READY for instant (<100ms) redirect:', res.url);
+                }
+                return res;
+            }).catch(err => {
+                console.warn('[BookingScreen] Background HitPay pre-warm notice:', err?.message || err);
+                if (prewarmedHitPaySessionRef.current?.bookingId === bookingId) {
+                    prewarmedHitPaySessionRef.current.error = err;
+                }
+                throw err;
+            });
+
+            prewarmedHitPaySessionRef.current = {
+                bookingId,
+                paymentResultPromise: paymentPromise,
+                downpaymentAmount,
+                computedTotalPrice: totalPrice,
+                createdAt: Date.now()
+            };
+            console.log('⚡ [BookingScreen] Aggressive HitPay pre-warming started in background (Step:', step, ')');
+        } catch (e) {
+            console.warn('[BookingScreen] Background HitPay pre-warm initiation notice:', e);
+        }
+    }, [step, showPaymentBreakdownModal, totalPrice, user, db?.settings, selectedServiceIds]);
+
     const isQuoteRequest = useMemo(() => {
         if (!db || selectedServiceIds.size === 0) return false;
         const selectedServicesList = services.filter(s => selectedServiceIds.has(s.id));
@@ -1561,10 +1639,11 @@ const BookingScreen: React.FC = () => {
             }
 
             if (computedTotalPrice === 0) {
+                setBookingProcessingStage('Confirming Booking...');
                 const createdBooking = await addBooking(newBookingData);
                 sessionStorage.removeItem(BOOKING_STATE_KEY);
                 navigate('/customer-portal/booking-confirmation', {
-                    state: { bookings: [createdBooking], bookingId: createdBooking.id }
+                    state: { bookings: [createdBooking], bookingId: createdBooking?.id }
                 });
                 return;
             }
@@ -1575,21 +1654,22 @@ const BookingScreen: React.FC = () => {
                 throw new Error("Online Payment Gateway (HitPay) is required for checkout but currently inactive in system settings. Please contact the administrator.");
             }
 
-            const createdBooking = await addBooking({
-                ...newBookingData,
-                status: 'Pending',
-                paymentStatus: 'pending',
-                isPaid: false,
-                paymentMethod: 'Online (HitPay)'
-            });
+            // Check if HitPay session was already pre-warmed for this exact amount
+            const prewarmed = prewarmedHitPaySessionRef.current;
+            const isPrewarmValid = Boolean(
+                prewarmed && 
+                !prewarmed.error &&
+                prewarmed.downpaymentAmount === downpaymentAmount && 
+                prewarmed.computedTotalPrice === computedTotalPrice &&
+                (Date.now() - prewarmed.createdAt < 10 * 60 * 1000)
+            );
 
-            if (!createdBooking) {
-                throw new Error("Failed to create booking for payment.");
-            }
+            // Use the pre-warmed booking ID if available, otherwise generate synchronously
+            const bookingId = isPrewarmValid ? prewarmed!.bookingId : doc(collection(firestore, 'bookings')).id;
 
-            // Keep BOOKING_STATE_KEY saved in sessionStorage in case user cancels and clicks 'Retry Checkout'
+            // Keep pending transaction saved immediately in storage
             const txDetails = {
-                bookingId: createdBooking.id,
+                bookingId: bookingId,
                 amount: downpaymentAmount,
                 totalAmount: computedTotalPrice,
                 items: selectedServices.map(s => ({
@@ -1606,32 +1686,77 @@ const BookingScreen: React.FC = () => {
 
             const hitPay = HitPayService.fromSettings(db?.settings);
             const appTitle = db?.settings?.appName || 'RidersBUD';
-            const returnUrl = `${window.location.origin}/customer-portal/booking-confirmation?bookingId=${createdBooking.id}`;
-            const refNumber = `BOK-${createdBooking.id}-DP-${Date.now()}`;
-            const purpose = `${appTitle} — 50% Initial DP (Booking #${createdBooking.id.slice(-6).toUpperCase()})`;
+            const returnUrl = `${window.location.origin}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
+            const refNumber = `BOK-${bookingId}-DP-${Date.now()}`;
+            const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
-            // Create official HitPay payment request directly (Sandbox or Live based on settings)
-            const { url } = await hitPay.createPaymentRequest({
-                amount: downpaymentAmount,
-                currency: db?.settings?.currency || 'PHP',
-                reference_number: refNumber,
-                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                redirect_url: returnUrl,
-                email: user.email || 'customer@example.com',
-                name: user.name || 'Customer',
-                phone: user.phone || '',
-                purpose: purpose
-            });
+            // Non-blocking parallel booking registration in Firestore
+            const bookingPromise = addBooking({
+                ...newBookingData,
+                status: 'Pending',
+                paymentStatus: 'pending',
+                isPaid: false,
+                paymentMethod: 'Online (HitPay)'
+            }, bookingId);
+
+            let paymentResult: { url: string; id: string } | undefined;
+
+            if (isPrewarmValid && prewarmed?.readyResult) {
+                // INSTANT PATH (<100ms): Session already generated in background while user was selecting options!
+                setBookingProcessingStage('Redirecting to HitPay...');
+                paymentResult = prewarmed.readyResult;
+                await bookingPromise;
+            } else {
+                // PROGRESSIVE PATH: Pre-warm is in-flight or fresh request needed
+                setBookingProcessingStage('Securing Payment Session...');
+                
+                const fallbackPaymentRequest = () => hitPay.createPaymentRequest({
+                    amount: downpaymentAmount,
+                    currency: db?.settings?.currency || 'PHP',
+                    reference_number: refNumber,
+                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    redirect_url: returnUrl,
+                    email: user.email || 'customer@example.com',
+                    name: user.name || 'Customer',
+                    phone: user.phone || '',
+                    purpose: purpose
+                });
+
+                const paymentPromise = isPrewarmValid
+                    ? prewarmed!.paymentResultPromise.catch((err) => {
+                        console.warn('[BookingScreen] In-flight prewarm rejected, falling back to fresh request:', err);
+                        return fallbackPaymentRequest();
+                    })
+                    : fallbackPaymentRequest();
+
+                // Dynamic progress feedback if upstream HitPay takes more than 1 second
+                const progressTimer = setTimeout(() => {
+                    setBookingProcessingStage('Connecting to HitPay Gateway...');
+                }, 1000);
+
+                const [_, resolvedPayment] = await Promise.all([
+                    bookingPromise,
+                    paymentPromise
+                ]);
+                clearTimeout(progressTimer);
+                paymentResult = resolvedPayment;
+            }
+
+            // Clear cache after successful consumption
+            prewarmedHitPaySessionRef.current = null;
+
+            const url = paymentResult?.url;
+            setBookingProcessingStage('Opening Payment Gateway...');
 
             if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
                 setPendingPaymentMarker({
                     entityKind: 'booking',
-                    entityId: createdBooking.id,
-                    returnRoute: `/customer-portal/booking-confirmation?bookingId=${createdBooking.id}`,
+                    entityId: bookingId,
+                    returnRoute: `/customer-portal/booking-confirmation?bookingId=${bookingId}`,
                     startedAt: Date.now(),
                     purpose: 'booking-downpayment'
                 });
-                startPaymentWatcher('booking', createdBooking.id, `/customer-portal/booking-confirmation?bookingId=${createdBooking.id}`);
+                startPaymentWatcher('booking', bookingId, `/customer-portal/booking-confirmation?bookingId=${bookingId}`);
                 await openPaymentUrl(url);
                 return;
             }
@@ -1648,6 +1773,7 @@ const BookingScreen: React.FC = () => {
             setError(msg);
         } finally {
             setIsBooking(false);
+            setBookingProcessingStage('');
         }
     };
 
@@ -3328,17 +3454,21 @@ const BookingScreen: React.FC = () => {
                                     setShowPaymentBreakdownModal(true);
                                 }}
                                 disabled={isBooking}
-                                className="w-full bg-gradient-to-r from-primary to-orange-600 text-white font-black h-14 flex items-center justify-center hover:shadow-xl hover:shadow-primary/30 transition-all disabled:opacity-50 disabled:grayscale gap-3 rounded-2xl uppercase tracking-wider text-[18px] shadow-lg shadow-primary/20"
+                                className={`w-full text-white font-black h-14 flex items-center justify-center gap-3 rounded-2xl uppercase tracking-wider text-[17px] shadow-lg transition-all duration-300 ${
+                                    isBooking 
+                                        ? 'bg-gradient-to-r from-orange-500 via-primary to-orange-600 shadow-primary/40 animate-pulse cursor-wait'
+                                        : 'bg-gradient-to-r from-primary to-orange-600 hover:shadow-xl hover:shadow-primary/30 shadow-primary/20 active:scale-[0.98]'
+                                }`}
                             >
                                 {isBooking ? (
                                     <>
                                         <Spinner size="md" color="text-white" />
-                                        <span>Processing...</span>
+                                        <span className="font-extrabold tracking-wide">{bookingProcessingStage || 'Securing Booking...'}</span>
                                     </>
                                 ) : (
                                     <>
                                         <span>{isQuoteRequest ? 'Proceed for Payment' : 'Confirm & Book Now'}</span>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 sm:h-8 sm:w-8 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-7 sm:w-7 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                                     </>
                                 )}
                             </button>
@@ -3496,10 +3626,10 @@ const BookingScreen: React.FC = () => {
                         isOpen={showPaymentBreakdownModal}
                         onClose={() => setShowPaymentBreakdownModal(false)}
                         onProceed={async () => {
-                            setShowPaymentBreakdownModal(false);
                             await handleBooking();
                         }}
                         isProcessing={isBooking}
+                        processingStage={bookingProcessingStage}
                         services={selectedServices.map(s => ({
                             id: s.id,
                             name: s.name,

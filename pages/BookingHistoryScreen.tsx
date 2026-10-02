@@ -567,9 +567,11 @@ const BookingHistoryScreen: React.FC = () => {
                     rating,
                     comment
                 };
-                await updateReview(selectedBookingForReview.id, updated);
                 setSelectedBookingForReview(prev => prev ? ({ ...prev, review: updated } as any) : null);
                 setSuccessMessage('Review updated successfully!');
+                setShowSuccessMessage(true);
+                setTimeout(() => setShowSuccessMessage(false), 3000);
+                await updateReview(selectedBookingForReview.id, updated);
             } else {
                 const newRev = {
                     bookingId: selectedBookingForReview.id,
@@ -580,12 +582,12 @@ const BookingHistoryScreen: React.FC = () => {
                     rating,
                     comment
                 };
-                await addReview(selectedBookingForReview.id, newRev);
                 setSelectedBookingForReview(prev => prev ? ({ ...prev, review: { ...newRev, id: `review-${Date.now()}`, date: new Date().toISOString() }, isReviewed: true } as any) : null);
                 setSuccessMessage('Review submitted successfully!');
+                setShowSuccessMessage(true);
+                setTimeout(() => setShowSuccessMessage(false), 3000);
+                await addReview(selectedBookingForReview.id, newRev);
             }
-            setShowSuccessMessage(true);
-            setTimeout(() => setShowSuccessMessage(false), 5000);
         } catch (e) {
             console.error('Review submission error:', e);
             throw e;

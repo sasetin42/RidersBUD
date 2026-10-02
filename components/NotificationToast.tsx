@@ -129,34 +129,55 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification, onD
     const [progress, setProgress] = useState(100);
     const navigate = useNavigate();
 
+    const onDismissRef = React.useRef(onDismiss);
+    onDismissRef.current = onDismiss;
+
+    const remainingTimeRef = React.useRef(3000);
+    const lastTickRef = React.useRef<number | null>(null);
+    const isExitingRef = React.useRef(false);
+
     const style = getTypeStyle(notification.type);
     const IconComponent = style.icon;
 
-    // Auto-dismiss timer + progress bar
+    const triggerDismiss = React.useCallback(() => {
+        if (isExitingRef.current) return;
+        isExitingRef.current = true;
+        setIsExiting(true);
+        setTimeout(() => {
+            onDismissRef.current(notification.id);
+        }, 280);
+    }, [notification.id]);
+
+    // Strict 3000ms auto-hide countdown with loading progress bar
     useEffect(() => {
-        const duration = 5000;
-        const interval = 50;
-        const step = (interval / duration) * 100;
+        const intervalMs = 25;
+        lastTickRef.current = Date.now();
 
-        const progressTimer = setInterval(() => {
-            setProgress(prev => Math.max(0, prev - step));
-        }, interval);
+        const timer = setInterval(() => {
+            if (isExitingRef.current) return;
 
-        const dismissTimer = setTimeout(() => {
-            setIsExiting(true);
-            setTimeout(() => onDismiss(notification.id), 320);
-        }, duration);
+            const now = Date.now();
+            const elapsed = now - (lastTickRef.current ?? now);
+            lastTickRef.current = now;
+
+            remainingTimeRef.current = Math.max(0, remainingTimeRef.current - elapsed);
+            const currentPct = (remainingTimeRef.current / 3000) * 100;
+            setProgress(currentPct);
+
+            if (remainingTimeRef.current <= 0) {
+                clearInterval(timer);
+                triggerDismiss();
+            }
+        }, intervalMs);
 
         return () => {
-            clearInterval(progressTimer);
-            clearTimeout(dismissTimer);
+            clearInterval(timer);
         };
-    }, [notification.id, onDismiss]);
+    }, [triggerDismiss]);
 
     const handleClose = (e?: React.MouseEvent) => {
         e?.stopPropagation();
-        setIsExiting(true);
-        setTimeout(() => onDismiss(notification.id), 320);
+        triggerDismiss();
     };
 
     const handleClick = () => {
@@ -175,48 +196,46 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification, onD
             role="alert"
             aria-live="assertive"
             style={{
-                borderRadius: '18px',
-                background: 'rgba(22,22,26,0.97)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '12px',
+                background: 'rgba(18, 18, 22, 0.98)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderTop: `1px solid ${style.topBorder}`,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.4)',
+                boxShadow: '0 6px 24px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.5)',
             }}
         >
-            {/* Left color accent bar */}
+            {/* Left color accent line */}
             <div
-                className="absolute left-0 top-0 bottom-0 w-[4px] rounded-l-[18px]"
+                className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-[12px]"
                 style={{
                     background: style.leftBar,
                     boxShadow: style.leftBarGlow,
                 }}
             />
 
-            {/* Content */}
-            <div className="flex items-start gap-3 pl-4 pr-3 pt-3 pb-2.5">
-                {/* Icon */}
+            {/* Compact content row */}
+            <div className="flex items-center gap-2.5 pl-3 pr-2 py-2">
+                {/* Compact icon badge */}
                 <div
-                    className="flex-shrink-0 w-10 h-10 rounded-[10px] flex items-center justify-center mt-0.5"
+                    className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center"
                     style={{
                         background: style.iconBg,
                         border: `1px solid ${style.iconBorder}`,
                     }}
                 >
                     <IconComponent
-                        size={18}
-                        strokeWidth={2.2}
-                        className=""
+                        size={14}
+                        strokeWidth={2.4}
                         style={{ color: style.iconColor } as React.CSSProperties}
                     />
                 </div>
 
-                {/* Text block */}
-                <div className="flex-1 min-w-0">
-                    {/* Type badge + title row */}
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                {/* Text body - compact, highly legible */}
+                <div className="flex-1 min-w-0 pr-1">
+                    <div className="flex items-center gap-1.5 leading-none">
                         <span
-                            className="text-[8px] font-black tracking-widest uppercase px-1.5 py-0.5 rounded-md"
+                            className="text-[7.5px] font-black tracking-wider uppercase px-1.5 py-0.5 rounded leading-none flex-shrink-0"
                             style={{
                                 background: style.badgeBg,
                                 color: style.badgeText,
@@ -225,50 +244,48 @@ const NotificationToast: React.FC<NotificationToastProps> = ({ notification, onD
                         >
                             {style.badgeLabel}
                         </span>
+                        <p
+                            className="font-bold text-[12px] leading-tight truncate"
+                            style={{ color: style.titleColor }}
+                        >
+                            {notification.title}
+                        </p>
                     </div>
-                    <p
-                        className="font-black text-[13px] leading-snug line-clamp-1"
-                        style={{ color: style.titleColor }}
-                    >
-                        {notification.title}
-                    </p>
-                    <p className="text-[12px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">
+                    <p className="text-[11px] text-gray-200 mt-0.5 line-clamp-1 leading-snug font-normal">
                         {notification.message}
                     </p>
-
-                    {/* View link */}
-                    {notification.link && (
-                        <div className="flex justify-end mt-1.5">
-                            <button
-                                className="flex items-center gap-0.5 text-[10px] font-black tracking-wide transition-opacity hover:opacity-70"
-                                style={{ color: style.linkColor }}
-                                onClick={handleClick}
-                            >
-                                View
-                                <ChevronRight size={10} strokeWidth={3} />
-                            </button>
-                        </div>
-                    )}
                 </div>
 
-                {/* Close button — 44px touch target */}
-                <button
-                    onClick={handleClose}
-                    className="flex-shrink-0 -mt-0.5 -mr-0.5 w-8 h-8 flex items-center justify-center rounded-full text-gray-500 hover:text-white hover:bg-white/10 transition-colors active:scale-90"
-                    aria-label="Dismiss"
-                >
-                    <X size={14} strokeWidth={2.5} />
-                </button>
+                {/* Actions: View Link & Dismiss Button */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                    {notification.link && (
+                        <button
+                            className="flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded transition-opacity hover:opacity-80 active:scale-95"
+                            style={{ color: style.linkColor }}
+                            onClick={handleClick}
+                        >
+                            <span>View</span>
+                            <ChevronRight size={10} strokeWidth={3} />
+                        </button>
+                    )}
+                    <button
+                        onClick={handleClose}
+                        className="w-5 h-5 flex items-center justify-center rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-colors active:scale-90"
+                        aria-label="Dismiss"
+                    >
+                        <X size={12} strokeWidth={2.5} />
+                    </button>
+                </div>
             </div>
 
-            {/* Progress bar */}
-            <div className="absolute bottom-0 left-[4px] right-0 h-[2px] bg-white/5">
+            {/* Bottom 3-second countdown progress bar */}
+            <div className="absolute bottom-0 left-[3px] right-0 h-[2px] bg-white/5">
                 <div
                     className="h-full rounded-full transition-none"
                     style={{
                         width: `${progress}%`,
                         background: style.progressColor,
-                        transition: 'width 50ms linear',
+                        transition: 'width 25ms linear',
                         boxShadow: `0 0 6px ${style.progressColor}80`,
                     }}
                 />

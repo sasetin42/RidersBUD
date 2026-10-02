@@ -1,63 +1,68 @@
-# HitPay Online Payment Loading Speed Optimization Plan
+# HitPay Loading Speed & Checkout Optimization Plan
 
-## Goal
-Accelerate the HitPay online payment loading speed and visual responsiveness across Web and native Android APK, slashing checkout initiation and rendering latency from ~3-4s down to under 1s.
-
----
-
-## Performance Bottlenecks Identified
-
-1. **Cold Network & TLS Handshake Latency:**
-   - Every HitPay proxy call creates a new TCP/TLS connection to `api.hit-pay.com` without HTTP Keep-Alive.
-   - Browser / WebView does not preconnect or DNS-prefetch HitPay checkout domains.
-
-2. **Sequential Session Creation Bottleneck:**
-   - User waits for `/hitpay-checkout` to mount, selects a method, and clicks "Pay".
-   - Only *after* the click does the app dispatch `/api/hitpay-proxy` to HitPay API (~1.2s roundtrip), and only *after* that returns does the iframe begin downloading assets (~1.5s). Total perceived delay: 3-4 seconds.
-
-3. **Dynamic Chunk Lazy-Loading Overhead:**
-   - `HitPayCheckoutScreen` and `HitPayInAppModal` are dynamically imported chunks downloaded only after clicking navigation.
-
-4. **Iframe Perceived Render Lag:**
-   - Blank or generic spinner while the HitPay hosted checkout executes its client-side JavaScript bundle.
+## 1. Problem Statement
+When a customer clicks **Proceed to Pay** in the `BookingPaymentBreakdownModal`, the button stays in **"CONNECTING TO HITPAY..."** state with a spinner for 3.5 to 5+ seconds before redirecting to HitPay.
+Live profiling reveals that HitPay's Sandbox API takes ~3.9s to generate a checkout session URL.
 
 ---
 
-## Actionable Tasks
+## 2. Optimization Strategy (Zero-Wait Architecture)
 
-- [x] **Task 1: Network & TLS Optimization (Preconnect + DNS Prefetch)**
-  - Added `<link rel="preconnect" href="https://checkout.hit-pay.com" crossorigin>` and `api.hit-pay.com` (both sandbox and production) to `index.html`.
-  - **Verify:** Network tab shows early DNS pre-resolution for HitPay domains before checkout.
-
-- [x] **Task 2: Persistent HTTP Keep-Alive in Backend Proxy**
-  - In `functions/index.js` and `vite.config.ts`, instantiated `new https.Agent({ keepAlive: true, maxSockets: 50, keepAliveMsecs: 60000 })` for all upstream requests to HitPay.
-  - **Verify:** Sequential proxy requests show socket reuse and TTFB reduction of 300-500ms.
-
-- [x] **Task 3: Intelligent Background Pre-Warming & Pre-Initiation**
-  - In `HitPayCheckoutScreen.tsx`, initiated background pre-fetching for the default payment session (`gcash`) as soon as the screen mounts with URL params.
-  - When the user taps "Pay PHP X", if the pre-warmed session URL is ready, opens the in-app checkout instantly with **0ms initiation delay**!
-  - If the user changes payment method, smoothly re-initiates for the selected channel.
-  - **Verify:** Tapping "Pay" displays the payment checkout immediately without waiting for a new API roundtrip.
-
-- [x] **Task 4: Component & Chunk Preloading**
-  - In `App.tsx`, added `preloadHitPayCheckout` triggered when the user visits payment-eligible screens (`BookingScreen`, `ServiceBookingFlow`, `PaymentScreen`, `ServicePaymentScreen`).
-  - **Verify:** Clicking "Proceed to Pay" transitions to `/hitpay-checkout` with zero chunk download delay.
-
-- [x] **Task 5: High-Performance In-App Modal UX & Skeleton UI**
-  - In `HitPayInAppModal.tsx`, implemented high-speed connection progress bar and modern shimmer skeleton loader matching HitPay's visual layout.
-  - Added smooth opacity cross-fade transition when the iframe completes loading.
-  - **Verify:** Seamless visual continuity without jarring layout shifts or blank screens.
-
-- [x] **Task 6: Verification & Verification Build**
-  - Run `npx tsc --noEmit` to verify type safety: **Passed (0 errors)**.
-  - Run `npm run build` and measure bundle impact: **Built in 15.89s**.
-  - Sync with native Android APK via `npx cap sync android`: **Synced in 0.248s**.
-  - **Verify:** All payment paths (Services, Downpayment, Final Balance, Parts Store) execute under 1 second.
+```
+[ Step 3: Mechanic Selected / Step 4 Reached ]
+                     │
+                     ▼
+  Aggressive Background Pre-warming Initiated (Silent)
+  - HitPay session created while customer reads breakdown
+  - Browser DNS/SSL pre-connected
+                     │
+                     ▼
+ [ Customer clicks "Proceed to Pay" in Breakdown Modal ]
+                     │
+         ┌───────────┴───────────┐
+         │                       │
+ [ Session Ready? ]       [ Still Resolving? ]
+         │                       │
+        YES                      NO
+         │                       │
+   Instant Redirect        Progressive Status Display
+   (< 100ms response)      ("Securing checkout session...")
+```
 
 ---
 
-## Done When
-- [x] HitPay gateway session initiates instantaneously via background pre-warming.
-- [x] Network requests to HitPay reuse persistent sockets via HTTP Keep-Alive.
-- [x] In-app modal loads smoothly with modern skeleton placeholder.
-- [x] TypeScript check and production build pass with 0 errors.
+## 3. Targeted Technical Interventions
+
+### Phase 1: Aggressive Background Pre-warming & Cache Management
+- **File:** `pages/BookingScreen.tsx`
+- **Action:**
+  - Trigger pre-warming when the user selects a mechanic / transitions to Step 4 (Summary & Payment), or as soon as the price is calculated.
+  - Store the pre-warmed HitPay response (`payment_url`, `id`, `status`) in a robust reference cache keyed by `amount + customerEmail + serviceType`.
+  - When the user taps "Proceed to Pay" in `BookingPaymentBreakdownModal`, immediately consume the ready pre-warmed result without triggering a duplicate HitPay API call.
+
+### Phase 2: Decoupled & Non-blocking Booking Confirmation
+- **File:** `pages/BookingScreen.tsx`
+- **Action:**
+  - Decouple non-essential background operations (such as sending confirmation email via SMTP and detailed admin notification logs) from the critical path of redirecting the user to HitPay.
+  - Save the pending booking document into Firestore optimistically and launch payment URL immediately upon receipt.
+
+### Phase 3: Browser Pre-connect & DNS Prefetch
+- **File:** `index.html` & `pages/BookingScreen.tsx`
+- **Action:**
+  - Inject `<link rel="preconnect" href="https://api.sandbox.hit-pay.com">` and `<link rel="preconnect" href="https://checkout.sandbox.hit-pay.com">` to eliminate ~400-600ms of TCP/TLS handshake latency at runtime.
+
+### Phase 4: Enhanced Micro-Interaction & Progress Feedback
+- **File:** `components/BookingPaymentBreakdownModal.tsx`
+- **Action:**
+  - Replace the static "Connecting to HitPay..." state with responsive, fast-paced micro-step feedback ("Preparing invoice..." → "Securing session..." → "Opening gateway...") if the user clicks before pre-warming completes.
+  - When pre-warmed session is already hot, transition immediately to avoid user perceived lag.
+
+---
+
+## 4. Verification & Testing
+1. **Benchmark Latency:**
+   - Measure time-to-redirect from "Proceed to Pay" tap before vs. after optimization (target: < 300ms on pre-warmed cache hit).
+2. **Integrity Validation:**
+   - Verify that 50% downpayment calculation is strictly preserved.
+   - Verify that HitPay webhook / redirect verification continues to update Firestore booking status accurately.
+   - Type-check with `npx tsc --noEmit` and build test with `npm run build`.
