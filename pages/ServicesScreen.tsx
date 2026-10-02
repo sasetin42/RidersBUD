@@ -1,3 +1,4 @@
+import { isSpecialServiceEnabled } from '../utils/specialServicesHelper';
 import React, { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Service, Mechanic } from '../types';
@@ -218,20 +219,19 @@ const ServicesScreen: React.FC = () => {
         const modules = db?.settings?.modules;
 
         const isModuleEnabled = (serviceName: string, category: string) => {
-            if (!modules) return true;
             const nameLower = serviceName.toLowerCase();
             const catLower = category.toLowerCase();
             if (nameLower.includes('rent a car') || catLower.includes('rentals') || catLower.includes('rent a car')) {
-                return modules.find(m => m.id === 'rent-a-car')?.enabled !== false;
+                return isSpecialServiceEnabled('carRental', db?.settings);
             }
             if (nameLower.includes('driver for hire') || catLower.includes('driver')) {
-                return modules.find(m => m.id === 'driver-for-hire')?.enabled !== false;
+                return isSpecialServiceEnabled('driverHire', db?.settings);
             }
             if (nameLower.includes('registration') || nameLower.includes('liaison') || catLower.includes('liaison') || catLower.includes('registration')) {
-                return modules.find(m => m.id === 'liaison-assistance')?.enabled !== false;
+                return isSpecialServiceEnabled('liaison', db?.settings);
             }
             if (nameLower.includes('towing') || catLower.includes('towing')) {
-                return modules.find(m => m.id === 'towing')?.enabled !== false;
+                return isSpecialServiceEnabled('towing', db?.settings);
             }
             return true;
         };

@@ -1,7 +1,9 @@
+import { isSpecialServiceEnabled } from '../utils/specialServicesHelper';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import MarketingBanner from '../components/MarketingBanner';
+import { UpcomingStoreModal } from '../components/UpcomingStoreModal';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import { useNotification } from '../context/NotificationContext';
@@ -118,6 +120,24 @@ const HomeScreen: React.FC = () => {
     const [balanceBookingForModal, setBalanceBookingForModal] = useState<any | null>(null);
     const [isInitiatingHitPayBalance, setIsInitiatingHitPayBalance] = useState(false);
     const [showBalanceGCashModal, setShowBalanceGCashModal] = useState(false);
+    const [showUpcomingStoreModal, setShowUpcomingStoreModal] = useState(false);
+
+    const partsModule = db?.settings?.modules?.find(m => m.id === 'parts-store');
+    const isStoreDisabled = partsModule ? !partsModule.enabled : false;
+
+    const handlePartsStoreClick = (e?: React.MouseEvent) => {
+        if (e) e.preventDefault();
+        if (isStoreDisabled) {
+            setShowUpcomingStoreModal(true);
+        } else {
+            navigate('/customer-portal/parts-store');
+        }
+    };
+
+    // One-time guards for HitPay return reconciliation: this effect re-runs on every
+    // realtime db update while the first reconcile is still in-flight — without these,
+    // updateBookingPayment / updateRentalBooking fire twice+ and duplicate notifications.
+    const reconciledTargetsRef = React.useRef<Set<string>>(new Set());
 
     // Native: resume pending payment watch (custom tab re-entry / process death)
     useEffect(() => {
@@ -195,6 +215,8 @@ const HomeScreen: React.FC = () => {
         const targetBookingId = searchParams.get('bookingId') || searchParams.get('rentalId') || searchParams.get('liaisonId') || searchParams.get('driverId');
 
         if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isRentalReturn) {
+            if (reconciledTargetsRef.current.has(`rental-${targetBookingId}`)) return;
+            reconciledTargetsRef.current.add(`rental-${targetBookingId}`);
             const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-BAL-${Date.now()}`;
             const reqId = searchParams.get('payment_request_id') || '';
 
@@ -234,6 +256,8 @@ const HomeScreen: React.FC = () => {
         }
 
         if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isLiaisonReturn) {
+            if (reconciledTargetsRef.current.has(`liaison-${targetBookingId}`)) return;
+            reconciledTargetsRef.current.add(`liaison-${targetBookingId}`);
             const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-LIA-BAL-${Date.now()}`;
             const reqId = searchParams.get('payment_request_id') || '';
 
@@ -272,6 +296,8 @@ const HomeScreen: React.FC = () => {
         }
 
         if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isDriverReturn) {
+            if (reconciledTargetsRef.current.has(`driver-${targetBookingId}`)) return;
+            reconciledTargetsRef.current.add(`driver-${targetBookingId}`);
             const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-DRV-BAL-${Date.now()}`;
             const reqId = searchParams.get('payment_request_id') || '';
 
@@ -311,6 +337,8 @@ const HomeScreen: React.FC = () => {
 
         // Standard Mechanic / Maintenance Booking Return
         if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && !isRentalReturn && !isLiaisonReturn && !isDriverReturn) {
+            if (reconciledTargetsRef.current.has(`booking-${targetBookingId}`)) return;
+            reconciledTargetsRef.current.add(`booking-${targetBookingId}`);
             const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-BAL-${Date.now()}`;
             const reqId = searchParams.get('payment_request_id') || '';
 
@@ -1124,222 +1152,7 @@ const HomeScreen: React.FC = () => {
         <div className="flex flex-col min-h-screen bg-[#121212] text-white pb-24 font-sans">
             <CustomerHeader title={`Welcome, ${user?.name.split(' ')[0]}!`} icon={<Car size={22} />} />
 
-            {/* Search Bar section */}
-            <div className="px-6 py-4 bg-[#121212]/90 backdrop-blur-md sticky top-[53px] z-30 border-b border-white/5 w-full">
-                {/* Search Bar & Live Dropdown - Ultra-Modern Glassmorphic Search Widget */}
-                <div className="relative w-full z-40 max-w-5xl mx-auto">
-                    <div className="relative flex items-center group w-full">
-                        <label htmlFor="globalSearch" className="sr-only">Search services, products, and tools</label>
-                        <div className="absolute left-3.5 flex items-center justify-center pointer-events-none text-gray-400 group-focus-within:text-primary transition-colors">
-                            <Search className="h-5 w-5" />
-                        </div>
-                        <input
-                            id="globalSearch"
-                            name="globalSearch"
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={handleSearch}
-                            onFocus={() => setShowSearchDropdown(true)}
-                            placeholder="Search services, products, and tools..."
-                            className="w-full bg-[#16161D]/80 backdrop-blur-xl border border-white/15 hover:border-white/25 rounded-2xl pl-11 pr-11 py-3.5 text-sm text-white placeholder-gray-400 shadow-[0_4px_20px_rgba(0,0,0,0.4)] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all font-medium"
-                        />
-                        {searchQuery && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSearchQuery('');
-                                    setShowSearchDropdown(false);
-                                }}
-                                className="absolute right-3.5 p-1 rounded-full bg-white/10 hover:bg-white/20 text-gray-400 hover:text-white transition-all"
-                                title="Clear search"
-                            >
-                                <X size={14} />
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Live Search Overlay Backdrop */}
-                    {showSearchDropdown && (searchQuery.trim().length > 0) && (
-                        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] transition-opacity" onClick={() => setShowSearchDropdown(false)} />
-                    )}
-
-                    {/* Live Search Results Dropdown - Glassmorphic Container */}
-                    {showSearchDropdown && searchQuery.trim() && (
-                        <div className="absolute top-full left-0 right-0 mt-2.5 bg-[#0e0f15]/90 border border-white/15 rounded-2xl shadow-[0_25px_60px_-10px_rgba(0,0,0,0.85),0_0_25px_rgba(254,120,3,0.06)] z-50 overflow-hidden max-h-[440px] overflow-y-auto divide-y divide-white/10 backdrop-blur-2xl custom-scrollbar animate-in fade-in-50 zoom-in-95 duration-200">
-                            {/* Services Section */}
-                            {searchResults.services.length > 0 && (
-                                <div className="p-3">
-                                    <div className="flex items-center justify-between mb-2.5 px-2">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-sm shadow-primary animate-pulse" />
-                                            <h4 className="text-[10px] font-black text-primary tracking-widest uppercase">Services</h4>
-                                        </div>
-                                        <span className="text-[9px] font-black text-primary/80 bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
-                                            {searchResults.services.length}
-                                        </span>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        {searchResults.services.map(s => (
-                                            <button
-                                                key={s.id}
-                                                onClick={() => {
-                                                    navigate(`/customer-portal/services?q=${encodeURIComponent(s.name)}`);
-                                                    setShowSearchDropdown(false);
-                                                }}
-                                                className="w-full text-left p-2.5 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/5 hover:border-primary/40 rounded-xl transition-all flex items-center justify-between group shadow-sm"
-                                            >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-primary border border-primary/25 shrink-0 group-hover:scale-105 group-hover:border-primary/50 transition-all shadow-inner">
-                                                        <Wrench size={15} />
-                                                    </div>
-                                                    <div className="min-w-0 pr-2">
-                                                        <p className="text-xs font-black text-white group-hover:text-primary transition-colors truncate">
-                                                            {s.name}
-                                                        </p>
-                                                        <p className="text-[11px] text-gray-300 font-medium truncate mt-0.5 leading-snug">
-                                                            {s.description || 'Professional automotive maintenance & repair'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    {s.price && (
-                                                        <span className="text-[11px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-lg">
-                                                            ₱{Number(s.price).toLocaleString()}
-                                                        </span>
-                                                    )}
-                                                    <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-primary group-hover:bg-primary/15 transition-all">
-                                                        <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Products Section */}
-                            {searchResults.products.length > 0 && (
-                                <div className="p-3">
-                                    <div className="flex items-center justify-between mb-2.5 px-2">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400 animate-pulse" />
-                                            <h4 className="text-[10px] font-black text-cyan-400 tracking-widest uppercase">Products & Parts</h4>
-                                        </div>
-                                        <span className="text-[9px] font-black text-cyan-400/80 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full">
-                                            {searchResults.products.length}
-                                        </span>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        {searchResults.products.map(p => (
-                                            <button
-                                                key={p.id}
-                                                onClick={() => {
-                                                    navigate(`/customer-portal/parts-store?q=${encodeURIComponent(p.name)}`);
-                                                    setShowSearchDropdown(false);
-                                                }}
-                                                className="w-full text-left p-2.5 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/5 hover:border-cyan-400/40 rounded-xl transition-all flex items-center justify-between group shadow-sm"
-                                            >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-9 h-9 rounded-xl overflow-hidden bg-black/40 border border-white/10 shrink-0 flex items-center justify-center p-1 group-hover:scale-105 group-hover:border-cyan-400/40 transition-all shadow-inner">
-                                                        {p.imageUrls?.[0] ? (
-                                                            <img src={p.imageUrls[0]} alt={p.name} className="w-full h-full object-contain" />
-                                                        ) : (
-                                                            <Car size={15} className="text-cyan-400" />
-                                                        )}
-                                                    </div>
-                                                    <div className="min-w-0 pr-2">
-                                                        <p className="text-xs font-black text-white group-hover:text-cyan-400 transition-colors truncate">
-                                                            {p.name}
-                                                        </p>
-                                                        <p className="text-[11px] text-gray-300 font-medium truncate mt-0.5 leading-snug">
-                                                            {p.brand ? `${p.brand} • ` : ''}{p.description || 'Genuine replacement part'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-[11px] font-black text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-lg">
-                                                        ₱{Number(p.price).toLocaleString()}
-                                                    </span>
-                                                    <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-cyan-400 group-hover:bg-cyan-500/15 transition-all">
-                                                        <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Tools Section */}
-                            {searchResults.tools.length > 0 && (
-                                <div className="p-3">
-                                    <div className="flex items-center justify-between mb-2.5 px-2">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400 animate-pulse" />
-                                            <h4 className="text-[10px] font-black text-emerald-400 tracking-widest uppercase">Tools & Equipment</h4>
-                                        </div>
-                                        <span className="text-[9px] font-black text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                                            {searchResults.tools.length}
-                                        </span>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        {searchResults.tools.map(t => (
-                                            <button
-                                                key={t.id}
-                                                onClick={() => {
-                                                    navigate(`/customer-portal/parts-store?q=${encodeURIComponent(t.name)}`);
-                                                    setShowSearchDropdown(false);
-                                                }}
-                                                className="w-full text-left p-2.5 bg-white/[0.03] hover:bg-white/[0.08] active:bg-white/[0.12] border border-white/5 hover:border-emerald-400/40 rounded-xl transition-all flex items-center justify-between group shadow-sm"
-                                            >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-9 h-9 rounded-xl overflow-hidden bg-black/40 border border-white/10 shrink-0 flex items-center justify-center p-1 group-hover:scale-105 group-hover:border-emerald-400/40 transition-all shadow-inner">
-                                                        {t.imageUrls?.[0] ? (
-                                                            <img src={t.imageUrls[0]} alt={t.name} className="w-full h-full object-contain" />
-                                                        ) : (
-                                                            <Settings size={15} className="text-emerald-400" />
-                                                        )}
-                                                    </div>
-                                                    <div className="min-w-0 pr-2">
-                                                        <p className="text-xs font-black text-white group-hover:text-emerald-400 transition-colors truncate">
-                                                            {t.name}
-                                                        </p>
-                                                        <p className="text-[11px] text-gray-300 font-medium truncate mt-0.5 leading-snug">
-                                                            {t.brand ? `${t.brand} • ` : ''}{t.description || 'Professional garage equipment'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    <span className="text-[11px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg">
-                                                        ₱{Number(t.price).toLocaleString()}
-                                                    </span>
-                                                    <div className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-emerald-400 group-hover:bg-emerald-500/15 transition-all">
-                                                        <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* No Results State */}
-                            {searchResults.services.length === 0 && searchResults.products.length === 0 && searchResults.tools.length === 0 && (
-                                <div className="p-8 text-center bg-white/[0.01]">
-                                    <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3 text-gray-400 shadow-inner">
-                                        <Search size={22} className="text-gray-400" />
-                                    </div>
-                                    <p className="text-xs font-black text-white tracking-wide">No results found for "{searchQuery}"</p>
-                                    <p className="text-[11px] text-gray-400 mt-1 font-medium">Try searching for "towing", "change oil", "brake", or "battery"</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <main className="flex-grow w-full px-6 space-y-4 overflow-y-auto custom-scrollbar pt-2 max-w-5xl mx-auto">
+            <main className="flex-grow w-full px-6 space-y-4 overflow-y-auto custom-scrollbar pt-4 max-w-5xl mx-auto">
 
                 {/* Customer Account & Vehicle Banner - Compact & Full Responsive Mobile View */}
                 {user?.vehicles && user.vehicles.length > 0 && (() => {
@@ -1469,17 +1282,17 @@ const HomeScreen: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Horizontal Category Filter Tabs */}
+                    {/* Horizontal Category Filter Tabs (dynamically hide disabled special services) */}
                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
                         {[
-                            { id: 'all', label: 'All', icon: Layers, count: allTransactions.length },
-                            { id: 'maintenance', label: 'Services', icon: Wrench, count: allTransactions.filter(t => t.type === 'maintenance').length },
-                            { id: 'rental', label: 'Rent a Car', icon: Car, count: allTransactions.filter(t => t.type === 'rental').length },
-                            { id: 'driver', label: 'Driver for Hire', icon: UserCheck, count: allTransactions.filter(t => t.type === 'driver').length },
-                            { id: 'liaison', label: 'LTO Liaison', icon: FileText, count: allTransactions.filter(t => t.type === 'liaison').length },
-                            { id: 'towing', label: 'Towing', icon: Truck, count: allTransactions.filter(t => t.type === 'towing').length },
-                            { id: 'order', label: 'Product Orders', icon: Package, count: allTransactions.filter(t => t.type === 'order').length },
-                        ].map(tab => {
+                            { id: 'all', label: 'All', icon: Layers, count: allTransactions.length, visible: true },
+                            { id: 'maintenance', label: 'Services', icon: Wrench, count: allTransactions.filter(t => t.type === 'maintenance').length, visible: true },
+                            { id: 'rental', label: 'Rent a Car', icon: Car, count: allTransactions.filter(t => t.type === 'rental').length, visible: isSpecialServiceEnabled('carRental', db?.settings) },
+                            { id: 'driver', label: 'Driver for Hire', icon: UserCheck, count: allTransactions.filter(t => t.type === 'driver').length, visible: isSpecialServiceEnabled('driverHire', db?.settings) },
+                            { id: 'liaison', label: 'LTO Liaison', icon: FileText, count: allTransactions.filter(t => t.type === 'liaison').length, visible: isSpecialServiceEnabled('liaison', db?.settings) },
+                            { id: 'towing', label: 'Towing', icon: Truck, count: allTransactions.filter(t => t.type === 'towing').length, visible: isSpecialServiceEnabled('towing', db?.settings) },
+                            { id: 'order', label: 'Product Orders', icon: Package, count: allTransactions.filter(t => t.type === 'order').length, visible: true },
+                        ].filter(t => t.visible).map(tab => {
                             const TabIcon = tab.icon;
                             const isSelected = activeTransactionTab === tab.id;
                             return (
@@ -1795,25 +1608,27 @@ const HomeScreen: React.FC = () => {
                                     : `You currently have no ${activeTransactionTab} bookings or requests. Start a new transaction anytime.`}
                             </p>
 
-                            {/* Compact Mobile Responsive Quick Service Grid */}
-                            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 w-full">
+                            {/* Compact Mobile Responsive Quick Service Grid (dynamically hides disabled services) */}
+                            <div className="flex flex-wrap items-center justify-center gap-2 w-full">
                                 <button
                                     onClick={() => navigate('/customer-portal/services')}
-                                    className="bg-primary hover:bg-orange-600 text-black font-black text-[10px] sm:text-xs py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl transition border border-primary/20 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 shadow-md shadow-primary/10 active:scale-95 text-center"
+                                    className="flex-1 min-w-[90px] bg-primary hover:bg-orange-600 text-black font-black text-[10px] sm:text-xs py-2 sm:py-2.5 px-2 rounded-xl transition border border-primary/20 flex items-center justify-center gap-1.5 shadow-md shadow-primary/10 active:scale-95 text-center"
                                 >
                                     <Wrench size={13} className="shrink-0" />
                                     <span className="truncate">Services</span>
                                 </button>
+                                {isSpecialServiceEnabled('carRental', db?.settings) && (
+                                    <button
+                                        onClick={() => navigate('/customer-portal/rent-a-car')}
+                                        className="flex-1 min-w-[90px] bg-white/5 hover:bg-white/10 text-white font-bold text-[10px] sm:text-xs py-2 sm:py-2.5 px-2 rounded-xl transition border border-white/10 flex items-center justify-center gap-1.5 active:scale-95 text-center"
+                                    >
+                                        <Car size={13} className="text-blue-400 shrink-0" />
+                                        <span className="truncate">Rent a Car</span>
+                                    </button>
+                                )}
                                 <button
-                                    onClick={() => navigate('/customer-portal/rent-a-car')}
-                                    className="bg-white/5 hover:bg-white/10 text-white font-bold text-[10px] sm:text-xs py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl transition border border-white/10 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 active:scale-95 text-center"
-                                >
-                                    <Car size={13} className="text-blue-400 shrink-0" />
-                                    <span className="truncate">Rent a Car</span>
-                                </button>
-                                <button
-                                    onClick={() => navigate('/customer-portal/parts-store')}
-                                    className="bg-white/5 hover:bg-white/10 text-white font-bold text-[10px] sm:text-xs py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl transition border border-white/10 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 active:scale-95 text-center"
+                                    onClick={handlePartsStoreClick}
+                                    className="flex-1 min-w-[90px] bg-white/5 hover:bg-white/10 text-white font-bold text-[10px] sm:text-xs py-2 sm:py-2.5 px-2 rounded-xl transition border border-white/10 flex items-center justify-center gap-1.5 active:scale-95 text-center"
                                 >
                                     <Package size={13} className="text-cyan-400 shrink-0" />
                                     <span className="truncate">Parts Store</span>
@@ -1828,14 +1643,14 @@ const HomeScreen: React.FC = () => {
 
                 {/* Popular Services */}
                 <section className="animate-slideUp" style={{ animationDelay: '0.1s' }}>
-                    <div className="flex justify-between items-end mb-5">
-                        <h2 className="text-lg font-black text-white tracking-wide">Popular Services</h2>
+                    <div className="flex justify-between items-end mb-2.5">
+                        <h2 className="text-base sm:text-lg font-black text-white tracking-wide">Popular Services</h2>
                         <Tooltip content="Browse all services">
                             <Link to="/customer-portal/services" className="text-xs text-primary font-bold hover:text-white transition-colors">View All</Link>
                         </Tooltip>
                     </div>
 
-                    <div className="flex gap-4 overflow-x-auto pb-4 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
+                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
                         {popularServices.map(service => (
                             <Tooltip key={service.id} content={service.name}>
                                 <Link
@@ -1872,22 +1687,20 @@ const HomeScreen: React.FC = () => {
 
                 {/* Featured App Services */}
                 <section className="animate-slideUp" style={{ animationDelay: '0.15s' }}>
-                    <div className="flex justify-between items-end mb-5 mt-8">
-                        <h2 className="text-lg font-black text-white tracking-wide">Featured Services</h2>
+                    <div className="flex justify-between items-end mb-2.5 mt-2">
+                        <h2 className="text-base sm:text-lg font-black text-white tracking-wide">Featured Services</h2>
                         <Tooltip content="Browse all ridersbud services">
                             <Link to="/customer-portal/app-services" className="text-xs text-primary font-bold hover:text-white transition-colors">View All</Link>
                         </Tooltip>
                     </div>
 
-                    <div className="flex gap-4 overflow-x-auto pb-4 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
+                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
                         {db?.appServices?.filter((s: any) => {
                             if (s.category !== 'Special Services' || s.isActive === false) return false;
-                            const modules = db?.settings?.modules;
-                            if (!modules) return true;
-                            if (s.slug === 'rent-a-car') return modules.find(m => m.id === 'rent-a-car')?.enabled !== false;
-                            if (s.slug === 'driver-for-hire') return modules.find(m => m.id === 'driver-for-hire')?.enabled !== false;
-                            if (s.slug === 'registration-assistance') return modules.find(m => m.id === 'liaison-assistance')?.enabled !== false;
-                            if (s.slug === 'towing') return modules.find(m => m.id === 'towing')?.enabled !== false;
+                            if (s.slug === 'rent-a-car' && !isSpecialServiceEnabled('carRental', db?.settings)) return false;
+                            if (s.slug === 'driver-for-hire' && !isSpecialServiceEnabled('driverHire', db?.settings)) return false;
+                            if (s.slug === 'registration-assistance' && !isSpecialServiceEnabled('liaison', db?.settings)) return false;
+                            if (s.slug === 'towing' && !isSpecialServiceEnabled('towing', db?.settings)) return false;
                             return true;
                         }).slice().sort((a: any, b: any) => (a.order || 99) - (b.order || 99)).map((service: any) => (
                             <Tooltip key={service.id} content={service.name}>
@@ -1916,10 +1729,10 @@ const HomeScreen: React.FC = () => {
                 </section>
 
                 {/* Genuine Parts Banner — Premium Redesign */}
-                <section className="animate-slideUp space-y-4">
+                <section className="animate-slideUp space-y-3 mt-2">
                     <div
                         className="w-full relative rounded-3xl overflow-hidden py-6 sm:py-8 min-h-[240px] bg-gradient-to-br from-[#1E1E22] via-[#121214] to-[#0A0A0C] border border-white/5 group cursor-pointer shadow-2xl hover:border-primary/30 hover:shadow-primary/5 transition-all duration-500 flex items-center"
-                        onClick={() => navigate('/customer-portal/parts-store')}
+                        onClick={handlePartsStoreClick}
                     >
                         {/* Background overlay image — proper dark industrial texture */}
                         <img
@@ -1955,7 +1768,14 @@ const HomeScreen: React.FC = () => {
                                     return cats.slice(0, 4).map(cat => (
                                         <span
                                             key={cat}
-                                            onClick={(e) => { e.stopPropagation(); navigate(`/customer-portal/parts-store?category=${encodeURIComponent(cat)}`); }}
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                if (isStoreDisabled) {
+                                                    setShowUpcomingStoreModal(true);
+                                                } else {
+                                                    navigate(`/customer-portal/parts-store?category=${encodeURIComponent(cat)}`); 
+                                                }
+                                            }}
                                             className="text-[9px] sm:text-[10px] font-bold text-white/70 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full hover:bg-primary/20 hover:border-primary/30 hover:text-primary transition-all duration-300 cursor-pointer"
                                         >
                                             {cat}
@@ -3161,6 +2981,11 @@ const HomeScreen: React.FC = () => {
                     />
                 );
             })()}
+
+            <UpcomingStoreModal 
+                isOpen={showUpcomingStoreModal}
+                onClose={() => setShowUpcomingStoreModal(false)}
+            />
         </div>
     );
 };

@@ -1,3 +1,4 @@
+import { isSpecialServiceSlugOrNameEnabled } from '../../utils/specialServicesHelper';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -17,7 +18,7 @@ const AppServicesListScreen: React.FC = () => {
         );
     }
 
-    const services = (db?.appServices?.filter(s => s.isActive) || []).slice().sort((a: any, b: any) => (a.order || 99) - (b.order || 99));
+    const services = (db?.appServices?.filter(s => s.isActive && isSpecialServiceSlugOrNameEnabled(s.slug || s.name, db?.settings)) || []).slice().sort((a: any, b: any) => (a.order || 99) - (b.order || 99));
     const accentColor = db?.settings?.accentColor || '#FE7803';
 
     return (

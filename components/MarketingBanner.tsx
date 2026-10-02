@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowRight, Sparkles, Tag, Star, Shield, Zap, Gift } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useDatabase } from '../context/DatabaseContext';
+import { UpcomingStoreModal } from './UpcomingStoreModal';
 
 const MarketingBanner = () => {
     const [currentSlide, setCurrentSlide] = useState(0);
     const [randomSlides, setRandomSlides] = useState<any[]>([]);
+    const [showUpcomingModal, setShowUpcomingModal] = useState(false);
+    const { db } = useDatabase();
+    const navigate = useNavigate();
+
+    const partsModule = db?.settings?.modules?.find(m => m.id === 'parts-store');
+    const isStoreDisabled = partsModule ? !partsModule.enabled : false;
 
     // Pool of all possible marketing slides
     const slidePool = useMemo(() => [
@@ -66,59 +74,74 @@ const MarketingBanner = () => {
 
     if (randomSlides.length === 0) return null;
 
+    const handleSlideClick = (e: React.MouseEvent, link: string) => {
+        if (link.includes('/parts-store') && isStoreDisabled) {
+            e.preventDefault();
+            setShowUpcomingModal(true);
+        }
+    };
+
     return (
-        <div className="relative rounded-3xl overflow-hidden shadow-2xl mb-8 group h-64 sm:h-72 animate-slideUp">
-            {randomSlides.map((slide, index) => (
-                <div
-                    key={slide.id}
-                    className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
-                >
-                    {/* Background Image with Overlay */}
-                    <img
-                        src={slide.image}
-                        alt={slide.title}
-                        className="absolute inset-0 w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-[2000ms]"
-                        loading="eager"
-                    />
-                    <div className={`absolute inset-0 ${slide.bg} opacity-80 mix-blend-multiply`}></div>
-                    <div className="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent"></div>
+        <>
+            <div className="relative rounded-3xl overflow-hidden shadow-2xl mb-3 sm:mb-4 group h-64 sm:h-72 animate-slideUp">
+                {randomSlides.map((slide, index) => (
+                    <div
+                        key={slide.id}
+                        className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
+                    >
+                        {/* Background Image with Overlay */}
+                        <img
+                            src={slide.image}
+                            alt={slide.title}
+                            className="absolute inset-0 w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-[2000ms]"
+                            loading="eager"
+                        />
+                        <div className={`absolute inset-0 ${slide.bg} opacity-80 mix-blend-multiply`}></div>
+                        <div className="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent"></div>
 
-                    {/* Content */}
-                    <div className="relative z-20 h-full flex items-center px-8 sm:px-12">
-                        <div className="max-w-[70%]">
-                            <div className="flex items-center gap-3 mb-2 animate-fadeIn">
-                                <div className="p-2 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 shadow-lg">
-                                    {slide.icon}
+                        {/* Content */}
+                        <div className="relative z-20 h-full flex items-center px-8 sm:px-12">
+                            <div className="max-w-[70%]">
+                                <div className="flex items-center gap-3 mb-2 animate-fadeIn">
+                                    <div className="p-2 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 shadow-lg">
+                                        {slide.icon}
+                                    </div>
+                                    <span className="text-[10px] font-black  tracking-widest text-white/90 bg-white/10 px-3 py-1 rounded-full border border-white/10 backdrop-blur-sm">Featured</span>
                                 </div>
-                                <span className="text-[10px] font-black  tracking-widest text-white/90 bg-white/10 px-3 py-1 rounded-full border border-white/10 backdrop-blur-sm">Featured</span>
-                            </div>
-                            <h3 className="text-[20px] font-black text-white leading-tight mb-2 drop-shadow-lg line-clamp-2">{slide.title}</h3>
-                            <p className="text-[12px] text-gray-200 font-medium mb-5 line-clamp-2 drop-shadow-md opacity-90">{slide.subtitle}</p>
+                                <h3 className="text-[20px] font-black text-white leading-tight mb-2 drop-shadow-lg line-clamp-2">{slide.title}</h3>
+                                <p className="text-[12px] text-gray-200 font-medium mb-5 line-clamp-2 drop-shadow-md opacity-90">{slide.subtitle}</p>
 
-                            <Link
-                                to={slide.link}
-                                className="inline-flex items-center gap-2 bg-white text-black px-6 py-2.5 rounded-full text-xs font-black  tracking-wide hover:bg-primary hover:text-white transition-all duration-300 transform hover:scale-105 shadow-xl group-hover:shadow-2xl"
-                            >
-                                {slide.cta}
-                                <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-                            </Link>
+                                <Link
+                                    to={slide.link}
+                                    onClick={(e) => handleSlideClick(e, slide.link)}
+                                    className="inline-flex items-center gap-2 bg-white text-black px-6 py-2.5 rounded-full text-xs font-black  tracking-wide hover:bg-primary hover:text-white transition-all duration-300 transform hover:scale-105 shadow-xl group-hover:shadow-2xl"
+                                >
+                                    {slide.cta}
+                                    <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                                </Link>
+                            </div>
                         </div>
                     </div>
-                </div>
-            ))}
-
-            {/* Indicators */}
-            <div className="absolute bottom-4 left-0 right-0 z-30 flex justify-center gap-2">
-                {randomSlides.map((_, index) => (
-                    <button
-                        key={index}
-                        onClick={() => setCurrentSlide(index)}
-                        className={`h-1.5 rounded-full transition-all duration-300 backdrop-blur-sm ${index === currentSlide ? 'w-8 bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]' : 'w-2 bg-white/30 hover:bg-white/50'}`}
-                        aria-label={`Go to slide ${index + 1}`}
-                    />
                 ))}
+
+                {/* Indicators */}
+                <div className="absolute bottom-4 left-0 right-0 z-30 flex justify-center gap-2">
+                    {randomSlides.map((_, index) => (
+                        <button
+                            key={index}
+                            onClick={() => setCurrentSlide(index)}
+                            className={`h-1.5 rounded-full transition-all duration-300 backdrop-blur-sm ${index === currentSlide ? 'w-8 bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]' : 'w-2 bg-white/30 hover:bg-white/50'}`}
+                            aria-label={`Go to slide ${index + 1}`}
+                        />
+                    ))}
+                </div>
             </div>
-        </div>
+
+            <UpcomingStoreModal 
+                isOpen={showUpcomingModal}
+                onClose={() => setShowUpcomingModal(false)}
+            />
+        </>
     );
 };
 

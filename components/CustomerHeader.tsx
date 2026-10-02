@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
-import { Settings, LogOut, ChevronLeft, User } from 'lucide-react';
+import CustomerSearchModal from './CustomerSearchModal';
+import { Settings, LogOut, ChevronLeft, User, Search } from 'lucide-react';
 import { getProfileImage } from '../utils/imageConstants';
 import { useScrollDirection } from '../hooks/useScrollDirection';
 import { useDatabase } from '../context/DatabaseContext';
@@ -20,6 +21,7 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
     const { db } = useDatabase();
     const navigate = useNavigate();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
     const scrollDirection = useScrollDirection();
     const isHidden = scrollDirection === 'up';
 
@@ -59,7 +61,17 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                 </div>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
+                {/* Search Icon Widget Button (inline before Notification Bell) */}
+                <button
+                    onClick={() => setIsSearchOpen(true)}
+                    className="p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 active:scale-95 transition-all flex items-center justify-center"
+                    aria-label="Search services, products, and tools"
+                    title="Search services, products, and tools"
+                >
+                    <Search className="h-5 w-5" />
+                </button>
+
                 {/* Notification Bell - fully functional */}
                 <NotificationBell />
 
@@ -111,6 +123,9 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                     )}
                 </div>
             </div>
+
+            {/* Global Search Modal */}
+            <CustomerSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
         </header>
     );
 };

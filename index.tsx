@@ -4,6 +4,21 @@ import * as ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 
+// Proactively purge any bloated or orphaned firestore_mutations from localStorage
+// to prevent browser QuotaExceededError crashes
+try {
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('firestore_mutations_') || key.startsWith('firestore_') || key.includes('firestore/'))) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach(k => {
+    try { localStorage.removeItem(k); } catch (_) {}
+  });
+} catch (_) {}
+
 // Suppress console warnings and errors originating from browser extensions (e.g. MetaMask, contentscript.js)
 // Uses Object.defineProperty to make the override non-configurable, preventing extensions from bypassing it.
 
@@ -220,8 +235,23 @@ window.addEventListener('error', (event) => {
     errorMsg.includes('startTime') ||
     errorMsg.includes('reportAllChanges') ||
     errorStack.includes('startTime') ||
-    errorStack.includes('reportAllChanges')
+    errorStack.includes('reportAllChanges') ||
+    errorMsg.includes('QuotaExceededError') ||
+    errorMsg.includes('quota') ||
+    errorMsg.includes('firestore_mutations')
   ) {
+    if (errorMsg.includes('QuotaExceededError') || errorMsg.includes('firestore_mutations')) {
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('firestore_mutations_') || k.startsWith('firestore_') || k.includes('firestore'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch (_) {}
+    }
     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
     event.preventDefault();
     event.stopPropagation();
@@ -251,8 +281,24 @@ window.addEventListener('unhandledrejection', (event) => {
     reasonStr.includes('startTime') ||
     reasonStr.includes('reportAllChanges') ||
     reasonStr.includes('Evervault') ||
-    reasonStr.includes('hcaptcha')
+    reasonStr.includes('hcaptcha') ||
+    reasonStr.includes('QuotaExceededError') ||
+    reasonStr.includes('quota') ||
+    reasonStr.includes('firestore_mutations')
   ) {
+    if (reasonStr.includes('QuotaExceededError') || reasonStr.includes('firestore_mutations')) {
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('firestore_mutations_') || k.startsWith('firestore_') || k.includes('firestore'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch (_) {}
+    }
+    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
     event.preventDefault();
     event.stopPropagation();
   }

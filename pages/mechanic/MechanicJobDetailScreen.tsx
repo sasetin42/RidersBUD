@@ -1111,16 +1111,53 @@ const MechanicJobDetailScreen: React.FC = () => {
                             </div>
 
                             {/* Payment Summary Cards */}
-                            <div className="grid grid-cols-2 gap-2.5">
-                                <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3.5 flex flex-col justify-center">
-                                    <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 mb-1">50% Initial DP PAID</p>
-                                    <p className="text-xl font-black text-white tracking-tight">₱{(booking.paidAmount || (booking.totalAmount ? booking.totalAmount * 0.5 : 0)).toLocaleString()}</p>
-                                </div>
-                                <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3.5 flex flex-col justify-center text-right">
-                                    <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1">Remaining Balance</p>
-                                    <p className="text-xl font-black text-primary tracking-tight">₱{((booking.totalAmount || booking.service?.price || 0) - (booking.paidAmount || 0)).toLocaleString()}</p>
-                                </div>
-                            </div>
+                            {(() => {
+                                const totalRevenue = getJobTotalAmount(booking);
+                                const isJobCompleted = booking.status === 'Completed' || booking.paymentStatus === 'paid' || booking.isPaid === true;
+
+                                if (isJobCompleted) {
+                                    return (
+                                        <div className="bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-black/40 border border-emerald-500/25 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+                                            <div>
+                                                <div className="flex items-center gap-1.5 mb-1">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                                                        Total Amount Services (Kabuuan)
+                                                    </p>
+                                                </div>
+                                                <p className="text-2xl font-black text-white tracking-tight">
+                                                    ₱{totalRevenue.toLocaleString()}
+                                                </p>
+                                                <p className="text-[10px] text-gray-400 mt-0.5">
+                                                    Buong serbisyo ay bayad na (Fully Settled)
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm">
+                                                    <CheckCircle size={13} className="text-emerald-400" />
+                                                    <span>100% Paid</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                const initialDeposit = booking.paidAmount || (totalRevenue > 0 ? totalRevenue * 0.5 : 0);
+                                const remainingBalance = Math.max(0, totalRevenue - initialDeposit);
+
+                                return (
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                        <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3.5 flex flex-col justify-center">
+                                            <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 mb-1">50% Initial DP Paid</p>
+                                            <p className="text-xl font-black text-white tracking-tight">₱{initialDeposit.toLocaleString()}</p>
+                                        </div>
+                                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3.5 flex flex-col justify-center text-right">
+                                            <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1">Remaining Balance</p>
+                                            <p className="text-xl font-black text-primary tracking-tight">₱{remainingBalance.toLocaleString()}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Layman's Terms Payment Breakdown for Mechanic */}
                             {(() => {
@@ -1129,6 +1166,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                                 const mechanicTakeHome = getJobMechanicShare(booking, serviceFeePct);
                                 const adminCommission = Math.max(0, totalRevenue - mechanicTakeHome);
                                 const mechanicPct = 100 - serviceFeePct;
+                                const isJobCompleted = booking.status === 'Completed' || booking.paymentStatus === 'paid' || booking.isPaid === true;
 
                                 return (
                                     <div className="p-4 bg-gradient-to-br from-white/[0.04] to-white/[0.01] border border-white/10 rounded-2xl space-y-3">
@@ -1174,7 +1212,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                         Your Take-Home Pay ({mechanicPct}%)
                                                     </p>
                                                     <p className="text-[9px] text-gray-400 font-medium">
-                                                        Iyong maiuuwi at papasok sa Wallet
+                                                        {isJobCompleted ? 'Pumasok na sa iyong Wallet' : 'Iyong maiuuwi at papasok sa Wallet'}
                                                     </p>
                                                 </div>
                                                 <p className="text-lg font-black text-emerald-400 tracking-tight">

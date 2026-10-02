@@ -297,6 +297,11 @@ const BookingScreen: React.FC = () => {
     const [verifyingPayment, setVerifyingPayment] = useState(false);
     const [waitingBookingId, setWaitingBookingId] = useState<string | null>(null);
 
+    // One-time guard: HitPay return must reconcile exactly ONCE. This effect re-runs on
+    // every db?.bookings realtime update — without the guard, updateBookingPayment fires
+    // repeatedly and spams 3 notifications per pass (the 99+ notification flood).
+    const hitpayReturnProcessedRef = React.useRef(false);
+
     // Handle return from HitPay redirect (Booking flow)
     useEffect(() => {
         const query = new URLSearchParams(location.search);
@@ -308,6 +313,8 @@ const BookingScreen: React.FC = () => {
             const targetBookingId = pendingTx ? (JSON.parse(pendingTx).bookingId) : query.get('bookingId');
             
             if (targetBookingId) {
+                if (hitpayReturnProcessedRef.current) return;
+                hitpayReturnProcessedRef.current = true;
                 try {
                     let dpAmount = 0;
                     let totAmount = 0;

@@ -14,41 +14,51 @@ export function usePresence(userId: string | null, collectionName: string, autoS
 
         const userRef = doc(firestoreDB, collectionName, userId);
         
-        // Initial heartbeat
-        const initialPayload: { lastActive: string; isOnline?: boolean } = {
-            lastActive: new Date().toISOString()
-        };
-        if (autoSetOnline) {
-            initialPayload.isOnline = true;
+        // Initial heartbeat (only when online)
+        if (navigator.onLine) {
+            const initialPayload: { lastActive: string; isOnline?: boolean } = {
+                lastActive: new Date().toISOString()
+            };
+            if (autoSetOnline) {
+                initialPayload.isOnline = true;
+            }
+
+            setDoc(userRef, initialPayload, { merge: true }).catch(() => {});
         }
 
-        setDoc(userRef, initialPayload, { merge: true }).catch(() => {});
-
-        // Heartbeat interval every 20 seconds
+        // Heartbeat interval throttled to 60 seconds (prevents Firestore offline mutation buffer overflow)
         const interval = setInterval(() => {
-            if (userIdRef.current) {
+            // Only send presence ping when tab is visible and network is online
+            if (userIdRef.current && document.visibilityState === 'visible' && navigator.onLine) {
                 const tickPayload: { lastActive: string; isOnline?: boolean } = {
                     lastActive: new Date().toISOString()
                 };
                 if (autoSetOnline) {
                     tickPayload.isOnline = true;
                 }
-                setDoc(userRef, tickPayload, { merge: true }).catch(() => {});
+                setDoc(userRef, tickPayload, { merge: true }).catch((err) => {
+                    // If local cache/storage quota is exceeded, gracefully ignore
+                    if (String(err?.message || err).includes('quota') || String(err?.message || err).includes('QuotaExceededError')) {
+                        // Suppress
+                    }
+                });
             }
-        }, 20000);
+        }, 60000);
 
         return () => {
             clearInterval(interval);
             try { 
-                if (autoSetOnline) {
-                    setDoc(userRef, { 
-                        isOnline: false,
-                        lastActive: new Date().toISOString()
-                    }, { merge: true }).catch(() => {}); 
-                } else {
-                    setDoc(userRef, { 
-                        lastActive: new Date().toISOString()
-                    }, { merge: true }).catch(() => {}); 
+                if (navigator.onLine) {
+                    if (autoSetOnline) {
+                        setDoc(userRef, { 
+                            isOnline: false,
+                            lastActive: new Date().toISOString()
+                        }, { merge: true }).catch(() => {}); 
+                    } else {
+                        setDoc(userRef, { 
+                            lastActive: new Date().toISOString()
+                        }, { merge: true }).catch(() => {}); 
+                    }
                 }
             } catch (_) {}
         };

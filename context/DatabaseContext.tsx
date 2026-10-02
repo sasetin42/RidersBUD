@@ -212,6 +212,98 @@ window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => 
     }
 });
 
+// ============================================================================
+// Notification self-healing engine (module scope — survives re-subscriptions)
+// 1. Write-time dedupe: blocks identical notifications written within 60s
+//    (kills duplicates from runaway payment-reconcile loops).
+// 2. Snapshot dedupe: collapses identical per-recipient copies already in
+//    Firestore and auto-purges the older ones so counts return to normal.
+// 3. Tombstones: deleted notification IDs are remembered for the session; if
+//    an upstream bug re-creates the same doc, it is hidden instantly AND
+//    purged from Firestore — deleted notifications never come back.
+// ============================================================================
+const NOTIF_DEDUPE_WINDOW_MS = 60_000;
+const recentNotifSigs = new Map<string, number>();
+const notifTombstones = new Set<string>();
+
+const notifSignature = (recipientId?: string, recipientRole?: string, title?: string, message?: string) =>
+    `${recipientId || ''}|${recipientRole || ''}|${(title || '').trim()}|${(message || '').trim()}`;
+
+const isMapsTestNotif = (item: any) => {
+    const title = (item?.title || '').toLowerCase();
+    const message = (item?.message || '').toLowerCase();
+    return (
+        title.includes('google map') ||
+        title.includes('google maps') ||
+        title.includes('maps api') ||
+        message.includes('google maps api') ||
+        message.includes('api key connection test')
+    );
+};
+
+/** Guard used by both notification writers — returns true if this exact notification was just written. */
+const isDuplicateNotificationWrite = (recipientId?: string, recipientRole?: string, title?: string, message?: string) => {
+    const now = Date.now();
+    for (const [sig, ts] of recentNotifSigs) {
+        if (now - ts > NOTIF_DEDUPE_WINDOW_MS) recentNotifSigs.delete(sig);
+    }
+    const sig = notifSignature(recipientId, recipientRole, title, message);
+    const lastTs = recentNotifSigs.get(sig);
+    if (lastTs && now - lastTs < NOTIF_DEDUPE_WINDOW_MS) {
+        console.info('[Notifications] Duplicate write blocked (dedupe window):', title);
+        return true;
+    }
+    recentNotifSigs.set(sig, now);
+    return false;
+};
+
+/** Dedupe a Firestore notifications snapshot per recipient; returns visible docs + stale doc IDs to purge. */
+const processNotificationsSnapshot = (data: any[]): { visible: any[]; staleDocIds: string[] } => {
+    const bySignature = new Map<string, any>();
+    const staleDocIds: string[] = [];
+
+    (data as any[]).forEach((n: any) => {
+        if (!n?.id) return;
+        // Explicitly deleted notification re-created upstream — purge & hide.
+        if (notifTombstones.has(n.id)) {
+            staleDocIds.push(n.id);
+            return;
+        }
+        // System test pings must never reach user feeds.
+        if (isMapsTestNotif(n)) {
+            staleDocIds.push(n.id);
+            return;
+        }
+        // Collapse identical duplicates (same recipient + title + message).
+        const sig = notifSignature(n.recipientId, n.recipientRole, n.title, n.message);
+        const existing = bySignature.get(sig);
+        if (!existing) {
+            bySignature.set(sig, n);
+        } else {
+            // Keep the newest copy, purge the older one.
+            const keep = (n.timestamp ?? 0) >= (existing.timestamp ?? 0) ? n : existing;
+            const drop = keep === n ? existing : n;
+            bySignature.set(sig, keep);
+            staleDocIds.push(drop.id);
+        }
+    });
+
+    const visible = Array.from(bySignature.values()).sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    return { visible, staleDocIds };
+};
+
+/** Purge stale/duplicate/tombstoned notification docs in the background.
+ * Uses per-doc deletes (not a batch) because a session may lack permission to delete
+ * some docs (e.g. 'all' broadcasts from a customer session) — one denial must not
+ * abort the cleanup of the rest. Failures are silent; UI already hides these docs. */
+const purgeStaleNotificationDocs = (docIds: string[]) => {
+    if (docIds.length === 0) return;
+    docIds.forEach(id => {
+        if (!id) return;
+        deleteDoc(doc(firestore, 'notifications', id)).catch(() => {});
+    });
+};
+
 // Helper to remove any undefined fields recursively to prevent Firestore 'Unsupported field value: undefined' errors
 const cleanFirestoreData = (obj: any): any => {
     if (obj === null || obj === undefined) return null;
@@ -767,35 +859,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 q,
                 (data) => {
                     if (stateKey === 'notifications' && Array.isArray(data)) {
-                        const isGoogleMapsTest = (item: any) => {
-                            const title = (item?.title || '').toLowerCase();
-                            const message = (item?.message || '').toLowerCase();
-                            return (
-                                title.includes('google map') ||
-                                title.includes('google maps') ||
-                                title.includes('maps api') ||
-                                message.includes('google maps api') ||
-                                message.includes('api key connection test')
-                            );
-                        };
-
-                        // Filter from memory state immediately
-                        const cleanNotifications = (data as any[]).filter(n => !isGoogleMapsTest(n));
-                        setDb(prev => prev ? { ...prev, notifications: cleanNotifications } : null);
-
-                        // Batch delete any matching docs in the background
-                        const staleDocs = (data as any[]).filter(isGoogleMapsTest);
-                        if (staleDocs.length > 0) {
-                            try {
-                                const batch = writeBatch(firestore);
-                                staleDocs.forEach(d => {
-                                    if (d.id) batch.delete(doc(firestore, 'notifications', d.id));
-                                });
-                                batch.commit().catch(e => console.warn('[DatabaseContext] Auto-purge Maps notifs error:', e));
-                            } catch (e) {
-                                console.warn('[DatabaseContext] Auto-purge batch error:', e);
-                            }
-                        }
+                        const { visible, staleDocIds } = processNotificationsSnapshot(data as any[]);
+                        setDb(prev => prev ? { ...prev, notifications: visible } : null);
+                        purgeStaleNotificationDocs(staleDocIds);
                     } else {
                         setDb(prev => prev ? { ...prev, [stateKey]: data } : null);
                     }
@@ -810,33 +876,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 q,
                 (data) => {
                     if (stateKey === 'notifications' && Array.isArray(data)) {
-                        const isGoogleMapsTest = (item: any) => {
-                            const title = (item?.title || '').toLowerCase();
-                            const message = (item?.message || '').toLowerCase();
-                            return (
-                                title.includes('google map') ||
-                                title.includes('google maps') ||
-                                title.includes('maps api') ||
-                                message.includes('google maps api') ||
-                                message.includes('api key connection test')
-                            );
-                        };
-
-                        const cleanNotifications = (data as any[]).filter(n => !isGoogleMapsTest(n));
-                        setDb(prev => prev ? { ...prev, notifications: cleanNotifications } : null);
-
-                        const staleDocs = (data as any[]).filter(isGoogleMapsTest);
-                        if (staleDocs.length > 0) {
-                            try {
-                                const batch = writeBatch(firestore);
-                                staleDocs.forEach(d => {
-                                    if (d.id) batch.delete(doc(firestore, 'notifications', d.id));
-                                });
-                                batch.commit().catch(e => console.warn('[DatabaseContext] Auto-purge query Maps notifs error:', e));
-                            } catch (e) {
-                                console.warn('[DatabaseContext] Auto-purge batch error:', e);
-                            }
-                        }
+                        const { visible, staleDocIds } = processNotificationsSnapshot(data as any[]);
+                        setDb(prev => prev ? { ...prev, notifications: visible } : null);
+                        purgeStaleNotificationDocs(staleDocIds);
                     } else {
                         setDb(prev => prev ? { ...prev, [stateKey]: data } : null);
                     }
@@ -1180,6 +1222,12 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             lowerMsg.includes('google maps api') ||
             lowerMsg.includes('api key connection test')
         ) {
+            return;
+        }
+
+        // Guard: block identical notifications written within the dedupe window
+        // (protects against runaway reconcile loops duplicating the same alert).
+        if (isDuplicateNotificationWrite(recipientId, recipientRole, notif.title, notif.message)) {
             return;
         }
 
@@ -2071,6 +2119,18 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         const isFull = status === 'paid' || extraData?.isPaid === true;
         const txReference = extraData?.balancePaymentRef || extraData?.downpaymentRef || extraData?.hitpayReference || `TXN-${Date.now()}`;
         const txType = isFull ? 'balance' : 'downpayment';
+
+        // Idempotency backstop: if this exact payment reference was already verified
+        // on the booking, this call is a replay (e.g. a reconcile effect re-running on
+        // realtime updates) — skip entirely so payments and notifications never double.
+        const isReplay =
+            (booking as any)?.isVerified &&
+            ((isFull && !!extraData?.balancePaymentRef && booking?.balancePaymentRef === extraData.balancePaymentRef) ||
+             (!isFull && !!extraData?.downpaymentRef && booking?.downpaymentRef === extraData.downpaymentRef));
+        if (isReplay) {
+            console.info(`[DatabaseContext] updateBookingPayment replay detected for booking ${id} (ref ${txReference}) — skipping.`);
+            return;
+        }
         
         const newTransaction = {
             id: `tx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -3372,6 +3432,11 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             return;
         }
 
+        // Guard: block identical notifications written within the dedupe window
+        if (isDuplicateNotificationWrite(recipientId, recipientRole, notification.title, notification.message)) {
+            return;
+        }
+
         if (!recipientRole) {
             recipientRole = recipientId === 'admin' ? 'admin' : 'customer';
         }
@@ -3467,6 +3532,10 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const deleteNotification = async (id: string) => {
+        // Remember this ID as tombstoned: if anything re-creates the doc upstream,
+        // the snapshot engine hides it instantly and purges it again.
+        notifTombstones.add(id);
+
         setDb(prev => {
             if (!prev) return null;
             return {
@@ -3506,6 +3575,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         const targetNotifs = (db?.notifications || []).filter(isMatchingNotification);
         const targetIds = specificIds && specificIds.length > 0 ? specificIds : targetNotifs.map(n => n.id);
+
+        // Tombstone every cleared ID so re-created copies are hidden + re-purged
+        targetIds.forEach(tid => { if (tid) notifTombstones.add(tid); });
 
         setDb(prev => {
             if (!prev) return null;
@@ -3549,6 +3621,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                  (isCustomer && n.recipientRole === 'customer') || 
                  (isMechanic && n.recipientRole === 'mechanic'))
             ) || [];
+
+            // Tombstone cleared IDs so re-created copies are hidden + re-purged
+            matched.forEach(m => { if (m.id) notifTombstones.add(m.id); });
 
             setDb(prev => {
                 if (!prev) return null;

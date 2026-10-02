@@ -1,3 +1,4 @@
+import { isSpecialServiceEnabled } from './utils/specialServicesHelper';
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { updateDoc, doc } from 'firebase/firestore';
@@ -23,7 +24,7 @@ import NotificationToasts from './components/NotificationToasts';
 import TourOverlay from './components/TourOverlay';
 import AppLoadingScreen from './components/AppLoadingScreen';
 import ScrollToTop from './components/ScrollToTop';
-import { Shield } from 'lucide-react';
+import { Shield, ShoppingBag, Sparkles, ShieldCheck, Truck, Wrench, Bell, CheckCircle2 } from 'lucide-react';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Geolocation } from '@capacitor/geolocation';
@@ -188,11 +189,89 @@ const ModuleGuard: React.FC<ModuleGuardProps> = ({ moduleId, children }) => {
     const modules = db?.settings?.modules;
     const module = modules?.find(m => m.id === moduleId);
     
-    if (!modules || !module) {
-        return <>{children}</>;
+    // Check both modules and serviceCustomizations
+    let isExplicitlyDisabled = false;
+    if (module && module.enabled === false) {
+        isExplicitlyDisabled = true;
     }
-    
-    if (!module.enabled) {
+    if (moduleId === 'rent-a-car' && !isSpecialServiceEnabled('carRental', db?.settings)) {
+        isExplicitlyDisabled = true;
+    } else if (moduleId === 'driver-for-hire' && !isSpecialServiceEnabled('driverHire', db?.settings)) {
+        isExplicitlyDisabled = true;
+    } else if (moduleId === 'liaison-assistance' && !isSpecialServiceEnabled('liaison', db?.settings)) {
+        isExplicitlyDisabled = true;
+    } else if (moduleId === 'towing' && !isSpecialServiceEnabled('towing', db?.settings)) {
+        isExplicitlyDisabled = true;
+    }
+
+    if (isExplicitlyDisabled) {
+        if (moduleId === 'parts-store') {
+            return (
+                <div className="flex flex-col items-center justify-center min-h-[85vh] px-4 py-8 text-center bg-secondary animate-fadeIn">
+                    <div className="w-full max-w-md bg-[#141417] border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-80" />
+
+                        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4 text-primary shadow-[0_0_20px_rgba(255,107,0,0.25)]">
+                            <ShoppingBag className="w-8 h-8" />
+                        </div>
+
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-wider mb-2">
+                            <Sparkles size={12} className="animate-spin text-amber-400" />
+                            Upcoming Feature
+                        </div>
+
+                        <h2 className="text-2xl font-black text-white tracking-tight mb-2">Parts & Tools Store</h2>
+
+                        {module.bannerMessage ? (
+                            <div className="mb-5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/90 leading-relaxed font-medium">
+                                {module.bannerMessage}
+                            </div>
+                        ) : (
+                            <p className="text-gray-400 text-xs leading-relaxed mb-5">
+                                Our curated automotive parts and specialty tools catalog is coming soon with direct doorstep delivery and certified fitment guarantee.
+                            </p>
+                        )}
+
+                        <div className="space-y-2.5 text-left mb-6">
+                            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-3">
+                                <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                                    <ShieldCheck size={16} />
+                                </div>
+                                <span className="text-xs font-bold text-gray-200">100% Genuine OEM & Warrantied Parts</span>
+                            </div>
+                            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-3">
+                                <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
+                                    <Truck size={16} />
+                                </div>
+                                <span className="text-xs font-bold text-gray-200">Real-Time Delivery & Courier Tracking</span>
+                            </div>
+                            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-3">
+                                <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                                    <Wrench size={16} />
+                                </div>
+                                <span className="text-xs font-bold text-gray-200">On-Site Mechanic Installation Option</span>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-2.5">
+                            <button
+                                onClick={() => window.location.href = '/customer-portal/services'}
+                                className="flex-1 py-3 px-4 bg-primary text-white font-bold text-xs tracking-wider uppercase rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-95"
+                            >
+                                Browse Services
+                            </button>
+                            <button
+                                onClick={() => window.location.href = '/customer-portal/'}
+                                className="py-3 px-5 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-bold text-xs rounded-xl border border-white/10 transition-all active:scale-95"
+                            >
+                                Back Home
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className="flex flex-col items-center justify-center min-h-[80vh] px-6 text-center bg-secondary animate-fadeIn">
                 <div className="w-20 h-20 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-6">
@@ -1557,9 +1636,9 @@ const AppContent: React.FC = () => {
                                                         <Route path="/booking-history/:plateNumber?" element={<BookingHistoryScreen />} />
                                                         <Route path="/bookings" element={<Navigate to="/customer-portal/" replace />} />
                                                         <Route path="/my-service-requests" element={<Navigate to="/customer-portal/" replace />} />
-                                                        <Route path="/order-history" element={<OrderHistoryScreen />} />
+                                                        <Route path="/order-history" element={<ModuleGuard moduleId="parts-store"><OrderHistoryScreen /></ModuleGuard>} />
                                                         <Route path="/warranties" element={<WarrantyScreen />} />
-                                                        <Route path="/wishlist" element={<WishlistScreen />} />
+                                                        <Route path="/wishlist" element={<ModuleGuard moduleId="parts-store"><WishlistScreen /></ModuleGuard>} />
                                                         <Route path="/faq" element={<FAQScreen />} />
                                                         <Route path="/rent-a-car" element={<ModuleGuard moduleId="rent-a-car"><RentCarScreen /></ModuleGuard>} />
                                                         <Route path="/rent-car" element={<Navigate to="/customer-portal/rent-a-car" replace />} />

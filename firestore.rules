@@ -106,9 +106,20 @@ service cloud.firestore {
     }
 
     // Notifications
-    // Note: The code stores recipientId WITHOUT the "customer-" or "mechanic-" prefix
-    // (stripped by sendNotification/addNotification). So the rule matches the raw UID directly.
+    // Notes:
+    // - The code stores recipientId WITHOUT the "customer-" or "mechanic-" prefix
+    //   (stripped by sendNotification/addNotification). Rules match the raw UID directly.
+    // - Every notification MUST carry an explicit recipientRole so reads are strictly
+    //   scoped to the matching role — this prevents cross-account notification mixing.
+    // - Writes are constrained: recipientRole must be one of the 3 valid roles so a
+    //   mis-tagged document can never be created (keeps per-role feeds strictly isolated).
+    // - Delete is limited to the recipient or admin, so one user can never wipe
+    //   another user's notifications.
     match /notifications/{notificationId} {
+      function validNotifRole() {
+        return request.resource.data.recipientRole in ['customer', 'mechanic', 'admin'];
+      }
+
       allow read: if isAuth() && (
         isAdmin() ||
         (
@@ -122,7 +133,16 @@ service cloud.firestore {
           (!("recipientRole" in resource.data) || resource.data.recipientRole == "customer" || resource.data.recipientRole == null || resource.data.recipientRole == "")
         )
       );
-      allow create, update: if isAuth();
+
+      allow create: if isAuth() && validNotifRole();
+
+      allow update: if isAuth() && (
+        isAdmin() ||
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.recipientId == "customer-" + request.auth.uid ||
+        resource.data.recipientId == "mechanic-" + request.auth.uid
+      );
+
       allow delete: if isAuth() && (
         isAdmin() || 
         resource.data.recipientId == request.auth.uid ||

@@ -25,6 +25,12 @@ const BookingConfirmationScreen: React.FC = () => {
     const [showRedirectNotification, setShowRedirectNotification] = useState(false);
     const [isLoading, setIsLoading] = useState(!locationState.bookings?.length && !!locationState.bookingId);
 
+    // One-time guards: the payment reconcile below must NEVER re-run. Re-running it
+    // re-fires updateBookingPayment → 3 duplicate notifications per pass (the 99+ flood).
+    const reconciledTxRef = React.useRef<Set<string>>(new Set());
+    const urlCleanedRef = React.useRef(false);
+    const cancelProcessedRef = React.useRef(false);
+
     // If return from payment with status=canceled or status=failed, cancel and redirect with modal
     useEffect(() => {
         const queryParams = new URLSearchParams(location.search);
@@ -32,6 +38,9 @@ const BookingConfirmationScreen: React.FC = () => {
         const bookingId = queryParams.get('bookingId') || locationState.bookingId;
 
         if (status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') {
+            // Process gateway cancellation exactly once — never re-cancel on re-renders
+            if (cancelProcessedRef.current) return;
+            cancelProcessedRef.current = true;
             const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
             let parsedBookingId = bookingId;
             let cancelAmount = 0;
@@ -112,8 +121,23 @@ const BookingConfirmationScreen: React.FC = () => {
 
         const targetBookingId = bookingId || locationState.bookingId || parsedTx?.bookingId;
 
-        // Reconcile payment if returning with success/completed from HitPay
+        // Strip gateway params from the URL immediately so a refresh/re-render
+        // can never re-trigger the reconcile below.
+        if (status && !urlCleanedRef.current) {
+            urlCleanedRef.current = true;
+            const cleanQuery = new URLSearchParams();
+            const keepId = queryParams.get('bookingId') || '';
+            if (keepId) cleanQuery.set('bookingId', keepId);
+            const cleanSearch = cleanQuery.toString();
+            window.history.replaceState({}, document.title, window.location.pathname + (cleanSearch ? `?${cleanSearch}` : ''));
+        }
+
+        // Reconcile payment if returning with success/completed from HitPay — exactly once per booking
         if (isCompleted && targetBookingId && updateBookingPayment) {
+            if (reconciledTxRef.current.has(targetBookingId)) {
+                return; // Already reconciled this booking — never fire again
+            }
+            reconciledTxRef.current.add(targetBookingId);
             try {
                 const dpAmount = parsedTx?.amount || Number(queryParams.get('amount')) || 0;
                 const totAmount = parsedTx?.totalAmount || (dpAmount > 0 ? dpAmount * 2 : 0);

@@ -1,3 +1,4 @@
+import { isSpecialServiceSlugOrNameEnabled } from '../../utils/specialServicesHelper';
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -38,6 +39,7 @@ const AppServiceDetailScreen: React.FC = () => {
 
     const isRentACar = service.id === 'rent-a-car' || service.slug === 'rent-a-car' || service.name.toLowerCase().includes('rent a car');
     const isDriverForHire = service.id === 'driver-for-hire' || service.slug === 'driver-for-hire' || service.name.toLowerCase().includes('driver for hire');
+    const isServiceEnabled = isSpecialServiceSlugOrNameEnabled(service.slug || service.name, db?.settings);
 
     const handleBookNow = () => {
         if (isRentACar) {
@@ -275,27 +277,36 @@ const AppServiceDetailScreen: React.FC = () => {
                             </p>
                         </div>
 
-                        <button
-                            onClick={handleBookNow}
-                            className="hidden md:flex w-full text-white font-black uppercase tracking-widest text-xs py-4 items-center justify-center gap-3 transition-all active:scale-[0.98] rounded-xl hover:shadow-lg hover:shadow-primary/20 hover:brightness-105"
-                            style={{ backgroundColor: accentColor }}
-                        >
-                            Book Now <ArrowRight size={15} />
-                        </button>
+                        {isServiceEnabled ? (
+                            <button
+                                onClick={handleBookNow}
+                                className="hidden md:flex w-full text-white font-black uppercase tracking-widest text-xs py-4 items-center justify-center gap-3 transition-all active:scale-[0.98] rounded-xl hover:shadow-lg hover:shadow-primary/20 hover:brightness-105"
+                                style={{ backgroundColor: accentColor }}
+                            >
+                                Book Now <ArrowRight size={15} />
+                            </button>
+                        ) : (
+                            <div className="hidden md:flex flex-col items-center justify-center p-3 rounded-xl bg-white/5 border border-white/10 text-center">
+                                <p className="text-xs font-bold text-gray-400">Service Temporarily Unavailable</p>
+                                <p className="text-[10px] text-gray-500 mt-0.5">This service is currently disabled in system settings.</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
 
             {/* Mobile Fixed Action Bar */}
-            <div className="fixed bottom-0 left-0 w-full p-4 bg-[#0A0A0A]/90 backdrop-blur-md border-t border-white/5 md:hidden z-40 flex gap-4 shadow-xl">
-                <button
-                    onClick={handleBookNow}
-                    className="w-full text-white font-black uppercase tracking-widest text-xs py-4 flex items-center justify-center gap-3 transition-all active:scale-[0.98] rounded-xl hover:shadow-lg hover:shadow-primary/20 hover:brightness-105"
-                    style={{ backgroundColor: accentColor }}
-                >
-                    Book Now <ArrowRight size={15} />
-                </button>
-            </div>
+            {isServiceEnabled && (
+                <div className="fixed bottom-0 left-0 w-full p-4 bg-[#0A0A0A]/90 backdrop-blur-md border-t border-white/5 md:hidden z-40 flex gap-4 shadow-xl">
+                    <button
+                        onClick={handleBookNow}
+                        className="w-full text-white font-black uppercase tracking-widest text-xs py-4 flex items-center justify-center gap-3 transition-all active:scale-[0.98] rounded-xl hover:shadow-lg hover:shadow-primary/20 hover:brightness-105"
+                        style={{ backgroundColor: accentColor }}
+                    >
+                        Book Now <ArrowRight size={15} />
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

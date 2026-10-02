@@ -235,6 +235,7 @@ const GCashPaymentModal: React.FC<Props> = ({
                 // Notify admin about the order payment
                 await addDoc(collection(firestore, 'notifications'), {
                     recipientId: 'admin',
+                    recipientRole: 'admin',
                     title: 'GCash Order Payment',
                     message: `GCash receipt uploaded by ${customerName} for parts order #${bookingId.slice(-6).toUpperCase()}.`,
                     type: 'info',
@@ -267,6 +268,7 @@ const GCashPaymentModal: React.FC<Props> = ({
                     // Add to admin notifications for rental
                     await addDoc(collection(firestore, 'notifications'), {
                         recipientId: 'admin',
+                        recipientRole: 'admin',
                         title: '🚗 New Rental Booking Created',
                         message: `New rental booking for ${services.map(s => s.name).join(', ') || 'Car Rental'} by ${customerName}.`,
                         type: 'info',
@@ -317,6 +319,7 @@ const GCashPaymentModal: React.FC<Props> = ({
 
                     await addDoc(collection(firestore, 'notifications'), {
                         recipientId: 'admin',
+                        recipientRole: 'admin',
                         title: '🚗 New Driver for Hire Request',
                         message: `New driver request by ${customerName} (${services[0]?.name || 'Driver for Hire'}).`,
                         type: 'info',
@@ -365,6 +368,7 @@ const GCashPaymentModal: React.FC<Props> = ({
 
                     await addDoc(collection(firestore, 'notifications'), {
                         recipientId: 'admin',
+                        recipientRole: 'admin',
                         title: '📋 New LTO Liaison Booking',
                         message: `New liaison booking for ${services.map(s => s.name).join(', ') || 'Registration'} by ${customerName}.`,
                         type: 'info',
@@ -427,6 +431,7 @@ const GCashPaymentModal: React.FC<Props> = ({
                     // Add to admin notifications
                     await addDoc(collection(firestore, 'notifications'), {
                         recipientId: 'admin',
+                        recipientRole: 'admin',
                         title: '📅 New Booking Created',
                         message: `New booking for ${services.map(s => s.name).join(', ') || 'Service'} by ${customerName}.`,
                         type: 'info',
