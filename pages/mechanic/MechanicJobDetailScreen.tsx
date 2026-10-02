@@ -1075,15 +1075,15 @@ const MechanicJobDetailScreen: React.FC = () => {
                         <div className="space-y-3.5 relative z-10">
                             {/* Reference Information Grid */}
                             <div className="p-3.5 bg-black/40 border border-white/5 rounded-2xl space-y-2 text-[11px]">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-gray-400 font-medium">Gateway / Method:</span>
-                                    <span className="text-white font-bold tracking-wide">{booking.paymentMethod || 'HitPay (Online)'}</span>
+                                <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-1">
+                                    <span className="text-gray-400 font-medium shrink-0">Gateway / Method:</span>
+                                    <span className="text-white font-bold tracking-wide text-right">{booking.paymentMethod || 'HitPay (Online)'}</span>
                                 </div>
                                 {(booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference) && (
-                                    <div className="flex justify-between items-center gap-2">
-                                        <span className="text-gray-400 font-medium flex-shrink-0">Reference No:</span>
-                                        <div className="flex items-center gap-1.5 overflow-hidden">
-                                            <span className="text-primary font-mono font-bold text-[10px] truncate">
+                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1.5 pt-1 border-t border-white/5">
+                                        <span className="text-gray-400 font-medium shrink-0">Reference No:</span>
+                                        <div className="flex items-center justify-between sm:justify-end gap-1.5 min-w-0 w-full sm:w-auto bg-white/[0.02] sm:bg-transparent p-1.5 sm:p-0 rounded-xl sm:rounded-none">
+                                            <span className="text-primary font-mono font-bold text-[10px] sm:text-[11px] truncate max-w-[200px] sm:max-w-[240px]">
                                                 {booking.downpaymentRef || booking.hitpayReference || booking.gcashDownpaymentReference || booking.gcashReference}
                                             </span>
                                             <button
@@ -1094,18 +1094,20 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                         alert('Reference number copied!');
                                                     }
                                                 }}
-                                                className="p-1 hover:bg-white/10 rounded text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                                                className="p-1.5 hover:bg-white/10 active:scale-95 rounded-lg text-gray-400 hover:text-white transition-all shrink-0"
                                                 title="Copy Reference"
                                             >
-                                                <Copy size={11} />
+                                                <Copy size={12} />
                                             </button>
                                         </div>
                                     </div>
                                 )}
                                 {booking.downpaymentPaidAt && (
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-400 font-medium">Paid Timestamp:</span>
-                                        <span className="text-gray-300 font-medium font-mono text-[10px]">{new Date(booking.downpaymentPaidAt).toLocaleString()}</span>
+                                    <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-1 pt-1 border-t border-white/5">
+                                        <span className="text-gray-400 font-medium shrink-0">Paid Timestamp:</span>
+                                        <span className="text-gray-300 font-medium font-mono text-[10px] sm:text-[11px] text-right">
+                                            {new Date(booking.downpaymentPaidAt).toLocaleString()}
+                                        </span>
                                     </div>
                                 )}
                             </div>
@@ -1117,24 +1119,24 @@ const MechanicJobDetailScreen: React.FC = () => {
 
                                 if (isJobCompleted) {
                                     return (
-                                        <div className="bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-black/40 border border-emerald-500/25 rounded-2xl p-4 flex items-center justify-between shadow-lg">
-                                            <div>
+                                        <div className="bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-black/40 border border-emerald-500/25 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                                            <div className="min-w-0">
                                                 <div className="flex items-center gap-1.5 mb-1">
-                                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                                    <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-emerald-400 truncate">
                                                         Total Amount Services (Kabuuan)
                                                     </p>
                                                 </div>
-                                                <p className="text-2xl font-black text-white tracking-tight">
+                                                <p className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                                                     ₱{totalRevenue.toLocaleString()}
                                                 </p>
-                                                <p className="text-[10px] text-gray-400 mt-0.5">
+                                                <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">
                                                     Buong serbisyo ay bayad na (Fully Settled)
                                                 </p>
                                             </div>
-                                            <div className="text-right">
-                                                <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm">
-                                                    <CheckCircle size={13} className="text-emerald-400" />
+                                            <div className="sm:text-right shrink-0">
+                                                <span className="inline-flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shadow-sm">
+                                                    <CheckCircle size={13} className="text-emerald-400 shrink-0" />
                                                     <span>100% Paid</span>
                                                 </span>
                                             </div>
@@ -1146,14 +1148,14 @@ const MechanicJobDetailScreen: React.FC = () => {
                                 const remainingBalance = Math.max(0, totalRevenue - initialDeposit);
 
                                 return (
-                                    <div className="grid grid-cols-2 gap-2.5">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                         <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-3.5 flex flex-col justify-center">
-                                            <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400/80 mb-1">50% Initial DP Paid</p>
-                                            <p className="text-xl font-black text-white tracking-tight">₱{initialDeposit.toLocaleString()}</p>
+                                            <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-emerald-400/80 mb-1">50% Initial DP Paid</p>
+                                            <p className="text-xl sm:text-2xl font-black text-white tracking-tight">₱{initialDeposit.toLocaleString()}</p>
                                         </div>
-                                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3.5 flex flex-col justify-center text-right">
-                                            <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400 mb-1">Remaining Balance</p>
-                                            <p className="text-xl font-black text-primary tracking-tight">₱{remainingBalance.toLocaleString()}</p>
+                                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3.5 flex flex-col justify-center text-left sm:text-right">
+                                            <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Remaining Balance</p>
+                                            <p className="text-xl sm:text-2xl font-black text-primary tracking-tight">₱{remainingBalance.toLocaleString()}</p>
                                         </div>
                                     </div>
                                 );
@@ -1169,53 +1171,53 @@ const MechanicJobDetailScreen: React.FC = () => {
                                 const isJobCompleted = booking.status === 'Completed' || booking.paymentStatus === 'paid' || booking.isPaid === true;
 
                                 return (
-                                    <div className="p-4 bg-gradient-to-br from-white/[0.04] to-white/[0.01] border border-white/10 rounded-2xl space-y-3">
-                                        <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                                    <div className="p-4 sm:p-5 bg-gradient-to-br from-white/[0.04] to-white/[0.01] border border-white/10 rounded-2xl space-y-3.5 shadow-md">
+                                        <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2 pb-2.5 border-b border-white/10">
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <div className="w-7 h-7 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary font-bold text-xs shrink-0">
                                                     ₱
                                                 </div>
-                                                <div>
-                                                    <p className="text-xs font-black text-white tracking-wide uppercase">Payment Terms Breakdown</p>
-                                                    <p className="text-[9px] text-gray-400">Malinaw na hatian sa bayad ng serbisyo</p>
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-black text-white tracking-wide uppercase truncate">Payment Terms Breakdown</p>
+                                                    <p className="text-[10px] text-gray-400 leading-tight">Malinaw na hatian sa bayad ng serbisyo</p>
                                                 </div>
                                             </div>
-                                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                                            <span className="self-start xs:self-auto text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-primary/20 text-primary border border-primary/30 shrink-0">
                                                 {mechanicPct}% / {serviceFeePct}% Share
                                             </span>
                                         </div>
 
-                                        <div className="space-y-2 text-xs">
-                                            <div className="flex justify-between items-center text-gray-300">
-                                                <span className="flex items-center gap-1.5 font-medium">
-                                                    <span>Customer Total Paid</span>
-                                                    <span className="text-[10px] text-gray-500">(Kabuuang Bayad)</span>
-                                                </span>
-                                                <span className="font-bold text-white tracking-tight">
+                                        <div className="space-y-2.5 text-xs sm:text-[13px]">
+                                            <div className="flex justify-between items-center gap-2 text-gray-300">
+                                                <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
+                                                    <span className="font-medium">Customer Total Paid</span>
+                                                    <span className="text-[10px] sm:text-xs text-gray-500">(Kabuuang Bayad)</span>
+                                                </div>
+                                                <span className="font-black text-white tracking-tight shrink-0">
                                                     ₱{totalRevenue.toLocaleString()}
                                                 </span>
                                             </div>
 
-                                            <div className="flex justify-between items-center text-red-400/90">
-                                                <span className="flex items-center gap-1.5 font-medium">
-                                                    <span>Admin Platform Fee ({serviceFeePct}%)</span>
-                                                    <span className="text-[10px] text-red-500/70">(Bawas ng App)</span>
-                                                </span>
-                                                <span className="font-bold tracking-tight">
+                                            <div className="flex justify-between items-center gap-2 text-red-400/90">
+                                                <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
+                                                    <span className="font-medium">Admin Platform Fee ({serviceFeePct}%)</span>
+                                                    <span className="text-[10px] sm:text-xs text-red-500/70">(Bawas ng App)</span>
+                                                </div>
+                                                <span className="font-black tracking-tight shrink-0">
                                                     - ₱{adminCommission.toLocaleString()}
                                                 </span>
                                             </div>
 
-                                            <div className="pt-2 border-t border-dashed border-white/10 flex justify-between items-center">
-                                                <div>
-                                                    <p className="text-xs font-black text-emerald-400 uppercase tracking-wide">
+                                            <div className="pt-3 border-t border-dashed border-white/10 flex justify-between items-center gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs sm:text-sm font-black text-emerald-400 uppercase tracking-wide">
                                                         Your Take-Home Pay ({mechanicPct}%)
                                                     </p>
-                                                    <p className="text-[9px] text-gray-400 font-medium">
+                                                    <p className="text-[10px] text-gray-400 font-medium leading-tight mt-0.5">
                                                         {isJobCompleted ? 'Pumasok na sa iyong Wallet' : 'Iyong maiuuwi at papasok sa Wallet'}
                                                     </p>
                                                 </div>
-                                                <p className="text-lg font-black text-emerald-400 tracking-tight">
+                                                <p className="text-lg sm:text-xl font-black text-emerald-400 tracking-tight shrink-0">
                                                     ₱{mechanicTakeHome.toLocaleString()}
                                                 </p>
                                             </div>

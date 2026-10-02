@@ -72,15 +72,10 @@ export const calculateMechanicWalletLedger = (
     const calculatedGrossLifetime = paidCompletedJobs.reduce((sum, job) => sum + getJobTotalAmount(job), 0);
     const calculatedNetLifetime = paidCompletedJobs.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
 
-    const docTotalEarnings = (mechanic as any)?.totalEarnings != null && Number((mechanic as any).totalEarnings) > 0
-        ? Number((mechanic as any).totalEarnings)
-        : 0;
-
-    // Authoritative net lifetime earnings: trust the document when present (it is written by the
-    // earnings-release guard with the exact credited amount); otherwise compute from bookings.
-    // NOTE: never Math.max(doc, computed) here — that re-inflates balances after commission corrections.
-    const lifetimeEarnings = docTotalEarnings > 0 ? docTotalEarnings : calculatedNetLifetime;
-    const grossLifetimeEarnings = Math.max(calculatedGrossLifetime, lifetimeEarnings);
+    // Authoritative net lifetime earnings:
+    // Ground truth is strictly derived from completed jobs. When transactions are removed/empty, earnings are 0.
+    const lifetimeEarnings = calculatedNetLifetime;
+    const grossLifetimeEarnings = calculatedGrossLifetime;
 
     // 2. Filter payouts for this mechanic
     const myPayouts = payouts.filter(p => p.mechanicId === mechanicId);
@@ -104,19 +99,7 @@ export const calculateMechanicWalletLedger = (
     // In-transit locked balance is all pending requests + approved requests awaiting disbursement
     const lockedBalance = pendingPayoutsTotal + approvedPayoutsTotal;
 
-    // Harmonize with mechanic.walletBalance if specified on the document (fallback reconcile)
-    let availableBalance = ledgerAvailableBalance;
-    if (mechanic?.walletBalance != null && mechanic.walletBalance >= 0) {
-        // If document balance is provided, deduct pending requests so it never over-reports
-        const adjustedDocBalance = Math.max(0, mechanic.walletBalance - pendingPayoutsTotal);
-        if (paidCompletedJobs.length > 0) {
-            // When completed jobs exist, reconcile to the maximum of calculated net ledger or document balance
-            // to prevent balance truncation or static drift
-            availableBalance = Math.max(ledgerAvailableBalance, adjustedDocBalance);
-        } else {
-            availableBalance = Math.max(ledgerAvailableBalance, adjustedDocBalance);
-        }
-    }
+    const availableBalance = ledgerAvailableBalance;
 
     return {
         lifetimeEarnings,

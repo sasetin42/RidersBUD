@@ -27,8 +27,10 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
     const [comment, setComment] = useState('');
     const [hoverRating, setHoverRating] = useState(0);
     const [error, setError] = useState('');
+    const [localSubmitting, setLocalSubmitting] = useState(false);
 
     const maxChars = 500;
+    const isProcessing = isSubmitting || localSubmitting;
 
     useEffect(() => {
         if (isOpen) {
@@ -40,6 +42,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                 setComment('');
             }
             setError('');
+            setLocalSubmitting(false);
         }
     }, [isOpen, existingReview]);
 
@@ -50,6 +53,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
     if (!isOpen) return null;
 
     const handleSubmit = async () => {
+        if (isProcessing) return;
         if (rating === 0) {
             setError('Please select a star rating.');
             return;
@@ -59,15 +63,21 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
             return;
         }
 
+        setError('');
+        setLocalSubmitting(true);
         try {
-            await onSubmit(rating, comment);
+            await onSubmit(rating, comment.trim());
             onClose();
-        } catch (err) {
-            setError('Failed to submit review. Please try again.');
+        } catch (err: any) {
+            console.error('Review submit error:', err);
+            setError(err?.message || 'Failed to submit review. Please try again.');
+        } finally {
+            setLocalSubmitting(false);
         }
     };
 
     const handleTagToggle = (tag: string) => {
+        setError('');
         const isSelected = comment.toLowerCase().includes(tag.toLowerCase());
         if (isSelected) {
             // Remove tag and clean up commas/whitespace
@@ -203,13 +213,16 @@ const ReviewModal: React.FC<ReviewModalProps> = ({
                 {/* Submit Action Button */}
                 <button
                     onClick={handleSubmit}
-                    disabled={isSubmitting}
-                    className="w-full bg-primary hover:bg-orange-600 text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                    disabled={isProcessing}
+                    className="w-full bg-primary hover:bg-orange-600 text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-primary/25 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 cursor-pointer active:scale-[0.98]"
                 >
-                    {isSubmitting ? (
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    {isProcessing ? (
+                        <>
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-sm font-black tracking-wide">Submitting Review...</span>
+                        </>
                     ) : (
-                        existingReview ? 'Update Review' : 'Submit Review'
+                        <span>{existingReview ? 'Update Review' : 'Submit Review'}</span>
                     )}
                 </button>
             </div>

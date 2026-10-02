@@ -528,6 +528,7 @@ const BookingDetailScreen: React.FC = () => {
     const [cancelReason, setCancelReason] = useState('');
     const [isCancelling, setIsCancelling] = useState(false);
     const [showReviewModal, setShowReviewModal] = useState(false);
+    const [isSubmittingReview, setIsSubmittingReview] = useState(false);
     const [showDeclineModal, setShowDeclineModal] = useState(false);
     const [reviewSubmitted, setReviewSubmitted] = useState(false);
     const [showReleaseFundsModal, setShowReleaseFundsModal] = useState(false);
@@ -1683,6 +1684,7 @@ const BookingDetailScreen: React.FC = () => {
 
     const handleReviewSubmit = async (rating: number, comment: string) => {
         if (!booking) throw new Error('No booking data available');
+        setIsSubmittingReview(true);
         try {
             const targetProviderId = isDriverHire 
                 ? (mechanic?.id || (booking as any).driverId || 'driver-assigned')
@@ -1722,6 +1724,8 @@ const BookingDetailScreen: React.FC = () => {
         } catch (error) {
             console.error('Error submitting review:', error);
             throw error; // Propagate to ReviewModal to trigger its own error banner
+        } finally {
+            setIsSubmittingReview(false);
         }
     };
 
@@ -3500,6 +3504,7 @@ const BookingDetailScreen: React.FC = () => {
                 isOpen={showReviewModal}
                 onClose={handleReviewClose}
                 onSubmit={handleReviewSubmit}
+                isSubmitting={isSubmittingReview}
                 mechanicName={mechanic?.name || booking?.mechanicName}
                 mechanicImageUrl={mechanic?.imageUrl || booking?.mechanic?.imageUrl}
             />

@@ -1585,8 +1585,8 @@ const PayoutRequestModal: React.FC<{
     }, [db?.bookings, db?.payouts, mechanic?.id, pendingRequestsAmount]);
 
     const safeWithdrawable = (availableBalance != null && availableBalance >= 0)
-        ? Math.max(0, Math.max(lifetimeEarnings, availableBalance - pendingRequestsAmount))
-        : lifetimeEarnings;
+        ? availableBalance
+        : 0;
     const requestAmount = parseFloat(amount || '0');
     const initialHasPayoutDetails = mechanic.payoutDetails && mechanic.payoutDetails.accountName && mechanic.payoutDetails.accountNumber;
 

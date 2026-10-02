@@ -15,7 +15,7 @@ import { Phone, MapPin, MessageSquare, User, Car, Radio, Wifi, WifiOff, AlertTri
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db as firestore } from '../../firebase';
 import { CallButton } from '../../components/CallUI';
-import { calculateMechanicWalletLedger, getJobTotalAmount } from '../../utils/mechanicLedger';
+import { calculateMechanicWalletLedger, getJobTotalAmount, getJobMechanicShare } from '../../utils/mechanicLedger';
 
 
 
@@ -237,7 +237,8 @@ const MechanicDashboardScreen: React.FC = () => {
         });
 
         const jobsCompletedToday = myJobsToday.filter(b => b.status === 'Completed' && b.isPaid !== false && b.paymentStatus !== 'failed');
-        const earningsToday = jobsCompletedToday.reduce((sum, job) => sum + getJobTotalAmount(job), 0);
+        const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 30;
+        const earningsToday = jobsCompletedToday.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
 
         const timeTo24h = (timeStr: string | undefined) => {
             if (!timeStr) return '00:00';

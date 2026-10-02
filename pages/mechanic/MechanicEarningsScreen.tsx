@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db as firestore } from '../../firebase';
 import { 
     Wallet, ArrowUpRight, DollarSign, History, 
     CheckCircle2, TrendingUp, Info, X, 
@@ -456,7 +458,7 @@ const MechanicEarningsScreen: React.FC = () => {
         // Lifetime earnings
         const allCompletedPaid = myCompletedJobs.filter(job => job.isPaid !== false && job.paymentStatus !== 'failed');
         const lifetimeNetSum = allCompletedPaid.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
-        const calcAllTime = Math.max((currentMechanic as any).totalEarnings || 0, lifetimeNetSum);
+        const calcAllTime = lifetimeNetSum;
 
         // Rolling 7-day chart buckets (matching Sun-Sat or rolling 7 days)
         const last7Days = Array.from({ length: 7 }).map((_, i) => {
@@ -512,10 +514,33 @@ const MechanicEarningsScreen: React.FC = () => {
             payouts: myPayouts,
             availableBalance: walletLedger.availableBalance,
             lockedBalance: walletLedger.lockedBalance,
-            allTimeEarnings: walletLedger.lifetimeEarnings || calcAllTime,
+            allTimeEarnings: walletLedger.lifetimeEarnings != null ? walletLedger.lifetimeEarnings : calcAllTime,
             serviceFeePercentage
         };
     }, [db, currentMechanic, filter]);
+
+    // Self-healing balance sync: if document has stale balance differing from authoritative ledger, sync it
+    useEffect(() => {
+        if (!currentMechanic?.id || !db) return;
+        const targetAvailable = availableBalance;
+        const targetLifetime = allTimeEarnings;
+        const targetLocked = lockedBalance;
+        
+        if (
+            currentMechanic.walletBalance !== targetAvailable ||
+            currentMechanic.totalEarnings !== targetLifetime ||
+            currentMechanic.lockedBalance !== targetLocked
+        ) {
+            try {
+                const mechanicRef = doc(firestore, 'mechanics', currentMechanic.id);
+                updateDoc(mechanicRef, {
+                    walletBalance: targetAvailable,
+                    totalEarnings: targetLifetime,
+                    lockedBalance: targetLocked
+                }).catch(() => {});
+            } catch (_) {}
+        }
+    }, [currentMechanic?.id, currentMechanic?.walletBalance, currentMechanic?.totalEarnings, currentMechanic?.lockedBalance, availableBalance, allTimeEarnings, lockedBalance]);
 
     const handlePayoutSubmit = async (amount: number, method: string, details: string) => {
         if (!currentMechanic) return;
