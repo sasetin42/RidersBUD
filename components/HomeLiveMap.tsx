@@ -247,6 +247,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
 
         // Customer Location marker (clean real-time live pin without obtrusive radius circle)
         if (customerLocation && mapInstanceRef.current) {
+            const nextPos: [number, number] = [customerLocation.lat, customerLocation.lng];
             if (!customerMarkerRef.current) {
                 const userIcon = L.divIcon({
                     html: `
@@ -259,9 +260,13 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
                     iconSize: [32, 32],
                     iconAnchor: [16, 16],
                 });
-                customerMarkerRef.current = L.marker([customerLocation.lat, customerLocation.lng], { icon: userIcon }).addTo(mapInstanceRef.current);
+                customerMarkerRef.current = L.marker(nextPos, { icon: userIcon }).addTo(mapInstanceRef.current);
             } else {
-                customerMarkerRef.current.setLatLng([customerLocation.lat, customerLocation.lng]);
+                const prevPos = customerMarkerRef.current.getLatLng();
+                // Skip sub-meter sensor noise so the live pin doesn't shimmer
+                if (Math.abs(prevPos.lat - nextPos[0]) > 1e-6 || Math.abs(prevPos.lng - nextPos[1]) > 1e-6) {
+                    customerMarkerRef.current.setLatLng(nextPos);
+                }
             }
         }
 
@@ -280,25 +285,10 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
 
     }, [mechanics, customerLocation, selectedMechanicId]);
 
-    // Simulate live movement for available mechanics
-    useEffect(() => {
-        const interval = setInterval(() => {
-            Object.keys(markersRef.current).forEach(key => {
-                const marker = markersRef.current[key];
-                // Only move if available (implied by existence in filtered mechanics list) and random chance
-                // To check availability strictly we'd need to look up the mechanic again, but for visual flair random is okay
-                if (marker && Math.random() > 0.7) {
-                    const latLng = marker.getLatLng();
-                    // Small random jitter
-                    const newLat = latLng.lat + (Math.random() - 0.5) * 0.0001;
-                    const newLng = latLng.lng + (Math.random() - 0.5) * 0.0001;
-                    marker.setLatLng([newLat, newLng]);
-                }
-            });
-        }, 2000); // Update every 2 seconds
-
-        return () => clearInterval(interval);
-    }, []);
+    // NOTE: Mechanic pins are driven exclusively by the realtime Firestore stream
+    // (db.mechanics → updateMechanicLocation). A previous "simulated movement" timer
+    // that jittered markers randomly every 2s was removed so positions stay truthful
+    // and consistent with the tracking maps.
 
     return <div ref={mapRef} className="h-full w-full" />;
 };

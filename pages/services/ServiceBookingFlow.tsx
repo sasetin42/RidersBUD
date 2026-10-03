@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ChevronLeft, ChevronRight, CheckCircle, Car, Calendar, MapPin, FileText, Camera, CreditCard, ShieldCheck } from 'lucide-react';
 import Spinner from '../../components/Spinner';
 import { ServiceRequest } from '../../types';
-import { HitPayService } from '../../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../../services/HitPayService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 
 const ServiceBookingFlow: React.FC = () => {
@@ -96,7 +96,7 @@ const ServiceBookingFlow: React.FC = () => {
 
             if (isTowing && createdRequest && isHitPayActive) {
                 const hitPay = HitPayService.fromSettings(db?.settings);
-                const returnUrl = `${window.location.origin}/customer-portal/service-payment?bookingId=${createdRequest.id || ''}&isServiceRequest=true`;
+                const returnUrl = `${getLiveAppOrigin()}/customer-portal/service-payment?bookingId=${createdRequest.id || ''}&isServiceRequest=true`;
 
                 sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
                     bookingId: createdRequest.id,
@@ -124,7 +124,7 @@ const ServiceBookingFlow: React.FC = () => {
                     amount: downpaymentAmount,
                     currency: db?.settings?.currency || 'PHP',
                     reference_number: refNumber,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
                     redirect_url: returnUrl,
                     email: user.email || 'customer@example.com',
                     name: user.name || 'Customer',

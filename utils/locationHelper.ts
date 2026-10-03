@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { Geolocation as NativeGeolocation } from '@capacitor/geolocation';
+
 /**
  * Safe Geolocation Utilities
  * Prevents browser console warnings ("Geolocation permission has been blocked as the user has ignored...")
@@ -91,7 +94,43 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
 }
 
 /**
+ * True when running inside the packaged Android/iOS app (Capacitor native runtime).
+ * Native builds talk directly to the OS location stack (GPS satellite fixes)
+ * instead of the WebView's often-coarse network fallback.
+ */
+export function isNativePlatform(): boolean {
+    try {
+        return typeof window !== 'undefined' &&
+            typeof (window as any).Capacitor !== 'undefined' &&
+            typeof (window as any).Capacitor.isNativePlatform === 'function' &&
+            (window as any).Capacitor.isNativePlatform() === true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function toNativeOptions(options?: PositionOptions) {
+    return {
+        enableHighAccuracy: options?.enableHighAccuracy !== false,
+        timeout: options?.timeout ?? 10000,
+        maximumAge: options?.maximumAge ?? 0
+    };
+}
+
+function geoError(code: 1 | 2 | 3, message: string): GeolocationPositionError {
+    return {
+        code,
+        message,
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3
+    } as GeolocationPositionError;
+}
+
+/**
  * Safe wrapper around navigator.geolocation.getCurrentPosition.
+ * Prefers the native (Capacitor) location stack on Android/iOS for hardware GPS
+ * precision, then falls back to the browser API.
  * Will NOT invoke navigator.geolocation if permission is denied,
  * preventing the Chrome browser-level blocked prompt console warning.
  */
@@ -101,44 +140,49 @@ export async function safeGetCurrentPosition(
     options?: PositionOptions
 ): Promise<void> {
     if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('geolocation' in navigator)) {
-        onError?.({
-            code: 2,
-            message: 'Geolocation is not supported by your browser/device.',
-            PERMISSION_DENIED: 1,
-            POSITION_UNAVAILABLE: 2,
-            TIMEOUT: 3
-        } as GeolocationPositionError);
+        onError?.(geoError(2, 'Geolocation is not supported by your browser/device.'));
         return;
     }
 
     const isDenied = await isGeolocationPermissionDenied();
     if (isDenied) {
-        onError?.({
-            code: 1,
-            message: 'Geolocation permission has been blocked or denied.',
-            PERMISSION_DENIED: 1,
-            POSITION_UNAVAILABLE: 2,
-            TIMEOUT: 3
-        } as GeolocationPositionError);
+        onError?.(geoError(1, 'Geolocation permission has been blocked or denied.'));
         return;
     }
 
+    // 1) Native hardware GPS (Android / iOS) — precise satellite fixes
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const position = await NativeGeolocation.getCurrentPosition(toNativeOptions(options));
+            if (position && position.coords) {
+                onSuccess(position as unknown as GeolocationPosition);
+                return;
+            }
+        } catch (_) {
+            // Fall through to the WebView implementation
+        }
+    }
+
+    // 2) Browser geolocation
     try {
         navigator.geolocation.getCurrentPosition(onSuccess, onError, options);
     } catch (_) {
-        onError?.({
-            code: 1,
-            message: 'Unable to access geolocation.',
-            PERMISSION_DENIED: 1,
-            POSITION_UNAVAILABLE: 2,
-            TIMEOUT: 3
-        } as GeolocationPositionError);
+        onError?.(geoError(1, 'Unable to access geolocation.'));
     }
 }
 
 /**
- * Safe wrapper around navigator.geolocation.watchPosition.
- * Returns null immediately if permission is denied.
+ * Native (Capacitor) watches return string ids while the web API returns numbers.
+ * We hand out synthetic negative numbers for native watches so every caller in the
+ * app can keep using a single `number | null` handle with `safeClearWatch`.
+ */
+const nativeWatchRegistry = new Map<number, string>();
+let nextNativeHandle = -1;
+
+/**
+ * Safe wrapper around navigator.geolocation.watchPosition (or the native plugin).
+ * Prefers the native hardware GPS stream on Android/iOS.
+ * Returns a numeric handle immediately usable with safeClearWatch; null if denied.
  */
 export async function safeWatchPosition(
     onSuccess: PositionCallback,
@@ -151,16 +195,28 @@ export async function safeWatchPosition(
 
     const isDenied = await isGeolocationPermissionDenied();
     if (isDenied) {
-        onError?.({
-            code: 1,
-            message: 'Geolocation permission is denied.',
-            PERMISSION_DENIED: 1,
-            POSITION_UNAVAILABLE: 2,
-            TIMEOUT: 3
-        } as GeolocationPositionError);
+        onError?.(geoError(1, 'Geolocation permission is denied.'));
         return null;
     }
 
+    // 1) Native hardware GPS stream (Android / iOS)
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const nativeId = await NativeGeolocation.watchPosition(
+                toNativeOptions(options),
+                (position: any) => {
+                    if (position && position.coords) onSuccess(position as GeolocationPosition);
+                }
+            );
+            const handle = nextNativeHandle--;
+            nativeWatchRegistry.set(handle, nativeId);
+            return handle;
+        } catch (_) {
+            // Fall through to the WebView stream
+        }
+    }
+
+    // 2) Browser watch stream
     try {
         return navigator.geolocation.watchPosition(onSuccess, onError, options);
     } catch (_) {
@@ -169,14 +225,122 @@ export async function safeWatchPosition(
 }
 
 /**
- * Safe wrapper around navigator.geolocation.clearWatch.
+ * Safe wrapper around navigator.geolocation.clearWatch / native clearWatch.
+ * Accepts any handle produced by safeWatchPosition (web ids or synthetic native ids).
  */
 export function safeClearWatch(watchId: number | null): void {
-    if (watchId !== null && typeof window !== 'undefined' && typeof navigator !== 'undefined' && navigator.geolocation) {
-        try {
-            navigator.geolocation.clearWatch(watchId);
-        } catch (_) {}
+    if (watchId === null || typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.geolocation) {
+        return;
     }
+
+    if (watchId < 0 && nativeWatchRegistry.has(watchId)) {
+        const nativeId = nativeWatchRegistry.get(watchId)!;
+        nativeWatchRegistry.delete(watchId);
+        try {
+            NativeGeolocation.clearWatch({ id: nativeId }).catch(() => {});
+        } catch (_) {}
+        return;
+    }
+
+    try {
+        navigator.geolocation.clearWatch(watchId);
+    } catch (_) {}
+}
+
+/**
+ * Great-circle distance in meters between two coordinate pairs.
+ */
+export function distanceMeters(
+    a: { lat: number; lng: number },
+    b: { lat: number; lng: number }
+): number {
+    const R = 6371000;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLng = (b.lng - a.lng) * Math.PI / 180;
+    const lat1 = a.lat * Math.PI / 180;
+    const lat2 = b.lat * Math.PI / 180;
+    const h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+export interface PreciseFix {
+    lat: number;
+    lng: number;
+    /** Accuracy radius of this fix in meters. */
+    accuracy: number;
+    /** Best (lowest) accuracy this watcher has seen, in meters. */
+    bestAccuracy: number;
+    timestamp: number;
+    isHighAccuracy: boolean;
+}
+
+export interface PreciseWatchOptions extends PositionOptions {
+    /** Stationary sensor-noise deadband in meters (default 1.5). */
+    minMoveMeters?: number;
+    /** Force-emit a fix after this many ms without one so maps never go stale (default 15000). */
+    staleAfterMs?: number;
+}
+
+/**
+ * Unified high-accuracy live position stream used by EVERY live map in the app so
+ * customer and mechanic positions behave identically everywhere:
+ *
+ *  - Native hardware GPS first (Android/iOS), browser stream as fallback
+ *  - Drops degraded network readings (far worse than the best fix seen) so a
+ *    ±140m cell-tower reading never yanks a pinpoint pin backwards
+ *  - Stationary deadband: ignores sub-2m jitter so pins don't shimmer
+ *  - Auto-hones: still emits whenever accuracy improves by >5m
+ *  - Stale safety valve: emits anyway after `staleAfterMs` so a moving user never freezes
+ */
+export async function startPreciseWatch(
+    onFix: (fix: PreciseFix) => void,
+    onError?: PositionErrorCallback,
+    options?: PreciseWatchOptions
+): Promise<number | null> {
+    const minMove = options?.minMoveMeters ?? 1.5;
+    const staleAfter = options?.staleAfterMs ?? 15000;
+
+    let bestAccuracy: number | null = null;
+    let lastAccepted: { lat: number; lng: number } | null = null;
+    let lastAcceptedAt = 0;
+
+    return safeWatchPosition((position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        if (!isFinite(latitude) || !isFinite(longitude) || !(accuracy >= 0) || accuracy > 5000) return;
+
+        const now = Date.now();
+        const prevBest = bestAccuracy;
+        const improved = prevBest === null || accuracy < prevBest - 5;
+        if (prevBest === null || accuracy < prevBest) bestAccuracy = accuracy;
+
+        // Degraded coarse reading while we hold a much better fix — drop unless stale
+        if (
+            prevBest !== null &&
+            accuracy > prevBest * 2 &&
+            accuracy > 35 &&
+            lastAcceptedAt > 0 &&
+            now - lastAcceptedAt < staleAfter
+        ) {
+            return;
+        }
+
+        const moved = lastAccepted ? distanceMeters(lastAccepted, { lat: latitude, lng: longitude }) : Infinity;
+        const stale = lastAcceptedAt === 0 || now - lastAcceptedAt >= staleAfter;
+        if (!stale && !improved && moved < minMove) return;
+
+        lastAccepted = { lat: latitude, lng: longitude };
+        lastAcceptedAt = now;
+
+        onFix({
+            lat: latitude,
+            lng: longitude,
+            accuracy,
+            bestAccuracy: bestAccuracy as number,
+            timestamp: position.timestamp || now,
+            isHighAccuracy: accuracy <= 35
+        });
+    }, onError, options);
 }
 
 /**

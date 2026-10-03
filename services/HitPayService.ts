@@ -3,6 +3,16 @@ import { PaymentRequest, Settings } from '../types';
 const SANDBOX_API_URL = 'https://api.sandbox.hit-pay.com/v1';
 const PRODUCTION_API_URL = 'https://api.hit-pay.com/v1';
 
+export const getLiveAppOrigin = (): string => {
+    if (typeof window !== 'undefined') {
+        const origin = window.location.origin;
+        if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.startsWith('capacitor:')) {
+            return origin;
+        }
+    }
+    return 'https://ridersbud-10806.web.app';
+};
+
 /**
  * Returns the absolute proxy endpoint if running inside Capacitor Android APK,
  * or relative endpoint if running on web.
@@ -99,18 +109,27 @@ class HitPayService {
         // 6. Name: Max 100 chars, non-empty
         const name = (data.name && data.name.trim().length > 0) ? data.name.trim().slice(0, 100) : 'RidersBud Customer';
 
-        // 7. Webhook: HitPay rejects 'localhost' and private IP webhooks with 422.
-        // If localhost or missing, fallback to the official production webhook URL.
+        // 7. Redirect URL: NEVER allow localhost or capacitor:// to go to HitPay!
+        // On native APK (Capacitor) or localhost, map to the live production domain.
+        let redirect_url = data.redirect_url;
+        if (!redirect_url || redirect_url.includes('localhost') || redirect_url.includes('127.0.0.1') || redirect_url.startsWith('capacitor:')) {
+            const cleanPath = redirect_url
+                ? redirect_url.replace(/^(https?:\/\/[^\/]+|capacitor:\/\/localhost)/i, '')
+                : '/customer-portal/';
+            redirect_url = `${getLiveAppOrigin()}${cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`}`;
+        }
+
+        // 8. Webhook: Authoritative Cloud Function webhook endpoint
         let webhook = data.webhook;
-        if (!webhook || webhook.includes('localhost') || webhook.includes('127.0.0.1')) {
-            webhook = 'https://ridersbud-10806.web.app/payment/webhook';
+        if (!webhook || webhook.includes('localhost') || webhook.includes('127.0.0.1') || webhook.includes('/payment/webhook')) {
+            webhook = 'https://ridersbud-10806.web.app/api/hitpay-webhook';
         }
 
         const payload: Record<string, any> = {
             amount,
             currency,
             reference_number,
-            redirect_url: data.redirect_url,
+            redirect_url,
             webhook,
             email: validEmail,
             name,
@@ -189,62 +208,126 @@ class HitPayService {
     /**
      * Creates a payment request via the hitpayProxy Cloud Function and returns
      * the official HitPay hosted checkout URL.
+     *
+     * IMPORTANT — payment session ids are NEVER fabricated. HitPay's drop-in resolves
+     * `GET /v1/business/{id}/checkout-dropin-pr`, so a synthetic id (the old
+     * `hitpay_<timestamp>` placeholder) returns 404, the sheet never renders and the
+     * customer is left on an infinite spinner. When the gateway cannot be reached we
+     * instead return `portalFallback: true` with an EMPTY id so callers can route to
+     * the in-app checkout portal.
      */
-    async createPaymentRequest(data: PaymentRequest): Promise<{ url: string, id: string }> {
+    async createPaymentRequest(data: PaymentRequest): Promise<{ url: string, id: string, portalFallback?: boolean }> {
         if (!data?.amount) {
             throw new Error("HitPay payment request requires an amount.");
         }
 
         const payload = this.sanitizePayload(data);
-        let lastErrorMessage = '';
 
-        try {
-            const endpoint = getHitPayProxyEndpoint('/api/hitpay-proxy');
-            const proxyResp = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    isSandbox: this.isSandbox,
-                    apiKey: this.apiKey || undefined,
-                    payload
-                })
-            });
+        type Attempt =
+            | { kind: 'ok'; url: string; id: string }
+            | { kind: 'portal'; reason: string }
+            | { kind: 'error'; message: string; retryable: boolean };
+
+        const dispatch = async (): Promise<Attempt> => {
+            let proxyResp: Response;
+            try {
+                proxyResp = await fetch(getHitPayProxyEndpoint('/api/hitpay-proxy'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        isSandbox: this.isSandbox,
+                        apiKey: this.apiKey || undefined,
+                        payload
+                    })
+                });
+            } catch (networkErr: any) {
+                return {
+                    kind: 'error',
+                    message: networkErr?.message || 'Proxy network failure',
+                    retryable: true
+                };
+            }
 
             const contentType = proxyResp.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                const proxyResult = await proxyResp.json();
-                if (proxyResp.ok && proxyResult && proxyResult.url) {
-                    return { url: proxyResult.url, id: proxyResult.id };
-                } else if (proxyResult && proxyResult.fallbackToPortal) {
-                    // Gateway connection is blocked or unavailable; gracefully route to in-app portal
-                    const params = new URLSearchParams({
-                        amount: String(payload.amount),
-                        currency: payload.currency || 'PHP',
-                        reference: payload.reference_number,
-                        redirect_url: payload.redirect_url || `${window.location.origin}/customer-portal/`,
-                        email: payload.email || 'customer@ridersbud.com',
-                        name: payload.name || 'Valued Customer',
-                        purpose: payload.purpose || 'RidersBUD Payment',
-                        sandbox: this.isSandbox ? 'true' : 'false'
-                    });
-                    if (payload.phone) params.set('phone', payload.phone);
-                    if (payload.payment_methods?.[0]) params.set('method', payload.payment_methods[0]);
-                    const portalUrl = `/hitpay-checkout?${params.toString()}`;
-                    return { url: portalUrl, id: `hitpay_${Date.now()}` };
-                } else if (proxyResult) {
-                    const errorDetail = proxyResult.errors
-                        ? Object.entries(proxyResult.errors).map(([k, v]) => `${k}: ${(v as any[]).join(', ')}`).join('; ')
-                        : (proxyResult.message || proxyResult.error || 'Payment request validation error');
-                    lastErrorMessage = typeof errorDetail === 'string' ? errorDetail : JSON.stringify(errorDetail);
-                }
-            } else {
-                lastErrorMessage = `Backend HitPay proxy returned HTTP ${proxyResp.status}.`;
+            if (!contentType.includes('application/json')) {
+                // HTML/404 body: proxy route missing or misconfigured
+                return {
+                    kind: 'error',
+                    message: `Backend HitPay proxy returned HTTP ${proxyResp.status}.`,
+                    retryable: proxyResp.status >= 500
+                };
             }
-        } catch (proxyErr: any) {
-            lastErrorMessage = proxyErr?.message || 'Proxy network failure';
+
+            const proxyResult = await proxyResp.json().catch(() => null);
+
+            if (proxyResp.ok && proxyResult && proxyResult.url) {
+                return {
+                    kind: 'ok',
+                    url: String(proxyResult.url),
+                    id: proxyResult.id ? String(proxyResult.id) : ''
+                };
+            }
+
+            if (proxyResult && proxyResult.fallbackToPortal) {
+                // Upstream HitPay unreachable at that moment — worth one retry
+                return {
+                    kind: 'portal',
+                    reason: String(proxyResult.message || proxyResult.reason || 'HitPay gateway is currently unreachable.')
+                };
+            }
+
+            if (proxyResult) {
+                const errorDetail = proxyResult.errors
+                    ? Object.entries(proxyResult.errors).map(([k, v]) => `${k}: ${(v as any[]).join(', ')}`).join('; ')
+                    : (proxyResult.message || proxyResult.error || 'Payment request validation error');
+                return {
+                    kind: 'error',
+                    message: typeof errorDetail === 'string' ? errorDetail : JSON.stringify(errorDetail),
+                    // Validation errors are deterministic — retrying would just add latency
+                    retryable: false
+                };
+            }
+
+            return { kind: 'error', message: 'Payment proxy returned an empty response.', retryable: true };
+        };
+
+        let attempt = await dispatch();
+
+        // One automatic retry for transient network / upstream failures so a single
+        // blip doesn't degrade a healthy checkout into the fallback portal.
+        const retryable = attempt.kind === 'portal' || (attempt.kind === 'error' && attempt.retryable);
+        if (retryable) {
+            await new Promise(r => setTimeout(r, 1500));
+            attempt = await dispatch();
         }
 
-        throw new Error(`Unable to initialize HitPay payment session: ${lastErrorMessage || 'HitPay gateway is currently unreachable. Please verify your internet or try again.'}`);
+        if (attempt.kind === 'ok') {
+            return { url: attempt.url, id: attempt.id };
+        }
+
+        if (attempt.kind === 'portal') {
+            // Gateway connection blocked/unavailable — route to the in-app checkout portal,
+            // which creates its own session and surfaces a friendly, retryable error.
+            const params = new URLSearchParams({
+                amount: String(payload.amount),
+                currency: payload.currency || 'PHP',
+                reference: payload.reference_number,
+                redirect_url: payload.redirect_url || (typeof window !== 'undefined' ? `${window.location.origin}/customer-portal/` : ''),
+                email: payload.email || 'customer@ridersbud.com',
+                name: payload.name || 'Valued Customer',
+                purpose: payload.purpose || 'RidersBUD Payment',
+                sandbox: this.isSandbox ? 'true' : 'false'
+            });
+            if (payload.phone) params.set('phone', payload.phone);
+            if (payload.payment_methods?.[0]) params.set('method', payload.payment_methods[0]);
+            return {
+                url: `/hitpay-checkout?${params.toString()}`,
+                id: '',
+                portalFallback: true
+            };
+        }
+
+        throw new Error(`Unable to initialize HitPay payment session: ${attempt.message || 'HitPay gateway is currently unreachable. Please verify your internet or try again.'}`);
     }
 }
 

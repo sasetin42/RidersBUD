@@ -33,7 +33,7 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
     return (
         <header
             className={`sticky top-0 px-4 py-3 z-50 bg-[#121212]/95 backdrop-blur-md flex items-center justify-between border-b border-white/5 shadow-sm transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}
-            style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))', paddingBottom: '0.75rem' }}
+            style={{ paddingTop: 'calc(0.75rem + var(--safe-top))', paddingBottom: '0.75rem' }}
         >
             <div className="flex items-center gap-3">
                 {showBackButton && (

@@ -24,7 +24,7 @@ import { CallButton } from '../../components/CallUI';
 import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { useCall } from '../../context/CallContext';
 import { Geolocation } from '@capacitor/geolocation';
-import { safeGetCurrentPosition, safeWatchPosition, safeClearWatch, isGeolocationPermissionDenied } from '../../utils/locationHelper';
+import { safeGetCurrentPosition, startPreciseWatch, safeClearWatch, isGeolocationPermissionDenied } from '../../utils/locationHelper';
 import { getJobTotalAmount, getJobMechanicShare } from '../../utils/mechanicLedger';
 
 // Default currency configuration
@@ -284,7 +284,6 @@ const MechanicJobDetailScreen: React.FC = () => {
 
     // Real-time location tracking for "En Route" status
     useEffect(() => {
-        let nativeWatchId: string | null = null;
         let webWatchId: number | null = null;
 
         const isNative = (window as any).Capacitor !== undefined;
@@ -347,43 +346,23 @@ const MechanicJobDetailScreen: React.FC = () => {
             isGeolocationPermissionDenied().then(isDenied => {
                 if (isDenied) return;
 
-                if (isNative) {
-                    Geolocation.watchPosition(
-                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                        (position) => {
-                            if (position) {
-                                handleSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
-                            }
-                        }
-                    ).then((id) => {
-                        nativeWatchId = id;
-                    }).catch(() => {
-                        safeWatchPosition(
-                            (position) => handleSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy),
-                            () => {},
-                            { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                        ).then(id => {
-                            webWatchId = id;
-                        });
-                    });
-                } else {
-                    safeWatchPosition(
-                        (position) => handleSuccess(position.coords.latitude, position.coords.longitude, position.coords.accuracy),
-                        () => {},
-                        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                    ).then(id => {
-                        webWatchId = id;
-                    });
-                }
+                // Unified precise stream (native GPS first, degraded readings filtered,
+                // stationary jitter deadband) — the same engine the customer side uses,
+                // so both parties' pins behave identically on every tracking map.
+                startPreciseWatch(
+                    (fix) => handleSuccess(fix.lat, fix.lng, fix.accuracy),
+                    () => {},
+                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                ).then(id => {
+                    webWatchId = id;
+                });
             });
         }
 
         return () => {
-            if (nativeWatchId !== null) {
-                Geolocation.clearWatch({ id: nativeWatchId }).catch(() => {});
-            }
             if (webWatchId !== null) {
                 safeClearWatch(webWatchId);
+                webWatchId = null;
             }
         };
     }, [booking?.status, bookingId]);

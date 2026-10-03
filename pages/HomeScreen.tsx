@@ -25,7 +25,7 @@ import { CancellationDetailsModal, CancellationData } from '../components/Cancel
 import { useLocation } from 'react-router-dom';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import { geocodeAddressOrCity, resolveOrderTrackingLocations } from '../utils/locationHelper';
-import { HitPayService } from '../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -421,7 +421,7 @@ const HomeScreen: React.FC = () => {
             }
 
             const hitPay = HitPayService.fromSettings(db?.settings);
-            const returnUrl = `${window.location.origin}/customer-portal/?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}&status=completed`;
+            const returnUrl = `${getLiveAppOrigin()}/customer-portal/?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}&status=completed`;
             const appTitle = db?.settings?.appName || 'RidersBUD';
 
             sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
@@ -447,7 +447,7 @@ const HomeScreen: React.FC = () => {
                 amount: balanceDue,
                 currency: db?.settings?.currency || 'PHP',
                 reference_number: `${refPrefix}-${targetTx.id}-BAL-${Date.now()}`,
-                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
                 redirect_url: returnUrl,
                 email: user.email || 'customer@example.com',
                 name: user.name || 'Customer',
@@ -1149,7 +1149,10 @@ const HomeScreen: React.FC = () => {
     }
 
     return (
-        <div className="flex flex-col min-h-screen bg-[#121212] text-white pb-24 font-sans">
+        <div 
+            className="flex flex-col min-h-screen bg-[#121212] text-white font-sans"
+            style={{ paddingBottom: 'calc(6rem + var(--safe-bottom))' }}
+        >
             <CustomerHeader title={`Welcome, ${user?.name.split(' ')[0]}!`} icon={<Car size={22} />} />
 
             <main className="flex-grow w-full px-6 space-y-4 overflow-y-auto custom-scrollbar pt-4 max-w-5xl mx-auto">

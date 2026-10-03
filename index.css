@@ -13,27 +13,23 @@
 }
 
 /* TRUE FULLSCREEN (edge-to-edge): the app canvas spans the entire screen —
-   under the status bar, around punch-holes, and behind the gesture bar.
-   Padding (not margin) keeps the dark canvas painted in the system-bar areas
-   so there are never white bars, while content never sits under them. */
+   under the status bar, around punch-holes, and behind the gesture bar. */
 html {
     background: #0A0A0A;
-    padding-top: var(--safe-top);
-    padding-bottom: var(--safe-bottom);
-    padding-left: var(--safe-left);
-    padding-right: var(--safe-right);
     box-sizing: border-box;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
 }
 
 html,
 body,
 #root {
-    height: 100%;
+    min-height: 100%;
     width: 100%;
     margin: 0;
     padding: 0;
     overflow-x: hidden;
-    /* Kill browser overscroll/pull-to-refresh */
+    /* Kill browser overscroll/pull-to-refresh bounces on background */
     overscroll-behavior-y: none;
     overscroll-behavior-x: none;
     /* Prevent text selection (web feel) */
@@ -42,6 +38,11 @@ body,
     /* Disable tap highlight on mobile */
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
+}
+
+/* Universal momentum scrolling for mobile devices */
+* {
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Re-enable selection for inputs, textareas, and other readable elements */
@@ -53,6 +54,15 @@ textarea,
     -webkit-user-select: text;
 }
 
+/* Prevent iOS WebKit/Safari auto-zoom on input focus by enforcing 16px minimum on mobile */
+@media screen and (max-width: 768px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="submit"]):not([type="button"]),
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+}
+
 body {
     font-family: 'Maven Pro', sans-serif;
     background-color: #171617; /* Matches secondary color */
@@ -62,9 +72,9 @@ body {
     min-height: 100%;
 }
 
-/* Native Micro-interactions */
+/* Native Micro-interactions & Zero Touch Latency */
 .btn-haptic {
-    transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: transform 0.12s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
@@ -76,17 +86,20 @@ body {
     opacity: 0.9;
 }
 
-/* Kill all focus outlines/rings for pure touch feel */
-*:focus {
-    outline: none !important;
-    -webkit-tap-highlight-color: transparent;
-}
-
+/* Fast tap response on interactive controls */
 button, 
 a, 
 input, 
 select, 
-textarea {
+textarea,
+[role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Kill all focus outlines/rings for pure touch feel */
+*:focus {
+    outline: none !important;
     -webkit-tap-highlight-color: transparent;
 }
 

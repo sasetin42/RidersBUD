@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import CustomerHeader from '../components/CustomerHeader';
 import { CheckCircle2, Clock, ShieldCheck, Star, Calendar, Car, Wrench, CreditCard, Sparkles, ChevronRight, AlertCircle } from 'lucide-react';
 import { Booking } from '../types';
+import { Capacitor } from '@capacitor/core';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import CustomerMechanicChatModal from '../components/customer/CustomerMechanicChatModal';
@@ -698,6 +699,15 @@ const BookingConfirmationScreen: React.FC = () => {
 
                 {/* Bottom Sticky-ready Action Buttons */}
                 <div className="pt-2 space-y-2">
+                    {!Capacitor.isNativePlatform() && (
+                        <a
+                            href={`ridersbud://customer-portal/booking-confirmation?bookingId=${primaryBooking.id}`}
+                            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 rounded-xl transition text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
+                        >
+                            <span>Open in RidersBUD App</span>
+                            <ChevronRight size={16} />
+                        </a>
+                    )}
                     <button
                         onClick={() => navigate(`/customer-portal/booking-detail/${primaryBooking.id}`)}
                         className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition text-sm shadow-lg shadow-primary/25 flex items-center justify-center gap-2"

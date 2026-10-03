@@ -8,7 +8,8 @@ import Spinner from '../components/Spinner';
 import { CreditCard, Wallet, Banknote, Truck, CheckCircle2, Circle, ChevronRight, ShieldCheck, Lock } from 'lucide-react';
 import { Card } from '../components/ui';
 
-import { HitPayService } from '../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
+import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import HitPayInAppModal from '../components/HitPayInAppModal';
 import { getPartImage } from '../utils/fallbackImages';
@@ -291,10 +292,8 @@ const PaymentScreen: React.FC = () => {
 
             if (selectedMethod === 'Credit Card' || isHitPayActive) {
                 const isSandbox = db?.settings?.hitpaySandboxMode === true;
-                const hitPay = HitPayService.fromSettings(db?.settings, isSandbox);
                 setProcessingStep(isSandbox ? 'Connecting to HitPay Sandbox...' : 'Connecting to HitPay...');
 
-                const returnUrl = `${window.location.origin}${window.location.pathname}`;
                 const newOrderData = buildSafeOrderData('Credit Card', 'Processing');
                 const reference = newOrderData.transactionId;
 
@@ -310,29 +309,45 @@ const PaymentScreen: React.FC = () => {
                 }));
 
                 try {
-                    const { url } = await hitPay.createPaymentRequest({
+                    const result = await HitPayEmbeddedService.startCheckout({
+                        entityKind: 'order',
+                        entityId: newOrder.id,
                         amount: total,
                         currency: db?.settings?.currency || 'PHP',
-                        reference_number: reference,
-                        webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                        redirect_url: returnUrl,
-                        email: user.email || 'customer@ridersbud.com',
-                        name: deliveryDetails.fullName || 'Valued Customer',
-                        phone: deliveryDetails.phone || '09171234567',
-                        purpose: `RidersBUD Parts & Services Order #${reference}`
+                        referenceNumber: reference,
+                        purpose: `RidersBUD Parts & Services Order #${reference}`,
+                        customerEmail: user.email || 'customer@ridersbud.com',
+                        customerName: deliveryDetails.fullName || 'Valued Customer',
+                        customerPhone: deliveryDetails.phone || '09171234567',
+                        returnRoute: window.location.pathname,
+                        isSandbox,
+                        settings: db?.settings,
+                        onStateChange: (state, msg) => {
+                            if (msg) setProcessingStep(msg);
+                        }
                     });
 
-                    if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-                        await openPaymentUrl(url);
+                    if (result.redirected) {
                         return;
                     }
 
-                    if (url && url.startsWith('/')) {
-                        navigate(url);
+                    if (result.success) {
+                        setProcessingStep('Finalizing Order...');
+                        setIsSuccess(true);
+                        if (updateOrderStatus) {
+                            await updateOrderStatus(newOrder.id, 'Processing', 'Paid');
+                        }
+                        clearCart();
+                        sessionStorage.removeItem('pendingHitPayTx');
+                        navigate('?success=true', { replace: true });
                         return;
+                    } else if (result.paymentState === 'CANCELLED') {
+                        setIsProcessing(false);
+                        setProcessingStep('');
+                        return;
+                    } else {
+                        throw new Error(result.errorMessage || "Payment was not successful.");
                     }
-
-                    throw new Error("Unable to obtain payment gateway URL.");
                 } catch (hitpayErr) {
                     console.warn('HitPay online checkout unavailable. Falling back to GCash payment modal:', hitpayErr);
                     setPendingOrderId(newOrder.id);

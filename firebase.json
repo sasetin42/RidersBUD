@@ -35,6 +35,10 @@
                 "function": "hitpayWebhook"
             },
             {
+                "source": "/payment/webhook",
+                "function": "hitpayWebhook"
+            },
+            {
                 "source": "/api/smtp-bridge",
                 "function": "smtpHandler"
             },

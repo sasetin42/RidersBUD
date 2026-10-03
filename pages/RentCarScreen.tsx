@@ -8,11 +8,12 @@ import FilterSelect from '../components/FilterSelect';
 import { RentalCar } from '../types';
 import { useAuth } from '../context/AuthContext';
 import GCashPaymentModal from '../components/GCashPaymentModal';
-import { HitPayService } from '../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
+import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
-import { getAccurateLivePosition, safeWatchPosition, safeClearWatch, reverseGeocodeCoordinates } from '../utils/locationHelper';
+import { getAccurateLivePosition, startPreciseWatch, safeClearWatch, reverseGeocodeCoordinates } from '../utils/locationHelper';
 import { getLeafletTileConfig } from '../utils/mapTileProviders';
 
 declare const L: any;
@@ -519,11 +520,11 @@ const RentCarLocationModal: React.FC<{
             fetchAddress(fallback.lat, fallback.lng);
         });
 
-        // Live Watch Position stream
-        safeWatchPosition(
-            (pos) => {
+        // Live Watch Position stream (unified precise stream: native GPS first, degraded readings filtered)
+        startPreciseWatch(
+            (fix) => {
                 if (!isMounted) return;
-                const { latitude, longitude, accuracy } = pos.coords;
+                const { lat: latitude, lng: longitude, accuracy } = fix;
                 setLocationAccuracy(prev => (prev !== null && accuracy > prev * 2.0 && accuracy > 35 ? prev : accuracy));
                 setCoords(prev => {
                     if (prev !== null) {
@@ -1276,9 +1277,9 @@ const RentCarScreen: React.FC = () => {
         const createdRental = await addRentalBooking(pendingBookingData);
         if (!createdRental) throw new Error("Failed to save rental booking.");
 
-        const hitPay = HitPayService.fromSettings(db?.settings);
+        const isSandbox = db?.settings?.hitpaySandboxMode === true;
         const downpayment = bookingDetails.totalPrice * 0.5;
-        const returnUrl = `${window.location.origin}/customer-portal/service-payment?bookingId=${createdRental.id}&isRental=true`;
+        const refNumber = `RNT-${createdRental.id}-${Date.now()}`;
 
         sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
             bookingId: createdRental.id,
@@ -1297,28 +1298,28 @@ const RentCarScreen: React.FC = () => {
             leavingTimestamp: Date.now()
         }));
 
-        const { url } = await hitPay.createPaymentRequest({
+        const result = await HitPayEmbeddedService.startCheckout({
+            entityKind: 'rental',
+            entityId: createdRental.id,
             amount: downpayment,
             currency: db?.settings?.currency || 'PHP',
-            reference_number: `RNT-${createdRental.id}-${Date.now()}`,
-            webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-            redirect_url: returnUrl,
-            email: user.email || 'customer@example.com',
-            name: user.name || 'Customer'
+            referenceNumber: refNumber,
+            purpose: `RidersBUD — Car Rental 50% Deposit (${selectedCar.make} ${selectedCar.model})`,
+            customerEmail: user.email || 'customer@example.com',
+            customerName: user.name || 'Customer',
+            returnRoute: '/customer-portal/',
+            isSandbox,
+            settings: db?.settings
         });
 
-        if (url.startsWith('/')) {
-            navigate(url);
-        } else {
-            setPendingPaymentMarker({
-                entityKind: 'rental',
-                entityId: createdRental.id,
-                returnRoute: `/customer-portal/`,
-                startedAt: Date.now(),
-                purpose: 'rental-downpayment'
-            });
-            startPaymentWatcher('rental', createdRental.id, `/customer-portal/`);
-            openPaymentUrl(url);
+        if (result.redirected) {
+            return;
+        }
+
+        if (result.success) {
+            navigate('/customer-portal/', { state: { rentalSuccess: true } });
+        } else if (result.paymentState !== 'CANCELLED') {
+            alert(result.errorMessage || 'Failed to complete payment.');
         }
         return;
     };

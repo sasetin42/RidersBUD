@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ridersbud-v4';
+const CACHE_NAME = 'ridersbud-v6';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -54,15 +54,19 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== location.origin) return;
   if (request.method !== 'GET') return;
 
-  // Handle navigation/HTML requests by falling back to index.html when offline
-  if (request.mode === 'navigate' || (request.headers.get('accept') && request.headers.get('accept').includes('text/html'))) {
+  // 1. Navigation / HTML Requests (SPA Routes like /customer-portal/profile, /customer-portal/*, etc.)
+  const isHtmlRequest = request.mode === 'navigate' ||
+    (request.headers.get('accept') && request.headers.get('accept').includes('text/html')) ||
+    (!url.pathname.includes('.') && !url.pathname.startsWith('/api/'));
+
+  if (isHtmlRequest) {
     event.respondWith(
       (async () => {
         try {
           const networkResponse = await fetch(request);
           if (networkResponse && (networkResponse.ok || networkResponse.status === 304)) {
             const copy = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/', copy)).catch(() => {});
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy)).catch(() => {});
             return networkResponse;
           }
         } catch {
@@ -84,7 +88,7 @@ self.addEventListener('fetch', (event) => {
           // Last resort fallback
         }
 
-        // Return a basic clean HTML offline shell rather than Response.error() to avoid FetchEvent error logs
+        // Return a clean HTML offline shell rather than Response.error()
         return new Response(
           '<!DOCTYPE html><html><head><meta charset="utf-8"><title>RidersBUD</title></head><body><div id="root"></div></body></html>',
           { headers: { 'Content-Type': 'text/html' } }
@@ -94,15 +98,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (request.mode === 'navigate') return;
   if (isViteInternal(url)) return;
   if (request.headers.get('upgrade') === 'websocket') return;
   if (url.pathname.match(/\.(ts|tsx|jsx|vue|svelte)$/)) return;
 
-  const safeRespond = (p) => {
-    const safe = p.catch(() => Response.error());
-    event.respondWith(safe);
-    event.waitUntil(safe.catch(() => {}));
+  const safeRespond = (promise) => {
+    event.respondWith(
+      promise.catch(async () => {
+        try {
+          return await fetch(request);
+        } catch {
+          return new Response(null, { status: 504, statusText: 'Gateway Timeout' });
+        }
+      })
+    );
   };
 
   if (url.pathname.startsWith('/api/')) {
@@ -115,7 +124,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.match(/\.(png|jpg|jpeg|svg|woff2?|ico)$/)) {
+  if (url.pathname.match(/\.(png|jpg|jpeg|svg|webp|woff2?|ico)$/)) {
     safeRespond(staleWhileRevalidate(request));
     return;
   }
@@ -133,27 +142,28 @@ async function cacheFirst(request) {
   if (cached) return cached;
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response && response.ok) {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
+      cache.put(request, response.clone()).catch(() => {});
     }
     return response;
   } catch {
-    return Response.error();
+    return new Response(null, { status: 404, statusText: 'Not Found' });
   }
 }
 
 async function networkFirst(request) {
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response && response.ok) {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
+      cache.put(request, response.clone()).catch(() => {});
     }
     return response;
   } catch {
     const cached = await caches.match(request);
-    return cached || Response.error();
+    if (cached) return cached;
+    return new Response(null, { status: 504, statusText: 'Gateway Timeout' });
   }
 }
 
@@ -162,16 +172,16 @@ async function staleWhileRevalidate(request) {
   const cached = await cache.match(request);
   if (cached) {
     fetch(request).then((response) => {
-      if (response && response.ok) cache.put(request, response.clone());
+      if (response && response.ok) cache.put(request, response.clone()).catch(() => {});
     }).catch(() => {});
     return cached;
   }
   try {
     const response = await fetch(request);
-    if (response && response.ok) cache.put(request, response.clone());
-    return response || Response.error();
+    if (response && response.ok) cache.put(request, response.clone()).catch(() => {});
+    return response;
   } catch {
-    return Response.error();
+    return new Response(null, { status: 404, statusText: 'Not Found' });
   }
 }
 

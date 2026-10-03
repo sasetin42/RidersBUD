@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { 
     X, 
     Navigation, 
@@ -96,6 +96,11 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
     const routeLayerGroupRef = useRef<any>(null);
     const customerMarkerRef = useRef<any>(null);
     const mechanicMarkerRef = useRef<any>(null);
+    // Realtime route bookkeeping: guards against out-of-order responses and
+    // throttles OSRM refetches while positions stream in.
+    const routeRequestSeqRef = useRef(0);
+    const lastRouteKeyRef = useRef<string>('');
+    const lastRouteFetchAtRef = useRef(0);
 
     const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number } | null>(null);
     const [isLoadingRoute, setIsLoadingRoute] = useState(false);
@@ -133,11 +138,105 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
         window.open(navUrl, '_blank', 'noopener,noreferrer');
     };
 
+    /**
+     * Draws the OSRM route between two live endpoints. Called once when the modal
+     * opens and again whenever either party moves far enough to matter, so the line
+     * stays truthful without re-creating the map (or snapping the user's view).
+     */
+    const fetchAndDrawRoute = useCallback((from: [number, number], to: [number, number], fitBounds: boolean) => {
+        const map = mapInstanceRef.current;
+        const layer = routeLayerGroupRef.current;
+        if (!map || !layer) return;
+
+        const seq = ++routeRequestSeqRef.current;
+        lastRouteFetchAtRef.current = Date.now();
+        setIsLoadingRoute(true);
+
+        const isCurrent = () =>
+            seq === routeRequestSeqRef.current &&
+            !!mapInstanceRef.current &&
+            !!routeLayerGroupRef.current;
+
+        const drawFallback = () => {
+            if (!isCurrent()) return;
+            routeLayerGroupRef.current.clearLayers();
+            const straightCoords = [from, to];
+            const fallbackPolyline = L.polyline(straightCoords, {
+                color: '#FE7803',
+                weight: 4,
+                opacity: 0.85,
+                dashArray: '8, 8'
+            });
+            routeLayerGroupRef.current.addLayer(fallbackPolyline);
+
+            const latDiff = to[0] - from[0];
+            const lngDiff = to[1] - from[1];
+            const approxKm = parseFloat((Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111).toFixed(1));
+            setRouteInfo({ distanceKm: approxKm, durationMin: Math.max(1, Math.round(approxKm * 3)) });
+
+            if (fitBounds) {
+                try {
+                    mapInstanceRef.current.fitBounds(L.latLngBounds(straightCoords), { padding: [60, 60], animate: true });
+                } catch (_) {}
+            }
+        };
+
+        const routeUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+
+        fetch(routeUrl)
+            .then(res => res.json())
+            .then(data => {
+                if (!isCurrent()) return;
+
+                if (data && data.routes && data.routes.length > 0) {
+                    const primaryRoute = data.routes[0];
+                    const coords = primaryRoute.geometry.coordinates.map((c: any) => [c[1], c[0]]);
+
+                    const distKm = parseFloat((primaryRoute.distance / 1000).toFixed(1));
+                    const durMin = Math.max(1, Math.round(primaryRoute.duration / 60));
+                    setRouteInfo({ distanceKm: distKm, durationMin: durMin });
+
+                    routeLayerGroupRef.current.clearLayers();
+
+                    // Glow background
+                    const glowPolyline = L.polyline(coords, {
+                        color: '#FE7803',
+                        weight: 8,
+                        opacity: 0.35,
+                        lineJoin: 'round'
+                    });
+                    routeLayerGroupRef.current.addLayer(glowPolyline);
+
+                    // Core line
+                    const corePolyline = L.polyline(coords, {
+                        color: '#FE7803',
+                        weight: 4,
+                        opacity: 1,
+                        lineJoin: 'round'
+                    });
+                    routeLayerGroupRef.current.addLayer(corePolyline);
+
+                    if (fitBounds) {
+                        try {
+                            mapInstanceRef.current.fitBounds(L.latLngBounds(coords), { padding: [70, 70], animate: true });
+                        } catch (_) {}
+                    }
+                } else {
+                    drawFallback();
+                }
+            })
+            .catch(err => {
+                console.warn('OSRM routing fetch failed, falling back:', err);
+                drawFallback();
+            })
+            .finally(() => {
+                if (isCurrent()) setIsLoadingRoute(false);
+            });
+    }, []);
+
     // Initialize Map once when modal opens
     useEffect(() => {
         if (!isOpen || !mapContainerRef.current || typeof L === 'undefined') return;
-
-        let isSubscribed = true;
 
         // Cleanup existing map if any
         if (mapInstanceRef.current) {
@@ -284,85 +383,9 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
 
         mapInstanceRef.current = map;
 
-        // Fetch OSRM Best-Way Route
-        setIsLoadingRoute(true);
-        const routeUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${mechLng},${mechLat};${custLng},${custLat}?overview=full&geometries=geojson`;
-
-        const drawFallback = () => {
-            if (!isSubscribed || !mapInstanceRef.current || !routeLayerGroupRef.current) return;
-            routeLayerGroupRef.current.clearLayers();
-            const straightCoords = [
-                [mechLat, mechLng],
-                [custLat, custLng]
-            ];
-            const fallbackPolyline = L.polyline(straightCoords, {
-                color: '#FE7803',
-                weight: 4,
-                opacity: 0.85,
-                dashArray: '8, 8'
-            });
-            routeLayerGroupRef.current.addLayer(fallbackPolyline);
-
-            const latDiff = custLat - mechLat;
-            const lngDiff = custLng - mechLng;
-            const approxKm = parseFloat((Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111).toFixed(1));
-            setRouteInfo({ distanceKm: approxKm, durationMin: Math.max(1, Math.round(approxKm * 3)) });
-
-            try {
-                map.fitBounds(L.latLngBounds(straightCoords), { padding: [60, 60] });
-            } catch (_) {}
-        };
-
-        fetch(routeUrl)
-            .then(res => res.json())
-            .then(data => {
-                if (!isSubscribed || !mapInstanceRef.current || !routeLayerGroupRef.current) return;
-
-                if (data && data.routes && data.routes.length > 0) {
-                    const primaryRoute = data.routes[0];
-                    const coords = primaryRoute.geometry.coordinates.map((c: any) => [c[1], c[0]]);
-
-                    const distKm = parseFloat((primaryRoute.distance / 1000).toFixed(1));
-                    const durMin = Math.max(1, Math.round(primaryRoute.duration / 60));
-                    setRouteInfo({ distanceKm: distKm, durationMin: durMin });
-
-                    routeLayerGroupRef.current.clearLayers();
-
-                    // Glow background
-                    const glowPolyline = L.polyline(coords, {
-                        color: '#FE7803',
-                        weight: 8,
-                        opacity: 0.35,
-                        lineJoin: 'round'
-                    });
-                    routeLayerGroupRef.current.addLayer(glowPolyline);
-
-                    // Core line
-                    const corePolyline = L.polyline(coords, {
-                        color: '#FE7803',
-                        weight: 4,
-                        opacity: 1,
-                        lineJoin: 'round'
-                    });
-                    routeLayerGroupRef.current.addLayer(corePolyline);
-
-                    try {
-                        const bounds = L.latLngBounds(coords);
-                        map.fitBounds(bounds, { padding: [70, 70] });
-                    } catch (_) {}
-                } else {
-                    drawFallback();
-                }
-            })
-            .catch(err => {
-                console.warn('OSRM routing fetch failed, falling back:', err);
-                drawFallback();
-            })
-            .finally(() => {
-                if (isSubscribed) {
-                    setIsLoadingRoute(false);
-                }
-            });
+        // Initial route draw (also seeds the realtime refresh key)
+        lastRouteKeyRef.current = `${custLat.toFixed(3)},${custLng.toFixed(3)}|${mechLat.toFixed(3)},${mechLng.toFixed(3)}`;
+        fetchAndDrawRoute([mechLat, mechLng], [custLat, custLng], true);
 
         const timer = setTimeout(() => {
             if (mapInstanceRef.current) {
@@ -373,7 +396,6 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
         }, 300);
 
         return () => {
-            isSubscribed = false;
             clearTimeout(timer);
             if (mapInstanceRef.current) {
                 try {
@@ -386,6 +408,9 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
                 customerMarkerRef.current = null;
                 mechanicMarkerRef.current = null;
             }
+            // Invalidate any in-flight route response and re-seed on next open
+            routeRequestSeqRef.current++;
+            lastRouteKeyRef.current = '';
         };
     }, [isOpen]); // Only re-instantiate map when modal visibility changes
 
@@ -400,6 +425,25 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
             mechanicMarkerRef.current.setLatLng([mechLat, mechLng]);
         }
     }, [custLat, custLng, mechLat, mechLng]);
+
+    // Realtime route refresh: refetch the OSRM line once either endpoint has moved
+    // ~110m, throttled so a streaming GPS fix can't hammer the routing service.
+    useEffect(() => {
+        if (!isOpen || !mapInstanceRef.current) return;
+
+        const key = `${custLat.toFixed(3)},${custLng.toFixed(3)}|${mechLat.toFixed(3)},${mechLng.toFixed(3)}`;
+        if (key === lastRouteKeyRef.current) return;
+        lastRouteKeyRef.current = key;
+
+        const sinceLastFetch = Date.now() - lastRouteFetchAtRef.current;
+        const delay = Math.max(1200, 8000 - sinceLastFetch);
+
+        const timer = setTimeout(() => {
+            fetchAndDrawRoute([mechLat, mechLng], [custLat, custLng], false);
+        }, delay);
+
+        return () => clearTimeout(timer);
+    }, [isOpen, custLat, custLng, mechLat, mechLng, fetchAndDrawRoute]);
 
     const handleFocusView = (view: 'both' | 'customer' | 'mechanic') => {
         setActiveView(view);

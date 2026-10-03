@@ -12,18 +12,20 @@ import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fal
 import Tooltip from '../components/ui/Tooltip';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
-import { HitPayService } from '../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
+import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
 import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers, seedServices } from '../data/mockData';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import BookingPaymentBreakdownModal from '../components/BookingPaymentBreakdownModal';
 import { 
     safeGetCurrentPosition, 
-    safeWatchPosition, 
     safeClearWatch, 
     isGeolocationPermissionDenied,
     getAccurateLivePosition,
-    reverseGeocodeCoordinates
+    reverseGeocodeCoordinates,
+    startPreciseWatch,
+    distanceMeters
 } from '../utils/locationHelper';
 import { getLeafletTileConfig } from '../utils/mapTileProviders';
 
@@ -507,8 +509,15 @@ const BookingScreen: React.FC = () => {
     const [locationStatus, setLocationStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
     const [locationError, setLocationError] = useState('');
     const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+    /** Best (tightest) GPS accuracy achieved so far on this screen — never regresses. */
+    const [bestLocationAccuracy, setBestLocationAccuracy] = useState<number | null>(null);
+    /** True when GPS stayed coarse for too long (network/cell fix only) so the UI can advise a manual pin. */
+    const [gpsStalled, setGpsStalled] = useState(false);
     const [isTrackingLive, setIsTrackingLive] = useState(true);
     const watchIdRef = useRef<number | null>(null);
+    const isTrackingLiveRef = useRef(isTrackingLive);
+    isTrackingLiveRef.current = isTrackingLive;
+    const bestAccuracyRef = useRef<number | null>(null);
 
     const [serviceSearch, setServiceSearch] = useState('');
     const [mechanicSearch, setMechanicSearch] = useState(initialState?.mechanicSearch || '');
@@ -560,6 +569,8 @@ const BookingScreen: React.FC = () => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
     const markerRef = useRef<any>(null);
+    const nearbyMechanicsLayerRef = useRef<any>(null);
+    const [mapReadyVersion, setMapReadyVersion] = useState(0);
     const confirmationMapRef = useRef<HTMLDivElement>(null);
     const confirmationMapInstanceRef = useRef<any>(null);
 
@@ -1006,89 +1017,117 @@ const BookingScreen: React.FC = () => {
         sessionStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
     }, [step, selectedServiceIds, selectedVehiclePlate, selectedDate, selectedEndDate, selectedTime, selectedEndTime, selectedMechanic, serviceLocation, mechanicSearch, specializationFilter, sortOption, notes, selectedCar, selectedDriver, startLocation, endLocation]);
 
-    useEffect(() => {
-        if (step === 2) {
-            setLocationStatus('fetching');
+    // Apply a GPS fix to the accuracy HUD and (when live-tracking) to the draggable pin.
+    // Shared by the initial lock, the realtime stream and the auto-refine retries so
+    // accuracy/position behave identically no matter which source produced the fix.
+    const applyLocationFix = useCallback((lat: number, lng: number, accuracy: number, opts?: { ignoreDeadband?: boolean }) => {
+        if (!isFinite(lat) || !isFinite(lng) || !isFinite(accuracy)) return;
 
-            // Apply high-precision progressive auto-hone
+        // Accuracy HUD: a degraded cell-tower reading must never erase a good satellite lock
+        setLocationAccuracy(prev => (prev !== null && accuracy > prev * 2 && accuracy > 35) ? prev : accuracy);
+        if (bestAccuracyRef.current === null || accuracy < bestAccuracyRef.current) {
+            bestAccuracyRef.current = accuracy;
+            setBestLocationAccuracy(accuracy);
+            if (accuracy <= 25) setGpsStalled(false);
+        }
+
+        setServiceLocation(prev => {
+            if (prev !== null) {
+                const moved = distanceMeters(prev, { lat, lng });
+                if (moved < 1.0 && !opts?.ignoreDeadband) {
+                    return prev; // stationary sensor jitter
+                }
+            }
+            if (isTrackingLiveRef.current || prev === null) {
+                return { lat, lng };
+            }
+            return prev; // user dragged the pin — respect their placement
+        });
+    }, []);
+
+    useEffect(() => {
+        if (step !== 2) return;
+
+        let cancelled = false;
+        let refining = false;
+
+        bestAccuracyRef.current = null;
+        setBestLocationAccuracy(null);
+        setGpsStalled(false);
+        setLocationStatus('fetching');
+
+        // 1) Instant first fix + progressive satellite auto-hone
+        getAccurateLivePosition(
+            (accurate) => {
+                if (cancelled) return;
+                applyLocationFix(accurate.latitude, accurate.longitude, accurate.accuracy);
+                setLocationStatus('success');
+                setLocationError('');
+            },
+            { timeoutMs: 9000, targetAccuracy: 12 }
+        ).catch((err) => {
+            if (cancelled) return;
+            console.warn("[BookingScreen] Initial high-precision lock warning:", err);
+            // Safe fallback default Carmona / Manila if permission or device failed
+            setServiceLocation(prev => {
+                if (prev === null) {
+                    setLocationStatus('success');
+                    return { lat: 14.3149, lng: 121.0583 };
+                }
+                return prev;
+            });
+        });
+
+        // 2) Continuous realtime stream — native GPS first, degraded readings filtered out
+        startPreciseWatch(
+            (fix) => {
+                if (cancelled) return;
+                applyLocationFix(fix.lat, fix.lng, fix.accuracy);
+                setLocationStatus('success');
+            },
+            () => {},
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        ).then(id => {
+            if (cancelled) {
+                if (id !== null) safeClearWatch(id);
+                return;
+            }
+            watchIdRef.current = id;
+        });
+
+        // 3) Auto-refine loop: while accuracy is still coarse, keep re-running the satellite hone
+        const refineTimer = setInterval(() => {
+            if (cancelled || refining) return;
+            const best = bestAccuracyRef.current;
+            if (best !== null && best <= 25) return; // already pinpoint — stop retrying
+            refining = true;
             getAccurateLivePosition(
                 (accurate) => {
-                    setServiceLocation(prev => {
-                        // Jitter filter: if moved less than 1 meter and not first reading, ignore minor sensor bounce
-                        if (prev !== null) {
-                            const dLat = (accurate.latitude - prev.lat) * 111320;
-                            const dLng = (accurate.longitude - prev.lng) * (111320 * Math.cos(prev.lat * (Math.PI / 180)));
-                            const distanceMoved = Math.sqrt(dLat * dLat + dLng * dLng);
-                            if (distanceMoved < 1.0) {
-                                return prev;
-                            }
-                        }
-                        if (isTrackingLive || prev === null) {
-                            return { lat: accurate.latitude, lng: accurate.longitude };
-                        }
-                        return prev;
-                    });
-                    setLocationAccuracy(accurate.accuracy);
-                    setLocationStatus('success');
-                    setLocationError('');
+                    if (!cancelled) {
+                        applyLocationFix(accurate.latitude, accurate.longitude, accurate.accuracy, { ignoreDeadband: true });
+                    }
                 },
-                { timeoutMs: 9000, targetAccuracy: 12 }
-            ).catch((err) => {
-                console.warn("[BookingScreen] Initial high-precision lock warning:", err);
-                // Safe fallback default Carmona / Manila if permission or device failed
-                setServiceLocation(prev => {
-                    if (prev === null) {
-                        setLocationStatus('success');
-                        return { lat: 14.3149, lng: 121.0583 };
-                    }
-                    return prev;
-                });
-            });
+                { timeoutMs: 8000, targetAccuracy: 15 }
+            ).catch(() => {}).finally(() => { refining = false; });
+        }, 12000);
 
-            // Long-term active GPS stream for live following
-            const handleStreamSuccess = (position: GeolocationPosition) => {
-                const { latitude, longitude, accuracy } = position.coords;
-                // Avoid overriding a better reading with a severely degraded coarse network reading
-                setLocationAccuracy(prevAcc => {
-                    if (prevAcc !== null && accuracy > prevAcc * 2.0 && accuracy > 35) {
-                        return prevAcc;
-                    }
-                    return accuracy;
-                });
+        // 4) Honest stalled state: if no satellite lock arrives, tell the user to fine-tune the pin
+        const stallTimer = setTimeout(() => {
+            if (cancelled) return;
+            const best = bestAccuracyRef.current;
+            if (best === null || best > 60) setGpsStalled(true);
+        }, 20000);
 
-                setServiceLocation(prev => {
-                    if (prev !== null) {
-                        const dLat = (latitude - prev.lat) * 111320;
-                        const dLng = (longitude - prev.lng) * (111320 * Math.cos(prev.lat * (Math.PI / 180)));
-                        const distanceMoved = Math.sqrt(dLat * dLat + dLng * dLng);
-                        if (distanceMoved < 1.0) {
-                            return prev;
-                        }
-                    }
-                    if (isTrackingLive || prev === null) {
-                        return { lat: latitude, lng: longitude };
-                    }
-                    return prev;
-                });
-                setLocationStatus('success');
-            };
-
-            safeWatchPosition(
-                handleStreamSuccess,
-                () => {},
-                { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-            ).then(watchId => {
-                watchIdRef.current = watchId;
-            });
-
-            return () => {
-                if (watchIdRef.current !== null) {
-                    safeClearWatch(watchIdRef.current);
-                    watchIdRef.current = null;
-                }
-            };
-        }
-    }, [step, isTrackingLive]);
+        return () => {
+            cancelled = true;
+            clearInterval(refineTimer);
+            clearTimeout(stallTimer);
+            if (watchIdRef.current !== null) {
+                safeClearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+            }
+        };
+    }, [step, applyLocationFix]);
 
     // Map initialization: Run once when step === 2 and serviceLocation is available
     useEffect(() => {
@@ -1131,6 +1170,9 @@ const BookingScreen: React.FC = () => {
             autoPanSpeed: 10,
         }).addTo(mapInstanceRef.current);
 
+        // Signal that the map instance is ready so dependent layers (nearby mechanics) can attach
+        setMapReadyVersion(v => v + 1);
+
         // Drag events — live update location state
         markerRef.current.on('drag', (e: any) => {
             const { lat: newLat, lng: newLng } = e.target.getLatLng();
@@ -1170,6 +1212,7 @@ const BookingScreen: React.FC = () => {
                 mapInstanceRef.current = null;
                 markerRef.current = null;
             }
+            nearbyMechanicsLayerRef.current = null;
         };
     }, [step, serviceLocation === null, leafletLoaded]); // eslint-disable-line
 
@@ -1188,6 +1231,76 @@ const BookingScreen: React.FC = () => {
             }
         }
     }, [serviceLocation, isTrackingLive, step]);
+
+    // ── Realtime nearby mechanics on the confirm-location map ──────────────────
+    // Live Firestore stream (db.mechanics) filtered to online specialists around the pin.
+    // The origin is quantized (~11m cell) so dragging the pin doesn't rebuild markers
+    // on every pointer frame — it refreshes when the pin actually relocates.
+    const nearbyOriginKey = serviceLocation ? `${serviceLocation.lat.toFixed(4)},${serviceLocation.lng.toFixed(4)}` : null;
+    const nearbyMechanics = useMemo(() => {
+        if (step !== 2 || !nearbyOriginKey) return [];
+        const [latStr, lngStr] = nearbyOriginKey.split(',');
+        const origin = { lat: parseFloat(latStr), lng: parseFloat(lngStr) };
+        return (db?.mechanics || [])
+            .filter(m => typeof m.lat === 'number' && typeof m.lng === 'number' && isFinite(m.lat) && isFinite(m.lng))
+            .filter(m => m.isOnline !== false && (m as any).isAvailable !== false)
+            .map(m => ({ mechanic: m, distanceKm: distanceMeters(origin, { lat: m.lat, lng: m.lng }) / 1000 }))
+            .filter(entry => entry.distanceKm <= 25)
+            .sort((a, b) => a.distanceKm - b.distanceKm)
+            .slice(0, 12);
+    }, [step, nearbyOriginKey, db?.mechanics]);
+
+    // Draw / refresh the live mechanic pins (recreated from the stream, never simulated)
+    useEffect(() => {
+        if (step !== 2 || !mapInstanceRef.current || typeof L === 'undefined') return;
+
+        if (!nearbyMechanicsLayerRef.current) {
+            nearbyMechanicsLayerRef.current = L.layerGroup().addTo(mapInstanceRef.current);
+        }
+        const layer = nearbyMechanicsLayerRef.current;
+        layer.clearLayers();
+
+        nearbyMechanics.forEach(({ mechanic, distanceKm }) => {
+            const icon = L.divIcon({
+                html: `<div class="rb-map-pin-wrapper ${mechanic.isOnline !== false ? 'pulse-available' : ''}">
+                    <div class="rb-pin-circle">
+                        <img src="${mechanic.imageUrl || '/riders-logo.png'}" alt="${mechanic.name}" />
+                    </div>
+                    <div class="rb-pin-stem"></div>
+                    <div class="rb-pin-dot"></div>
+                </div>`,
+                className: 'rb-leaflet-icon',
+                iconSize: [56, 72],
+                iconAnchor: [28, 72],
+                popupAnchor: [0, -74]
+            });
+
+            const distanceLabel = distanceKm < 1
+                ? `${Math.round(distanceKm * 1000)} m away`
+                : `${distanceKm.toFixed(1)} km away`;
+
+            const popup = `
+                <div class="ridersbud-popup-inner" style="padding:14px;min-width:190px;">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                        <img src="${mechanic.imageUrl || '/riders-logo.png'}" alt="${mechanic.name}"
+                            style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid #FE7803;flex-shrink:0;" />
+                        <div style="min-width:0;">
+                            <div style="font-weight:900;font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${mechanic.name}</div>
+                            <div style="font-size:10px;color:#9ca3af;margin-top:3px;">★ ${Number(mechanic.rating || 0).toFixed(1)} &bull; ${(mechanic.specializations || []).slice(0, 2).join(' / ')}</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                        <span style="background:rgba(254,120,3,0.15);color:#FE7803;border:1px solid rgba(254,120,3,0.35);padding:3px 8px;border-radius:99px;font-size:9px;font-weight:900;letter-spacing:0.06em;">● AVAILABLE</span>
+                        <span style="color:#4ade80;font-size:10px;font-weight:800;">${distanceLabel}</span>
+                    </div>
+                </div>
+            `;
+
+            const marker = L.marker([mechanic.lat, mechanic.lng], { icon, keyboard: false });
+            marker.bindPopup(popup, { className: 'ridersbud-popup' });
+            layer.addLayer(marker);
+        });
+    }, [step, nearbyMechanics, mapReadyVersion]);
 
 
 
@@ -1333,7 +1446,7 @@ const BookingScreen: React.FC = () => {
             const hitPay = HitPayService.fromSettings(db?.settings);
             const appTitle = db?.settings?.appName || 'RidersBUD';
             const bookingId = doc(collection(firestore, 'bookings')).id;
-            const returnUrl = `${window.location.origin}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
+            const returnUrl = `${getLiveAppOrigin()}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
             const refNumber = `BOK-${bookingId}-DP-${Date.now()}`;
             const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
@@ -1341,7 +1454,7 @@ const BookingScreen: React.FC = () => {
                 amount: downpaymentAmount,
                 currency: db?.settings?.currency || 'PHP',
                 reference_number: refNumber,
-                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
                 redirect_url: returnUrl,
                 email: user.email || 'customer@example.com',
                 name: user.name || 'Customer',
@@ -1686,7 +1799,7 @@ const BookingScreen: React.FC = () => {
 
             const hitPay = HitPayService.fromSettings(db?.settings);
             const appTitle = db?.settings?.appName || 'RidersBUD';
-            const returnUrl = `${window.location.origin}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
+            const returnUrl = `${getLiveAppOrigin()}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
             const refNumber = `BOK-${bookingId}-DP-${Date.now()}`;
             const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
@@ -1714,7 +1827,7 @@ const BookingScreen: React.FC = () => {
                     amount: downpaymentAmount,
                     currency: db?.settings?.currency || 'PHP',
                     reference_number: refNumber,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
                     redirect_url: returnUrl,
                     email: user.email || 'customer@example.com',
                     name: user.name || 'Customer',
@@ -1745,28 +1858,46 @@ const BookingScreen: React.FC = () => {
             // Clear cache after successful consumption
             prewarmedHitPaySessionRef.current = null;
 
-            const url = paymentResult?.url;
             setBookingProcessingStage('Opening Payment Gateway...');
 
-            if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-                setPendingPaymentMarker({
-                    entityKind: 'booking',
-                    entityId: bookingId,
-                    returnRoute: `/customer-portal/booking-confirmation?bookingId=${bookingId}`,
-                    startedAt: Date.now(),
-                    purpose: 'booking-downpayment'
+            const isSandbox = db?.settings?.hitpaySandboxMode === true;
+            const checkoutResult = await HitPayEmbeddedService.startCheckout({
+                entityKind: 'booking',
+                entityId: bookingId,
+                amount: downpaymentAmount,
+                currency: db?.settings?.currency || 'PHP',
+                referenceNumber: refNumber,
+                purpose: purpose,
+                customerEmail: user.email || 'customer@example.com',
+                customerName: user.name || 'Customer',
+                customerPhone: user.phone || undefined,
+                returnRoute: `/customer-portal/booking-confirmation?bookingId=${bookingId}`,
+                isSandbox,
+                settings: db?.settings,
+                onStateChange: (state, msg) => {
+                    if (msg) setBookingProcessingStage(msg);
+                }
+            });
+
+            if (checkoutResult.redirected) {
+                // The browser is already opening or redirecting to the official HitPay checkout URL.
+                // Do not perform SPA navigation or clear in-progress state.
+                return;
+            }
+
+            if (checkoutResult.success) {
+                sessionStorage.removeItem(BOOKING_STATE_KEY);
+                navigate(`/customer-portal/booking-confirmation?bookingId=${bookingId}`, {
+                    state: { bookingId }
                 });
-                startPaymentWatcher('booking', bookingId, `/customer-portal/booking-confirmation?bookingId=${bookingId}`);
-                await openPaymentUrl(url);
                 return;
-            }
-
-            if (url && url.startsWith('/')) {
-                navigate(url);
+            } else if (checkoutResult.paymentState === 'CANCELLED') {
+                setIsBooking(false);
+                setBookingProcessingStage('');
                 return;
+            } else {
+                throw new Error(checkoutResult.errorMessage || "Unable to complete payment.");
             }
-
-            throw new Error("Unable to obtain payment gateway URL.");
         } catch (err: any) {
             setShowPaymentBreakdownModal(false);
             const msg = err?.message || 'An error occurred while connecting to Payment Gateway.';
@@ -2549,24 +2680,28 @@ const BookingScreen: React.FC = () => {
                                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                                         !isTrackingLive 
                                             ? 'bg-amber-500' 
-                                            : locationAccuracy <= 25 
-                                            ? 'bg-green-500 animate-pulse shadow-md shadow-green-500/50' 
-                                            : 'bg-yellow-400 animate-ping'
+                                            : (gpsStalled || locationAccuracy > 25)
+                                            ? 'bg-yellow-400 animate-ping'
+                                            : 'bg-green-500 animate-pulse shadow-md shadow-green-500/50'
                                     }`} />
                                     <div className="flex flex-col">
                                         <span className="text-[10px] text-white font-extrabold tracking-wider leading-none">
                                             {!isTrackingLive 
                                                 ? 'MANUAL PIN PLACEMENT' 
-                                                : locationAccuracy <= 25 
+                                                : gpsStalled
+                                                ? 'LOCATION APPROXIMATE'
+                                                : (bestLocationAccuracy !== null && bestLocationAccuracy <= 25)
                                                 ? 'LIVE GPS ACTIVE' 
                                                 : 'REFINING GPS ACCURACY...'}
                                         </span>
                                         <span className="text-[8px] text-gray-400 font-bold mt-1 leading-none">
-                                            {isTrackingLive 
-                                                ? (locationAccuracy <= 25 
-                                                    ? `Accurate to ±${Math.round(locationAccuracy)}m (Pinpoint)` 
-                                                    : `Satellite calibrating: ±${Math.round(locationAccuracy)}m`)
-                                                : 'Tap recenter to resume GPS'}
+                                            {!isTrackingLive
+                                                ? 'Tap recenter to resume GPS'
+                                                : gpsStalled
+                                                ? `No satellite lock (±${Math.round(locationAccuracy)}m) — drag pin to fine-tune`
+                                                : (bestLocationAccuracy !== null && bestLocationAccuracy <= 25)
+                                                ? `Accurate to ±${Math.round(locationAccuracy)}m (Pinpoint)` 
+                                                : `Satellite calibrating: ±${Math.round(locationAccuracy)}m`}
                                         </span>
                                     </div>
                                     {!isTrackingLive && (
@@ -2577,6 +2712,26 @@ const BookingScreen: React.FC = () => {
                                             Resume
                                         </button>
                                     )}
+                                </div>
+                            )}
+
+                            {/* Live nearby-mechanics badge */}
+                            {nearbyMechanics.length > 0 && (
+                                <div
+                                    className="absolute left-4 z-[400] bg-[#1a1a1ae0] backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 flex items-center gap-2 shadow-2xl animate-slideDown"
+                                    style={{ top: locationAccuracy !== null ? 148 : 96 }}
+                                >
+                                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-md shadow-green-500/50 flex-shrink-0" />
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] text-white font-extrabold tracking-wider leading-none">
+                                            {nearbyMechanics.length} MECHANIC{nearbyMechanics.length === 1 ? '' : 'S'} NEARBY
+                                        </span>
+                                        <span className="text-[8px] text-gray-400 font-bold mt-1 leading-none">
+                                            Nearest {nearbyMechanics[0].distanceKm < 1
+                                                ? `${Math.round(nearbyMechanics[0].distanceKm * 1000)} m`
+                                                : `${nearbyMechanics[0].distanceKm.toFixed(1)} km`} • live positions
+                                        </span>
+                                    </div>
                                 </div>
                             )}
 
@@ -2608,13 +2763,12 @@ const BookingScreen: React.FC = () => {
                                 </button>
 
                                 {/* Recenter / GPS button */}
-                                <button
-                                    onClick={() => {
+                                <button                                        onClick={() => {
                                         setIsTrackingLive(true);
+                                        isTrackingLiveRef.current = true;
                                         getAccurateLivePosition(
                                             (accurate) => {
-                                                setServiceLocation({ lat: accurate.latitude, lng: accurate.longitude });
-                                                setLocationAccuracy(accurate.accuracy);
+                                                applyLocationFix(accurate.latitude, accurate.longitude, accurate.accuracy, { ignoreDeadband: true });
                                                 if (mapInstanceRef.current) {
                                                     mapInstanceRef.current.setView([accurate.latitude, accurate.longitude], 18, { animate: true, duration: 0.6 });
                                                 }

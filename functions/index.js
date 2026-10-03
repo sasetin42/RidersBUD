@@ -517,7 +517,7 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
 
     // If payment was completed, atomically update the target entity
     if (status === 'completed' && referenceNumber) {
-      // Reference formats: BOK-<id>[-DP], RNT-<id>, LIA-<id>, TOW-<id>, DRV-<id>
+      // Reference formats: BOK-<id>[-DP], RNT-<id>, LIA-<id>, TOW-<id>, DRV-<id>, ORD-<id>
       let entityId = '';
       let collectionName = '';
       let isDeposit = false;
@@ -536,6 +536,9 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
       } else if (referenceNumber.startsWith('TOW-') || referenceNumber.startsWith('DRV-')) {
         entityId = referenceNumber.split('-')[1];
         collectionName = 'serviceRequests';
+      } else if (referenceNumber.startsWith('ORD-')) {
+        entityId = referenceNumber.split('-')[1];
+        collectionName = 'orders';
       }
 
       if (entityId && collectionName) {
@@ -581,6 +584,10 @@ exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             ...(collectionName === 'bookings' ? {
               status: isFullyPaid && entityData.status === 'Work Done' ? 'Completed' : (entityData.status || 'Upcoming')
+            } : {}),
+            ...(collectionName === 'orders' ? {
+              status: 'Processing',
+              paymentStatus: 'Paid'
             } : {}),
             ...(isFullyPaid ? {
               balancePaymentRef: referenceNumber,

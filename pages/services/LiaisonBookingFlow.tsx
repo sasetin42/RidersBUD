@@ -6,9 +6,10 @@ import { ChevronLeft, ChevronRight, ChevronDown, CheckCircle, Car, Calendar, Map
 import Spinner from '../../components/Spinner';
 import { VehicleFormModal } from '../MyGarageScreen';
 import { Vehicle } from '../../types';
-import { HitPayService } from '../../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../../services/HitPayService';
+import { HitPayEmbeddedService } from '../../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
-import { getAccurateLivePosition, reverseGeocodeCoordinates, safeGetCurrentPosition, safeWatchPosition, safeClearWatch } from '../../utils/locationHelper';
+import { getAccurateLivePosition, reverseGeocodeCoordinates, safeGetCurrentPosition, startPreciseWatch, safeClearWatch } from '../../utils/locationHelper';
 import { getLeafletTileConfig } from '../../utils/mapTileProviders';
 
 interface DocumentFile {
@@ -371,10 +372,10 @@ const LiaisonBookingFlow: React.FC = () => {
         if (!isRegAssist) return;
         let isMounted = true;
 
-        safeWatchPosition(
-            (pos) => {
+        startPreciseWatch(
+            (fix) => {
                 if (!isMounted) return;
-                const { latitude, longitude, accuracy } = pos.coords;
+                const { lat: latitude, lng: longitude, accuracy } = fix;
                 setRegLocationAccuracy(prev => (prev !== null && accuracy > prev * 2.0 && accuracy > 35 ? prev : accuracy));
                 setRegCoords(prev => {
                     if (prev !== null) {
@@ -907,8 +908,8 @@ const LiaisonBookingFlow: React.FC = () => {
 
             if (createdLiaison && isHitPayActive) {
                 const downpayment = fees.total * 0.5;
-                const hitPay = HitPayService.fromSettings(db?.settings);
-                const returnUrl = `${window.location.origin}/customer-portal/service-payment?bookingId=${createdLiaison.id || ''}&isLiaison=true`;
+                const isSandbox = db?.settings?.hitpaySandboxMode === true;
+                const refNumber = `LIA-${createdLiaison.id || Date.now()}`;
 
                 sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
                     bookingId: createdLiaison.id,
@@ -927,30 +928,25 @@ const LiaisonBookingFlow: React.FC = () => {
                     }
                 }));
 
-                const { url } = await hitPay.createPaymentRequest({
+                const result = await HitPayEmbeddedService.startCheckout({
+                    entityKind: 'liaison',
+                    entityId: createdLiaison.id,
                     amount: downpayment,
                     currency: db?.settings?.currency || 'PHP',
-                    reference_number: `LIA-${createdLiaison.id || Date.now()}`,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                    redirect_url: returnUrl,
-                    email: user.email || customerEmail || 'customer@example.com',
-                    name: user.name || 'Customer',
-                    phone: customerPhone || user.phone || undefined,
-                    purpose: `RidersBUD — Liaison Service 50% Downpayment (${effectiveServiceType})`
+                    referenceNumber: refNumber,
+                    purpose: `RidersBUD — Liaison Service 50% Downpayment (${effectiveServiceType})`,
+                    customerEmail: user.email || customerEmail || 'customer@example.com',
+                    customerName: user.name || 'Customer',
+                    customerPhone: customerPhone || user.phone || undefined,
+                    returnRoute: '/customer-portal/my-service-requests',
+                    isSandbox,
+                    settings: db?.settings
                 });
 
-                if (url.startsWith('/')) {
-                    navigate(url);
-                } else {
-                    setPendingPaymentMarker({
-                        entityKind: 'liaison',
-                        entityId: createdLiaison.id,
-                        returnRoute: '/customer-portal/my-service-requests',
-                        startedAt: Date.now(),
-                        purpose: 'liaison-downpayment'
-                    });
-                    startPaymentWatcher('liaison', createdLiaison.id, '/customer-portal/my-service-requests');
-                    openPaymentUrl(url);
+                if (result.success) {
+                    navigate('/customer-portal/my-service-requests', { state: { paymentSuccess: true } });
+                } else if (result.paymentState !== 'CANCELLED') {
+                    alert(result.errorMessage || 'Failed to complete payment.');
                 }
                 return;
             }

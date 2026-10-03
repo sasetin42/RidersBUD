@@ -5,9 +5,10 @@ import { useDatabase } from '../../context/DatabaseContext';
 import CustomerHeader from '../../components/CustomerHeader';
 import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Car, Phone, Info, Check, CheckCircle, CheckCircle2, User, FileText, AlertCircle, Award, Navigation, Loader2, Radio, Receipt, ShieldCheck, Sparkles, CreditCard } from 'lucide-react';
 import Spinner from '../../components/Spinner';
-import { safeGetCurrentPosition, getAccurateLivePosition, safeWatchPosition, safeClearWatch, reverseGeocodeCoordinates } from '../../utils/locationHelper';
+import { safeGetCurrentPosition, getAccurateLivePosition, startPreciseWatch, safeClearWatch, reverseGeocodeCoordinates } from '../../utils/locationHelper';
 import { getLeafletTileConfig } from '../../utils/mapTileProviders';
-import { HitPayService } from '../../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../../services/HitPayService';
+import { HitPayEmbeddedService } from '../../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 import GCashPaymentModal from '../../components/GCashPaymentModal';
 
@@ -125,11 +126,11 @@ const DriverLocationModal: React.FC<{
             fetchAddress(fallback.lat, fallback.lng);
         });
 
-        // Live Watch Position stream
-        safeWatchPosition(
-            (pos) => {
+        // Live Watch Position stream (unified precise stream: native GPS first, degraded readings filtered)
+        startPreciseWatch(
+            (fix) => {
                 if (!isMounted) return;
-                const { latitude, longitude, accuracy } = pos.coords;
+                const { lat: latitude, lng: longitude, accuracy } = fix;
                 setLocationAccuracy(prev => (prev !== null && accuracy > prev * 2.0 && accuracy > 35 ? prev : accuracy));
                 setCoords(prev => {
                     if (prev !== null) {
@@ -630,11 +631,11 @@ const DriverBookingFlow: React.FC = () => {
     useEffect(() => {
         let isMounted = true;
 
-        // Live Watch Position stream for Step 1
-        safeWatchPosition(
-            (pos) => {
+        // Live Watch Position stream for Step 1 (unified precise stream)
+        startPreciseWatch(
+            (fix) => {
                 if (!isMounted) return;
-                const { latitude, longitude, accuracy } = pos.coords;
+                const { lat: latitude, lng: longitude, accuracy } = fix;
                 setStep1LocationAccuracy(prev => (prev !== null && accuracy > prev * 2.0 && accuracy > 35 ? prev : accuracy));
                 setStartCoords(prev => {
                     if (prev !== null) {
@@ -988,9 +989,8 @@ const DriverBookingFlow: React.FC = () => {
             if (isHitPayActive) {
                 const createdRequest = await addServiceRequest(requestPayload);
                 const reqId = createdRequest?.id || `DRV-${Date.now()}`;
-
-                const hitPay = HitPayService.fromSettings(db?.settings);
-                const returnUrl = `${window.location.origin}/customer-portal/service-payment?bookingId=${reqId}&isDriver=true`;
+                const isSandbox = db?.settings?.hitpaySandboxMode === true;
+                const refNumber = `DRV-${reqId}-${Date.now()}`;
 
                 sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
                     bookingId: reqId,
@@ -1010,30 +1010,25 @@ const DriverBookingFlow: React.FC = () => {
                     }
                 }));
 
-                const { url } = await hitPay.createPaymentRequest({
+                const result = await HitPayEmbeddedService.startCheckout({
+                    entityKind: 'service-request',
+                    entityId: reqId,
                     amount: downpayment,
                     currency: db?.settings?.currency || 'PHP',
-                    reference_number: `DRV-${reqId}-${Date.now()}`,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                    redirect_url: returnUrl,
-                    email: user.email || 'customer@example.com',
-                    name: user.name || 'Customer',
-                    phone: form.contactNumber || user.phone || undefined,
-                    purpose: `RidersBUD — Driver for Hire ${Math.round(depositPercentage * 100)}% Deposit (${effectivePurpose})`
+                    referenceNumber: refNumber,
+                    purpose: `RidersBUD — Driver for Hire ${Math.round(depositPercentage * 100)}% Deposit (${effectivePurpose})`,
+                    customerEmail: user.email || 'customer@example.com',
+                    customerName: user.name || 'Customer',
+                    customerPhone: form.contactNumber || user.phone || undefined,
+                    returnRoute: '/customer-portal/my-service-requests',
+                    isSandbox,
+                    settings: db?.settings
                 });
 
-                if (url.startsWith('/')) {
-                    navigate(url);
-                } else {
-                    setPendingPaymentMarker({
-                        entityKind: 'service-request',
-                        entityId: reqId,
-                        returnRoute: '/customer-portal/my-service-requests',
-                        startedAt: Date.now(),
-                        purpose: 'driver-downpayment'
-                    });
-                    startPaymentWatcher('service-request', reqId, '/customer-portal/my-service-requests');
-                    openPaymentUrl(url);
+                if (result.success) {
+                    navigate('/customer-portal/my-service-requests', { state: { paymentSuccess: true } });
+                } else if (result.paymentState !== 'CANCELLED') {
+                    alert(result.errorMessage || 'Failed to complete payment.');
                 }
                 return;
             }

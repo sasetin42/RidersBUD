@@ -5,6 +5,197 @@
     <script>
         // CRITICAL: Protect against third-party Chrome extensions, DevTools performance/web-vitals monitors, and scheduler callbacks
         (function() {
+            // Immediate Console Interceptors to capture early extension content scripts (contentscript.js, EventEmitter, ObjectMultiplex)
+            const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup','pusher','usePusher','Evervault','evervault','PaymentMethodCardCybersource','PaymentMethodQrCode','useCharge','CheckoutRequestPage','CLOSING or CLOSED','ERR_CACHE_READ_FAILURE','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-'];
+            const originalLog = console.log;
+            console.log = function(...args) {
+                if (args[0] && typeof args[0] === 'string' && logSuppressions.some(function(s) { return args[0].indexOf(s) !== -1; })) return;
+                originalLog.apply(console, args);
+            };
+            const originalWarn = console.warn;
+            console.warn = function(...args) {
+                var joined = '';
+                for (var i = 0; i < args.length; i++) {
+                    try {
+                        joined += (typeof args[i] === 'object' ? JSON.stringify(args[i]) : String(args[i])) + ' ';
+                    } catch(e) {
+                        joined += String(args[i]) + ' ';
+                    }
+                }
+                if (
+                    joined.includes('contentscript') ||
+                    joined.includes('ObjectMultiplex') ||
+                    joined.includes('MaxListenersExceededWarning') ||
+                    joined.includes('EventEmitter') ||
+                    joined.includes('app-init-liveness') ||
+                    joined.includes('background-liveness') ||
+                    joined.includes('orphaned data') ||
+                    joined.includes('close listeners added') ||
+                    joined.includes('end listeners added') ||
+                    joined.includes('setMaxListeners') ||
+                    joined.includes('cdn.tailwindcss.com') ||
+                    joined.includes('Tailwind CSS') ||
+                    joined.includes('permission-denied') ||
+                    joined.includes('FirebaseError') ||
+                    joined.includes('storage/unauthorized') ||
+                    joined.includes('unauthorized') ||
+                    joined.includes('Missing or insufficient permissions') ||
+                    joined.includes('Bypassing Firebase Auth') ||
+                    joined.includes('@firebase/database') ||
+                    joined.includes('FIREBASE WARNING') ||
+                    joined.includes('Permission denied') ||
+                    joined.includes('auth/invalid-credential') ||
+                    joined.includes('auth/too-many-requests') ||
+                    joined.includes('Firebase Auth failed') ||
+                    joined.includes('identitytoolkit') ||
+                    joined.includes('Cannot read properties') ||
+                    joined.includes('BloomFilter') ||
+                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
+                    joined.includes('BLOCKED_BY_CLIENT') ||
+                    joined.includes('network-request-failed') ||
+                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
+                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
+                    joined.includes('ERR_NETWORK_CHANGED') ||
+                    joined.includes('cleardot.gif') ||
+                    joined.includes('r.stripe.com') ||
+                    joined.includes('stripe.com') ||
+                    joined.includes('m.stripe.network') ||
+                    joined.includes('pusher.com') ||
+                    joined.includes('usePusher') ||
+                    joined.includes('Evervault') ||
+                    joined.includes('evervault.com') ||
+                    joined.includes('Failed to load Evervault') ||
+                    joined.includes('PaymentMethodCardCybersource') ||
+                    joined.includes('PaymentMethodQrCode') ||
+                    joined.includes('useCharge') ||
+                    joined.includes('CheckoutRequestPage') ||
+                    joined.includes('CLOSING or CLOSED') ||
+                    joined.includes('controller-with-preconnect') ||
+                    joined.includes('elements-inner') ||
+                    joined.includes('accessory-render') ||
+                    joined.includes('fingerprinted') ||
+                    joined.includes('shared-') ||
+                    joined.includes('Permissions policy violation') ||
+                    joined.includes('unload is not allowed') ||
+                    joined.includes('Blocked aria-hidden on a <body>') ||
+                    joined.includes('Listen/channel') ||
+                    joined.includes('Write/channel') ||
+                    joined.includes('webchannel') ||
+                    joined.includes('QUIC') ||
+                    joined.includes('QUIC_TOO_MANY_RTOS') ||
+                    joined.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+                    joined.includes('firestore.googleapis.com') ||
+                    joined.includes('Geolocation permission has been blocked') ||
+                    joined.includes('chromestatus.com') ||
+                    joined.includes('6443143280984064') ||
+                    joined.includes('ERR_CACHE_READ_FAILURE') ||
+                    joined.includes('CACHE_READ_FAILURE') ||
+                    joined.includes('tile.openstreetmap.org') ||
+                    joined.includes('hcaptcha') ||
+                    joined.includes('Capacitor App info unavailable') ||
+                    joined.includes('Not implemented on web') ||
+                    joined.includes('version.json') ||
+                    joined.includes('[forter]') ||
+                    joined.includes('no siteId; skipping init') ||
+                    joined.includes('[Stripe.js]') ||
+                    joined.includes('grabpay_pm_beta_1') ||
+                    joined.includes('Elements requires "width=device-width"') ||
+                    joined.includes('viewport_meta_requirements')
+                ) return;
+                originalWarn.apply(console, args);
+            };
+            const originalError = console.error;
+            console.error = function(...args) {
+                var joined = '';
+                for (var i = 0; i < args.length; i++) {
+                    try {
+                        joined += (typeof args[i] === 'object' ? JSON.stringify(args[i]) : String(args[i])) + ' ';
+                    } catch(e) {
+                        joined += String(args[i]) + ' ';
+                    }
+                }
+                if (
+                    joined.includes('contentscript') ||
+                    joined.includes('ObjectMultiplex') ||
+                    joined.includes('MaxListenersExceededWarning') ||
+                    joined.includes('EventEmitter') ||
+                    joined.includes('app-init-liveness') ||
+                    joined.includes('background-liveness') ||
+                    joined.includes('orphaned data') ||
+                    joined.includes('close listeners added') ||
+                    joined.includes('end listeners added') ||
+                    joined.includes('setMaxListeners') ||
+                    joined.includes('permission-denied') ||
+                    joined.includes('Missing or insufficient permissions') ||
+                    joined.includes('FirebaseError') ||
+                    joined.includes('storage/unauthorized') ||
+                    joined.includes('FIRESTORE') ||
+                    joined.includes('INTERNAL ASSERTION') ||
+                    joined.includes('message channel closed') ||
+                    joined.includes('WebSocket') ||
+                    joined.includes('unauthorized') ||
+                    joined.includes('identitytoolkit') ||
+                    joined.includes('accounts:lookup') ||
+                    joined.includes('default-src') ||
+                    joined.includes('.well-known') ||
+                    joined.includes('Failed to load resource') ||
+                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
+                    joined.includes('BLOCKED_BY_CLIENT') ||
+                    joined.includes('reportAllChanges') ||
+                    joined.includes('startTime') ||
+                    joined.includes('network-request-failed') ||
+                    joined.includes('Listen/channel') ||
+                    joined.includes('Write/channel') ||
+                    joined.includes('webchannel') ||
+                    joined.includes('QUIC_TOO_MANY_RTOS') ||
+                    joined.includes('ERR_CONNECTION_CLOSED') ||
+                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
+                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
+                    joined.includes('ERR_NETWORK_CHANGED') ||
+                    joined.includes('cleardot.gif') ||
+                    joined.includes('r.stripe.com') ||
+                    joined.includes('stripe.com') ||
+                    joined.includes('m.stripe.network') ||
+                    joined.includes('CLOSING or CLOSED') ||
+                    joined.includes('usePusher') ||
+                    joined.includes('pusher.com') ||
+                    joined.includes('Evervault') ||
+                    joined.includes('evervault.com') ||
+                    joined.includes('Failed to load Evervault') ||
+                    joined.includes('PaymentMethodCardCybersource') ||
+                    joined.includes('PaymentMethodQrCode') ||
+                    joined.includes('useCharge') ||
+                    joined.includes('CheckoutRequestPage') ||
+                    joined.includes('controller-with-preconnect') ||
+                    joined.includes('elements-inner') ||
+                    joined.includes('accessory-render') ||
+                    joined.includes('fingerprinted') ||
+                    joined.includes('shared-') ||
+                    joined.includes('Permissions policy violation') ||
+                    joined.includes('Geolocation permission has been blocked') ||
+                    joined.includes('chromestatus.com') ||
+                    joined.includes('6443143280984064') ||
+                    joined.includes('ERR_CACHE_READ_FAILURE') ||
+                    joined.includes('CACHE_READ_FAILURE') ||
+                    joined.includes('tile.openstreetmap.org') ||
+                    joined.includes('Blocked aria-hidden on a <body>') ||
+                    joined.includes('hcaptcha') ||
+                    joined.includes('Failed to check for RidersBUD app updates') ||
+                    joined.includes('version.json') ||
+                    joined.includes('smtp-bridge') ||
+                    joined.includes('hitpay-proxy') ||
+                    joined.includes('Failed to reload') ||
+                    joined.includes('FetchEvent') ||
+                    joined.includes('network error response') ||
+                    joined.includes('checkout-dropin-pr') ||
+                    joined.includes('DataCloneError') ||
+                    joined.includes('hitpay-main.js') ||
+                    joined.includes('hitpay.js') ||
+                    joined.includes('could not be cloned')
+                ) return;
+                originalError.apply(console, args);
+            };
+
             // 1. Prototype and fallback protection for startTime
             try {
                 if (typeof Object.prototype.startTime === 'undefined') {
@@ -109,174 +300,32 @@
                     keys.forEach(function(key) { window.caches.delete(key); });
                 });
             }
-            const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup','pusher','usePusher','Evervault','evervault','PaymentMethodCardCybersource','PaymentMethodQrCode','useCharge','CheckoutRequestPage','CLOSING or CLOSED','ERR_CACHE_READ_FAILURE','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-'];
-            const originalLog = console.log;
-            console.log = function(...args) {
-                if (args[0] && typeof args[0] === 'string' && logSuppressions.some(function(s) { return args[0].indexOf(s) !== -1; })) return;
-                originalLog.apply(console, args);
-            };
-            const originalWarn = console.warn;
-            console.warn = function(...args) {
-                var joined = '';
-                for (var i = 0; i < args.length; i++) {
-                    try {
-                        joined += (typeof args[i] === 'object' ? JSON.stringify(args[i]) : String(args[i])) + ' ';
-                    } catch(e) {
-                        joined += String(args[i]) + ' ';
-                    }
+
+
+            // Wrap window.postMessage to prevent 3rd-party payment SDKs (e.g. HitPay / Axios in iframes)
+            // from throwing uncaught DataCloneError when posting non-cloneable objects/functions
+            try {
+                if (typeof window.postMessage === 'function') {
+                    const originalPostMessage = window.postMessage;
+                    window.postMessage = function(message, targetOrigin, transfer) {
+                        try {
+                            return originalPostMessage.apply(this, arguments);
+                        } catch (err) {
+                            if (err && (err.name === 'DataCloneError' || (err.message && err.message.includes('could not be cloned')))) {
+                                // Try cloning sanitized JSON representation if possible
+                                try {
+                                    const sanitized = JSON.parse(JSON.stringify(message));
+                                    return originalPostMessage.call(this, sanitized, targetOrigin);
+                                } catch (_) {
+                                    // Non-serializable, safely ignore 3rd party internal postMessage crash
+                                    return;
+                                }
+                            }
+                            throw err;
+                        }
+                    };
                 }
-                if (
-                    joined.includes('contentscript') ||
-                    joined.includes('ObjectMultiplex') ||
-                    joined.includes('MaxListenersExceededWarning') ||
-                    joined.includes('app-init-liveness') ||
-                    joined.includes('background-liveness') ||
-                    joined.includes('orphaned data') ||
-                    joined.includes('cdn.tailwindcss.com') ||
-                    joined.includes('Tailwind CSS') ||
-                    joined.includes('permission-denied') ||
-                    joined.includes('FirebaseError') ||
-                    joined.includes('storage/unauthorized') ||
-                    joined.includes('unauthorized') ||
-                    joined.includes('Missing or insufficient permissions') ||
-                    joined.includes('Bypassing Firebase Auth') ||
-                    joined.includes('@firebase/database') ||
-                    joined.includes('FIREBASE WARNING') ||
-                    joined.includes('Permission denied') ||
-                    joined.includes('auth/invalid-credential') ||
-                    joined.includes('auth/too-many-requests') ||
-                    joined.includes('Firebase Auth failed') ||
-                    joined.includes('identitytoolkit') ||
-                    joined.includes('Cannot read properties') ||
-                    joined.includes('BloomFilter') ||
-                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
-                    joined.includes('BLOCKED_BY_CLIENT') ||
-                    joined.includes('network-request-failed') ||
-                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
-                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
-                    joined.includes('ERR_NETWORK_CHANGED') ||
-                    joined.includes('cleardot.gif') ||
-                    joined.includes('r.stripe.com') ||
-                    joined.includes('stripe.com') ||
-                    joined.includes('m.stripe.network') ||
-                    joined.includes('pusher.com') ||
-                    joined.includes('usePusher') ||
-                    joined.includes('Evervault') ||
-                    joined.includes('evervault.com') ||
-                    joined.includes('Failed to load Evervault') ||
-                    joined.includes('PaymentMethodCardCybersource') ||
-                    joined.includes('PaymentMethodQrCode') ||
-                    joined.includes('useCharge') ||
-                    joined.includes('CheckoutRequestPage') ||
-                    joined.includes('CLOSING or CLOSED') ||
-                    joined.includes('controller-with-preconnect') ||
-                    joined.includes('elements-inner') ||
-                    joined.includes('accessory-render') ||
-                    joined.includes('fingerprinted') ||
-                    joined.includes('shared-') ||
-                    joined.includes('Permissions policy violation') ||
-                    joined.includes('unload is not allowed') ||
-                    joined.includes('Blocked aria-hidden on a <body>') ||
-                    joined.includes('Listen/channel') ||
-                    joined.includes('Write/channel') ||
-                    joined.includes('webchannel') ||
-                    joined.includes('QUIC') ||
-                    joined.includes('QUIC_TOO_MANY_RTOS') ||
-                    joined.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-                    joined.includes('firestore.googleapis.com') ||
-                    joined.includes('Geolocation permission has been blocked') ||
-                    joined.includes('chromestatus.com') ||
-                    joined.includes('6443143280984064') ||
-                    joined.includes('ERR_CACHE_READ_FAILURE') ||
-                    joined.includes('CACHE_READ_FAILURE') ||
-                    joined.includes('tile.openstreetmap.org') ||
-                    joined.includes('hcaptcha') ||
-                    joined.includes('Capacitor App info unavailable') ||
-                    joined.includes('Not implemented on web') ||
-                    joined.includes('version.json')
-                ) return;
-                originalWarn.apply(console, args);
-            };
-            const originalError = console.error;
-            console.error = function(...args) {
-                var joined = '';
-                for (var i = 0; i < args.length; i++) {
-                    try {
-                        joined += (typeof args[i] === 'object' ? JSON.stringify(args[i]) : String(args[i])) + ' ';
-                    } catch(e) {
-                        joined += String(args[i]) + ' ';
-                    }
-                }
-                if (
-                    joined.includes('contentscript') ||
-                    joined.includes('ObjectMultiplex') ||
-                    joined.includes('MaxListenersExceededWarning') ||
-                    joined.includes('app-init-liveness') ||
-                    joined.includes('background-liveness') ||
-                    joined.includes('orphaned data') ||
-                    joined.includes('permission-denied') ||
-                    joined.includes('Missing or insufficient permissions') ||
-                    joined.includes('FirebaseError') ||
-                    joined.includes('storage/unauthorized') ||
-                    joined.includes('FIRESTORE') ||
-                    joined.includes('INTERNAL ASSERTION') ||
-                    joined.includes('message channel closed') ||
-                    joined.includes('WebSocket') ||
-                    joined.includes('unauthorized') ||
-                    joined.includes('identitytoolkit') ||
-                    joined.includes('accounts:lookup') ||
-                    joined.includes('default-src') ||
-                    joined.includes('.well-known') ||
-                    joined.includes('Failed to load resource') ||
-                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
-                    joined.includes('BLOCKED_BY_CLIENT') ||
-                    joined.includes('reportAllChanges') ||
-                    joined.includes('startTime') ||
-                    joined.includes('network-request-failed') ||
-                    joined.includes('Listen/channel') ||
-                    joined.includes('Write/channel') ||
-                    joined.includes('webchannel') ||
-                    joined.includes('QUIC_TOO_MANY_RTOS') ||
-                    joined.includes('ERR_CONNECTION_CLOSED') ||
-                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
-                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
-                    joined.includes('ERR_NETWORK_CHANGED') ||
-                    joined.includes('cleardot.gif') ||
-                    joined.includes('r.stripe.com') ||
-                    joined.includes('stripe.com') ||
-                    joined.includes('m.stripe.network') ||
-                    joined.includes('CLOSING or CLOSED') ||
-                    joined.includes('usePusher') ||
-                    joined.includes('pusher.com') ||
-                    joined.includes('Evervault') ||
-                    joined.includes('evervault.com') ||
-                    joined.includes('Failed to load Evervault') ||
-                    joined.includes('PaymentMethodCardCybersource') ||
-                    joined.includes('PaymentMethodQrCode') ||
-                    joined.includes('useCharge') ||
-                    joined.includes('CheckoutRequestPage') ||
-                    joined.includes('controller-with-preconnect') ||
-                    joined.includes('elements-inner') ||
-                    joined.includes('accessory-render') ||
-                    joined.includes('fingerprinted') ||
-                    joined.includes('shared-') ||
-                    joined.includes('Permissions policy violation') ||
-                    joined.includes('Geolocation permission has been blocked') ||
-                    joined.includes('chromestatus.com') ||
-                    joined.includes('6443143280984064') ||
-                    joined.includes('ERR_CACHE_READ_FAILURE') ||
-                    joined.includes('CACHE_READ_FAILURE') ||
-                    joined.includes('tile.openstreetmap.org') ||
-                    joined.includes('Blocked aria-hidden on a <body>') ||
-                    joined.includes('hcaptcha') ||
-                    joined.includes('Failed to check for RidersBUD app updates') ||
-                    joined.includes('version.json') ||
-                    joined.includes('smtp-bridge') ||
-                    joined.includes('hitpay-proxy') ||
-                    joined.includes('Failed to reload')
-                ) return;
-                originalError.apply(console, args);
-            };
+            } catch (_) {}
 
             // Robust WebSocket monkeypatch: intercept invalid state send/close to prevent unhandled exceptions from Pusher in payment iframes
             try {
@@ -321,7 +370,7 @@
             var originalDebug = console.debug;
             console.debug = function() {};
  
-              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org'];
+              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org','checkout-dropin-pr','DataCloneError','hitpay-main.js','hitpay.js','could not be cloned'];
             // Protect global PerformanceObserver, PerformanceObserverEntryList, PerformanceEntry prototype & performance entries against buggy extension / DevTools callbacks
             try {
                 if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
@@ -613,21 +662,14 @@
                     return true;
                 }
             }, true);
-            // Global image cache read failure recovery: if Chromium fails reading local disk cache (ERR_CACHE_READ_FAILURE),
-            // bust the cache with timestamp and force fresh network reload without UI breakage
-            window.addEventListener('error', function(e) {
-                var target = e.target;
-                if (target && target.tagName === 'IMG') {
-                    var src = target.src || '';
-                    if (src && !target.dataset.cacheBusted && (src.indexOf('firebasestorage.googleapis.com') !== -1 || src.indexOf('unsplash.com') !== -1)) {
-                        target.dataset.cacheBusted = 'true';
-                        var separator = src.indexOf('?') !== -1 ? '&' : '?';
-                        target.src = src.replace(/([?&])_cb=[^&]*/, '') + separator + '_cb=' + Date.now();
-                        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-                        e.preventDefault();
-                        e.stopPropagation();
-                        return;
-                    }
+
+            // Suppress third-party iframe security policy violation reports (e.g. sandbox.hit-pay.com attempting to frame hit-pay.com)
+            window.addEventListener('securitypolicyviolation', function(e) {
+                var blocked = e.blockedURI || '';
+                var directive = e.violatedDirective || '';
+                if (blocked.indexOf('hit-pay.com') !== -1 || blocked.indexOf('stripe.com') !== -1 || directive === 'frame-src') {
+                    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                    e.stopPropagation();
                 }
             }, true);
         })();
@@ -636,7 +678,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="format-detection" content="telephone=no" />
     <meta name="msapplication-tap-highlight" content="no" />
     <title>RidersBud - Professional Bike Repair & Mechanics</title>
@@ -679,7 +721,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#FE7803" />
     <meta name="color-scheme" content="dark" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.web.app https://ridersbud-10806.web.app https://*.firebaseapp.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com https://smtpjs.com https://*.smtpjs.com https://api.hit-pay.com https://api.sandbox.hit-pay.com https://*.hit-pay.com https://*.stripe.com https://r.stripe.com https://m.stripe.com https://*.stripe.network wss://*.pusher.com https://*.pusher.com https://*.evervault.com https://js.evervault.com https://webhook.site https://*.webhook.site; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://*.hit-pay.com https://*.stripe.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.firebaseio.com https://unpkg.com https://smtpjs.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.stripe.network https://*.pusher.com https://*.evervault.com https://js.evervault.com; frame-src 'self' https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.google.com https://*.hit-pay.com https://*.stripe.com https://js.stripe.com https://*.evervault.com; child-src 'self' https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.google.com https://*.hit-pay.com https://*.stripe.com https://*.evervault.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* ws://localhost:*; connect-src 'self' http://localhost:* ws://localhost:* wss://*.firebaseio.com https://*.firebaseio.com https://*.web.app https://ridersbud-10806.web.app https://*.firebaseapp.com https://*.googleapis.com https://*.google.com https://*.gstatic.com https://fonts.googleapis.com https://fonts.gstatic.com https://maps.googleapis.com https://nominatim.openstreetmap.org https://routing.openstreetmap.de https://unpkg.com https://smtpjs.com https://*.smtpjs.com https://api.hit-pay.com https://api.sandbox.hit-pay.com https://*.hit-pay.com https://hit-pay.com https://*.stripe.com https://stripe.com https://r.stripe.com https://m.stripe.com https://*.stripe.network wss://*.pusher.com https://*.pusher.com https://*.evervault.com https://js.evervault.com https://webhook.site https://*.webhook.site; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://*.hit-pay.com https://hit-pay.com https://*.stripe.com https://stripe.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://apis.google.com https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.firebaseio.com https://unpkg.com https://smtpjs.com https://*.hit-pay.com https://hit-pay.com https://*.stripe.com https://stripe.com https://js.stripe.com https://*.stripe.network https://*.pusher.com https://*.evervault.com https://js.evervault.com; frame-src 'self' https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.google.com https://*.hit-pay.com https://hit-pay.com https://*.stripe.com https://stripe.com https://js.stripe.com https://*.evervault.com; child-src 'self' https://*.firebaseapp.com https://*.web.app https://ridersbud-10806.web.app https://*.google.com https://*.hit-pay.com https://hit-pay.com https://*.stripe.com https://stripe.com https://*.evervault.com;">
     <link rel="manifest" href="/manifest.json" />
     
     <!-- Leaflet CSS & JS for Maps (self-hosted to avoid tracking prevention blocks) -->

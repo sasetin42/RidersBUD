@@ -30,7 +30,7 @@ import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Geolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
-import { isGeolocationPermissionDenied, safeGetCurrentPosition, safeWatchPosition, safeClearWatch, initPermissionMonitor, onPermissionChange } from './utils/locationHelper';
+import { isGeolocationPermissionDenied, safeGetCurrentPosition, safeClearWatch, initPermissionMonitor, onPermissionChange, startPreciseWatch } from './utils/locationHelper';
 import { AppUpdateService, AppVersionInfo } from './services/AppUpdateService';
 import { UpdateModal } from './components/UpdateModal';
 
@@ -423,7 +423,7 @@ const AppContent: React.FC = () => {
         prevUserIdRef.current = currentUserId;
     }
 
-    const watchIdRef = useRef<number | string | null>(null);
+    const watchIdRef = useRef<number | null>(null);
     const isCustomerLocationUpdatingRef = useRef<boolean>(false);
     const lastCustomerLocationUpdateRef = useRef<number>(0);
 
@@ -1152,67 +1152,30 @@ const AppContent: React.FC = () => {
             b.status === 'En Route'
         );
 
-        const isNative = Capacitor.isNativePlatform();
-
         if (activeBooking && watchIdRef.current === null) {
             // Guard: only attempt geolocation if permission is not denied
             isGeolocationPermissionDenied().then(isDenied => {
                 if (isDenied || watchIdRef.current !== null) return;
 
-                if (isNative) {
-                    Geolocation.watchPosition(
-                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                        (position) => {
-                            if (position) {
-                                updateCustomerLocation(user.id, {
-                                    lat: position.coords.latitude,
-                                    lng: position.coords.longitude
-                                });
-                            }
-                        }
-                    ).then((id) => {
-                        watchIdRef.current = id;
-                    }).catch(() => {
-                        // Fallback to web watch if native watch fails
-                        safeWatchPosition(
-                            (position) => {
-                                updateCustomerLocation(user.id, {
-                                    lat: position.coords.latitude,
-                                    lng: position.coords.longitude
-                                });
-                            },
-                            () => {},
-                            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                        ).then(id => {
-                            watchIdRef.current = id;
-                        });
-                    });
-                } else {
-                    safeWatchPosition(
-                        (position) => {
-                            updateCustomerLocation(user.id, {
-                                lat: position.coords.latitude,
-                                lng: position.coords.longitude
-                            });
-                        },
-                        () => {},
-                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                    ).then(id => {
-                        watchIdRef.current = id;
-                    });
-                }
+                // Unified precise stream: native GPS first, degraded network readings filtered,
+                // stationary jitter deadband — identical behaviour to every live map in the app.
+                startPreciseWatch(
+                    (fix) => {
+                        updateCustomerLocation(user.id, { lat: fix.lat, lng: fix.lng });
+                    },
+                    () => {},
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                ).then(id => {
+                    watchIdRef.current = id;
+                });
             });
         } else if (!activeBooking && watchIdRef.current !== null) {
-            if (isNative && typeof watchIdRef.current === 'string') {
-                Geolocation.clearWatch({ id: watchIdRef.current });
-            } else if (typeof watchIdRef.current === 'number') {
-                safeClearWatch(watchIdRef.current);
-            }
+            safeClearWatch(watchIdRef.current);
             watchIdRef.current = null;
         }
     }, [activeBookingStatuses, user, isAuthenticated, updateCustomerLocation]);
 
-    const mechanicWatchIdRef = useRef<number | string | null>(null);
+    const mechanicWatchIdRef = useRef<number | null>(null);
     // Effect for Live Mechanic Location Tracking (En Route)
     useEffect(() => {
         if (!isMechanicAuthenticated || !mechanic || !db || !updateMechanicLocation) {
@@ -1224,62 +1187,25 @@ const AppContent: React.FC = () => {
             b.status === 'En Route'
         );
 
-        const isNative = Capacitor.isNativePlatform();
-
         if (activeJob && mechanicWatchIdRef.current === null) {
             // Guard: only attempt geolocation if permission is not denied
             isGeolocationPermissionDenied().then(isDenied => {
                 if (isDenied || mechanicWatchIdRef.current !== null) return;
 
-                if (isNative) {
-                    Geolocation.watchPosition(
-                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                        (position) => {
-                            if (position) {
-                                updateMechanicLocation(mechanic.id, {
-                                    lat: position.coords.latitude,
-                                    lng: position.coords.longitude
-                                }, activeJob.id);
-                            }
-                        }
-                    ).then((id) => {
-                        mechanicWatchIdRef.current = id;
-                    }).catch(() => {
-                        // Fallback to web watch if native watch fails
-                        safeWatchPosition(
-                            (position) => {
-                                updateMechanicLocation(mechanic.id, {
-                                    lat: position.coords.latitude,
-                                    lng: position.coords.longitude
-                                }, activeJob.id);
-                            },
-                            () => {},
-                            { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                        ).then(id => {
-                            mechanicWatchIdRef.current = id;
-                        });
-                    });
-                } else {
-                    safeWatchPosition(
-                        (position) => {
-                            updateMechanicLocation(mechanic.id, {
-                                lat: position.coords.latitude,
-                                lng: position.coords.longitude
-                            }, activeJob.id);
-                        },
-                        () => {},
-                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
-                    ).then(id => {
-                        mechanicWatchIdRef.current = id;
-                    });
-                }
+                // Same unified precise stream the customer side uses, so both parties'
+                // positions arrive filtered, deduped and consistent on every tracking map.
+                startPreciseWatch(
+                    (fix) => {
+                        updateMechanicLocation(mechanic.id, { lat: fix.lat, lng: fix.lng }, activeJob.id);
+                    },
+                    () => {},
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+                ).then(id => {
+                    mechanicWatchIdRef.current = id;
+                });
             });
         } else if (!activeJob && mechanicWatchIdRef.current !== null) {
-            if (isNative && typeof mechanicWatchIdRef.current === 'string') {
-                Geolocation.clearWatch({ id: mechanicWatchIdRef.current });
-            } else if (typeof mechanicWatchIdRef.current === 'number') {
-                safeClearWatch(mechanicWatchIdRef.current);
-            }
+            safeClearWatch(mechanicWatchIdRef.current);
             mechanicWatchIdRef.current = null;
         }
     }, [activeBookingStatuses, mechanic, isMechanicAuthenticated, updateMechanicLocation]);

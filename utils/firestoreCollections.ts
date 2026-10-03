@@ -11,12 +11,14 @@ export type PaymentEntityKind =
     | 'rental'           // car rental bookings (rentalBookings)
     | 'liaison'          // LTO liaison bookings (liaisonBookings)
     | 'service-request'  // towing / driver-for-hire / other service requests (serviceRequests)
+    | 'order';           // parts store orders (orders)
 
 export const PAYMENT_COLLECTIONS: Record<PaymentEntityKind, string> = {
     'booking': 'bookings',
     'rental': 'rentalBookings',
     'liaison': 'liaisonBookings',
-    'service-request': 'serviceRequests'
+    'service-request': 'serviceRequests',
+    'order': 'orders'
 };
 
 export const collectionForEntity = (kind: PaymentEntityKind): string => PAYMENT_COLLECTIONS[kind] ?? 'bookings';

@@ -1,9 +1,9 @@
 {
-  "versionCode": 5,
-  "versionName": "1.0.4",
+  "versionCode": 9,
+  "versionName": "1.0.8",
   "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk",
-  "releaseNotes": "• Fast HitPay payment connection (<100ms instant redirect via pre-warming)\n• Mandatory customer 2nd payment verification gate on mechanic job timeline\n• Service completion celebration modal with confetti and auto-redirect\n• Mobile responsive layout & notification enhancements",
+  "releaseNotes": "• Payments auto-return to the app\n• 70/30 mechanic commission\n• True fullscreen on Android\n• Works offline (bundled app)",
   "mandatory": false,
   "minSupportedVersionCode": 1,
-  "generatedAt": "2026-10-02T08:42:19.216Z"
+  "generatedAt": "2026-10-02T15:55:26.994Z"
 }

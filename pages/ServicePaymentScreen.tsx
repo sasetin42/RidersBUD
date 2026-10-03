@@ -7,7 +7,8 @@ import { useDatabase } from '../context/DatabaseContext';
 import Spinner from '../components/Spinner';
 import { Booking } from '../types';
 
-import { HitPayService } from '../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
+import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import HitPayInAppModal from '../components/HitPayInAppModal';
 import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl } from '../utils/paymentRedirect';
@@ -187,7 +188,7 @@ const ServicePaymentScreen: React.FC = () => {
         try {
             const isSandbox = db?.settings?.hitpaySandboxMode === true;
             const hitPay = HitPayService.fromSettings(db?.settings, isSandbox);
-            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${booking.id}`;
+            const returnUrl = `${getLiveAppOrigin()}${window.location.pathname}?bookingId=${booking.id}`;
             const purpose = isDeposit
                 ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
@@ -197,7 +198,7 @@ const ServicePaymentScreen: React.FC = () => {
                 amount: amountToPay,
                 currency: db?.settings?.currency || 'PHP',
                 reference_number: refNumber,
-                webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
                 redirect_url: returnUrl,
                 email: user.email || 'customer@ridersbud.com',
                 name: user.name || 'Valued Customer',
@@ -556,66 +557,69 @@ const ServicePaymentScreen: React.FC = () => {
 
         try {
             const isSandbox = db?.settings?.hitpaySandboxMode === true;
-            const hitPay = HitPayService.fromSettings(db?.settings, isSandbox);
 
-            // Save state before redirect
+            // Save state before session
             sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
                 bookingId: booking.id,
                 amount: amountToPay,
                 totalAmount: total,
                 currentPaid: paid,
                 fullBooking: booking,
-                isRental: booking.isRental // Explicitly serialize isRental flag
+                isRental: booking.isRental
             }));
 
-            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${booking.id}`;
             const purpose = isDeposit
                 ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
             const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`;
 
-            let paymentRes: { url: string; id: string } | null = null;
-            const prewarmed = prewarmedSessionRef.current;
-            if (prewarmed && prewarmed.bookingId === booking.id && prewarmed.amount === amountToPay) {
-                if (prewarmed.readyResult?.url) {
-                    paymentRes = prewarmed.readyResult;
-                } else {
-                    try {
-                        paymentRes = await prewarmed.promise;
-                    } catch (_) {
-                        paymentRes = null;
-                    }
+            const entityKind = booking.isRental ? 'rental' : 'booking';
+
+            const checkoutResult = await HitPayEmbeddedService.startCheckout({
+                entityKind,
+                entityId: booking.id,
+                amount: amountToPay,
+                currency: db?.settings?.currency || 'PHP',
+                referenceNumber: refNumber,
+                purpose,
+                customerEmail: user.email || 'customer@ridersbud.com',
+                customerName: user.name || 'Valued Customer',
+                customerPhone: user.phone || '09171234567',
+                returnRoute: `${window.location.pathname}?bookingId=${booking.id}`,
+                isSandbox,
+                settings: db?.settings,
+                onStateChange: (state, msg) => {
+                    if (msg) setProcessingStage(msg);
                 }
+            });
+
+            if (checkoutResult.redirected) {
+                return;
             }
 
-            if (!paymentRes) {
-                paymentRes = await hitPay.createPaymentRequest({
+            if (checkoutResult.success) {
+                await processBookingPaymentSuccess({
+                    targetBookingId: booking.id,
                     amount: amountToPay,
-                    currency: db?.settings?.currency || 'PHP',
-                    reference_number: refNumber,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
-                    redirect_url: returnUrl,
-                    email: user.email || 'customer@ridersbud.com',
-                    name: user.name || 'Valued Customer',
-                    phone: user.phone || '09171234567',
-                    purpose: purpose
+                    totalAmount: total,
+                    currentPaid: paid,
+                    fullBooking: booking,
+                    isRentalBooking: !!booking.isRental,
+                    isLiaisonBooking: !!(booking as any).isLiaison,
+                    isDriverBooking: !!((booking as any).isDriver || (booking as any).isDriverHire),
+                    isServiceReqBooking: !!(booking as any).isServiceRequest,
+                    hitpayRef: checkoutResult.referenceNumber || refNumber,
+                    requestId: checkoutResult.paymentRequestId || ''
                 });
-            }
-
-            setProcessingStage('Opening Payment Gateway...');
-            const { url } = paymentRes;
-
-            if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-                await openPaymentUrl(url);
                 return;
-            }
-
-            if (url && url.startsWith('/')) {
-                navigate(url);
+            } else if (checkoutResult.paymentState === 'CANCELLED') {
+                setIsProcessing(false);
+                setProcessingStage('');
+                sessionStorage.removeItem('pendingHitPayServiceTx');
                 return;
+            } else {
+                throw new Error(checkoutResult.errorMessage || "Payment could not be completed.");
             }
-
-            throw new Error("Unable to obtain payment gateway URL.");
         } catch (err) {
             setError(err instanceof Error ? err.message : "An unexpected error occurred.");
             setIsProcessing(false);

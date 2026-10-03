@@ -9,7 +9,7 @@ import Spinner from '../components/Spinner';
 import ReviewModal from '../components/ReviewModal';
 import ReviewDeclinedModal from '../components/ReviewDeclinedModal';
 import GCashPaymentModal from '../components/GCashPaymentModal';
-import { HitPayService } from '../services/HitPayService';
+import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
 import { CallButton } from '../components/CallUI';
 import { useCall } from '../context/CallContext';
@@ -25,9 +25,8 @@ import {
 import { ref, onValue, set, get } from 'firebase/database';
 import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db as firestore, rtdb } from '../firebase';
-import { Geolocation } from '@capacitor/geolocation';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
-import { safeWatchPosition, safeClearWatch, isGeolocationPermissionDenied, RIDERSBUD_STORE_LOCATION } from '../utils/locationHelper';
+import { startPreciseWatch, safeClearWatch, isGeolocationPermissionDenied, RIDERSBUD_STORE_LOCATION } from '../utils/locationHelper';
 
 declare const L: any;
 
@@ -841,7 +840,7 @@ const BookingDetailScreen: React.FC = () => {
         const isLiaisonTarget = (activeB as any).isLiaison || (activeB as any).serviceName?.toLowerCase().includes('liaison') || activeB.id.startsWith('LIA-');
 
         const hitPay = HitPayService.fromSettings(db?.settings);
-        const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${activeB.id}${isRentalTarget ? '&isRental=true' : ''}${isDriverTarget ? '&isDriver=true' : ''}${isLiaisonTarget ? '&isLiaison=true' : ''}`;
+        const returnUrl = `${getLiveAppOrigin()}${window.location.pathname}?bookingId=${activeB.id}${isRentalTarget ? '&isRental=true' : ''}${isDriverTarget ? '&isDriver=true' : ''}${isLiaisonTarget ? '&isLiaison=true' : ''}`;
         const appTitle = db?.settings?.appName || 'RidersBUD';
         const purposePrefix = isRentalTarget 
             ? 'Car Rental Balance Settlement' 
@@ -855,7 +854,7 @@ const BookingDetailScreen: React.FC = () => {
             amount: finalBalanceAmount,
             currency: db?.settings?.currency || 'PHP',
             reference_number: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${activeB.id}-BAL-${Date.now()}`,
-            webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+            webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
             redirect_url: returnUrl,
             email: user.email || 'customer@example.com',
             name: user.name || 'Customer',
@@ -898,7 +897,7 @@ const BookingDetailScreen: React.FC = () => {
             const isLiaisonTarget = (targetBooking as any).isLiaison || (targetBooking as any).serviceName?.toLowerCase().includes('liaison') || targetBooking.id.startsWith('LIA-');
 
             const hitPay = HitPayService.fromSettings(db?.settings);
-            const returnUrl = `${window.location.origin}${window.location.pathname}?bookingId=${targetBooking.id}${isRentalTarget ? '&isRental=true' : ''}${isDriverTarget ? '&isDriver=true' : ''}${isLiaisonTarget ? '&isLiaison=true' : ''}`;
+            const returnUrl = `${getLiveAppOrigin()}${window.location.pathname}?bookingId=${targetBooking.id}${isRentalTarget ? '&isRental=true' : ''}${isDriverTarget ? '&isDriver=true' : ''}${isLiaisonTarget ? '&isLiaison=true' : ''}`;
             const appTitle = db?.settings?.appName || 'RidersBUD';
 
             sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
@@ -942,7 +941,7 @@ const BookingDetailScreen: React.FC = () => {
                     amount: finalBalanceAmount,
                     currency: db?.settings?.currency || 'PHP',
                     reference_number: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${targetBooking.id}-BAL-${Date.now()}`,
-                    webhook: 'https://ridersbud-10806.web.app/payment/webhook',
+                    webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
                     redirect_url: returnUrl,
                     email: user.email || 'customer@example.com',
                     name: user.name || 'Customer',
@@ -1448,12 +1447,9 @@ const BookingDetailScreen: React.FC = () => {
         return () => { try { unsubscribe(); } catch (_) {} };
     }, [bookingId, booking?.status, booking?.location, booking?.eta, isDriverHire, (booking as any)?.estimatedArrivalTime]);
 
-    // Customer live location tracking — writes to RTDB for admin map
+    // Customer live location tracking — writes to RTDB for admin / tracking maps
     useEffect(() => {
-        let nativeWatchId: string | null = null;
-        let webWatchId: number | null = null;
-
-        const isNative = (window as any).Capacitor !== undefined;
+        let watchHandle: number | null = null;
 
         if (booking?.status === 'En Route' && bookingId) {
             const handleSuccess = (lat: number, lng: number) => {
@@ -1468,44 +1464,22 @@ const BookingDetailScreen: React.FC = () => {
             isGeolocationPermissionDenied().then(isDenied => {
                 if (isDenied) return;
 
-                if (isNative) {
-                    Geolocation.watchPosition(
-                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 },
-                        (position) => {
-                            if (position) {
-                                handleSuccess(position.coords.latitude, position.coords.longitude);
-                            }
-                        }
-                    ).then((id) => {
-                        nativeWatchId = id;
-                    }).catch((err) => {
-                        console.warn('[Customer Location] Native watch failed, falling back to web watch:', err);
-                        safeWatchPosition(
-                            (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
-                            () => {},
-                            { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                        ).then(id => {
-                            webWatchId = id;
-                        });
-                    });
-                } else {
-                    safeWatchPosition(
-                        (position) => handleSuccess(position.coords.latitude, position.coords.longitude),
-                        () => {},
-                        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
-                    ).then(id => {
-                        webWatchId = id;
-                    });
-                }
+                // Unified precise stream (native GPS first, degraded readings filtered,
+                // jitter deadband) — identical to the mechanic side for consistent pins.
+                startPreciseWatch(
+                    (fix) => handleSuccess(fix.lat, fix.lng),
+                    () => {},
+                    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+                ).then(id => {
+                    watchHandle = id;
+                });
             });
         }
 
         return () => {
-            if (nativeWatchId !== null) {
-                Geolocation.clearWatch({ id: nativeWatchId }).catch(() => {});
-            }
-            if (webWatchId !== null) {
-                safeClearWatch(webWatchId);
+            if (watchHandle !== null) {
+                safeClearWatch(watchHandle);
+                watchHandle = null;
             }
             // Clean up RTDB location when leaving the page
             if (bookingId) {
