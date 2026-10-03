@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { doc, getDoc } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
 import { HitPayService } from './HitPayService';
@@ -329,6 +330,9 @@ class HitPayEmbeddedService {
                     if (watchdog) clearTimeout(watchdog);
                     try { stopWatcher?.(); } catch (_) {}
                     clearPendingPaymentMarker();
+                    if (Capacitor.isNativePlatform()) {
+                        Browser.close().catch(() => {});
+                    }
                     resolve(result);
                 };
 

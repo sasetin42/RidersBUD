@@ -179,7 +179,11 @@ export const watchPaymentVerification = (
 export const openPaymentUrl = async (url: string): Promise<void> => {
     if (isNativePlatform()) {
         try {
-            await Browser.open({ url });
+            await Browser.open({
+                url,
+                toolbarColor: '#FE7803',
+                presentationStyle: 'popover'
+            });
             return;
         } catch {
             // fall through to window.open

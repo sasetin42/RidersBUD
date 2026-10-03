@@ -1991,7 +1991,7 @@ const BookingScreen: React.FC = () => {
 
         return (
             <>
-                <div className="px-4 sm:px-6 py-3 pb-32 space-y-3.5 flex-grow overflow-y-auto">
+                <div className="px-4 sm:px-6 py-3 pb-32 space-y-3.5 flex-grow overflow-y-auto min-h-0 overscroll-y-contain" data-scrollable="true">
                     {/* Compact Default Vehicle Banner with Quick Switcher */}
                     {!isSpecialRentalOrDriver && (
                         <div className="bg-[#18181B] border border-white/10 rounded-xl p-3 shadow-md flex items-center justify-between gap-3">
@@ -2361,7 +2361,7 @@ const BookingScreen: React.FC = () => {
                     </div>
 
                     {/* ── Scrollable List ── */}
-                    <div className="flex-1 overflow-y-auto pb-32 px-4 pt-4 space-y-6">
+                    <div className="flex-1 overflow-y-auto min-h-0 overscroll-y-contain pb-32 px-4 pt-4 space-y-6" data-scrollable="true">
 
                         {/* ── Car List ── */}
                         {isCarRental && (
@@ -2997,7 +2997,7 @@ const BookingScreen: React.FC = () => {
         };
 
         return (
-            <div className="p-6 space-y-5 flex-grow overflow-y-auto">
+            <div className="p-6 space-y-5 flex-grow overflow-y-auto min-h-0 overscroll-y-contain" data-scrollable="true">
                 {/* Search & Filters */}
                 <div className="bg-[#1E1E1E] p-4 rounded-2xl border border-white/10 space-y-3">
 
@@ -3220,8 +3220,8 @@ const BookingScreen: React.FC = () => {
         }
 
         return (
-            <div className="flex flex-col h-full bg-secondary overflow-hidden">
-                <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3.5 custom-scrollbar pb-28">
+            <div className="flex flex-col h-full bg-secondary overflow-hidden min-h-0">
+                <div className="flex-1 overflow-y-auto min-h-0 overscroll-y-contain p-3 sm:p-4 space-y-3.5 custom-scrollbar pb-28" data-scrollable="true">
                     {/* Header Info */}
                     <div className="space-y-0.5">
                         <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">Booking Summary</h3>

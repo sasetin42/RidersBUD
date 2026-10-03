@@ -29,9 +29,11 @@ body,
     margin: 0;
     padding: 0;
     overflow-x: hidden;
-    /* Kill browser overscroll/pull-to-refresh bounces on background */
-    overscroll-behavior-y: none;
+    overflow-y: auto;
+    /* Allow native vertical scrolling while preventing horizontal swipe bounce */
+    overscroll-behavior-y: auto;
     overscroll-behavior-x: none;
+    touch-action: pan-y;
     /* Prevent text selection (web feel) */
     user-select: none;
     -webkit-user-select: none;
@@ -40,9 +42,12 @@ body,
     -webkit-touch-callout: none;
 }
 
-/* Universal momentum scrolling for mobile devices */
-* {
+/* Universal momentum scrolling for scrollable containers */
+.overflow-y-auto,
+.overflow-auto,
+[data-scrollable="true"] {
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 /* Re-enable selection for inputs, textareas, and other readable elements */
@@ -86,14 +91,14 @@ body {
     opacity: 0.9;
 }
 
-/* Fast tap response on interactive controls */
+/* Fast tap response on interactive controls without blocking vertical scroll gestures */
 button, 
 a, 
 input, 
 select, 
 textarea,
 [role="button"] {
-    touch-action: manipulation;
+    touch-action: manipulation pan-y;
     -webkit-tap-highlight-color: transparent;
 }
 

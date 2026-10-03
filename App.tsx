@@ -1526,7 +1526,7 @@ const AppContent: React.FC = () => {
                                             ? 'min-h-screen pb-20' 
                                             : 'min-h-screen'
                                 }`}>
-                                    <div className={`${isMapScreen ? 'h-full' : 'min-h-screen'} flex flex-col`}>
+                                    <div className={`${isMapScreen ? 'h-full' : 'min-h-full'} flex-1 flex flex-col`}>
                                         <React.Suspense fallback={<AppLoadingScreen />}>
                                         <Routes>
                                             {isAuthenticated ? (

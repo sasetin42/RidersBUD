@@ -12,41 +12,17 @@ const ScrollToTop: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        const resetScroll = () => {
-            // 1. Reset main window scroll
-            window.scrollTo(0, 0);
-            if (document.documentElement) document.documentElement.scrollTo(0, 0);
-            if (document.body) document.body.scrollTo(0, 0);
+        // Only reset scroll when the route pathname actually changes (not query params)
+        window.scrollTo(0, 0);
+        if (document.documentElement) document.documentElement.scrollTop = 0;
+        if (document.body) document.body.scrollTop = 0;
 
-            // 2. Find and reset all custom scrollable containers in the DOM
-            const allElements = document.getElementsByTagName('*');
-            for (let i = 0; i < allElements.length; i++) {
-                const el = allElements[i] as HTMLElement;
-                if (el.scrollTop > 0) {
-                    el.scrollTop = 0;
-                }
-                if (el.scrollLeft > 0) {
-                    el.scrollLeft = 0;
-                }
-            }
-        };
-
-        // Reset immediately
-        resetScroll();
-
-        // Use requestAnimationFrame to catch lazy-loaded/delayed content renders
-        const frame1 = requestAnimationFrame(() => {
-            resetScroll();
-            const frame2 = requestAnimationFrame(resetScroll);
-            return () => {
-                cancelAnimationFrame(frame2);
-            };
+        // Reset primary scroll containers
+        const scrollContainers = document.querySelectorAll('main, [data-scrollable="true"], .overflow-y-auto');
+        scrollContainers.forEach((el) => {
+            (el as HTMLElement).scrollTop = 0;
         });
-
-        return () => {
-            cancelAnimationFrame(frame1);
-        };
-    }, [pathname, search]);
+    }, [pathname]);
 
     return null;
 };
