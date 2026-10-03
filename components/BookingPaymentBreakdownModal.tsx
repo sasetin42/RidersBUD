@@ -275,6 +275,11 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
                             </>
                         )}
                     </button>
+                    {isProcessing && (
+                        <p className="text-center text-[11px] text-emerald-300/90 font-bold mt-2.5 leading-snug">
+                            Secure HitPay Payment — You are securely completing your payment with HitPay.
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

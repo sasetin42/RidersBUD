@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["android.intent.action.VIEW"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.sasetin42.ridersbud",
+      "sha256_cert_fingerprints": [
+        "41:D6:02:FA:9C:3E:17:0A:0B:89:B6:6E:65:1C:14:C9:03:3B:EA:C6:8A:70:5B:AC:44:7B:9D:16:8D:7F:2E:E8",
+        "C3:76:0E:16:D1:B0:C2:21:67:90:08:16:3F:43:D2:22:F2:10:F0:9E:58:28:40:A6:07:D0:45:20:58:51:53:57"
+      ]
+    }
+  }
+]

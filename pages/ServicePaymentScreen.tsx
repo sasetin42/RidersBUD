@@ -10,8 +10,18 @@ import { Booking } from '../types';
 import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
-import HitPayInAppModal from '../components/HitPayInAppModal';
-import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl } from '../utils/paymentRedirect';
+import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
+import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl, PaymentEntityKind } from '../utils/paymentRedirect';
+import { fetchPaymentEntitySnapshot } from '../utils/paymentReturn';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db as firestore } from '../firebase';
+
+/** Resolve the Firestore entity kind for a booking-like record. */
+const entityKindForBooking = (b: any): PaymentEntityKind =>
+    b?.isRental ? 'rental'
+        : b?.isLiaison ? 'liaison'
+            : (b?.isServiceRequest || b?.isDriver || b?.isDriverHire) ? 'service-request'
+                : 'booking';
 
 const ServicePaymentScreen: React.FC = () => {
     const location = useLocation();
@@ -155,7 +165,12 @@ const ServicePaymentScreen: React.FC = () => {
     }, [total, paid, isDeposit]);
 
     const [showGCashModal, setShowGCashModal] = useState(false);
-    const [inAppModalUrl, setInAppModalUrl] = useState<string | null>(null);
+    // HitPay return → webhook-driven verification overlay (never trusted from redirect params)
+    const [paymentReturnTarget, setPaymentReturnTarget] = useState<{
+        entityKind: PaymentEntityKind;
+        entityId: string;
+        paymentRequestId?: string;
+    } | null>(null);
     const [selectedMethod, setSelectedMethod] = useState('');
     const [cardDetails, setCardDetails] = useState({ number: '', expiry: '', cvc: '' });
     const [cardErrors, setCardErrors] = useState<{ [key: string]: string }>({});
@@ -164,6 +179,8 @@ const ServicePaymentScreen: React.FC = () => {
     const [error, setError] = useState('');
 
     const finalizeRun = React.useRef(false);
+    // Stash filled by finalizeVerifiedPayment (post-webhook), consumed on overlay Close
+    const verifiedReturnRef = React.useRef<{ entityKind: PaymentEntityKind; entityId: string; mergedBooking: any } | null>(null);
     const prewarmedSessionRef = React.useRef<{
         bookingId: string;
         amount: number;
@@ -224,132 +241,40 @@ const ServicePaymentScreen: React.FC = () => {
         }
     }, [booking?.id, amountToPay, user?.email, db?.settings, isDeposit]);
 
-    const processBookingPaymentSuccess = async (successData: {
-        targetBookingId: string;
-        amount: number;
-        totalAmount: number;
-        currentPaid: number;
-        fullBooking: any;
-        isRentalBooking: boolean;
-        isLiaisonBooking: boolean;
-        isDriverBooking: boolean;
-        isServiceReqBooking: boolean;
-        hitpayRef: string;
-        requestId: string;
-    }) => {
+    /**
+     * Runs ONLY after the webhook's authoritative Firestore write is observed
+     * (requirement #8): refreshes the record, applies lifecycle-only status
+     * transitions, and stashes the confirmation payload for navigation.
+     */
+    const finalizeVerifiedPayment = async (entityKind: PaymentEntityKind, targetBookingId: string) => {
         try {
-            setIsProcessing(true);
-            const { targetBookingId, amount, totalAmount, currentPaid, fullBooking, isRentalBooking, isLiaisonBooking, isServiceReqBooking, hitpayRef, requestId } = successData;
-            const newPaidAmount = currentPaid + amount;
-            const isFullyPaid = newPaidAmount >= (totalAmount - 0.5);
-            const newPaymentStatus = isFullyPaid ? 'paid' : 'partial';
+            const auth = await fetchPaymentEntitySnapshot(entityKind, targetBookingId);
+            const paid = String(auth?.paymentStatus || '').toLowerCase() === 'paid';
 
-            if (isRentalBooking && updateRentalBooking) {
-                await updateRentalBooking(targetBookingId, {
-                    paidAmount: newPaidAmount,
-                    paymentStatus: newPaymentStatus,
-                    isPaid: isFullyPaid,
-                    isVerified: true,
-                    paymentMethod: 'HitPay (Online)',
-                    status: isFullyPaid ? 'Completed' : 'Confirmed',
-                    remainingBalance: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
-                    balanceAmount: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
-                    ...(isFullyPaid ? {
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        balancePaid: true
-                    } : {
-                        downpaymentRef: hitpayRef,
-                        downpaymentPaidAt: new Date().toISOString(),
-                        downpaymentAmount: amount
-                    })
-                });
-            } else if (isLiaisonBooking && updateLiaisonBooking) {
-                await updateLiaisonBooking(targetBookingId, {
-                    paidAmount: newPaidAmount,
-                    paymentStatus: newPaymentStatus,
-                    paymentMethod: 'Online (HitPay)',
-                    isPaid: isFullyPaid,
-                    status: isFullyPaid ? 'Completed' : 'Booking Received',
-                    ...(isFullyPaid ? {
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        remainingBalance: 0
-                    } : {
-                        downpaymentRef: hitpayRef,
-                        downpaymentPaidAt: new Date().toISOString(),
-                        downpaymentAmount: amount,
-                        remainingBalance: Math.max(0, totalAmount - newPaidAmount)
-                    })
-                });
-            } else if (isServiceReqBooking && updateServiceRequest) {
-                await updateServiceRequest(targetBookingId, {
-                    paidAmount: newPaidAmount,
-                    paymentStatus: newPaymentStatus,
-                    isPaid: isFullyPaid,
-                    isVerified: true,
-                    paymentMethod: 'HitPay (Online)',
-                    status: isFullyPaid ? 'Completed' : 'Confirmed',
-                    remainingBalance: isFullyPaid ? 0 : Math.max(0, totalAmount - newPaidAmount),
-                    ...(isFullyPaid ? {
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        balancePaid: true
-                    } : {
-                        downpaymentRef: hitpayRef,
-                        downpaymentPaidAt: new Date().toISOString(),
-                        downpaymentAmount: amount
-                    })
-                });
-            } else if (updateBookingPayment) {
-                await updateBookingPayment(targetBookingId, amount, newPaymentStatus, {
-                    paidAmount: newPaidAmount,
-                    remainingBalance: Math.max(0, totalAmount - newPaidAmount),
-                    isPaid: isFullyPaid,
-                    isVerified: true,
-                    paymentMethod: 'HitPay (Online)',
-                    hitpayPaymentRequestId: requestId,
-                    hitpayReference: hitpayRef,
-                    hitpayStatus: 'completed',
-                    ...(isFullyPaid ? {
-                        balancePaymentRef: hitpayRef,
-                        balancePaidAt: new Date().toISOString(),
-                        balancePaid: true,
-                        status: fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')
-                    } : {
-                        downpaymentRef: hitpayRef,
-                        downpaymentPaidAt: new Date().toISOString(),
-                        downpaymentAmount: amount,
-                        status: fullBooking?.status === 'Pending' ? 'Upcoming' : (fullBooking?.status || 'Upcoming')
-                    })
-                });
+            // Lifecycle-only updates — payment fields were written by the webhook.
+            try {
+                if (entityKind === 'rental' && updateRentalBooking) {
+                    await updateRentalBooking(targetBookingId, { status: paid ? 'Completed' : 'Confirmed' } as any);
+                } else if (entityKind === 'liaison' && updateLiaisonBooking) {
+                    await updateLiaisonBooking(targetBookingId, { status: paid ? 'Completed' : 'Booking Received' } as any);
+                } else if (entityKind === 'service-request' && updateServiceRequest) {
+                    await updateServiceRequest(targetBookingId, { status: paid ? 'Completed' : 'Confirmed' } as any);
+                } else if (entityKind === 'booking' && auth && !paid && auth.status === 'Pending') {
+                    await updateDoc(doc(firestore, 'bookings', targetBookingId), { status: 'Upcoming' });
+                }
+            } catch (_) {
+                // webhook data already authoritative — navigation still proceeds
             }
-            sessionStorage.removeItem('pendingHitPayServiceTx');
 
-            const updatedBooking = { 
-                ...fullBooking, 
-                totalAmount: totalAmount,
-                paidAmount: newPaidAmount, 
-                paymentStatus: newPaymentStatus, 
-                isPaid: isFullyPaid,
-                isVerified: true,
-                paymentMethod: 'HitPay (Online)',
-                isRental: isRentalBooking,
-                isLiaison: isLiaisonBooking,
-                status: isRentalBooking ? (isFullyPaid ? 'Completed' : 'Confirmed') : (isFullyPaid && fullBooking?.status === 'Work Done' ? 'Completed' : (fullBooking?.status || 'Upcoming')),
-                ...(isFullyPaid ? {
-                    balancePaymentRef: hitpayRef,
-                    balancePaidAt: new Date().toISOString(),
-                    balancePaid: true,
-                    remainingBalance: 0
-                } : {
-                    downpaymentRef: hitpayRef,
-                    downpaymentPaidAt: new Date().toISOString(),
-                    downpaymentAmount: amount,
-                    remainingBalance: Math.max(0, totalAmount - newPaidAmount)
-                })
+            sessionStorage.removeItem('pendingHitPayServiceTx');
+            sessionStorage.removeItem('pendingHitPayBookingTx');
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            verifiedReturnRef.current = {
+                entityKind,
+                entityId: targetBookingId,
+                mergedBooking: { ...(booking as any), ...(auth || {}) }
             };
-            navigate('/customer-portal/service-payment-confirmation', { state: { booking: updatedBooking }, replace: true });
         } catch (err) {
             setError("Failed to verify payment status.");
             setIsProcessing(false);
@@ -367,30 +292,16 @@ const ServicePaymentScreen: React.FC = () => {
 
             if (targetBookingId) {
                 finalizeRun.current = true;
-                const amount = sessionData?.amount || amountToPay || total;
-                const totalAmount = sessionData?.totalAmount || total;
-                const currentPaid = sessionData?.currentPaid !== undefined ? sessionData.currentPaid : paid;
                 const fullBooking = sessionData?.fullBooking || booking;
-                const isRental = sessionData?.isRental || isRentalParam || fullBooking?.isRental;
-                const isRentalBooking = fullBooking?.isRental || isRental;
-                const isDriverBooking = fullBooking?.isDriver || fullBooking?.isDriverHire || isDriverParam || sessionData?.isDriver;
-                const isLiaisonBooking = fullBooking?.isLiaison || isLiaisonParam || sessionData?.isLiaison;
-                const isServiceReqBooking = fullBooking?.isServiceRequest || sessionData?.isServiceRequest || isDriverBooking;
-                const hitpayRef = queryParams.get('reference') || queryParams.get('payment_request_id') || `HITPAY-${Date.now()}`;
                 const requestId = queryParams.get('payment_request_id') || '';
 
-                processBookingPaymentSuccess({
-                    targetBookingId,
-                    amount,
-                    totalAmount,
-                    currentPaid,
-                    fullBooking,
-                    isRentalBooking,
-                    isLiaisonBooking,
-                    isDriverBooking,
-                    isServiceReqBooking,
-                    hitpayRef,
-                    requestId
+                // The redirect is NOT proof of payment — the verification overlay
+                // waits for the webhook's authoritative Firestore write (requirement #8).
+                sessionStorage.removeItem('pendingHitPayServiceTx');
+                setPaymentReturnTarget({
+                    entityKind: entityKindForBooking(fullBooking || booking),
+                    entityId: targetBookingId,
+                    paymentRequestId: requestId || undefined
                 });
                 return;
             }
@@ -493,12 +404,42 @@ const ServicePaymentScreen: React.FC = () => {
         return options;
     }, [isHitPayActive, isManualGcashEnabled]);
 
+    // Verification overlay element (webhook-driven) — rendered in both return trees
+    const overlayEl = paymentReturnTarget ? (
+        <PaymentVerificationOverlay
+            isOpen={true}
+            entityKind={paymentReturnTarget.entityKind}
+            entityId={paymentReturnTarget.entityId}
+            paymentRequestId={paymentReturnTarget.paymentRequestId}
+            isSandbox={db?.settings?.hitpaySandboxMode === true}
+            amount={amountToPay}
+            onVerified={() => {
+                finalizeVerifiedPayment(paymentReturnTarget.entityKind, paymentReturnTarget.entityId);
+            }}
+            onClose={() => {
+                const verified = verifiedReturnRef.current;
+                verifiedReturnRef.current = null;
+                setPaymentReturnTarget(null);
+                setIsProcessing(false);
+                setProcessingStage('');
+                if (verified?.mergedBooking) {
+                    navigate('/customer-portal/service-payment-confirmation', {
+                        state: { booking: verified.mergedBooking },
+                        replace: true
+                    });
+                }
+            }}
+        />
+    ) : null;
+
     if (isProcessing) {
         return (
             <div className="flex flex-col items-center justify-center h-full bg-secondary space-y-4 px-4 text-center">
+                {overlayEl}
                 <Spinner size="lg" />
                 <p className="text-white font-bold text-base tracking-wide animate-pulse">{processingStage || 'Processing payment...'}</p>
-                <p className="text-gray-400 text-xs">Securing your transaction with HitPay Gateway...</p>
+                <p className="text-emerald-300 text-xs font-bold tracking-wide">Secure HitPay Payment</p>
+                <p className="text-gray-400 text-xs">You are securely completing your payment with HitPay.</p>
             </div>
         );
     }
@@ -573,7 +514,11 @@ const ServicePaymentScreen: React.FC = () => {
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
             const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`;
 
-            const entityKind = booking.isRental ? 'rental' : 'booking';
+            const entityKind = entityKindForBooking(booking);
+
+            const prewarmed = (prewarmedSessionRef.current?.readyResult?.url && prewarmedSessionRef.current?.bookingId === booking.id)
+                ? prewarmedSessionRef.current.readyResult
+                : null;
 
             const checkoutResult = await HitPayEmbeddedService.startCheckout({
                 entityKind,
@@ -588,6 +533,7 @@ const ServicePaymentScreen: React.FC = () => {
                 returnRoute: `${window.location.pathname}?bookingId=${booking.id}`,
                 isSandbox,
                 settings: db?.settings,
+                prewarmedSession: prewarmed,
                 onStateChange: (state, msg) => {
                     if (msg) setProcessingStage(msg);
                 }
@@ -598,19 +544,16 @@ const ServicePaymentScreen: React.FC = () => {
             }
 
             if (checkoutResult.success) {
-                await processBookingPaymentSuccess({
-                    targetBookingId: booking.id,
-                    amount: amountToPay,
-                    totalAmount: total,
-                    currentPaid: paid,
-                    fullBooking: booking,
-                    isRentalBooking: !!booking.isRental,
-                    isLiaisonBooking: !!(booking as any).isLiaison,
-                    isDriverBooking: !!((booking as any).isDriver || (booking as any).isDriverHire),
-                    isServiceReqBooking: !!(booking as any).isServiceRequest,
-                    hitpayRef: checkoutResult.referenceNumber || refNumber,
-                    requestId: checkoutResult.paymentRequestId || ''
+                // The gateway callback is NOT proof of payment — the verification
+                // overlay waits for the webhook's authoritative Firestore write
+                // (requirement #8) before showing success and continuing.
+                setPaymentReturnTarget({
+                    entityKind,
+                    entityId: booking.id,
+                    paymentRequestId: checkoutResult.paymentRequestId || undefined
                 });
+                setIsProcessing(false);
+                setProcessingStage('');
                 return;
             } else if (checkoutResult.paymentState === 'CANCELLED') {
                 setIsProcessing(false);
@@ -765,40 +708,9 @@ const ServicePaymentScreen: React.FC = () => {
                 />
             )}
 
-            {/* In-App HitPay Payment Sheet */}
-            {inAppModalUrl && booking && (
-                <HitPayInAppModal
-                    isOpen={Boolean(inAppModalUrl)}
-                    checkoutUrl={inAppModalUrl}
-                    title={isDeposit ? "Pay Deposit (50%)" : "Pay Remaining Balance"}
-                    amount={amountToPay}
-                    onClose={() => setInAppModalUrl(null)}
-                    onSuccess={(details) => {
-                        setInAppModalUrl(null);
-                        const isRental = booking?.isRental || isRentalParam;
-                        const isDriver = booking?.isDriver || (booking as any)?.isDriverHire || isDriverParam;
-                        const isLiaison = booking?.isLiaison || isLiaisonParam;
-                        const isServiceReq = booking?.isServiceRequest || isDriver;
-
-                        processBookingPaymentSuccess({
-                            targetBookingId: booking.id,
-                            amount: amountToPay,
-                            totalAmount: total,
-                            currentPaid: paid,
-                            fullBooking: booking,
-                            isRentalBooking: Boolean(isRental),
-                            isLiaisonBooking: Boolean(isLiaison),
-                            isDriverBooking: Boolean(isDriver),
-                            isServiceReqBooking: Boolean(isServiceReq),
-                            hitpayRef: details.reference || `HITPAY-${Date.now()}`,
-                            requestId: details.paymentRequestId || ''
-                        });
-                    }}
-                    onCancel={() => {
-                        setInAppModalUrl(null);
-                    }}
-                />
-            )}
+            {/* Webhook-driven payment verification overlay (opened on HitPay return
+                or after the in-app drop-in reports success) */}
+            {overlayEl}
         </div>
     );
 };

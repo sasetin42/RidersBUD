@@ -279,7 +279,7 @@ const getInitialState = (serviceIdFromUrl?: string, locationState?: any) => {
 
 const BookingScreen: React.FC = () => {
     const { serviceId: initialServiceId } = useParams<{ serviceId: string }>();
-    const { db, addBooking, cancelBooking, updateBookingPayment } = useDatabase();
+    const { db, addBooking, cancelBooking } = useDatabase();
     const navigate = useNavigate();
     const { user, loading: authLoading } = useAuth();
     const location = useLocation();
@@ -299,9 +299,9 @@ const BookingScreen: React.FC = () => {
     const [verifyingPayment, setVerifyingPayment] = useState(false);
     const [waitingBookingId, setWaitingBookingId] = useState<string | null>(null);
 
-    // One-time guard: HitPay return must reconcile exactly ONCE. This effect re-runs on
-    // every db?.bookings realtime update — without the guard, updateBookingPayment fires
-    // repeatedly and spams 3 notifications per pass (the 99+ notification flood).
+    // One-time guard: the HitPay return effect must run exactly ONCE. This effect
+    // re-runs on every db?.bookings realtime update — without the guard the return
+    // handling would fire repeatedly.
     const hitpayReturnProcessedRef = React.useRef(false);
 
     // Handle return from HitPay redirect (Booking flow)
@@ -318,62 +318,24 @@ const BookingScreen: React.FC = () => {
                 if (hitpayReturnProcessedRef.current) return;
                 hitpayReturnProcessedRef.current = true;
                 try {
-                    let dpAmount = 0;
-                    let totAmount = 0;
-                    if (pendingTx) {
-                        const parsed = JSON.parse(pendingTx);
-                        dpAmount = parsed.amount || 0;
-                        totAmount = parsed.totalAmount || (dpAmount * 2);
-                    } else {
-                        const existingB = db?.bookings.find(b => b.id === targetBookingId);
-                        totAmount = existingB?.totalAmount || existingB?.price || 0;
-                        dpAmount = totAmount > 0 ? Math.round(totAmount * 0.5) : Number(query.get('amount')) || 0;
-                    }
-
                     sessionStorage.removeItem('pendingHitPayBookingTx');
                     sessionStorage.removeItem(BOOKING_STATE_KEY);
 
-                    const dpRef = query.get('reference') || query.get('payment_request_id') || `HITPAY-${Date.now()}`;
                     const requestId = query.get('payment_request_id') || '';
-                    const remBalance = Math.max(0, totAmount - dpAmount);
+                    const dpRef = query.get('reference') || '';
 
-                    if (updateBookingPayment) {
-                        updateBookingPayment(targetBookingId, dpAmount, 'downpayment_paid', {
-                            paidAmount: dpAmount,
-                            downpaymentAmount: dpAmount,
-                            remainingBalance: remBalance,
-                            isVerified: true,
-                            isPaid: false,
-                            paymentMethod: 'HitPay (Online)',
-                            downpaymentRef: dpRef,
-                            downpaymentPaidAt: new Date().toISOString(),
-                            hitpayPaymentRequestId: requestId,
-                            hitpayReference: dpRef,
-                            hitpayStatus: 'completed',
-                            status: 'Upcoming'
-                        }).catch(console.warn);
-                    }
+                    // The redirect is NOT proof of payment — hand off to the confirmation
+                    // screen's verification overlay, which waits for the webhook's
+                    // authoritative Firestore write before showing success (requirement #8).
+                    const confirmParams = new URLSearchParams({
+                        bookingId: targetBookingId,
+                        status: 'completed'
+                    });
+                    if (requestId) confirmParams.set('payment_request_id', requestId);
+                    if (dpRef) confirmParams.set('reference', dpRef);
 
-                    const booking = db?.bookings.find(b => b.id === targetBookingId);
-                    const updatedBooking = booking ? {
-                        ...booking,
-                        paidAmount: dpAmount,
-                        downpaymentAmount: dpAmount,
-                        remainingBalance: remBalance,
-                        paymentStatus: 'downpayment_paid' as const,
-                        isVerified: true,
-                        isPaid: false,
-                        paymentMethod: 'HitPay (Online)',
-                        downpaymentRef: dpRef,
-                        downpaymentPaidAt: new Date().toISOString(),
-                        hitpayPaymentRequestId: requestId,
-                        hitpayReference: dpRef,
-                        hitpayStatus: 'completed',
-                        status: 'Upcoming' as const
-                    } : null;
-
-                    navigate('/customer-portal/booking-confirmation', {
-                        state: { bookings: updatedBooking ? [updatedBooking] : (booking ? [booking] : []), bookingId: targetBookingId },
+                    navigate(`/customer-portal/booking-confirmation?${confirmParams.toString()}`, {
+                        state: { bookingId: targetBookingId },
                         replace: true
                     });
                 } catch (e) {
@@ -1874,6 +1836,7 @@ const BookingScreen: React.FC = () => {
                 returnRoute: `/customer-portal/booking-confirmation?bookingId=${bookingId}`,
                 isSandbox,
                 settings: db?.settings,
+                prewarmedSession: (paymentResult?.url && paymentResult?.id) ? paymentResult : null,
                 onStateChange: (state, msg) => {
                     if (msg) setBookingProcessingStage(msg);
                 }
@@ -1887,7 +1850,19 @@ const BookingScreen: React.FC = () => {
 
             if (checkoutResult.success) {
                 sessionStorage.removeItem(BOOKING_STATE_KEY);
-                navigate(`/customer-portal/booking-confirmation?bookingId=${bookingId}`, {
+                // Route through the verification overlay (webhook-driven) before the
+                // confirmation screen claims success — never trust the gateway alone.
+                const confirmParams = new URLSearchParams({
+                    bookingId,
+                    status: 'completed'
+                });
+                if (checkoutResult.paymentRequestId) {
+                    confirmParams.set('payment_request_id', checkoutResult.paymentRequestId);
+                }
+                if (checkoutResult.referenceNumber) {
+                    confirmParams.set('reference', checkoutResult.referenceNumber);
+                }
+                navigate(`/customer-portal/booking-confirmation?${confirmParams.toString()}`, {
                     state: { bookingId }
                 });
                 return;

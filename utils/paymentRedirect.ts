@@ -31,6 +31,10 @@ export interface PendingPaymentMarker {
     returnRoute: string;
     startedAt: number;
     purpose?: string;
+    /** HitPay payment request id — lets the resume flow query the backend status endpoint. */
+    paymentRequestId?: string;
+    /** Path the checkout was initiated from — where the user lands if they close the tab without returning. */
+    initiatedFrom?: string;
 }
 
 export interface PaymentWatchResult {
@@ -173,11 +177,25 @@ export const watchPaymentVerification = (
 // ---------------------------------------------------------------------------
 
 /**
- * Open the payment gateway URL. Native: Chrome Custom Tab (watchable, closable).
+ * Open the payment gateway URL. Native: HitPayInApp native sheet/dialog with deep-link & intent support.
  * Web: plain redirect (behavior unchanged).
  */
-export const openPaymentUrl = async (url: string): Promise<void> => {
+export const openPaymentUrl = async (url: string, title?: string): Promise<void> => {
     if (isNativePlatform()) {
+        try {
+            const HitPayInApp = (Capacitor as any).Plugins?.HitPayInApp;
+            if (HitPayInApp?.openPayment) {
+                await HitPayInApp.openPayment({
+                    url,
+                    title: title || 'Secure Online Payment',
+                    returnScheme: 'ridersbud'
+                });
+                return;
+            }
+        } catch (inAppErr) {
+            console.warn('HitPayInApp plugin open error, falling back to Browser:', inAppErr);
+        }
+
         try {
             await Browser.open({
                 url,
@@ -190,6 +208,27 @@ export const openPaymentUrl = async (url: string): Promise<void> => {
         }
     }
     window.location.href = url;
+};
+
+/**
+ * Programmatically dismiss native in-app payment sheet.
+ */
+export const closeInAppPayment = async (): Promise<void> => {
+    if (isNativePlatform()) {
+        try {
+            const HitPayInApp = (Capacitor as any).Plugins?.HitPayInApp;
+            if (HitPayInApp?.closePayment) {
+                await HitPayInApp.closePayment();
+            }
+        } catch (e) {
+            // ignore
+        }
+        try {
+            await Browser.close();
+        } catch (e) {
+            // ignore
+        }
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -272,9 +311,9 @@ export const startPaymentWatcher = (
             // Clear the marker FIRST so the post-navigation resume hooks cannot
             // re-trigger and cause a navigation loop.
             clearPendingPaymentMarker();
-            // Verified: close the Custom Tab (if any) and return to the app.
+            // Verified: close the in-app payment sheet / Custom Tab and return to the app.
             if (isNativePlatform()) {
-                Browser.close().catch(() => {});
+                closeInAppPayment().catch(() => {});
             }
             if (!atRoute(returnRoute)) {
                 window.location.href = returnRoute;

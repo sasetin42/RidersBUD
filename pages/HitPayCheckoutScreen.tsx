@@ -22,8 +22,26 @@ import {
 } from 'lucide-react';
 import { HitPayService } from '../services/HitPayService';
 import { useDatabase } from '../context/DatabaseContext';
-import HitPayInAppModal from '../components/HitPayInAppModal';
-import { openPaymentUrl } from '../utils/paymentRedirect';
+import { openPaymentUrl, PaymentEntityKind } from '../utils/paymentRedirect';
+import { watchPaymentReturnVerification } from '../utils/paymentReturn';
+
+/**
+ * Resolve the Firestore entity behind a HitPay reference number
+ * (BOK-/RNT-/LIA-/TOW-/DRV-/ORD- prefixes) so the return flow can watch the
+ * webhook's authoritative write instead of trusting redirect parameters.
+ */
+const parseReferenceEntity = (ref: string): { kind: PaymentEntityKind; id: string } | null => {
+    if (!ref) return null;
+    const parts = ref.split('-');
+    if (parts.length < 2 || !parts[1]) return null;
+    const prefix = (parts[0] || '').toUpperCase();
+    if (prefix === 'BOK') return { kind: 'booking', id: parts[1] };
+    if (prefix === 'RNT' || prefix === 'RN') return { kind: 'rental', id: parts[1] };
+    if (prefix === 'LIA') return { kind: 'liaison', id: parts[1] };
+    if (prefix === 'TOW' || prefix === 'DRV') return { kind: 'service-request', id: parts[1] };
+    if (prefix === 'ORD') return { kind: 'order', id: parts[1] };
+    return null;
+};
 
 type PaymentMethodType = 'gcash' | 'qrph' | 'card' | 'maya';
 
@@ -61,7 +79,7 @@ export const HitPayCheckoutScreen: React.FC = () => {
 
     // Checkout Lifecycle States: 'idle' | 'processing' | 'redirecting' | 'verifying' | 'completed' | 'failed' | 'cancelled' | 'expired'
     const [checkoutState, setCheckoutState] = useState<
-        'idle' | 'processing' | 'redirecting' | 'verifying' | 'completed' | 'failed' | 'cancelled' | 'expired'
+        'idle' | 'processing' | 'redirecting' | 'verifying' | 'pending' | 'completed' | 'failed' | 'cancelled' | 'expired'
     >(() => {
         const status = searchParams.get('status') || searchParams.get('hitpay');
         if (status === 'completed' || status === 'success') return 'verifying';
@@ -81,7 +99,6 @@ export const HitPayCheckoutScreen: React.FC = () => {
         method?: string;
         paidAt?: string;
     } | null>(null);
-    const [inAppModalUrl, setInAppModalUrl] = useState<string | null>(null);
     const [copiedRef, setCopiedRef] = useState<boolean>(false);
 
     const handleCopyReference = (refText: string) => {
@@ -237,63 +254,87 @@ export const HitPayCheckoutScreen: React.FC = () => {
         const ref = searchParams.get('reference') || referenceNumber;
 
         if ((queryStatus === 'completed' || queryStatus === 'success') && checkoutState === 'verifying') {
-            setStatusMessage('Verifying authoritative transaction with HitPay...');
+            setStatusMessage('Verifying your payment with HitPay...');
 
-            const hitpay = HitPayService.fromSettings(db?.settings, isSandbox);
+            // The redirect is NOT proof of payment (requirement #8): verify through
+            // the backend status endpoint and the webhook's Firestore write only.
+            const entity = parseReferenceEntity(ref);
 
-            // Authoritative server verification check
-            const verifyTransaction = async () => {
-                try {
-                    let isVerified = false;
-                    let paymentMethodName = 'HitPay (Online)';
-
-                    if (reqId) {
-                        const statusData = await hitpay.getPaymentStatus(reqId);
-                        if (statusData && (statusData.status === 'completed' || statusData.status === 'succeeded')) {
-                            isVerified = true;
-                            paymentMethodName = statusData.payment_type || statusData.payment_method || 'HitPay';
+            if (entity && reqId) {
+                const stop = watchPaymentReturnVerification({
+                    entityKind: entity.kind,
+                    entityId: entity.id,
+                    paymentRequestId: reqId,
+                    isSandbox,
+                    timeoutMs: 90 * 1000,
+                    onState: (state, message) => {
+                        setStatusMessage(message);
+                        if (state === 'PAID') {
+                            setVerifiedTx({
+                                paymentRequestId: reqId,
+                                reference: ref,
+                                amount,
+                                method: 'HitPay (Online)',
+                                paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            });
+                            setCheckoutState('completed');
+                        } else if (state === 'FAILED') {
+                            setErrorMessage(message);
+                            setCheckoutState('failed');
+                        } else if (state === 'CANCELLED') {
+                            setCheckoutState('cancelled');
+                        } else if (state === 'PENDING') {
+                            setCheckoutState('pending');
                         }
-                    }
+                        // VERIFYING keeps the spinner with an honest message
+                    },
+                    onVerified: () => {}
+                });
+                return stop;
+            }
 
-                    // Fallback to verified if in sandbox testing or query params confirm completion
-                    if (!isVerified && (isSandbox || queryStatus === 'completed')) {
-                        isVerified = true;
-                    }
+            // No watchable entity — poll the backend status endpoint directly
+            // (server → HitPay API). Never trust the redirect parameters.
+            const hitpay = HitPayService.fromSettings(db?.settings, isSandbox);
+            let attempts = 0;
+            let disposed = false;
+            let pollTimer: any = null;
 
-                    if (isVerified) {
+            const verifyTransaction = async () => {
+                if (disposed) return;
+                try {
+                    const statusData = reqId ? await hitpay.getPaymentStatus(reqId) : null;
+                    if (statusData && (statusData.status === 'completed' || statusData.status === 'succeeded')) {
                         setVerifiedTx({
                             paymentRequestId: reqId || `req_${Date.now()}`,
                             reference: ref,
                             amount,
-                            method: paymentMethodName,
+                            method: statusData.payment_type || statusData.payment_method || 'HitPay',
                             paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         });
                         setCheckoutState('completed');
-                    } else {
-                        setErrorMessage('Payment verification is pending or could not be confirmed by gateway.');
-                        setCheckoutState('failed');
+                        return;
                     }
                 } catch (e: any) {
-                    console.warn('Verification check notice:', e.message);
-                    // If in sandbox, accept completed
-                    if (isSandbox) {
-                        setVerifiedTx({
-                            paymentRequestId: reqId || `req_sandbox_${Date.now()}`,
-                            reference: ref,
-                            amount,
-                            method: 'GCash / HitPay',
-                            paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        });
-                        setCheckoutState('completed');
-                    } else {
-                        setErrorMessage(e.message || 'Payment confirmation error.');
-                        setCheckoutState('failed');
-                    }
+                    console.warn('Verification check notice:', e?.message);
                 }
+
+                if (disposed) return;
+                attempts += 1;
+                if (attempts >= 6) {
+                    setStatusMessage('We have not received a confirmation from HitPay yet. If your payment went through, we will notify you automatically once it is confirmed.');
+                    setCheckoutState('pending');
+                    return;
+                }
+                setStatusMessage('Verifying your payment with HitPay...');
+                pollTimer = setTimeout(verifyTransaction, 4000);
             };
 
-            const timer = setTimeout(verifyTransaction, 1000);
-            return () => clearTimeout(timer);
+            pollTimer = setTimeout(verifyTransaction, 1500);
+            return () => {
+                disposed = true;
+                clearTimeout(pollTimer);
+            };
         }
     }, [searchParams, checkoutState, db?.settings, isSandbox, referenceNumber, amount]);
 
@@ -364,23 +405,26 @@ export const HitPayCheckoutScreen: React.FC = () => {
                 return;
             }
 
-            // If proxy returned an in-app fallback portal route or local simulation
+            // If proxy returned an in-app fallback portal route (gateway unreachable):
+            // NEVER fabricate a successful payment. Sandbox keeps its local simulation
+            // (no real money); live mode reports the failure honestly.
             if (url && url.startsWith('/')) {
-                // If the user is already on the checkout screen, avoid self-nesting iframe.
-                // Complete payment directly in sandbox/offline simulation mode.
-                setCheckoutState('verifying');
-                setStatusMessage('Verifying simulated test transaction...');
-                setTimeout(() => {
-                    setVerifiedTx({
-                        paymentRequestId: id || `sim_${Date.now()}`,
-                        reference: referenceNumber,
-                        amount,
-                        method: selectedMethod,
-                        paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    });
-                    setCheckoutState('completed');
-                }, 1200);
-                return;
+                if (isSandbox) {
+                    setCheckoutState('verifying');
+                    setStatusMessage('Verifying simulated test transaction...');
+                    setTimeout(() => {
+                        setVerifiedTx({
+                            paymentRequestId: id || `sim_${Date.now()}`,
+                            reference: referenceNumber,
+                            amount,
+                            method: selectedMethod,
+                            paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        });
+                        setCheckoutState('completed');
+                    }, 1200);
+                    return;
+                }
+                throw new Error('The HitPay gateway is currently unreachable. Please try again in a moment.');
             }
 
             throw new Error('Unable to obtain payment session URL from HitPay gateway.');
@@ -682,11 +726,33 @@ export const HitPayCheckoutScreen: React.FC = () => {
                                 <RefreshCw size={22} className="text-emerald-400 animate-spin" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-white">Verifying Payment Status</h3>
+                                <h3 className="text-lg font-bold text-white">Verifying your payment...</h3>
                                 <p className="text-xs text-gray-400 mt-1 max-w-sm">
-                                    Confirming authoritative transaction receipt and webhook with HitPay...
+                                    {statusMessage || 'Confirming your transaction with HitPay. This only takes a moment.'}
                                 </p>
                             </div>
+                        </div>
+                    )}
+
+                    {/* STATE: PENDING (no confirmation received yet) */}
+                    {checkoutState === 'pending' && (
+                        <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
+                            <div className="w-16 h-16 rounded-3xl bg-amber-500/15 border-2 border-amber-500/30 text-amber-400 flex items-center justify-center">
+                                <Clock size={32} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Payment Pending</h3>
+                                <p className="text-xs text-gray-400 mt-1 max-w-sm">
+                                    {statusMessage || 'We have not received a confirmation yet. We will notify you once HitPay confirms your payment.'}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => navigate('/customer-portal/', { replace: true })}
+                                className="w-full bg-white/5 hover:bg-white/10 text-white font-semibold text-sm py-3 rounded-xl transition-all"
+                            >
+                                Return to RidersBUD
+                            </button>
                         </div>
                     )}
 
@@ -855,32 +921,6 @@ export const HitPayCheckoutScreen: React.FC = () => {
                 </div>
 
             </div>
-
-            {/* In-App HitPay Secure Sheet */}
-            {inAppModalUrl && (
-                <HitPayInAppModal
-                    isOpen={Boolean(inAppModalUrl)}
-                    checkoutUrl={inAppModalUrl}
-                    title="HitPay Online Checkout"
-                    amount={amount}
-                    onClose={() => setInAppModalUrl(null)}
-                    onSuccess={(details) => {
-                        setInAppModalUrl(null);
-                        setVerifiedTx({
-                            paymentRequestId: details.paymentRequestId || `req_${Date.now()}`,
-                            reference: details.reference || referenceNumber,
-                            amount,
-                            method: selectedMethod,
-                            paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        });
-                        setCheckoutState('completed');
-                    }}
-                    onCancel={() => {
-                        setInAppModalUrl(null);
-                        setCheckoutState('cancelled');
-                    }}
-                />
-            )}
         </div>
     );
 };

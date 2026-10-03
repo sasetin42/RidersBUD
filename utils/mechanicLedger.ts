@@ -1,16 +1,27 @@
 import { Booking, Mechanic, PayoutRequest } from '../types';
 
 /**
+ * Robustly parse currency strings or numbers (e.g. "₱2,450", "2,450.00", 2450) safely into a valid number.
+ */
+export const parseAmount = (val: any): number => {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    const cleaned = String(val).replace(/[^0-9.-]+/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+};
+
+/**
  * Standardize job total amount computation across all mechanic screens and services.
  */
 export const getJobTotalAmount = (job: any): number => {
     if (!job) return 0;
-    if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
-    if (job.price != null && Number(job.price) > 0) return Number(job.price);
+    if (job.totalAmount != null && parseAmount(job.totalAmount) > 0) return parseAmount(job.totalAmount);
+    if (job.price != null && parseAmount(job.price) > 0) return parseAmount(job.price);
     const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
-    const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
-    const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
-    return svcsSum + addCosts + (Number(job.laborFee) || 0);
+    const svcsSum = svcs.reduce((s: number, svc: any) => s + parseAmount(svc?.price), 0);
+    const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + parseAmount(c?.price), 0);
+    return svcsSum + addCosts + parseAmount(job.laborFee);
 };
 
 /**
@@ -60,13 +71,21 @@ export const calculateMechanicWalletLedger = (
         };
     }
 
-    // 1. Gather all completed bookings for this mechanic/driver
+    const targetMechId = String(mechanicId).trim();
+
+    // 1. Gather all completed bookings for this mechanic/driver (case-insensitive and trimmed)
     const completedJobs = bookings.filter(b => {
-        const isMatch = (b.mechanic?.id === mechanicId) || (b.mechanicId === mechanicId);
-        return isMatch && b.status === 'Completed';
+        if (!b) return false;
+        const bMechId = b.mechanic?.id || b.mechanicId;
+        const isMatch = bMechId != null && String(bMechId).trim() === targetMechId;
+        const status = (b.status || '').toString().toLowerCase().trim();
+        return isMatch && status === 'completed';
     });
 
-    const paidCompletedJobs = completedJobs.filter(b => b.isPaid !== false && b.paymentStatus !== 'failed');
+    const paidCompletedJobs = completedJobs.filter(b => {
+        const payStatus = (b.paymentStatus || '').toString().toLowerCase().trim();
+        return b.isPaid !== false && payStatus !== 'failed' && payStatus !== 'cancelled';
+    });
 
     // Calculate gross and net earnings
     const calculatedGrossLifetime = paidCompletedJobs.reduce((sum, job) => sum + getJobTotalAmount(job), 0);
@@ -77,20 +96,30 @@ export const calculateMechanicWalletLedger = (
     const lifetimeEarnings = calculatedNetLifetime;
     const grossLifetimeEarnings = calculatedGrossLifetime;
 
-    // 2. Filter payouts for this mechanic
-    const myPayouts = payouts.filter(p => p.mechanicId === mechanicId);
+    // 2. Filter payouts for this mechanic with safe parsing & normalized statuses
+    const myPayouts = (payouts || []).filter(p => {
+        if (!p || !p.mechanicId) return false;
+        return String(p.mechanicId).trim() === targetMechId;
+    });
 
-    const pendingPayoutsTotal = myPayouts
-        .filter(p => p.status === 'Pending')
-        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    let pendingPayoutsTotal = 0;
+    let approvedPayoutsTotal = 0;
+    let paidPayoutsTotal = 0;
 
-    const approvedPayoutsTotal = myPayouts
-        .filter(p => p.status === 'Approved')
-        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    for (const p of myPayouts) {
+        const amt = parseAmount(p.amount);
+        if (amt <= 0) continue;
 
-    const paidPayoutsTotal = myPayouts
-        .filter(p => p.status === 'Paid' || (p.status as string) === 'Completed')
-        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const st = (p.status || '').toString().toLowerCase().trim();
+        if (st === 'pending') {
+            pendingPayoutsTotal += amt;
+        } else if (st === 'approved' || st === 'processing') {
+            approvedPayoutsTotal += amt;
+        } else if (st === 'paid' || st === 'completed' || st === 'settled') {
+            paidPayoutsTotal += amt;
+        }
+        // Note: Rejected, Cancelled, and Declined payouts are intentionally excluded. They never lock or deduct funds.
+    }
 
     // 3. Authoritative ledger calculation:
     // Ledger Available = Lifetime Net Earnings - (Paid + Approved + Pending Payouts)

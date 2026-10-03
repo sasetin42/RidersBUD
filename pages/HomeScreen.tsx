@@ -28,6 +28,7 @@ import { geocodeAddressOrCity, resolveOrderTrackingLocations } from '../utils/lo
 import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
 import GCashPaymentModal from '../components/GCashPaymentModal';
+import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
 
@@ -139,6 +140,13 @@ const HomeScreen: React.FC = () => {
     // updateBookingPayment / updateRentalBooking fire twice+ and duplicate notifications.
     const reconciledTargetsRef = React.useRef<Set<string>>(new Set());
 
+    // HitPay return → webhook-driven verification overlay (never trusted from redirect params)
+    const [paymentReturnTarget, setPaymentReturnTarget] = useState<{
+        entityKind: PaymentEntityKind;
+        entityId: string;
+        paymentRequestId?: string;
+    } | null>(null);
+
     // Native: resume pending payment watch (custom tab re-entry / process death)
     useEffect(() => {
         if (!isNative()) return;
@@ -214,187 +222,34 @@ const HomeScreen: React.FC = () => {
         const isDriverReturn = searchParams.get('isDriver') === 'true' || searchParams.get('driver') === 'true';
         const targetBookingId = searchParams.get('bookingId') || searchParams.get('rentalId') || searchParams.get('liaisonId') || searchParams.get('driverId');
 
-        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isRentalReturn) {
-            if (reconciledTargetsRef.current.has(`rental-${targetBookingId}`)) return;
-            reconciledTargetsRef.current.add(`rental-${targetBookingId}`);
-            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-BAL-${Date.now()}`;
-            const reqId = searchParams.get('payment_request_id') || '';
-
-            const rental = db?.rentalBookings?.find(r => r.id === targetBookingId || r.id?.toLowerCase() === targetBookingId.toLowerCase());
-            if (rental && !rental.isPaid && updateRentalBooking) {
-                const totalAmt = rental.totalPrice || 0;
-                updateRentalBooking(rental.id, {
-                    isPaid: true,
-                    isVerified: true,
-                    paidAmount: totalAmt,
-                    remainingBalance: 0,
-                    balanceAmount: 0,
-                    paymentStatus: 'paid',
-                    balancePaid: true,
-                    balancePaymentRef: hitpayRef,
-                    balancePaidAt: new Date().toISOString(),
-                    hitpayPaymentRequestId: reqId,
-                    hitpayReference: hitpayRef,
-                    hitpayStatus: 'completed',
-                    paymentMethod: 'HitPay (Online)',
-                    status: 'Completed'
-                }).then(() => {
-                    if (user?.id || rental.customerId) {
-                        addNotification({
-                            recipientId: user?.id || rental.customerId,
-                            recipientRole: 'customer',
-                            title: '✅ Rental Balance Settled',
-                            message: `Remaining balance for ${rental.carName || 'Rental Vehicle'} has been fully settled via HitPay online payment!`,
-                            type: 'info'
-                        });
-                    }
-                }).catch(console.error);
-
+        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId) {
+            // The redirect back from HitPay is NOT proof of payment (requirement #8).
+            // Hand off to the verification overlay, which waits for the webhook's
+            // authoritative Firestore write before reporting success (requirement #8),
+            // then fires the customer notification.
+            const entityKind: PaymentEntityKind = isRentalReturn
+                ? 'rental'
+                : isLiaisonReturn
+                    ? 'liaison'
+                    : isDriverReturn
+                        ? 'service-request'
+                        : (targetBookingId.startsWith('RNT-') || targetBookingId.startsWith('RN-') ||
+                            db?.rentalBookings?.some(r => r.id === targetBookingId))
+                            ? 'rental'
+                            : (targetBookingId.startsWith('LIA-') ||
+                                db?.liaisonBookings?.some(l => l.id === targetBookingId))
+                                ? 'liaison'
+                                : (targetBookingId.startsWith('DRV-') || targetBookingId.startsWith('TOW-') ||
+                                    db?.serviceRequests?.some(s => s.id === targetBookingId))
+                                    ? 'service-request'
+                                    : 'booking';
+            const guardKey = `${entityKind}-${targetBookingId}`;
+            if (!reconciledTargetsRef.current.has(guardKey)) {
+                reconciledTargetsRef.current.add(guardKey);
+                const reqId = searchParams.get('payment_request_id') || '';
                 sessionStorage.removeItem('pendingHitPayServiceTx');
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
-
-        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isLiaisonReturn) {
-            if (reconciledTargetsRef.current.has(`liaison-${targetBookingId}`)) return;
-            reconciledTargetsRef.current.add(`liaison-${targetBookingId}`);
-            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-LIA-BAL-${Date.now()}`;
-            const reqId = searchParams.get('payment_request_id') || '';
-
-            const liaison = db?.liaisonBookings?.find(l => l.id === targetBookingId || l.id?.toLowerCase() === targetBookingId.toLowerCase());
-            if (liaison && !liaison.balancePaid && updateLiaisonBooking) {
-                const totalAmt = liaison.fees?.total || liaison.totalAmount || 0;
-                updateLiaisonBooking(liaison.id, {
-                    isPaid: true,
-                    isVerified: true,
-                    paidAmount: totalAmt,
-                    remainingBalance: 0,
-                    paymentStatus: 'paid',
-                    balancePaid: true,
-                    balancePaymentRef: hitpayRef,
-                    balancePaidAt: new Date().toISOString(),
-                    hitpayPaymentRequestId: reqId,
-                    hitpayReference: hitpayRef,
-                    hitpayStatus: 'completed',
-                    paymentMethod: 'HitPay (Online)',
-                    status: 'Completed'
-                } as any).then(() => {
-                    if (user?.id || liaison.customerId) {
-                        addNotification({
-                            recipientId: user?.id || liaison.customerId,
-                            recipientRole: 'customer',
-                            title: '✅ Liaison Balance Settled',
-                            message: `Remaining balance for LTO Liaison (${liaison.serviceType || 'Registration'}) has been fully settled via HitPay online payment!`,
-                            type: 'info'
-                        });
-                    }
-                }).catch(console.error);
-
-                sessionStorage.removeItem('pendingHitPayServiceTx');
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
-
-        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && isDriverReturn) {
-            if (reconciledTargetsRef.current.has(`driver-${targetBookingId}`)) return;
-            reconciledTargetsRef.current.add(`driver-${targetBookingId}`);
-            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-DRV-BAL-${Date.now()}`;
-            const reqId = searchParams.get('payment_request_id') || '';
-
-            const driverReq = db?.serviceRequests?.find(s => s.id === targetBookingId || s.id?.toLowerCase() === targetBookingId.toLowerCase());
-            if (driverReq && !driverReq.isPaid && updateServiceRequest) {
-                const totalAmt = driverReq.totalAmount || driverReq.price || 0;
-                updateServiceRequest(driverReq.id, {
-                    isPaid: true,
-                    isVerified: true,
-                    paidAmount: totalAmt,
-                    remainingBalance: 0,
-                    paymentStatus: 'paid',
-                    balancePaid: true,
-                    balancePaymentRef: hitpayRef,
-                    balancePaidAt: new Date().toISOString(),
-                    hitpayPaymentRequestId: reqId,
-                    hitpayReference: hitpayRef,
-                    hitpayStatus: 'completed',
-                    paymentMethod: 'HitPay (Online)',
-                    status: 'Completed'
-                } as any).then(() => {
-                    if (user?.id || driverReq.customerId) {
-                        addNotification({
-                            recipientId: user?.id || driverReq.customerId,
-                            recipientRole: 'customer',
-                            title: '✅ Driver Service Balance Settled',
-                            message: `Remaining balance for Driver for Hire has been fully settled via HitPay online payment!`,
-                            type: 'info'
-                        });
-                    }
-                }).catch(console.error);
-
-                sessionStorage.removeItem('pendingHitPayServiceTx');
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
-
-        // Standard Mechanic / Maintenance Booking Return
-        if ((gatewayStatus === 'completed' || gatewayStatus === 'success') && targetBookingId && !isRentalReturn && !isLiaisonReturn && !isDriverReturn) {
-            if (reconciledTargetsRef.current.has(`booking-${targetBookingId}`)) return;
-            reconciledTargetsRef.current.add(`booking-${targetBookingId}`);
-            const hitpayRef = searchParams.get('reference') || searchParams.get('payment_request_id') || `HITPAY-BAL-${Date.now()}`;
-            const reqId = searchParams.get('payment_request_id') || '';
-
-            const booking = db?.bookings?.find(b => b.id === targetBookingId || b.id?.toLowerCase() === targetBookingId.toLowerCase());
-            if (booking && !booking.isPaid) {
-                const totalAmt = booking.totalAmount || booking.service?.price || 0;
-                const addCosts = (booking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
-                const fullTotal = totalAmt + addCosts;
-                const initialDp = booking.downpaymentAmount ? Number(booking.downpaymentAmount) : (totalAmt * 0.5);
-                const balanceAmt = Math.max(0, fullTotal - initialDp);
-
-                const servicePayload: any = {
-                    isPaid: true,
-                    isVerified: true,
-                    paidAmount: fullTotal,
-                    downpaymentAmount: initialDp,
-                    balanceAmount: balanceAmt,
-                    remainingBalance: 0,
-                    paymentStatus: 'paid',
-                    balancePaid: true,
-                    balancePaymentRef: hitpayRef,
-                    balancePaidAt: new Date().toISOString(),
-                    hitpayPaymentRequestId: reqId,
-                    hitpayReference: hitpayRef,
-                    hitpayStatus: 'completed',
-                    status: 'Completed'
-                };
-
-                const finishServiceReturn = () => {
-                    if (user?.id || booking.customerId) {
-                        addNotification({
-                            recipientId: user?.id || booking.customerId,
-                            recipientRole: 'customer',
-                            title: '✅ Service Balance Settled',
-                            message: `Remaining balance for #${targetBookingId.slice(-6).toUpperCase()} has been settled via HitPay online payment!`,
-                            type: 'info'
-                        });
-                    }
-                    sessionStorage.removeItem('pendingHitPayServiceTx');
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                };
-
-                if (updateBookingPayment) {
-                    updateBookingPayment(targetBookingId, balanceAmt, 'paid', servicePayload)
-                        .then(finishServiceReturn)
-                        .catch(async () => {
-                            try {
-                                await updateDoc(doc(firestore, 'bookings', targetBookingId), servicePayload);
-                            } catch (_) {}
-                            finishServiceReturn();
-                        });
-                } else {
-                    updateDoc(doc(firestore, 'bookings', targetBookingId), servicePayload)
-                        .then(finishServiceReturn)
-                        .catch(finishServiceReturn);
-                }
+                sessionStorage.removeItem('pendingHitPayBookingTx');
+                setPaymentReturnTarget({ entityKind, entityId: targetBookingId, paymentRequestId: reqId || undefined });
             }
         }
     }, [location.state, location.search, db?.bookings, db?.rentalBookings, db?.liaisonBookings, db?.serviceRequests, updateBookingPayment, updateRentalBooking, updateLiaisonBooking, updateServiceRequest, user?.id]);
@@ -421,7 +276,7 @@ const HomeScreen: React.FC = () => {
             }
 
             const hitPay = HitPayService.fromSettings(db?.settings);
-            const returnUrl = `${getLiveAppOrigin()}/customer-portal/?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}&status=completed`;
+            const returnUrl = `${getLiveAppOrigin()}/customer-portal/?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}`;
             const appTitle = db?.settings?.appName || 'RidersBUD';
 
             sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
@@ -3014,6 +2869,50 @@ const HomeScreen: React.FC = () => {
                     />
                 );
             })()}
+
+            {/* Webhook-driven payment verification (opened on HitPay return) */}
+            {paymentReturnTarget && (
+                <PaymentVerificationOverlay
+                    isOpen={Boolean(paymentReturnTarget)}
+                    entityKind={paymentReturnTarget.entityKind}
+                    entityId={paymentReturnTarget.entityId}
+                    paymentRequestId={paymentReturnTarget.paymentRequestId}
+                    isSandbox={db?.settings?.hitpaySandboxMode === true}
+                    onVerified={() => {
+                        const kind = paymentReturnTarget.entityKind;
+                        const entity: any = kind === 'rental'
+                            ? db?.rentalBookings?.find(r => r.id === paymentReturnTarget.entityId)
+                            : kind === 'liaison'
+                                ? db?.liaisonBookings?.find(l => l.id === paymentReturnTarget.entityId)
+                                : kind === 'service-request'
+                                    ? db?.serviceRequests?.find(s => s.id === paymentReturnTarget.entityId)
+                                    : db?.bookings?.find(b => b.id === paymentReturnTarget.entityId);
+                        const recipient = user?.id || entity?.customerId;
+                        if (recipient) {
+                            const title = kind === 'rental'
+                                ? '✅ Rental Balance Settled'
+                                : kind === 'liaison'
+                                    ? '✅ Liaison Balance Settled'
+                                    : kind === 'service-request'
+                                        ? '✅ Driver Service Balance Settled'
+                                        : '✅ Service Balance Settled';
+                            addNotification({
+                                recipientId: recipient,
+                                recipientRole: 'customer',
+                                title,
+                                message: `Remaining balance for #${paymentReturnTarget.entityId.slice(-6).toUpperCase()} has been settled via HitPay online payment!`,
+                                type: 'info'
+                            });
+                        }
+                        sessionStorage.removeItem('pendingHitPayServiceTx');
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }}
+                    onClose={() => {
+                        setPaymentReturnTarget(null);
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }}
+                />
+            )}
 
             <UpcomingStoreModal 
                 isOpen={showUpcomingStoreModal}

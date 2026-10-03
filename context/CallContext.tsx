@@ -511,8 +511,17 @@ const cleanupPeerConnection = useCallback(() => {
     }, 2000);
   }, []);
 
+  const incomingCallUnsubRef = useRef<(() => void) | null>(null);
+
   const listenForIncomingCalls = useCallback(() => {
     if (!userId) return;
+    
+    // Clean up any existing incoming listener
+    if (incomingCallUnsubRef.current) {
+      incomingCallUnsubRef.current();
+      incomingCallUnsubRef.current = null;
+    }
+
     const incomingRef = ref(rtdb, `calls/incoming/${userId}`);
     const unsubscribe = onValue(incomingRef, (snapshot) => {
       const data = snapshot.val();
@@ -605,7 +614,14 @@ const cleanupPeerConnection = useCallback(() => {
         }
       }
     });
-    return () => { off(incomingRef); };
+
+    incomingCallUnsubRef.current = unsubscribe;
+    return () => {
+      unsubscribe();
+      if (incomingCallUnsubRef.current === unsubscribe) {
+        incomingCallUnsubRef.current = null;
+      }
+    };
   }, [userId, cleanupPeerConnection, handleCallTermination]);
 
   // Sync ref with state to avoid stale closures
@@ -688,6 +704,10 @@ const cleanupPeerConnection = useCallback(() => {
     return () => {
       suspendManager.releaseWakeLock();
       cleanupPeerConnection();
+      if (incomingCallUnsubRef.current) {
+        incomingCallUnsubRef.current();
+        incomingCallUnsubRef.current = null;
+      }
       if (resetTimeoutRef.current) {
         clearTimeout(resetTimeoutRef.current);
         resetTimeoutRef.current = null;

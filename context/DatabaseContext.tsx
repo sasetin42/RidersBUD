@@ -346,10 +346,13 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             defaultMechanicImageUrl: '/assets/logo.png',
             hitpayEnabled: true,
             hitpaySandboxMode: false,
-            hitpayApiKey: 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb',
-            hitpaySalt: 'Wj5xX1V5DmDJ4hZOlvR9GrTWrgZi8OAJImleDzSMsB7xOlYgK74QlsoCTSetXAAM',
-            hitpaySandboxApiKey: 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8',
-            hitpaySandboxSalt: 'EsIA9lzyrf9czdNqs7IVZMCKrEmONcvxfSNJpPdaGDr4PxwC6g89J00RtPKreNUL',
+            // SECURITY: HitPay credentials are NEVER shipped in the client bundle.
+            // They live server-side (Cloud Functions env) or in the admin-only
+            // settings/hitpaySecrets document — see scripts/secureHitpaySecrets.ts.
+            hitpayApiKey: '',
+            hitpaySalt: '',
+            hitpaySandboxApiKey: '',
+            hitpaySandboxSalt: '',
             modules: [
                 { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
                 { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
@@ -475,6 +478,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         // ID token refresh → onAuthStateChanged fires → we now ONLY tear down private subs.
         let publicUnsubs: (() => void)[] = [];
         let privateUnsubs: (() => void)[] = [];
+        let privateTimers: any[] = [];
 
         const isLocalhost = typeof window !== 'undefined' && (
             window.location.hostname === 'localhost' ||
@@ -1046,6 +1050,9 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             currentSubscribedId = targetId;
             currentSubscribedRole = targetRole;
 
+            privateTimers.forEach(t => clearTimeout(t));
+            privateTimers = [];
+
             privateUnsubs.forEach(fn => fn());
             privateUnsubs = [];
 
@@ -1070,7 +1077,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
             // Helper to stagger private subscriptions and avoid QUIC transport overwhelm
             const staggerPrivate = (fn: () => void, delayMs: number) => {
-                setTimeout(fn, delayMs);
+                const timer = setTimeout(fn, delayMs);
+                privateTimers.push(timer);
             };
 
             if (isAdmin) {
@@ -1161,6 +1169,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         return () => {
             if (safetyTimer) clearTimeout(safetyTimer);
             publicTimers.forEach(t => clearTimeout(t));
+            privateTimers.forEach(t => clearTimeout(t));
             authUnsub();
             window.removeEventListener('adminAuthChange', handleAdminAuthChange);
             window.removeEventListener('customerAuthChange', handleAdminAuthChange);
@@ -3310,9 +3319,11 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         const newWalletBalance = newLedger.availableBalance;
         const newLockedBalance = newLedger.lockedBalance;
+        const newLifetimeEarnings = newLedger.lifetimeEarnings;
 
         batch.update(mechanicRef, {
             walletBalance: newWalletBalance,
+            totalEarnings: newLifetimeEarnings,
             lockedBalance: newLockedBalance
         });
 
@@ -3341,6 +3352,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     return {
                         ...m,
                         walletBalance: newWalletBalance,
+                        totalEarnings: newLifetimeEarnings,
                         lockedBalance: newLockedBalance
                     };
                 }
@@ -3420,12 +3432,27 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             submittedAt: new Date().toISOString()
         };
 
+        const updatedPayouts = [newPayoutDoc, ...(db?.payouts || [])];
+        const updatedLedger = calculateMechanicWalletLedger(
+            request.mechanicId,
+            mechanic,
+            db?.bookings || [],
+            updatedPayouts,
+            feePercentage
+        );
+
         // Optimistic local update
         setDb(prev => {
             if (!prev) return null;
             return {
                 ...prev,
-                payouts: [newPayoutDoc, ...prev.payouts]
+                payouts: [newPayoutDoc, ...prev.payouts],
+                mechanics: (prev.mechanics || []).map(m => m.id === request.mechanicId ? {
+                    ...m,
+                    walletBalance: updatedLedger.availableBalance,
+                    totalEarnings: updatedLedger.lifetimeEarnings,
+                    lockedBalance: updatedLedger.lockedBalance
+                } : m)
             };
         });
 
@@ -3436,6 +3463,17 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 requestDate: new Date().toISOString(),
                 submittedAt: new Date().toISOString()
             });
+
+            // Synchronize mechanic balances in Firestore
+            try {
+                const mechanicRef = doc(firestore, 'mechanics', request.mechanicId);
+                await updateDoc(mechanicRef, {
+                    walletBalance: updatedLedger.availableBalance,
+                    totalEarnings: updatedLedger.lifetimeEarnings,
+                    lockedBalance: updatedLedger.lockedBalance
+                });
+            } catch (_) {}
+
             // Align local id with Firestore generated id if available
             setDb(prev => {
                 if (!prev) return null;
@@ -3479,6 +3517,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         const newWalletBalance = newLedger.availableBalance;
         const newLockedBalance = newLedger.lockedBalance;
+        const newLifetimeEarnings = newLedger.lifetimeEarnings;
 
         // Optimistic local update
         setDb(prev => {
@@ -3491,6 +3530,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         return {
                             ...m,
                             walletBalance: newWalletBalance,
+                            totalEarnings: newLifetimeEarnings,
                             lockedBalance: newLockedBalance,
                             ...(alsoClearDestination ? { payoutDetails: undefined as any, savedPayoutDestinations: [] } : {})
                         };
@@ -3507,6 +3547,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             if (mechanicId) {
                 const updatePayload: any = {
                     walletBalance: newWalletBalance,
+                    totalEarnings: newLifetimeEarnings,
                     lockedBalance: newLockedBalance
                 };
                 if (alsoClearDestination) {

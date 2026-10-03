@@ -7,7 +7,7 @@ import {
     CheckCircle2, TrendingUp, Info, X, 
     Check, CreditCard, Calendar, ChevronRight,
     Smartphone, Landmark, QrCode, AlertCircle, Sparkles,
-    ShieldCheck, Clock, RefreshCw, Layers, Trash2, AlertTriangle
+    ShieldCheck, Clock, RefreshCw, Layers, Trash2, AlertTriangle, RotateCcw
 } from 'lucide-react';
 import Header from '../../components/Header';
 import NotificationBell from '../../components/NotificationBell';
@@ -388,12 +388,7 @@ const MechanicEarningsScreen: React.FC = () => {
 
     // Helper: Calculate total revenue of a job accurately
     const getJobTotal = (job: any): number => {
-        if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
-        if (job.price != null && Number(job.price) > 0) return Number(job.price);
-        const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
-        const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
-        const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
-        return svcsSum + addCosts + (Number(job.laborFee) || 0);
+        return getJobTotalAmount(job);
     };
 
     const {
@@ -406,7 +401,8 @@ const MechanicEarningsScreen: React.FC = () => {
         availableBalance,
         lockedBalance,
         allTimeEarnings,
-        serviceFeePercentage
+        serviceFeePercentage,
+        pendingPayout
     } = useMemo(() => {
         const defaultReturn = { 
             earningsInPeriod: 0, 
@@ -418,19 +414,33 @@ const MechanicEarningsScreen: React.FC = () => {
             availableBalance: 0,
             lockedBalance: 0,
             allTimeEarnings: 0,
-            serviceFeePercentage: 30
+            serviceFeePercentage: 30,
+            pendingPayout: null as PayoutRequest | null
         };
 
         if (!currentMechanic || !db) {
             return defaultReturn;
         }
 
+        const mechIdStr = String(currentMechanic.id).trim();
+
+        // Helper: Check if a booking is completed and paid
+        const isCompletedJob = (b: Booking) => {
+            if (!b) return false;
+            const bMechId = b.mechanic?.id || b.mechanicId;
+            const isMatch = bMechId != null && String(bMechId).trim() === mechIdStr;
+            const status = (b.status || '').toString().toLowerCase().trim();
+            return isMatch && status === 'completed';
+        };
+
+        const isPaidJob = (job: Booking) => {
+            const payStatus = (job.paymentStatus || '').toString().toLowerCase().trim();
+            return job.isPaid !== false && payStatus !== 'failed' && payStatus !== 'cancelled';
+        };
+
         // All completed jobs for this mechanic/driver
-        const myCompletedJobs = db.bookings
-            .filter(b => {
-                const isMatch = (b.mechanic?.id === currentMechanic.id) || (b.mechanicId === currentMechanic.id);
-                return isMatch && b.status === 'Completed';
-            })
+        const myCompletedJobs = (db.bookings || [])
+            .filter(isCompletedJob)
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         const now = new Date();
@@ -463,13 +473,13 @@ const MechanicEarningsScreen: React.FC = () => {
         const serviceFeePercentage = db?.settings?.serviceFeePercentage ?? 30;
 
         // Net Profit computation (paid jobs net of platform commission)
-        const paidJobsInPeriod = filteredJobs.filter(job => job.isPaid !== false && job.paymentStatus !== 'failed');
+        const paidJobsInPeriod = filteredJobs.filter(isPaidJob);
         const earnings = paidJobsInPeriod.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
         const jobsCount = filteredJobs.length;
         const avgValue = paidJobsInPeriod.length > 0 ? earnings / paidJobsInPeriod.length : 0;
 
         // Lifetime earnings
-        const allCompletedPaid = myCompletedJobs.filter(job => job.isPaid !== false && job.paymentStatus !== 'failed');
+        const allCompletedPaid = myCompletedJobs.filter(isPaidJob);
         const lifetimeNetSum = allCompletedPaid.reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
         const calcAllTime = lifetimeNetSum;
 
@@ -484,7 +494,7 @@ const MechanicEarningsScreen: React.FC = () => {
             const dayNormalized = normalizeDateStr(day);
             const earningsForDay = myCompletedJobs
                 .filter(job => {
-                    if (job.isPaid === false || job.paymentStatus === 'failed') return false;
+                    if (!isPaidJob(job)) return false;
                     return normalizeDateStr(job.date) === dayNormalized;
                 })
                 .reduce((sum, job) => sum + getJobMechanicShare(job, serviceFeePercentage), 0);
@@ -505,9 +515,12 @@ const MechanicEarningsScreen: React.FC = () => {
         }, {} as Record<string, Booking[]>);
 
         // Payout history
-        const myPayouts = (db.payouts as PayoutRequest[])
-            .filter(p => p.mechanicId === currentMechanic.id)
+        const myPayouts = ((db.payouts || []) as PayoutRequest[])
+            .filter(p => p && p.mechanicId && String(p.mechanicId).trim() === mechIdStr)
             .sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
+
+        // Find primary pending payout if any (for instant one-click cancel/unlock)
+        const pendingPayout = myPayouts.find(p => (p.status || '').toString().toLowerCase().trim() === 'pending') || null;
 
         // Dynamic Wallet Balances from authoritative ledger helper
         const walletLedger = calculateMechanicWalletLedger(
@@ -528,7 +541,8 @@ const MechanicEarningsScreen: React.FC = () => {
             availableBalance: walletLedger.availableBalance,
             lockedBalance: walletLedger.lockedBalance,
             allTimeEarnings: walletLedger.lifetimeEarnings != null ? walletLedger.lifetimeEarnings : calcAllTime,
-            serviceFeePercentage
+            serviceFeePercentage,
+            pendingPayout
         };
     }, [db, currentMechanic, filter]);
 
@@ -621,9 +635,15 @@ const MechanicEarningsScreen: React.FC = () => {
                                         ₱{availableBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                     </p>
                                     {lockedBalance > 0 && (
-                                        <span className="text-[11px] font-bold text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                                            ₱{lockedBalance.toLocaleString()} in transit
-                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveTab('payouts')}
+                                            title="Click to view pending payout request"
+                                            className="text-[11px] font-bold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 px-2.5 py-0.5 rounded-lg border border-amber-500/20 transition-all flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <Clock size={11} className="text-amber-400" />
+                                            <span>₱{lockedBalance.toLocaleString()} in transit</span>
+                                        </button>
                                     )}
                                 </div>
                                 {primaryAccount && (
@@ -635,7 +655,7 @@ const MechanicEarningsScreen: React.FC = () => {
                                 )}
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setIsPayoutModalOpen(true)}
@@ -648,13 +668,58 @@ const MechanicEarningsScreen: React.FC = () => {
                                 <Link
                                     to="/mechanic-portal/profile"
                                     title="Manage Payout Destinations"
-                                    className="p-3 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-2xl border border-white/5 transition-all"
+                                    className="p-3 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-2xl border border-white/5 transition-all flex items-center justify-center"
                                 >
                                     <CreditCard size={16} />
                                 </Link>
                             </div>
                         </div>
                     </div>
+
+                    {/* In-Transit Callout Alert: Informs mechanic why funds are locked and offers instant cancellation to restore available balance */}
+                    {lockedBalance > 0 && (
+                        <div className="bg-[#1C1813] border border-amber-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 text-xs shadow-lg animate-in fade-in duration-300">
+                            <div className="flex items-start gap-3 min-w-0">
+                                <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 border border-amber-500/30">
+                                    <Clock size={20} />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="font-black text-amber-300 text-sm tracking-tight">
+                                            ₱{lockedBalance.toLocaleString()} In Transit
+                                        </p>
+                                        <span className="px-2 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-300 rounded-md border border-amber-500/30">
+                                            Pending Withdrawal
+                                        </span>
+                                    </div>
+                                    <p className="text-gray-300 text-xs mt-1 leading-relaxed">
+                                        Your earnings are locked while your withdrawal request is pending review by admin. Once processed, it will be paid to your account.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 pt-1 sm:pt-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('payouts')}
+                                    className="px-3.5 py-2 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl text-xs font-bold transition-all border border-white/10 flex items-center gap-1.5"
+                                >
+                                    <CreditCard size={13} />
+                                    <span>View Payouts</span>
+                                </button>
+                                {pendingPayout && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setPayoutToDelete(pendingPayout)}
+                                        className="px-3.5 py-2 bg-red-500/20 hover:bg-red-500/30 active:scale-95 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                                        title="Cancel pending withdrawal request and immediately restore funds to Available Balance"
+                                    >
+                                        <RotateCcw size={13} />
+                                        <span>Cancel & Unlock</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {/* 2. Compact Performance Bar Chart */}
                     <div className="bg-[#161619] p-5 rounded-3xl border border-white/5 shadow-xl relative overflow-hidden">
@@ -789,60 +854,72 @@ const MechanicEarningsScreen: React.FC = () => {
                         ) : (
                             <div className="space-y-2.5">
                                 {payouts.length > 0 ? (
-                                    payouts.map((payout) => (
-                                        <div key={payout.id} className="bg-[#161619] p-4 rounded-2xl border border-white/5 hover:border-white/10 transition-all">
-                                            <div className="flex justify-between items-start mb-2.5">
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
-                                                        payout.status === 'Paid' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                                                        payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                                                        'bg-primary/10 border-primary/20 text-primary'
-                                                    }`}>
-                                                        <Wallet size={18} />
+                                    payouts.map((payout) => {
+                                        const pStatus = (payout.status || '').toString().toLowerCase().trim();
+                                        const isPaid = pStatus === 'paid' || pStatus === 'completed' || pStatus === 'settled';
+                                        const isApproved = pStatus === 'approved' || pStatus === 'processing';
+                                        const isRejected = pStatus === 'rejected' || pStatus === 'declined' || pStatus === 'cancelled';
+                                        const isPending = pStatus === 'pending';
+
+                                        return (
+                                            <div key={payout.id} className="bg-[#161619] p-4 rounded-2xl border border-white/5 hover:border-white/10 transition-all">
+                                                <div className="flex justify-between items-start mb-2.5">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                                                            isPaid ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                            isRejected ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                                            'bg-primary/10 border-primary/20 text-primary'
+                                                        }`}>
+                                                            <Wallet size={18} />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="font-black text-white tracking-tight text-sm">
+                                                                ₱{Number(payout.amount || 0).toLocaleString()}
+                                                            </p>
+                                                            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
+                                                                {new Date(payout.requestDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                    <div className="min-w-0">
-                                                        <p className="font-black text-white tracking-tight text-sm">
-                                                            ₱{payout.amount.toLocaleString()}
-                                                        </p>
-                                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-                                                            {new Date(payout.requestDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                        </p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider border ${
+                                                            isPaid ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                            isApproved ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                                            isRejected ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+                                                            'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                                        }`}>
+                                                            {isApproved ? 'Approved • Disbursing' : isPaid ? 'Paid' : isRejected ? 'Rejected' : 'Pending Review'}
+                                                        </span>
+                                                        {isPending && (
+                                                            <button
+                                                                onClick={() => setPayoutToDelete(payout)}
+                                                                className="px-2 py-1 rounded-lg text-red-400 hover:text-white bg-red-500/10 hover:bg-red-600 border border-red-500/20 text-[9px] font-bold tracking-wider uppercase transition-all flex items-center gap-1 cursor-pointer"
+                                                                title="Cancel request and restore funds to Available Balance"
+                                                            >
+                                                                <RotateCcw size={11} />
+                                                                <span>Cancel</span>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-wider border ${
-                                                        payout.status === 'Paid' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                                                        payout.status === 'Approved' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
-                                                        payout.status === 'Rejected' ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                                                        'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                                                    }`}>
-                                                        {payout.status === 'Approved' ? 'Approved • Disbursing' : payout.status}
-                                                    </span>
-                                                    {payout.status === 'Pending' && (
-                                                        <button
-                                                            onClick={() => setPayoutToDelete(payout)}
-                                                            className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                                                            title="Cancel and remove request"
-                                                        >
-                                                            <Trash2 size={13} />
-                                                        </button>
+                                                <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] text-gray-400 font-bold">
+                                                    <span className="truncate">{payout.paymentMethod}: {payout.accountDetails}</span>
+                                                    {isPending && (
+                                                        <span className="text-amber-400 shrink-0 ml-2">Under review</span>
+                                                    )}
+                                                    {isApproved && (
+                                                        <span className="text-blue-400 shrink-0 ml-2 font-semibold">Processing transfer</span>
+                                                    )}
+                                                    {isPaid && payout.transactionId && (
+                                                        <span className="text-emerald-400 font-mono shrink-0 ml-2 truncate max-w-[120px]">Ref: {payout.transactionId}</span>
+                                                    )}
+                                                    {isRejected && payout.rejectionReason && (
+                                                        <span className="text-red-400 shrink-0 ml-2 truncate max-w-[150px]">Reason: {payout.rejectionReason}</span>
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[9px] text-gray-400 font-bold">
-                                                <span className="truncate">{payout.paymentMethod}: {payout.accountDetails}</span>
-                                                {payout.status === 'Pending' && (
-                                                    <span className="text-amber-400 shrink-0 ml-2">Under review</span>
-                                                )}
-                                                {payout.status === 'Approved' && (
-                                                    <span className="text-blue-400 shrink-0 ml-2 font-semibold">Processing transfer</span>
-                                                )}
-                                                {payout.status === 'Paid' && payout.transactionId && (
-                                                    <span className="text-emerald-400 font-mono shrink-0 ml-2 truncate max-w-[120px]">Ref: {payout.transactionId}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))
+                                        );
+                                    })
                                 ) : (
                                     <div className="flex flex-col items-center justify-center py-16 text-gray-500 space-y-3 bg-[#161619]/50 rounded-3xl border border-white/5">
                                         <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5">

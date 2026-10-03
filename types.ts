@@ -523,6 +523,8 @@ export interface PaymentRequest {
     name: string;
     phone?: string;
     purpose?: string;
+    entityKind?: string;
+    entityId?: string;
     payment_methods?: string[];
     address?: {
         line1?: string;

@@ -171,7 +171,64 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         return res.status(405).json({ error: 'Method Not Allowed. Use POST or GET?action=status.' });
       }
 
-      const payload = JSON.stringify((req.body || {}).payload || {});
+      const rawPayload = (req.body || {}).payload || {};
+      const entityKind = (req.body || {}).entityKind || rawPayload.entityKind;
+      const entityId = (req.body || {}).entityId || rawPayload.entityId;
+
+      // Authoritative Price Verification: If entityKind and entityId provided, look up in Firestore
+      if (entityKind && entityId) {
+        let collectionName = '';
+        if (entityKind === 'booking') collectionName = 'bookings';
+        else if (entityKind === 'order') collectionName = 'orders';
+        else if (entityKind === 'rental') collectionName = 'rentalBookings';
+        else if (entityKind === 'liaison') collectionName = 'liaisonBookings';
+        else if (entityKind === 'service-request') collectionName = 'serviceRequests';
+
+        if (collectionName) {
+          try {
+            const entitySnap = await admin.firestore().collection(collectionName).doc(entityId).get();
+            if (entitySnap.exists) {
+              const entityData = entitySnap.data() || {};
+              const isDeposit = String(rawPayload.reference_number || '').includes('DP');
+              let authoritativeAmount = 0;
+
+              if (collectionName === 'bookings') {
+                if (isDeposit) {
+                  authoritativeAmount = Number(entityData.downpaymentAmount || (Number(entityData.totalAmount || 0) * 0.5));
+                } else {
+                  authoritativeAmount = Number(entityData.remainingBalance ?? (Number(entityData.totalAmount || 0) - Number(entityData.paidAmount || 0)));
+                  if (authoritativeAmount <= 0) authoritativeAmount = Number(entityData.totalAmount || 0);
+                }
+              } else if (collectionName === 'orders') {
+                authoritativeAmount = Number(entityData.total || entityData.totalAmount || 0);
+              } else if (collectionName === 'rentalBookings') {
+                if (isDeposit) {
+                  authoritativeAmount = Number(entityData.downpaymentAmount || (Number(entityData.totalAmount || entityData.totalPrice || 0) * 0.5));
+                } else {
+                  authoritativeAmount = Number(entityData.remainingBalance ?? (Number(entityData.totalAmount || entityData.totalPrice || 0) - Number(entityData.paidAmount || 0)));
+                  if (authoritativeAmount <= 0) authoritativeAmount = Number(entityData.totalAmount || entityData.totalPrice || 0);
+                }
+              } else if (collectionName === 'liaisonBookings' || collectionName === 'serviceRequests') {
+                authoritativeAmount = Number(entityData.totalAmount || entityData.estimatedCost || 0);
+              }
+
+              if (authoritativeAmount > 0) {
+                rawPayload.amount = Number(authoritativeAmount.toFixed(2));
+                rawPayload.currency = rawPayload.currency || entityData.currency || 'PHP';
+              }
+            }
+          } catch (lookupErr) {
+            console.warn(`Firestore authoritative price lookup failed for ${collectionName}/${entityId}:`, lookupErr.message);
+          }
+        }
+      }
+
+      // Attach authoritative server webhook URL if not already provided
+      if (!rawPayload.webhook) {
+        rawPayload.webhook = 'https://ridersbud-10806.web.app/api/hitpay-webhook';
+      }
+
+      const payload = JSON.stringify(rawPayload);
       const options = {
         hostname,
         port: 443,

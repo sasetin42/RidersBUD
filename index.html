@@ -99,6 +99,12 @@
                     joined.includes('no siteId; skipping init') ||
                     joined.includes('[Stripe.js]') ||
                     joined.includes('grabpay_pm_beta_1') ||
+                    joined.includes('Grammarly') ||
+                    joined.includes('Grammarly-check') ||
+                    joined.includes('unload is not allowed in this document') ||
+                    joined.includes('runtime.lastError') ||
+                    joined.includes('message channel closed before a response was received') ||
+                    joined.includes('A listener indicated an asynchronous response') ||
                     joined.includes('Elements requires "width=device-width"') ||
                     joined.includes('viewport_meta_requirements')
                 ) return;
@@ -191,7 +197,13 @@
                     joined.includes('DataCloneError') ||
                     joined.includes('hitpay-main.js') ||
                     joined.includes('hitpay.js') ||
-                    joined.includes('could not be cloned')
+                    joined.includes('could not be cloned') ||
+                    joined.includes('Grammarly') ||
+                    joined.includes('Grammarly-check') ||
+                    joined.includes('unload is not allowed in this document') ||
+                    joined.includes('runtime.lastError') ||
+                    joined.includes('message channel closed before a response was received') ||
+                    joined.includes('A listener indicated an asynchronous response')
                 ) return;
                 originalError.apply(console, args);
             };
@@ -370,7 +382,7 @@
             var originalDebug = console.debug;
             console.debug = function() {};
  
-              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org','checkout-dropin-pr','DataCloneError','hitpay-main.js','hitpay.js','could not be cloned'];
+              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org','checkout-dropin-pr','DataCloneError','hitpay-main.js','hitpay.js','could not be cloned','Grammarly','Grammarly-check','runtime.lastError'];
             // Protect global PerformanceObserver, PerformanceObserverEntryList, PerformanceEntry prototype & performance entries against buggy extension / DevTools callbacks
             try {
                 if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {

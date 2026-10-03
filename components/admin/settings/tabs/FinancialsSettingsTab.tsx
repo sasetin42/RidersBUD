@@ -1,6 +1,18 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DollarSign, CreditCard, Shield, Eye, EyeOff, CheckCircle2, AlertTriangle, Upload, FileText, QrCode } from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db as firestoreDb } from '../../../../firebase';
 import { Settings } from '../../../../types';
+
+/**
+ * HitPay credentials live ONLY in the admin-only settings/hitpaySecrets document
+ * (firestore.rules: settings/** is publicly readable, hitpaySecrets is not).
+ * They are never stored in settings/main, never shipped in the client bundle,
+ * and never read by the app at runtime — the Cloud Functions resolve them
+ * server-side (settings/hitpaySecrets → env fallback).
+ */
+const SECRET_FIELDS = ['hitpayApiKey', 'hitpaySalt', 'hitpaySandboxApiKey', 'hitpaySandboxSalt'] as const;
+type SecretField = (typeof SECRET_FIELDS)[number];
 
 interface FinancialsSettingsTabProps {
     settings: Settings;
@@ -17,6 +29,39 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
     const [showLiveSalt, setShowLiveSalt] = useState(false);
     const [showSandboxKey, setShowSandboxKey] = useState(false);
     const [showSandboxSalt, setShowSandboxSalt] = useState(false);
+
+    // Credential fields bind to the admin-only hitpaySecrets document
+    const [secrets, setSecrets] = useState<Partial<Record<SecretField, string>>>({});
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const snap = await getDoc(doc(firestoreDb, 'settings', 'hitpaySecrets'));
+                if (!cancelled && snap.exists()) {
+                    const d: any = snap.data() || {};
+                    setSecrets({
+                        hitpayApiKey: d.hitpayApiKey || d.liveApiKey || '',
+                        hitpaySalt: d.hitpaySalt || d.liveSalt || '',
+                        hitpaySandboxApiKey: d.hitpaySandboxApiKey || d.sandboxApiKey || '',
+                        hitpaySandboxSalt: d.hitpaySandboxSalt || d.sandboxSalt || ''
+                    });
+                }
+            } catch (e) {
+                console.warn('[FinancialsSettingsTab] hitpaySecrets read failed:', e);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    const updateSecret = (field: SecretField, value: string) => {
+        setSecrets(prev => ({ ...prev, [field]: value }));
+        setDoc(doc(firestoreDb, 'settings', 'hitpaySecrets'), { [field]: value }, { merge: true })
+            .catch(e => console.warn('[FinancialsSettingsTab] hitpaySecrets write failed:', e));
+    };
+
+    const secretValue = (field: SecretField): string =>
+        secrets[field] ?? ((settings as any)[field] as string) ?? '';
 
     return (
         <div className="space-y-8 animate-fadeIn">
@@ -194,7 +239,7 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
                                 </div>
                             </div>
 
-                            {/* API Credentials — editable, stored in settings/main */}
+                            {/* API Credentials — stored in admin-only settings/hitpaySecrets */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 {/* Live Keys Card */}
                                 <div className={`space-y-4 p-5 rounded-2xl border transition-all ${
@@ -228,8 +273,8 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
                                         <div className="relative">
                                             <input
                                                 type={showLiveKey ? 'text' : 'password'}
-                                                value={settings.hitpayApiKey || ''}
-                                                onChange={(e) => onChange('hitpayApiKey', e.target.value)}
+                                                value={secretValue('hitpayApiKey')}
+                                                onChange={(e) => updateSecret('hitpayApiKey', e.target.value)}
                                                 disabled={isSandbox}
                                                 placeholder={isSandbox ? 'Disabled in Sandbox Mode' : 'Live API Key...'}
                                                 className={`w-full border rounded-xl px-4 py-2.5 text-xs text-white pr-10 font-mono transition-all ${
@@ -254,8 +299,8 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
                                         <div className="relative">
                                             <input
                                                 type={showLiveSalt ? 'text' : 'password'}
-                                                value={settings.hitpaySalt || ''}
-                                                onChange={(e) => onChange('hitpaySalt', e.target.value)}
+                                                value={secretValue('hitpaySalt')}
+                                                onChange={(e) => updateSecret('hitpaySalt', e.target.value)}
                                                 disabled={isSandbox}
                                                 placeholder={isSandbox ? 'Disabled in Sandbox Mode' : 'Live Webhook Salt...'}
                                                 className={`w-full border rounded-xl px-4 py-2.5 text-xs text-white pr-10 font-mono transition-all ${
@@ -308,8 +353,8 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
                                         <div className="relative">
                                             <input
                                                 type={showSandboxKey ? 'text' : 'password'}
-                                                value={settings.hitpaySandboxApiKey || ''}
-                                                onChange={(e) => onChange('hitpaySandboxApiKey', e.target.value)}
+                                                value={secretValue('hitpaySandboxApiKey')}
+                                                onChange={(e) => updateSecret('hitpaySandboxApiKey', e.target.value)}
                                                 disabled={!isSandbox}
                                                 placeholder={!isSandbox ? 'Disabled in Live Production Mode' : 'Sandbox API Key...'}
                                                 className={`w-full border rounded-xl px-4 py-2.5 text-xs text-white pr-10 font-mono transition-all ${
@@ -334,8 +379,8 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
                                         <div className="relative">
                                             <input
                                                 type={showSandboxSalt ? 'text' : 'password'}
-                                                value={settings.hitpaySandboxSalt || ''}
-                                                onChange={(e) => onChange('hitpaySandboxSalt', e.target.value)}
+                                                value={secretValue('hitpaySandboxSalt')}
+                                                onChange={(e) => updateSecret('hitpaySandboxSalt', e.target.value)}
                                                 disabled={!isSandbox}
                                                 placeholder={!isSandbox ? 'Disabled in Live Production Mode' : 'Sandbox Salt...'}
                                                 className={`w-full border rounded-xl px-4 py-2.5 text-xs text-white pr-10 font-mono transition-all ${

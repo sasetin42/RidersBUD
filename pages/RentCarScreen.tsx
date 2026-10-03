@@ -1307,7 +1307,8 @@ const RentCarScreen: React.FC = () => {
             purpose: `RidersBUD — Car Rental 50% Deposit (${selectedCar.make} ${selectedCar.model})`,
             customerEmail: user.email || 'customer@example.com',
             customerName: user.name || 'Customer',
-            returnRoute: '/customer-portal/',
+            customerPhone: user.phone || undefined,
+            returnRoute: `/customer-portal/?bookingId=${createdRental.id}&isRental=true`,
             isSandbox,
             settings: db?.settings
         });
@@ -1317,7 +1318,15 @@ const RentCarScreen: React.FC = () => {
         }
 
         if (result.success) {
-            navigate('/customer-portal/', { state: { rentalSuccess: true } });
+            // Route through the verification overlay (webhook-driven) before celebrating.
+            const params = new URLSearchParams({
+                bookingId: createdRental.id,
+                isRental: 'true',
+                status: 'completed'
+            });
+            if (result.paymentRequestId) params.set('payment_request_id', result.paymentRequestId);
+            if (result.referenceNumber) params.set('reference', result.referenceNumber);
+            navigate(`/customer-portal/?${params.toString()}`, { state: { rentalSuccess: true } });
         } else if (result.paymentState !== 'CANCELLED') {
             alert(result.errorMessage || 'Failed to complete payment.');
         }

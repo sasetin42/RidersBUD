@@ -938,13 +938,27 @@ const LiaisonBookingFlow: React.FC = () => {
                     customerEmail: user.email || customerEmail || 'customer@example.com',
                     customerName: user.name || 'Customer',
                     customerPhone: customerPhone || user.phone || undefined,
-                    returnRoute: '/customer-portal/my-service-requests',
+                    returnRoute: `/customer-portal/?bookingId=${createdLiaison.id}&isLiaison=true`,
                     isSandbox,
                     settings: db?.settings
                 });
 
+                if (result.redirected) {
+                    // The browser is already opening the official HitPay checkout URL
+                    // in an in-app Custom Tab — do not SPA-navigate over it.
+                    return;
+                }
+
                 if (result.success) {
-                    navigate('/customer-portal/my-service-requests', { state: { paymentSuccess: true } });
+                    // Route through the verification overlay (webhook-driven) before celebrating.
+                    const params = new URLSearchParams({
+                        bookingId: createdLiaison.id,
+                        isLiaison: 'true',
+                        status: 'completed'
+                    });
+                    if (result.paymentRequestId) params.set('payment_request_id', result.paymentRequestId);
+                    if (result.referenceNumber) params.set('reference', result.referenceNumber);
+                    navigate(`/customer-portal/?${params.toString()}`, { state: { paymentSuccess: true } });
                 } else if (result.paymentState !== 'CANCELLED') {
                     alert(result.errorMessage || 'Failed to complete payment.');
                 }

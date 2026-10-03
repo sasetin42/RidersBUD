@@ -1,27 +1,25 @@
 # Plan: Streamline HitPay Direct Online Checkout (Sandbox & Live)
 
 ## Goal
-Directly remove the intermediate `/hitpay-checkout` selection intermediary screen across all payment entrypoints (Service Bookings, Parts Orders, Car Rentals, Towing/Liaison) so clicking "Pay" generates the official HitPay session immediately (Live or Sandbox depending on active settings) and redirects the customer directly to the official HitPay checkout URL with optimal loading speed and zero redundant steps.
+Directly bypass both the old intermediate `/hitpay-checkout` selection screen and the intermediary HitPay Drop-In sheet modal ("SaSe Web Solutions / NEXT" customer details step) across all payment entrypoints (Service Bookings, Parts Orders, Car Rentals, Towing/Liaison). Clicking "Pay" launches the proper payment gateway immediately ("agad") in both Live and Sandbox modes with sub-100ms loading speeds for pre-warmed sessions and zero redundant steps.
 
 ---
 
 ## Architecture & Flow Comparison
 
-### Previous Flow (2 Steps)
+### Previous Flow (Intermediary Steps)
 ```mermaid
 flowchart LR
-    A[ServicePaymentScreen / PaymentScreen] -->|User clicks Pay| B["Intermediary Screen (/hitpay-checkout)"]
-    B -->|User re-selects GCash/Card/QRPh & clicks Pay| C["HitPay API Request"]
-    C -->|Redirects| D["Official HitPay Hosted Checkout"]
+    A[Booking / Service / Rental Screen] -->|Click Pay| B["Drop-In Modal: 'SaSe Web Solutions'"]
+    B -->|Review amount/email & click NEXT| C["HitPay Channel Selection"]
 ```
 
-### Streamlined Direct Flow (1 Step - Instant)
+### Streamlined Direct Flow (Instant Payment 'Agad')
 ```mermaid
 flowchart LR
-    A[ServicePaymentScreen / PaymentScreen] -->|User clicks Pay Online| B["Direct HitPay Session Creation (Live / Sandbox)"]
-    B -->|Fast HTTP Keep-Alive / Proxy| C["Immediate Launch via openPaymentUrl"]
-    C -->|Capacitor / Mobile Web / Desktop| D["Official HitPay Hosted Checkout (checkout.hit-pay.com)"]
-    D -->|Upon Payment / Cancel| E["Authoritative Return & Webhook Auto-Verification"]
+    A[Booking / Service / Rental Screen] -->|Click Pay (0ms if pre-warmed)| B["HitPay Hosted Checkout (checkout.hit-pay.com)"]
+    B -->|Direct Payment Channels: GCash, QRPH, Card, Maya| C["Customer Pays"]
+    C -->|Auto-Verification & Webhook| D["App Confirmation Screen"]
 ```
 
 ---
@@ -29,41 +27,28 @@ flowchart LR
 ## Tasks
 
 - [x] Task 1: **Upgrade `HitPayService.ts`**:
-  - Optimize `createPaymentRequest` with instant timeout guard (8s) and ensure clean handling of both Live (`api.hit-pay.com`) and Sandbox (`api.sandbox.hit-pay.com`) environments based on `settings.hitpaySandboxMode`.
-  - Pass all customer metadata (name, email, phone, purpose, reference) cleanly.
+  - Normalize phone numbers to international E.164 format (`+639...`) so HitPay auto-fills phone without customer input.
+  - Optimize `createPaymentRequest` with instant timeout guard (8s) and ensure clean handling of both Live (`api.hit-pay.com`) and Sandbox (`api.sandbox.hit-pay.com`) environments.
   - Return the official hosted URL (`https://checkout.hit-pay.com/...` or sandbox equivalent) directly.
-  → Verify: `HitPayService.createPaymentRequest` resolves the authoritative checkout URL without redirecting to `/hitpay-checkout`.
 
-- [x] Task 2: **Streamline `pages/ServicePaymentScreen.tsx`**:
-  - In `handleProcessPayment`: Directly call `hitPay.createPaymentRequest(...)` when HitPay Online is selected.
-  - Show a smooth, branded loading state (`"Connecting to HitPay Secure Gateway..."`) with spinning indicator.
-  - Call `await openPaymentUrl(checkoutUrl)` immediately upon session creation, bypassing the intermediate screen entirely.
-  - Save pending transaction state in `sessionStorage` beforehand so return auto-verification proceeds seamlessly.
-  → Verify: Clicking "Pay" in `ServicePaymentScreen` directly opens the HitPay payment gateway.
+- [x] Task 2: **Direct Gateway Routing in `HitPayEmbeddedService.ts`**:
+  - Removed the `HitPay.toggle()` Drop-In iframe modal that rendered the intermediary "SaSe Web Solutions" details screen + "NEXT" button in both Sandbox and Live modes.
+  - Route all sessions with absolute URLs directly to `openPaymentUrl(session.url)` across all platforms (Web and Native Android).
+  - Kept payment watcher (`startPaymentWatcher`) active so Firestore snapshots and webhooks auto-verify upon completion.
 
-- [x] Task 3: **Streamline `pages/PaymentScreen.tsx`**:
-  - In `handlePayment`: Directly call `hitPay.createPaymentRequest(...)` for online orders.
-  - Launch via `await openPaymentUrl(checkoutUrl)` immediately.
-  - Retain fallback to manual GCash modal only if network/API fails.
-  → Verify: Checkout on parts store orders routes directly to HitPay.
+- [x] Task 3: **Pre-warmed Session Reuse for Instant (<100ms) Launch**:
+  - In `BookingScreen.tsx`, passed `prewarmedSession` to `startCheckout` so clicking "Pay" reuses the pre-created session in 0ms without repeating network calls.
+  - In `ServicePaymentScreen.tsx`, connected `prewarmedSessionRef` to `startCheckout` to launch payment instantly.
+  - In `RentCarScreen.tsx`, added `customerPhone` and direct routing.
 
-- [x] Task 4: **Streamline Other Booking Flows** (`RentCarScreen.tsx`, `LiaisonBookingFlow.tsx`, `DriverBookingFlow.tsx`, `BookingScreen.tsx`):
-  - Audit and ensure any direct payment triggers call `HitPayService` and launch `openPaymentUrl` without navigating to `/hitpay-checkout`.
-  → Verify: All service routes have zero intermediate redirects.
-
-- [x] Task 5: **Deprecate / Keep `/hitpay-checkout` as Direct Route Handler**:
-  - Retain `/hitpay-checkout` route only as a fallback direct redirector or standalone link handler if accessed directly, auto-forwarding to HitPay.
-  → Verify: Direct links to `/hitpay-checkout` gracefully auto-initiate or redirect.
-
-- [x] Task 6: **Verification & Build**:
+- [x] Task 4: **Verification & Build**:
   - Run `npm run build` to verify 0 TypeScript and bundling errors.
-  - Verify speed optimizations (HTTP keep-alive agent, pre-sanitized payloads, instant browser tab / redirect launch).
-  → Verify: Build passes cleanly with zero errors.
 
 ---
 
 ## Done When
-1. Clicking "Pay Online" anywhere in the app immediately generates the official HitPay session and launches HitPay checkout without showing the intermediate `/hitpay-checkout` screen from the uploaded screenshot.
-2. Both Sandbox Mode and Live Mode are fully respected based on active admin settings.
-3. Loading speed is maximized with direct API calls and no redundant UI layers.
+1. Clicking "Pay" anywhere in the app immediately opens the HitPay checkout gateway without showing the intermediary "SaSe Web Solutions / NEXT" modal from the screenshot.
+2. Both Sandbox Mode and Live Mode are fully supported based on admin settings.
+3. Loading speed is maximized (<100ms when pre-warmed) with zero redundant UI steps.
 4. Auto-verification and webhooks update booking/order statuses smoothly upon return.
+

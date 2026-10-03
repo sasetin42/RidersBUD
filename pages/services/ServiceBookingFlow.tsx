@@ -136,11 +136,11 @@ const ServiceBookingFlow: React.FC = () => {
                     setPendingPaymentMarker({
                         entityKind: 'service-request',
                         entityId: createdRequest.id,
-                        returnRoute: `/customer-portal/service-payment-confirmation?bookingId=${createdRequest.id}`,
+                        returnRoute: `/customer-portal/?bookingId=${createdRequest.id}`,
                         startedAt: Date.now(),
                         purpose: 'towing-downpayment'
                     });
-                    startPaymentWatcher('service-request', createdRequest.id, `/customer-portal/service-payment-confirmation?bookingId=${createdRequest.id}`);
+                    startPaymentWatcher('service-request', createdRequest.id, `/customer-portal/?bookingId=${createdRequest.id}`);
                     await openPaymentUrl(url);
                     return;
                 }

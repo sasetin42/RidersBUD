@@ -25,6 +25,10 @@ import NotificationToasts from './components/NotificationToasts';
 import TourOverlay from './components/TourOverlay';
 import AppLoadingScreen from './components/AppLoadingScreen';
 import ScrollToTop from './components/ScrollToTop';
+import PaymentVerificationOverlay from './components/PaymentVerificationOverlay';
+import { getPendingPaymentMarker, clearPendingPaymentMarker } from './utils/paymentRedirect';
+import { fetchPaymentEntitySnapshot, isPaymentEntityVerified } from './utils/paymentReturn';
+import { PaymentEntityKind } from './utils/firestoreCollections';
 import { Shield, ShoppingBag, Sparkles, ShieldCheck, Truck, Wrench, Bell, CheckCircle2 } from 'lucide-react';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -314,6 +318,64 @@ const AppContent: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    // Native resume after the HitPay Custom Tab closes without gateway status params
+    // (manual close / process death) — resume verification from the pending marker.
+    const [resumeVerification, setResumeVerification] = useState<{
+        entityKind: PaymentEntityKind;
+        entityId: string;
+        paymentRequestId?: string;
+    } | null>(null);
+
+    useEffect(() => {
+        if (!Capacitor.isNativePlatform()) return;
+        let cancelled = false;
+        let resumeHandle: any = null;
+
+        const checkPendingPayment = async () => {
+            try {
+                const marker = getPendingPaymentMarker();
+                if (!marker) return;
+                // Returns carrying gateway status params are handled by the screen itself.
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('status') || params.get('hitpay')) return;
+                const markerPath = marker.returnRoute.split('?')[0] || '/';
+                const initiatedFrom = marker.initiatedFrom || markerPath;
+                const currentPath = window.location.pathname;
+                if (currentPath !== markerPath && currentPath !== initiatedFrom) return;
+                // Already webhook-verified → just clean up the marker.
+                const snap = await fetchPaymentEntitySnapshot(marker.entityKind, marker.entityId);
+                if (cancelled) return;
+                if (snap && isPaymentEntityVerified(snap)) {
+                    clearPendingPaymentMarker();
+                    return;
+                }
+                setResumeVerification(prev => prev ?? {
+                    entityKind: marker.entityKind,
+                    entityId: marker.entityId,
+                    paymentRequestId: marker.paymentRequestId
+                });
+            } catch {
+                // marker/storage unavailable — nothing to resume
+            }
+        };
+
+        checkPendingPayment();
+        CapApp.addListener('resume', () => { checkPendingPayment(); })
+            .then(handle => { resumeHandle = handle; })
+            .catch(() => {});
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') checkPendingPayment();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
+        return () => {
+            cancelled = true;
+            document.removeEventListener('visibilitychange', onVisibility);
+            try { resumeHandle?.remove?.(); } catch { /* ignore */ }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         const handleOnline = () => setIsOnline(true);
@@ -1416,6 +1478,24 @@ const AppContent: React.FC = () => {
             )}
             <ScrollToTop />
             <NotificationToasts />
+
+            {/* Resume verification after returning from the HitPay Custom Tab */}
+            {resumeVerification && (
+                <PaymentVerificationOverlay
+                    isOpen={true}
+                    entityKind={resumeVerification.entityKind}
+                    entityId={resumeVerification.entityId}
+                    paymentRequestId={resumeVerification.paymentRequestId}
+                    isSandbox={db?.settings?.hitpaySandboxMode === true}
+                    onVerified={() => {
+                        // The webhook already wrote the record — screens refresh via realtime.
+                    }}
+                    onClose={() => {
+                        clearPendingPaymentMarker();
+                        setResumeVerification(null);
+                    }}
+                />
+            )}
             <GlobalChatListener />
             <ChatOverlay />
             <React.Suspense fallback={<AppLoadingScreen />}>

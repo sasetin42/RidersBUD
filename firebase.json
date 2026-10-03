@@ -8,6 +8,15 @@
         ],
         "headers": [
             {
+                "source": "/.well-known/assetlinks.json",
+                "headers": [
+                    {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    }
+                ]
+            },
+            {
                 "source": "/**",
                 "headers": [
                     {
@@ -26,6 +35,10 @@
             }
         ],
         "rewrites": [
+            {
+                "source": "/.well-known/assetlinks.json",
+                "destination": "/assetlinks.json"
+            },
             {
                 "source": "/api/hitpay-proxy",
                 "function": "hitpayProxy"

@@ -62,7 +62,26 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <!-- Queries for Philippine E-Wallets and Payment Apps (Android 11+ package visibility) -->
+    <queries>
+        <package android:name="com.globe.gcash.android" />
+        <package android:name="com.paymaya" />
+        <package android:name="com.grabtaxi.passenger" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="gcash" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="paymaya" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 </manifest>

@@ -11,7 +11,7 @@ import { Card } from '../components/ui';
 import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
-import HitPayInAppModal from '../components/HitPayInAppModal';
+import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
 import { getPartImage } from '../utils/fallbackImages';
 import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl } from '../utils/paymentRedirect';
 
@@ -55,7 +55,12 @@ const PaymentScreen: React.FC = () => {
     const [error, setError] = useState('');
     const [showGCashModal, setShowGCashModal] = useState(false);
     const [pendingOrderId, setPendingOrderId] = useState<string | null>(null);
-    const [inAppModalUrl, setInAppModalUrl] = useState<string | null>(null);
+    // HitPay return → webhook-driven verification overlay (never trusted from redirect params)
+    const [paymentReturnTarget, setPaymentReturnTarget] = useState<{
+        entityId: string;
+        paymentRequestId?: string;
+    } | null>(null);
+    const orderVerifiedRef = React.useRef(false);
 
     // Enhanced Checkout Fields
     const [deliveryDetails, setDeliveryDetails] = useState({
@@ -165,19 +170,19 @@ const PaymentScreen: React.FC = () => {
             }
 
             const finalizeOrder = async () => {
+                // The redirect is NOT proof of payment — the verification overlay
+                // waits for the webhook's authoritative Firestore write (which marks
+                // the order Paid) before success is shown (requirement #8).
                 try {
-                    setProcessingStep('Finalizing Order...');
+                    setProcessingStep('Verifying your payment...');
                     setIsProcessing(true);
-                    setIsSuccess(true);
-                    if (sessionData.orderId && updateOrderStatus) {
-                        await updateOrderStatus(sessionData.orderId, 'Processing', 'Paid');
-                    }
-                    clearCart();
                     sessionStorage.removeItem('pendingHitPayTx');
-                    window.history.replaceState({}, document.title, window.location.pathname + '?success=true');
+                    setPaymentReturnTarget({
+                        entityId: sessionData.orderId,
+                        paymentRequestId: queryParams.get('payment_request_id') || undefined
+                    });
                 } catch (err) {
                     setError("Failed to finalize order after payment.");
-                } finally {
                     setIsProcessing(false);
                 }
             };
@@ -332,14 +337,15 @@ const PaymentScreen: React.FC = () => {
                     }
 
                     if (result.success) {
-                        setProcessingStep('Finalizing Order...');
-                        setIsSuccess(true);
-                        if (updateOrderStatus) {
-                            await updateOrderStatus(newOrder.id, 'Processing', 'Paid');
-                        }
-                        clearCart();
+                        // The gateway callback is NOT proof of payment — the verification
+                        // overlay waits for the webhook's Firestore write (requirement #8).
+                        setIsProcessing(false);
+                        setProcessingStep('');
                         sessionStorage.removeItem('pendingHitPayTx');
-                        navigate('?success=true', { replace: true });
+                        setPaymentReturnTarget({
+                            entityId: newOrder.id,
+                            paymentRequestId: result.paymentRequestId || undefined
+                        });
                         return;
                     } else if (result.paymentState === 'CANCELLED') {
                         setIsProcessing(false);
@@ -637,6 +643,12 @@ const PaymentScreen: React.FC = () => {
                             </button>
                         )}
                     </div>
+
+                    {isProcessing && /hitpay/i.test(processingStep) && (
+                        <p className="text-center text-[11px] text-emerald-300/90 font-bold leading-snug">
+                            Secure HitPay Payment — You are securely completing your payment with HitPay.
+                        </p>
+                    )}
                 </div>
             </div>
 
@@ -726,28 +738,29 @@ const PaymentScreen: React.FC = () => {
                 />
             )}
 
-            {/* In-App HitPay Secure Sheet for Parts Orders */}
-            {inAppModalUrl && (
-                <HitPayInAppModal
-                    isOpen={Boolean(inAppModalUrl)}
-                    checkoutUrl={inAppModalUrl}
-                    title="Order Payment"
+            {/* Webhook-driven payment verification (opened on HitPay return) */}
+            {paymentReturnTarget && (
+                <PaymentVerificationOverlay
+                    isOpen={true}
+                    entityKind="order"
+                    entityId={paymentReturnTarget.entityId}
+                    paymentRequestId={paymentReturnTarget.paymentRequestId}
+                    isSandbox={db?.settings?.hitpaySandboxMode === true}
                     amount={total}
-                    onClose={() => setInAppModalUrl(null)}
-                    onSuccess={async (details) => {
-                        setInAppModalUrl(null);
-                        if (pendingOrderId && updateOrderStatus) {
-                            try {
-                                await updateOrderStatus(pendingOrderId, 'Processing');
-                            } catch (e) {
-                                console.warn('Order status update notice:', e);
-                            }
-                        }
-                        setIsSuccess(true);
+                    onVerified={() => {
+                        orderVerifiedRef.current = true;
                     }}
-                    onCancel={() => {
-                        setInAppModalUrl(null);
+                    onClose={() => {
+                        const verified = orderVerifiedRef.current;
+                        orderVerifiedRef.current = false;
+                        setPaymentReturnTarget(null);
                         setIsProcessing(false);
+                        setProcessingStep('');
+                        if (verified) {
+                            setIsSuccess(true);
+                            clearCart();
+                            window.history.replaceState({}, document.title, window.location.pathname + '?success=true');
+                        }
                     }}
                 />
             )}

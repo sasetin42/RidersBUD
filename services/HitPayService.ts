@@ -162,11 +162,20 @@ class HitPayService {
             }
         }
 
-        // 9. Phone: Only include if clean digits/plus exist and not dummy string
+        // 9. Phone: Normalize to international E.164 format (+639...) so HitPay auto-fills without prompting
         if (data.phone && typeof data.phone === 'string' && data.phone.trim().length >= 7) {
-            const cleanPhone = data.phone.replace(/[^\d+]/g, '');
-            if (cleanPhone.length >= 7) {
-                payload.phone = cleanPhone;
+            const raw = data.phone.trim();
+            const digits = raw.replace(/\D/g, '');
+            if (raw.startsWith('+') && digits.length >= 10) {
+                payload.phone = `+${digits}`;
+            } else if (digits.startsWith('09') && digits.length === 11) {
+                payload.phone = `+63${digits.slice(1)}`;
+            } else if (digits.startsWith('9') && digits.length === 10) {
+                payload.phone = `+63${digits}`;
+            } else if (digits.startsWith('63') && digits.length >= 12) {
+                payload.phone = `+${digits}`;
+            } else if (digits.length >= 7) {
+                payload.phone = digits;
             }
         }
 
@@ -236,7 +245,9 @@ class HitPayService {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         isSandbox: this.isSandbox,
-                        apiKey: this.apiKey || undefined,
+                        entityKind: data.entityKind,
+                        entityId: data.entityId,
+                        // Credentials are resolved server-side only — never sent from the client
                         payload
                     })
                 });

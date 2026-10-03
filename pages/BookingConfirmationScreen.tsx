@@ -12,6 +12,9 @@ import { db as firestore } from '../firebase';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { normalizeServiceImage } from '../utils/fallbackImages';
 import { seedServices } from '../data/mockData';
+import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
+import { useNotification } from '../context/NotificationContext';
+import { PaymentEntityKind } from '../utils/firestoreCollections';
 
 declare const L: any;
 
@@ -19,18 +22,26 @@ const BookingConfirmationScreen: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { user: customer } = useAuth();
-    const { db: database, cancelBooking, updateBookingPayment } = useDatabase();
+    const { db: database, cancelBooking } = useDatabase();
+    const { addNotification } = useNotification();
     const locationState = (location.state as { bookings?: Booking[]; bookingId?: string }) || {};
     const [bookings, setBookings] = useState<Booking[]>(locationState.bookings || []);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [showRedirectNotification, setShowRedirectNotification] = useState(false);
     const [isLoading, setIsLoading] = useState(!locationState.bookings?.length && !!locationState.bookingId);
 
-    // One-time guards: the payment reconcile below must NEVER re-run. Re-running it
-    // re-fires updateBookingPayment → 3 duplicate notifications per pass (the 99+ flood).
+    // One-time guards: the payment-return handler below must NEVER re-run. Re-running it
+    // re-fires the verification overlay target (duplicate overlay boots).
     const reconciledTxRef = React.useRef<Set<string>>(new Set());
     const urlCleanedRef = React.useRef(false);
     const cancelProcessedRef = React.useRef(false);
+
+    // Returned from HitPay — verification overlay (webhook-driven, never from redirect params)
+    const [paymentReturnTarget, setPaymentReturnTarget] = useState<{
+        entityKind: PaymentEntityKind;
+        entityId: string;
+        paymentRequestId?: string;
+    } | null>(null);
 
     // If return from payment with status=canceled or status=failed, cancel and redirect with modal
     useEffect(() => {
@@ -133,38 +144,29 @@ const BookingConfirmationScreen: React.FC = () => {
             window.history.replaceState({}, document.title, window.location.pathname + (cleanSearch ? `?${cleanSearch}` : ''));
         }
 
-        // Reconcile payment if returning with success/completed from HitPay — exactly once per booking
-        if (isCompleted && targetBookingId && updateBookingPayment) {
+        // Returning with success/completed from HitPay: the redirect is NOT proof of
+        // payment. Open the verification overlay, which waits for the webhook's
+        // authoritative Firestore write before reporting success (requirement #8).
+        if (isCompleted && targetBookingId) {
             if (reconciledTxRef.current.has(targetBookingId)) {
-                return; // Already reconciled this booking — never fire again
+                return; // Already handled this booking — never fire again
             }
             reconciledTxRef.current.add(targetBookingId);
             try {
-                const dpAmount = parsedTx?.amount || Number(queryParams.get('amount')) || 0;
-                const totAmount = parsedTx?.totalAmount || (dpAmount > 0 ? dpAmount * 2 : 0);
-                const dpRef = queryParams.get('reference') || queryParams.get('payment_request_id') || `HITPAY-${Date.now()}`;
                 const reqId = queryParams.get('payment_request_id') || '';
-                const remBalance = Math.max(0, totAmount - dpAmount);
 
                 sessionStorage.removeItem('pendingHitPayBookingTx');
+                sessionStorage.removeItem('pendingHitPayServiceTx');
                 localStorage.removeItem('last_hitpay_booking_tx');
+                localStorage.removeItem('last_hitpay_service_tx');
 
-                updateBookingPayment(targetBookingId, dpAmount, 'downpayment_paid', {
-                    paidAmount: dpAmount,
-                    downpaymentAmount: dpAmount,
-                    remainingBalance: remBalance,
-                    isVerified: true,
-                    isPaid: false,
-                    paymentMethod: 'Online (HitPay)',
-                    downpaymentRef: dpRef,
-                    downpaymentPaidAt: new Date().toISOString(),
-                    hitpayPaymentRequestId: reqId,
-                    hitpayReference: dpRef,
-                    hitpayStatus: 'completed',
-                    status: 'Upcoming'
-                }).catch(console.warn);
+                setPaymentReturnTarget({
+                    entityKind: 'booking',
+                    entityId: targetBookingId,
+                    paymentRequestId: reqId || undefined
+                });
             } catch (e) {
-                console.warn('Reconcile HitPay Booking payment error in confirmation screen:', e);
+                console.warn('HitPay return handling error in confirmation screen:', e);
             }
         }
 
@@ -414,6 +416,31 @@ const BookingConfirmationScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-[#121212] text-white">
             <CustomerHeader title={`Booking #${primaryBooking.id ? primaryBooking.id.slice(-6).toUpperCase() : 'DETAILS'}`} icon={<CheckCircle2 size={20} className="text-green-400" />} />
+
+            {/* Webhook-driven payment verification (opened on HitPay return) */}
+            {paymentReturnTarget && (
+                <PaymentVerificationOverlay
+                    isOpen={Boolean(paymentReturnTarget)}
+                    entityKind={paymentReturnTarget.entityKind}
+                    entityId={paymentReturnTarget.entityId}
+                    paymentRequestId={paymentReturnTarget.paymentRequestId}
+                    isSandbox={database?.settings?.hitpaySandboxMode === true}
+                    amount={downpaymentAmount}
+                    onVerified={() => {
+                        const booking = database?.bookings?.find(b => b.id === paymentReturnTarget.entityId);
+                        if (customer?.id || booking?.customerId) {
+                            addNotification({
+                                recipientId: customer?.id || (booking?.customerId as string),
+                                recipientRole: 'customer',
+                                title: '✅ Payment Received',
+                                message: `Your downpayment for Booking #${paymentReturnTarget.entityId.slice(-6).toUpperCase()} has been verified via HitPay.`,
+                                type: 'info'
+                            });
+                        }
+                    }}
+                    onClose={() => setPaymentReturnTarget(null)}
+                />
+            )}
             
             <div className="flex-grow flex flex-col p-3.5 sm:p-5 space-y-4 overflow-y-auto pb-8 max-w-lg mx-auto w-full">
 

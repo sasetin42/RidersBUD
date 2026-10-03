@@ -11,6 +11,8 @@ import ReviewDeclinedModal from '../components/ReviewDeclinedModal';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
+import { fetchPaymentEntitySnapshot } from '../utils/paymentReturn';
+import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
 import { CallButton } from '../components/CallUI';
 import { useCall } from '../context/CallContext';
 import {
@@ -534,6 +536,15 @@ const BookingDetailScreen: React.FC = () => {
     const [showGCashPaymentModal, setShowGCashPaymentModal] = useState(false);
     const [isBalanceModalDismissed, setIsBalanceModalDismissed] = useState(false);
     const [showCompleteTransactionModal, setShowCompleteTransactionModal] = useState(false);
+
+    // HitPay return → webhook-driven verification overlay (never trusted from redirect params)
+    const [paymentReturnTarget, setPaymentReturnTarget] = useState<{
+        entityKind: PaymentEntityKind;
+        entityId: string;
+        paymentRequestId?: string;
+    } | null>(null);
+    // Authoritative (webhook-written) snapshot stashed on verify, consumed on Close
+    const verifiedReturnRef = React.useRef<any>(null);
     const [showReceiptModal, setShowReceiptModal] = useState(false);
     const [copiedReference, setCopiedReference] = useState(false);
     const [copiedRefKey, setCopiedRefKey] = useState<string | null>(null);
@@ -654,15 +665,6 @@ const BookingDetailScreen: React.FC = () => {
 
             if (targetBookingId && activeBooking && !activeBooking.isPaid) {
                 finalizeRun.current = true;
-                setIsVerifyingFinalPayment(true);
-                const totalAmt = activeBooking.totalAmount || activeBooking.service?.price || sessionBookingData?.totalAmount || 0;
-                const addCosts = (activeBooking.additionalCosts || []).reduce((sum: number, c: any) => sum + (Number(c.price) || 0), 0);
-                const initialDp = activeBooking.downpaymentAmount 
-                    ? Number(activeBooking.downpaymentAmount)
-                    : (sessionBookingData?.currentPaid || (totalAmt * 0.5));
-                const fullTotal = totalAmt + addCosts;
-                const balanceAmt = Math.max(0, fullTotal - initialDp);
-
                 const isRentalTarget = (activeBooking as any)?.isRental === true || 
                     (activeBooking as any)?.serviceName?.toLowerCase().includes('rental') ||
                     (targetBookingId?.startsWith('RNT-') ?? false) || 
@@ -678,98 +680,19 @@ const BookingDetailScreen: React.FC = () => {
 
                 const isServiceReq = (activeBooking as any).isServiceRequest || targetBookingId.startsWith('DRV-') || Boolean(sessionBookingData?.isDriver);
 
-                const finalPayload: any = {
-                    isPaid: true,
-                    isVerified: true,
-                    paidAmount: fullTotal,
-                    downpaymentAmount: initialDp,
-                    remainingBalance: 0,
-                    balanceAmount: 0,
-                    paymentStatus: 'paid',
-                    balancePaid: true,
-                    balancePaymentRef: hitpayRef,
-                    balancePaidAt: new Date().toISOString(),
-                    hitpayPaymentRequestId: reqId,
-                    hitpayReference: hitpayRef,
-                    hitpayStatus: 'completed',
-                    paymentMethod: 'HitPay (Online)',
-                    status: 'Completed'
-                };
+                // The redirect is NOT proof of payment — open the verification overlay,
+                // which waits for the webhook's authoritative Firestore write before
+                // reporting success (requirement #8). Only after that does the UI
+                // finalize (lifecycle status + confirmation modal).
+                const entityKind: PaymentEntityKind = isLiaisonTarget
+                    ? 'liaison'
+                    : isRentalTarget
+                        ? 'rental'
+                        : isServiceReq
+                            ? 'service-request'
+                            : 'booking';
 
-                const completeFinalization = () => {
-                    sessionStorage.removeItem('pendingHitPayServiceTx');
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                    setIsVerifyingFinalPayment(false);
-                    setShowCompleteTransactionModal(true);
-                    setFetchedBooking(prev => prev ? ({ ...prev, ...finalPayload } as Booking) : ({ ...activeBooking, ...finalPayload } as Booking));
-                };
-
-                if (isLiaisonTarget) {
-                    if (updateLiaisonBooking) {
-                        updateLiaisonBooking(targetBookingId, finalPayload)
-                            .then(completeFinalization)
-                            .catch(async (err) => {
-                                console.warn("updateLiaisonBooking fallback to direct Firestore:", err);
-                                try {
-                                    await updateDoc(doc(firestore, 'liaisonBookings', targetBookingId), finalPayload);
-                                } catch (_) {}
-                                completeFinalization();
-                            });
-                    } else {
-                        updateDoc(doc(firestore, 'liaisonBookings', targetBookingId), finalPayload)
-                            .then(completeFinalization)
-                            .catch(completeFinalization);
-                    }
-                } else if (isRentalTarget) {
-                    if (updateRentalBooking) {
-                        updateRentalBooking(targetBookingId, finalPayload)
-                            .then(completeFinalization)
-                            .catch(async (err) => {
-                                console.warn("updateRentalBooking fallback to direct Firestore:", err);
-                                try {
-                                    await updateDoc(doc(firestore, 'rentalBookings', targetBookingId), finalPayload);
-                                } catch (_) {}
-                                completeFinalization();
-                            });
-                    } else {
-                        updateDoc(doc(firestore, 'rentalBookings', targetBookingId), finalPayload)
-                            .then(completeFinalization)
-                            .catch(completeFinalization);
-                    }
-                } else if (isServiceReq) {
-                    if (updateServiceRequest) {
-                        updateServiceRequest(targetBookingId, finalPayload)
-                            .then(completeFinalization)
-                            .catch(async (err) => {
-                                console.warn("updateServiceRequest fallback to direct Firestore:", err);
-                                try {
-                                    await updateDoc(doc(firestore, 'serviceRequests', targetBookingId), finalPayload);
-                                } catch (_) {}
-                                completeFinalization();
-                            });
-                    } else {
-                        updateDoc(doc(firestore, 'serviceRequests', targetBookingId), finalPayload)
-                            .then(completeFinalization)
-                            .catch(completeFinalization);
-                    }
-                } else {
-                    // Standard mechanic / maintenance booking
-                    if (updateBookingPayment) {
-                        updateBookingPayment(targetBookingId, balanceAmt, 'paid', finalPayload)
-                            .then(completeFinalization)
-                            .catch(async (err) => {
-                                console.warn("updateBookingPayment fallback to direct Firestore:", err);
-                                try {
-                                    await updateDoc(doc(firestore, 'bookings', targetBookingId), finalPayload);
-                                } catch (_) {}
-                                completeFinalization();
-                            });
-                    } else {
-                        updateDoc(doc(firestore, 'bookings', targetBookingId), finalPayload)
-                            .then(completeFinalization)
-                            .catch(completeFinalization);
-                    }
-                }
+                setPaymentReturnTarget({ entityKind, entityId: targetBookingId, paymentRequestId: reqId || undefined });
             } else if (activeBooking && (activeBooking.isPaid || activeBooking.paymentStatus === 'paid')) {
                 // If activeBooking was already marked as paid (e.g. from realtime Firestore), clean up immediately
                 finalizeRun.current = true;
@@ -4044,6 +3967,51 @@ const BookingDetailScreen: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Webhook-driven payment verification (opened on HitPay return) */}
+            {paymentReturnTarget && (
+                <PaymentVerificationOverlay
+                    isOpen={Boolean(paymentReturnTarget)}
+                    entityKind={paymentReturnTarget.entityKind}
+                    entityId={paymentReturnTarget.entityId}
+                    paymentRequestId={paymentReturnTarget.paymentRequestId}
+                    isSandbox={db?.settings?.hitpaySandboxMode === true}
+                    onVerified={async () => {
+                        const kind = paymentReturnTarget.entityKind;
+                        const id = paymentReturnTarget.entityId;
+                        sessionStorage.removeItem('pendingHitPayServiceTx');
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        setIsVerifyingFinalPayment(false);
+
+                        // Lifecycle-only status update AFTER webhook confirmation
+                        // (payment fields were already written by the webhook).
+                        try {
+                            if (kind === 'rental' && updateRentalBooking) {
+                                await updateRentalBooking(id, { status: 'Completed' } as any);
+                            } else if (kind === 'liaison' && updateLiaisonBooking) {
+                                await updateLiaisonBooking(id, { status: 'Completed' } as any);
+                            } else if (kind === 'service-request' && updateServiceRequest) {
+                                await updateServiceRequest(id, { status: 'Completed' } as any);
+                            } else if (kind === 'booking') {
+                                await updateDoc(doc(firestore, 'bookings', id), { status: 'Completed' });
+                            }
+                        } catch (_) { /* webhook data already authoritative */ }
+
+                        // Stash the authoritative snapshot; confirmation modal opens on Close
+                        // so the customer sees "Payment Successful" first (requirement #10).
+                        verifiedReturnRef.current = await fetchPaymentEntitySnapshot(kind, id);
+                    }}
+                    onClose={() => {
+                        const snap = verifiedReturnRef.current;
+                        verifiedReturnRef.current = null;
+                        setPaymentReturnTarget(null);
+                        if (snap) {
+                            setFetchedBooking(snap as Booking);
+                            setShowCompleteTransactionModal(true);
+                        }
+                    }}
+                />
             )}
 
             {/* Complete Transaction Success Modal with Confetti Overlay */}
