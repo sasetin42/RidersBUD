@@ -93,8 +93,7 @@ export const getLeafletTileConfig = (settings?: Settings | null) => {
             url: settings.leafletCustomTileUrl,
             options: {
                 attribution: settings.leafletCustomAttribution || '&copy; Custom Map Data',
-                maxZoom: 20,
-                crossOrigin: true
+                maxZoom: 20
             }
         };
     }
@@ -105,8 +104,7 @@ export const getLeafletTileConfig = (settings?: Settings | null) => {
         options: {
             attribution: provider.attribution,
             maxZoom: provider.maxZoom,
-            subdomains: provider.subdomains || 'abc',
-            crossOrigin: true
+            subdomains: provider.subdomains || 'abc'
         }
     };
 };

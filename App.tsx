@@ -26,8 +26,8 @@ import TourOverlay from './components/TourOverlay';
 import AppLoadingScreen from './components/AppLoadingScreen';
 import ScrollToTop from './components/ScrollToTop';
 import PaymentVerificationOverlay from './components/PaymentVerificationOverlay';
-import { getPendingPaymentMarker, clearPendingPaymentMarker } from './utils/paymentRedirect';
-import { fetchPaymentEntitySnapshot, isPaymentEntityVerified } from './utils/paymentReturn';
+import { getPendingPaymentMarker, clearPendingPaymentMarker, NAVIGATE_EVENT } from './utils/paymentRedirect';
+import { fetchPaymentEntitySnapshot, isPaymentEntityVerified, handlePaymentReturn, parsePaymentReturnUrl, fetchPaymentTransaction } from './utils/paymentReturn';
 import { PaymentEntityKind } from './utils/firestoreCollections';
 import { Shield, ShoppingBag, Sparkles, ShieldCheck, Truck, Wrench, Bell, CheckCircle2 } from 'lucide-react';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
@@ -99,6 +99,7 @@ const LiaisonBookingFlow = React.lazy(() => import('./pages/services/LiaisonBook
 const DriverBookingFlow = React.lazy(() => import('./pages/services/DriverBookingFlow'));
 const hitpayLoader = () => import('./pages/HitPayCheckoutScreen');
 const HitPayCheckoutScreen = React.lazy(hitpayLoader);
+const PaymentStatusScreen = React.lazy(() => import('./pages/PaymentStatusScreen'));
 export const preloadHitPayCheckout = () => {
     try {
         hitpayLoader();
@@ -325,6 +326,7 @@ const AppContent: React.FC = () => {
         entityKind: PaymentEntityKind;
         entityId: string;
         paymentRequestId?: string;
+        transactionId?: string;
     } | null>(null);
 
     useEffect(() => {
@@ -336,25 +338,44 @@ const AppContent: React.FC = () => {
             try {
                 const marker = getPendingPaymentMarker();
                 if (!marker) return;
-                // Returns carrying gateway status params are handled by the screen itself.
-                const params = new URLSearchParams(window.location.search);
-                if (params.get('status') || params.get('hitpay')) return;
+                // The centralized status screen owns verification while it is open —
+                // never drive a second overlay from it (prevents navigation loops).
+                if (window.location.pathname === '/payment/return') return;
                 const markerPath = marker.returnRoute.split('?')[0] || '/';
                 const initiatedFrom = marker.initiatedFrom || markerPath;
                 const currentPath = window.location.pathname;
                 if (currentPath !== markerPath && currentPath !== initiatedFrom) return;
-                // Already webhook-verified → just clean up the marker.
+
+                const base = {
+                    entityKind: marker.entityKind,
+                    entityId: marker.entityId,
+                    paymentRequestId: marker.paymentRequestId,
+                    transactionId: marker.transactionId
+                };
+
+                if (marker.transactionId) {
+                    // Authoritative check: server-settled paymentTransactions record.
+                    // PAID → overlay opens in its success state immediately; anything
+                    // else → "verification in progress" with backoff. A failed fetch
+                    // (offline) still opens the overlay, which keeps retrying.
+                    const tx = await fetchPaymentTransaction({ transactionId: marker.transactionId }).catch(() => null);
+                    if (cancelled) return;
+                    if (tx && (tx.status === 'FAILED' || tx.status === 'CANCELLED' || tx.status === 'EXPIRED')) {
+                        clearPendingPaymentMarker();
+                        return;
+                    }
+                    setResumeVerification(prev => prev ?? base);
+                    return;
+                }
+
+                // Legacy entity-based marker
                 const snap = await fetchPaymentEntitySnapshot(marker.entityKind, marker.entityId);
                 if (cancelled) return;
                 if (snap && isPaymentEntityVerified(snap)) {
                     clearPendingPaymentMarker();
                     return;
                 }
-                setResumeVerification(prev => prev ?? {
-                    entityKind: marker.entityKind,
-                    entityId: marker.entityId,
-                    paymentRequestId: marker.paymentRequestId
-                });
+                setResumeVerification(prev => prev ?? base);
             } catch {
                 // marker/storage unavailable — nothing to resume
             }
@@ -392,6 +413,14 @@ const AppContent: React.FC = () => {
             SystemBars.setStyle({ style: SystemBarsStyle.Dark }).catch(() => {});
         }
 
+        // Centralized SPA navigation channel — payment watchers route through the
+        // router instead of window.location.href (no full reloads / loops).
+        const onNavigateEvent = (e: Event) => {
+            const to = (e as CustomEvent)?.detail?.to;
+            if (typeof to === 'string' && to) navigate(to);
+        };
+        window.addEventListener(NAVIGATE_EVENT, onNavigateEvent);
+
         // Listen for native deep linking (appUrlOpen from external browser/GCash app redirects)
         let appUrlListener: any = null;
         if (Capacitor.isNativePlatform()) {
@@ -399,6 +428,16 @@ const AppContent: React.FC = () => {
                 try {
                     console.log('[Capacitor] App opened via deep link:', event.url);
                     const rawUrl = event.url;
+
+                    // Payment return channel (ridersbud://payment/return OR the
+                    // HTTPS App Link fallback) — one centralized handler; it only
+                    // triggers server-side verification, never trusts URL status.
+                    if (parsePaymentReturnUrl(rawUrl)) {
+                        handlePaymentReturn(rawUrl).catch((err) => {
+                            console.warn('[Payment] return handling failed:', err);
+                        });
+                        return;
+                    }
                     // Handle ridersbud:// or custom scheme or web domain
                     let parsedUrl: URL;
                     if (rawUrl.startsWith('ridersbud://') || rawUrl.startsWith('com.sasetin42.ridersbud://')) {
@@ -431,6 +470,7 @@ const AppContent: React.FC = () => {
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
+            window.removeEventListener(NAVIGATE_EVENT, onNavigateEvent);
             if (appUrlListener && typeof appUrlListener.remove === 'function') {
                 appUrlListener.remove();
             }
@@ -1486,6 +1526,7 @@ const AppContent: React.FC = () => {
                     entityKind={resumeVerification.entityKind}
                     entityId={resumeVerification.entityId}
                     paymentRequestId={resumeVerification.paymentRequestId}
+                    transactionId={resumeVerification.transactionId}
                     isSandbox={db?.settings?.hitpaySandboxMode === true}
                     onVerified={() => {
                         // The webhook already wrote the record — screens refresh via realtime.
@@ -1676,6 +1717,16 @@ const AppContent: React.FC = () => {
 
                     {/* Complete Profile Route */}
                     <Route path="/complete-profile" element={<CompleteProfileScreen />} />
+
+                    {/* HitPay payment return — centralized verification status screen */}
+                    <Route
+                        path="/payment/return"
+                        element={
+                            <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans flex flex-col">
+                                <PaymentStatusScreen />
+                            </div>
+                        }
+                    />
 
                     {/* Standalone /hitpay-checkout route accessible from anywhere */}
                     <Route

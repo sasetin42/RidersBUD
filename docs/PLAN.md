@@ -1,63 +1,116 @@
-# Implementation Plan: In-App Embedded HitPay Payment Integration for Android & Web
+# Implementation Plan & Architectural Spec: Hardened HitPay Mobile Payments (Android & iOS)
 
-## Goal
-Replace the external browser (`Browser.open()`) payment redirect path in the RidersBUD Android APK with the officially supported HitPay Drop-In / Embedded payment integration. Customers remain directly inside the RidersBUD Android application while completing GCash, QR Ph, Card, or Maya payments, with authoritative server-side session creation and webhook-driven Firestore verification.
-
----
-
-## Technical Architecture & Design
-
-### 1. Official HitPay Drop-In UI Integration
-- HitPay officially supports in-app embedded checkout using `hitpay.js`:
-  - Sandbox: `https://sandbox.hit-pay.com/hitpay.js`
-  - Production: `https://hit-pay.com/hitpay.js`
-- Integration mechanism:
-  - Backend creates payment request via `/api/hitpay-proxy` and returns `id` (Payment Request ID) and `url`.
-  - Frontend loads `hitpay.js` dynamically (or preloaded in `index.html`).
-  - Calls `window.HitPay.init(checkoutUrl, { closeOnError: true }, { onClose, onSuccess, onError })`.
-  - Calls `window.HitPay.toggle({ paymentRequest: paymentRequestId })`.
-  - When payment finishes, `onSuccess` triggers in-app verification, closes the Drop-In modal, and displays a celebration modal without ever switching out to Chrome!
-- Deep-link / 3D Secure / App Switch Fallback:
-  - If a banking institution requires an app-switch (e.g. Maya or bank app) or if `hitpay.js` cannot render on an older device, a controlled in-app sheet (`HitPayInAppModal`) is seamlessly presented without abandoning the user session.
-
-### 2. Unified Payment Controller (`services/PaymentCoordinator.ts`)
-- Unify payment session creation across all entry points:
-  1. Service Booking Downpayment (`BookingScreen.tsx`)
-  2. Service Balance Settlement (`ServicePaymentScreen.tsx` & `HomeScreen.tsx`)
-  3. Parts Store Checkout (`PaymentScreen.tsx`)
-  4. Car Rental Reservation (`RentCarScreen.tsx`)
-  5. Driver for Hire Booking (`DriverBookingFlow.tsx`)
-  6. LTO Liaison Booking (`LiaisonBookingFlow.tsx`)
-- All entry points route through the unified coordinator instead of duplicating `HitPayService.createPaymentRequest` + `openPaymentUrl`.
-
-### 3. Server-Side Security & Authoritative Verification (`functions/index.js`)
-- HitPay API Keys and Salt remain strictly in Firestore `settings/main` / Cloud Functions secrets.
-- Client never passes API keys or computes HMAC.
-- Server validates amount against the database booking/order record to prevent client-side amount tampering.
-- Idempotency enforced in `paymentWebhookLogs` preventing duplicate payment processing.
-- Order / Booking status only marked `paid` / `isVerified: true` by the authoritative webhook.
-
-### 4. Firestore Collections Mapping
-- Update `PaymentEntityKind` in `utils/firestoreCollections.ts` to include `'order'` for Parts Store purchases.
+## 1. Executive Summary & Goals
+Completely harden HitPay online payment processing for RidersBUD across Android APK and iOS. Eliminate browser drop-offs, payment loops, iframe framing failures, unverified client redirects, and duplicate payment initialization. Ensure HitPay webhook and server-side verification are the authoritative proof of payment.
 
 ---
 
-## Step-by-Step Tasks
+## 2. Technical Architecture & Payment Flow
 
-- [ ] Task 1: Add HitPay official Drop-In SDK scripts and preconnects to `index.html` and update CSP.
-- [ ] Task 2: Update `utils/firestoreCollections.ts` to support `'order'` entity kind.
-- [ ] Task 3: Create `services/HitPayEmbeddedService.ts` implementing `window.HitPay.init` & `toggle` with reactive promise lifecycle, state machine (PENDING, PROCESSING, PAID, FAILED, CANCELLED, EXPIRED), and timeout management.
-- [ ] Task 4: Enhance `functions/index.js` to ensure orders and bookings validate against duplicate processing and support Drop-In return callbacks.
-- [ ] Task 5: Refactor `BookingScreen.tsx`, `ServicePaymentScreen.tsx`, `PaymentScreen.tsx`, `RentCarScreen.tsx`, `DriverBookingFlow.tsx`, and `LiaisonBookingFlow.tsx` to use the in-app embedded HitPay controller instead of `openPaymentUrl(url)`.
-- [ ] Task 6: Type-check with `npx tsc --noEmit` and build web bundle with `npm run build`.
-- [ ] Task 7: Synchronize Capacitor Android (`npx cap sync android`) and build verified signed release APK.
+```
+RidersBUD App (Android / iOS / Web)
+   │
+   ├─► 1. Pre-Payment Intent / Lock
+   │      - Generate stable idempotency key (BOK-, RNT-, LIA-, TOW-, DRV-, ORD-)
+   │      - Write/reuse paymentTransactions/{transactionId} with status = INITIATED
+   │
+   ├─► 2. Backend Cloud Function Proxy (/api/hitpay-proxy)
+   │      - Validates price against authoritative Firestore record
+   │      - Securely injects server-side API keys and webhook/return URLs
+   │      - Reuses active pending session if already created
+   │      - Advances paymentTransactions/{transactionId} to PENDING
+   │
+   ├─► 3. Secure Native Browser Presentation
+   │      - @capacitor/browser (Chrome Custom Tabs on Android / SFSafariViewController on iOS)
+   │      - Never uncontrolled iframe, never bare window.location.href on native
+   │      - Preserves 3-D Secure, GCash/Maya native app switching
+   │
+   ├─► 4. Customer Completes / Cancels Payment
+   │      - HitPay webhook dispatches to /api/hitpay-webhook
+   │      - Cloud Function validates HMAC-SHA256 signature (v2 / legacy)
+   │      - Direct HitPay API re-verification before ANY state flip
+   │      - Atomic Firestore transaction: paymentTransactions status = PAID
+   │      - Idempotent entity update (isPaid, remainingBalance = 0, paymentStatus = "paid")
+   │
+   └─► 5. Mobile Native Return / App Resume
+          - Native URL Scheme: ridersbud://payment/return?tx=...&ref=...
+          - HTTPS App Link / Universal Link: https://ridersbud-10806.web.app/payment/return
+          - App URL listener in App.tsx / handlePaymentReturn()
+          - PaymentStatusScreen / PaymentVerificationOverlay queries server-settled state
+          - Clean dismissal of browser tab & clearance of pending local markers
+          - Navigation to verified booking/order confirmation
+```
 
 ---
 
-## Verification Criteria
-1. When user taps "Pay Now", no external Chrome browser window is launched.
-2. The official HitPay embedded overlay opens seamlessly inside the RidersBUD app.
-3. User can select GCash / QR Ph / Cards / Maya directly inside the overlay.
-4. Completing payment triggers `onSuccess` callback, autoruns Firestore verification, and displays the success screen inside RidersBUD.
-5. Cancelling the payment closes the modal gracefully and returns user to the booking screen.
-6. Cloud Function webhook idempotently logs the payment and updates Firestore.
+## 3. Platform Configurations
+
+### Android Native (`android/app/src/main/AndroidManifest.xml`)
+- Activity launchMode: `singleTask`
+- Intent Filters:
+  - Custom scheme: `ridersbud://` and `com.sasetin42.ridersbud://`
+  - Explicit path filter: `ridersbud://payment/return` (VIEW, DEFAULT, BROWSABLE)
+  - Verified App Links: `https://ridersbud-10806.web.app` (`autoVerify="true"`)
+- Package visibility `<queries>` configured for `com.globe.gcash.android`, `com.paymaya`, `com.grabtaxi.passenger`, and `https`/`gcash`/`paymaya` intents.
+- Native Activity (`MainActivity.java`) handles `onNewIntent` to pass warm-start VIEW intents into Capacitor bridge.
+
+### iOS Native (`ios/App/App/`)
+- Custom URL Schemes in `Info.plist`: `ridersbud`, `com.sasetin42.ridersbud`
+- Universal Links in `RidersBUD.entitlements`:
+  - `applinks:ridersbud-10806.web.app`
+  - `applinks:ridersbud-10806.firebaseapp.com`
+- Apple App Site Association (`public/.well-known/apple-app-site-association`) hosted with `application/json` headers via `firebase.json`.
+- `AppDelegate.swift` forwards `application(_:open:options:)` and `application(_:continue:restorationHandler:)` to `ApplicationDelegateProxy`.
+
+---
+
+## 4. Backend & Security Specification (`functions/`)
+- Zero credentials on client: HitPay API keys and Webhook Salt are kept server-side in `functions/.env` and admin-restricted Firestore `settings/hitpaySecrets`.
+- Webhook signature verification (`functions/lib/hitpay.js`):
+  - Validates `Hitpay-Signature` (HMAC-SHA256 hex of raw body)
+  - Fallback legacy `hmac` dictionary validation
+  - Dual environment salt checking (sandbox vs production)
+- Verification endpoint: `/api/hitpay-proxy?action=verify&id=<tx>&ref=<ref>&sandbox=true`
+  - Calls official HitPay API `GET /v1/payment-requests/{id}`
+  - Confirms status == `completed` and verifies amount, currency, and reference match
+  - Runs inside Firestore transaction with atomic lock
+- Single settlement logic for all business entities:
+  - `bookings`: updates `paidAmount`, `remainingBalance = 0`, `isPaid = true`, `paymentStatus = "paid"`
+  - `rentalBookings`: updates `paidAmount`, `remainingBalance = 0`, `isPaid = true`
+  - `liaisonBookings`: updates `paidAmount`, `isPaid = true`
+  - `serviceRequests`: updates `paidAmount`, `isPaid = true`
+  - `orders`: transitions `paymentStatus = "paid"`, `isPaid = true`, advances status `Pending` -> `Processing`
+
+---
+
+## 5. Mobile Return & State Management
+- `utils/paymentReturn.ts`: centralized `handlePaymentReturn()` router
+- `pages/PaymentStatusScreen.tsx`: dedicated status UI rendering states:
+  - Initializing Payment
+  - Connecting to HitPay
+  - Waiting for Payment
+  - Verifying Payment
+  - Payment Successful (with verified reference, amount, method, date)
+  - Payment Failed / Cancelled / Expired
+  - Payment Verification Pending (polling with exponential backoff)
+- `components/PaymentVerificationOverlay.tsx`: in-app floating overlay when app resumes from background or payment completes while user remains in-app.
+- Session lock & deduplication: clears local pending marker upon terminal status, preventing payment modal loops.
+
+---
+
+## 6. Verification & Automated Test Status
+- `npm run typecheck`: **0 errors (PASS)**
+- `npm run build`: **Vite build succeeded (PASS)**
+- `npx cap sync android`: **Synced successfully (PASS)**
+- `npx cap sync ios`: **Synced successfully (PASS)**
+- `scripts/e2e-hitpay.cjs` suite: **10/10 test assertions passed against deployed Cloud Functions:**
+  1. Create/reuse returns ONE session for the same reference
+  2. paymentTransactions record created with standardized fields
+  3. Transaction carries sandbox environment
+  4. Server verify: pending gateway stays un-paid
+  5. Webhook with invalid signature rejected with 401
+  6. Webhook without signature rejected
+  7. Validly-signed webhook accepted (200)
+  8. Signed "completed" webhook does NOT mark PAID when gateway says pending
+  9. Duplicate webhook idempotent (200, still not PAID)
+  10. Transaction still PENDING (no false PAID anywhere)

@@ -11,7 +11,7 @@ import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
-import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl, PaymentEntityKind } from '../utils/paymentRedirect';
+import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl, getPendingPaymentMarker, PaymentEntityKind } from '../utils/paymentRedirect';
 import { fetchPaymentEntitySnapshot } from '../utils/paymentReturn';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
@@ -209,7 +209,7 @@ const ServicePaymentScreen: React.FC = () => {
             const purpose = isDeposit
                 ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
-            const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`;
+            const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}`;
 
             const paymentPromise = hitPay.createPaymentRequest({
                 amount: amountToPay,
@@ -306,7 +306,10 @@ const ServicePaymentScreen: React.FC = () => {
                 return;
             }
         } else if ((status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') && !isProcessing) {
+            // URL parameters are NOT proof of anything: only react to cancellation
+            // when this app session actually started the payment (forged deep links no-op).
             const pendingTx = sessionStorage.getItem('pendingHitPayServiceTx');
+            if (!pendingTx && !getPendingPaymentMarker()) return;
             const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
             sessionStorage.removeItem('pendingHitPayServiceTx');
             sessionStorage.removeItem('pendingHitPayBookingTx');
@@ -512,7 +515,7 @@ const ServicePaymentScreen: React.FC = () => {
             const purpose = isDeposit
                 ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
-            const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}-${Date.now()}`;
+            const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}`;
 
             const entityKind = entityKindForBooking(booking);
 

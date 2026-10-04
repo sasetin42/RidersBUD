@@ -95,7 +95,6 @@ const MiniMap: React.FC<{ lat: number, lng: number }> = React.memo(({ lat, lng }
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 subdomains: 'abc',
-                crossOrigin: true,
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(mapInstance.current);
 
@@ -1645,26 +1644,29 @@ const BookingDetailScreen: React.FC = () => {
 
     const handleCancelBooking = async () => {
         if (!booking || !cancelReason.trim()) return;
-        setIsCancelling(true);
-        try {
-            if ((booking as any).isServiceRequest || isDriverHire) {
-                if (updateServiceRequest) {
-                    await updateServiceRequest(booking.id, {
+        const reason = cancelReason.trim();
+        const targetId = booking.id;
+        const isRequest = (booking as any).isServiceRequest || isDriverHire;
+
+        // 1. Optimistic UI update: Instantly close modal and navigate back
+        setShowCancelModal(false);
+        setCancelReason('');
+        navigate('/customer-portal/booking-history');
+
+        // 2. Perform background cancellation
+        (async () => {
+            try {
+                if (isRequest && updateServiceRequest) {
+                    await updateServiceRequest(targetId, {
                         status: 'Cancelled',
-                        notes: `Cancelled by customer: ${cancelReason.trim()}`
+                        notes: `Cancelled by customer: ${reason}`
                     });
                 }
+                await cancelBooking(targetId, reason);
+            } catch (error) {
+                console.error('Error cancelling booking in background:', error);
             }
-            await cancelBooking(booking.id, cancelReason.trim());
-            setShowCancelModal(false);
-            setCancelReason('');
-            navigate('/customer-portal/booking-history');
-        } catch (error) {
-            console.error('Error cancelling booking:', error);
-            alert('Failed to cancel booking. Please try again.');
-        } finally {
-            setIsCancelling(false);
-        }
+        })();
     };
 
     const handleConfirmCompletion = () => {

@@ -525,6 +525,16 @@ export interface PaymentRequest {
     purpose?: string;
     entityKind?: string;
     entityId?: string;
+    /**
+     * Payment lifecycle identity — forwarded to the backend so it can create/
+     * reuse the paymentTransactions record (idempotency keys).
+     */
+    transactionId?: string;
+    /** 'downpayment' | 'balance' | 'full' — controls how settlement applies to the entity. */
+    kind?: string;
+    customerId?: string;
+    /** Ask the backend to abandon a failed/expired session and create a fresh one. */
+    force?: boolean;
     payment_methods?: string[];
     address?: {
         line1?: string;
@@ -534,6 +544,25 @@ export interface PaymentRequest {
         postal_code?: string;
         country?: string;
     };
+}
+
+export interface PaymentSession {
+    /** HitPay hosted-checkout URL (empty when alreadyPaid). */
+    url: string;
+    /** HitPay payment request id. */
+    id: string;
+    /** paymentTransactions/{transactionId} — the authoritative reconciliation record. */
+    transactionId?: string;
+    /** Server-returned reference (idempotency key). */
+    referenceNumber?: string;
+    /** 'sandbox' | 'production' */
+    environment?: string;
+    /** Already PAID server-side — never open another payment session. */
+    alreadyPaid?: boolean;
+    status?: string;
+    /** Backend reuses an existing pending HitPay request instead of creating a duplicate. */
+    reused?: boolean;
+    portalFallback?: boolean;
 }
 
 export interface Database {

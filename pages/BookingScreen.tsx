@@ -14,7 +14,7 @@ import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
 import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
 import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
-import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
+import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, getPendingPaymentMarker, isNativePlatform as isNative } from '../utils/paymentRedirect';
 import { seedRentalCars as mockCars, seedHireDrivers as mockDrivers, seedServices } from '../data/mockData';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import BookingPaymentBreakdownModal from '../components/BookingPaymentBreakdownModal';
@@ -343,7 +343,9 @@ const BookingScreen: React.FC = () => {
                 }
             }
         } else if (statusParam === 'canceled' || statusParam === 'cancelled' || statusParam === 'failed' || statusParam === 'expired' || statusParam === 'abort' || hitpayParam === 'canceled' || hitpayParam === 'cancelled') {
+            // URL parameters are NOT proof: only react when this session really started a payment.
             const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
+            if (!pendingTx && !getPendingPaymentMarker()) return;
             let parsedBookingId = '';
             let cancelAmount = 0;
             let cancelledItems: Array<{ name: string; quantity?: number; price?: number }> = [];
@@ -714,7 +716,6 @@ const BookingScreen: React.FC = () => {
             const osmTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 subdomains: 'abc',
-                crossOrigin: true,
                 attribution: '&copy; OpenStreetMap contributors'
             });
 
@@ -1409,7 +1410,7 @@ const BookingScreen: React.FC = () => {
             const appTitle = db?.settings?.appName || 'RidersBUD';
             const bookingId = doc(collection(firestore, 'bookings')).id;
             const returnUrl = `${getLiveAppOrigin()}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
-            const refNumber = `BOK-${bookingId}-DP-${Date.now()}`;
+            const refNumber = `BOK-${bookingId}-DP`;
             const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
             const paymentPromise = hitPay.createPaymentRequest({
@@ -1762,7 +1763,7 @@ const BookingScreen: React.FC = () => {
             const hitPay = HitPayService.fromSettings(db?.settings);
             const appTitle = db?.settings?.appName || 'RidersBUD';
             const returnUrl = `${getLiveAppOrigin()}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
-            const refNumber = `BOK-${bookingId}-DP-${Date.now()}`;
+            const refNumber = `BOK-${bookingId}-DP`;
             const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
             // Non-blocking parallel booking registration in Firestore

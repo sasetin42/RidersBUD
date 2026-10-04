@@ -1,6 +1,7 @@
 import { HitPayService } from './HitPayService';
 import { PaymentEntityKind } from '../utils/firestoreCollections';
 import { setPendingPaymentMarker, openPaymentUrl, startPaymentWatcher } from '../utils/paymentRedirect';
+import { PaymentSession } from '../types';
 
 export type PaymentState = 'PENDING' | 'PROCESSING' | 'PAID' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
 
@@ -14,11 +15,14 @@ export interface CheckoutSessionParams {
     customerEmail?: string;
     customerName?: string;
     customerPhone?: string;
+    customerId?: string;
+    /** 'downpayment' | 'balance' | 'full' — how settlement applies to the entity. */
+    kind?: string;
     returnRoute: string;
     isSandbox?: boolean;
     settings?: any;
     /** Session already created in the background (pre-warm) — reuse it instead of paying for a second one. */
-    prewarmedSession?: { url: string; id: string } | null;
+    prewarmedSession?: { url: string; id: string; transactionId?: string } | null;
     onStateChange?: (state: PaymentState, message?: string) => void;
 }
 
@@ -34,6 +38,8 @@ export interface CheckoutResult {
     redirectTo?: string;
     referenceNumber?: string;
     paymentRequestId?: string;
+    /** paymentTransactions/{transactionId} — authoritative settlement record. */
+    transactionId?: string;
     amount?: number;
     currency?: string;
     paymentMethod?: string;
@@ -42,35 +48,30 @@ export interface CheckoutResult {
 }
 
 /**
- * HitPayEmbeddedService
- *
- * Provides an authoritative, secure, in-app payment experience directly inside
- * RidersBUD Android & Web using the official HitPay Drop-In UI.
+ * HitPayEmbeddedService — the single payment orchestration layer.
  *
  * Flow:
- * 1. Checks and locks against concurrent payments.
- * 2. Reuses the pre-warmed session or creates one server-side via hitpayProxy (secrets stay on server).
- * 3. Validates the session — a fabricated/portal session never reaches the drop-in.
- * 4. Renders the official drop-in (web) or opens hosted checkout (native / fallback),
- *    with a watchdog that guarantees the user is never left on a silent spinner.
- * 5. Verifies payment server-side / via the Firestore webhook — never on client status alone.
+ * 1. Transaction-level lock: double taps join the SAME in-flight session;
+ *    a different payment is rejected while one is active.
+ * 2. Creates (or reuses) the session server-side via hitpayProxy — the backend
+ *    creates `paymentTransactions/{tx}` (INITIATED → PENDING) and never spawns
+ *    a duplicate HitPay request for the same stable reference.
+ *    A PAID transaction short-circuits (`alreadyPaid`) — no new session.
+ * 3. Presents the payment in a Chrome Custom Tab (secure native browser) —
+ *    never window.location, window.open, or an uncontrolled WebView.
+ * 4. Watches the server-settled transaction: PAID closes the tab, clears the
+ *    pending marker/lock and routes back; the status screen shows the receipt.
+ *    Only server verification can ever produce PAID.
  */
 class HitPayEmbeddedService {
-    private static isSessionActive = false;
+    /** key = entityKind:entityId:kind → in-flight session promise (double-tap join). */
+    private static activeSessions = new Map<string, Promise<CheckoutResult>>();
 
-    /**
-     * Start the unified in-app embedded checkout.
-     */
+    static isSessionActive(): boolean {
+        return this.activeSessions.size > 0;
+    }
+
     static async startCheckout(params: CheckoutSessionParams): Promise<CheckoutResult> {
-        if (this.isSessionActive) {
-            return {
-                success: false,
-                paymentState: 'FAILED',
-                errorMessage: 'A payment session is already in progress. Please complete or close it first.'
-            };
-        }
-
-        this.isSessionActive = true;
         const {
             entityKind,
             entityId,
@@ -81,12 +82,61 @@ class HitPayEmbeddedService {
             customerEmail,
             customerName,
             customerPhone,
+            customerId,
+            kind,
             returnRoute,
             isSandbox = true,
             settings,
             prewarmedSession,
             onStateChange
         } = params;
+
+        // --- Session lock (requirement #11) ---
+        const lockKey = `${entityKind}:${entityId}:${kind || referenceNumber}`;
+        const inFlight = this.activeSessions.get(lockKey);
+        if (inFlight) {
+            // Same payment tapped again → join the existing session (no duplicate).
+            return inFlight;
+        }
+        if (this.activeSessions.size > 0) {
+            return {
+                success: false,
+                paymentState: 'FAILED',
+                errorMessage: 'A payment session is already in progress. Please complete or close it first.'
+            };
+        }
+
+        const run = this.launchSession(params, {
+            entityKind, entityId, amount, currency, referenceNumber, purpose,
+            customerEmail, customerName, customerPhone, customerId, kind,
+            returnRoute, isSandbox, settings, prewarmedSession, onStateChange
+        }, lockKey);
+
+        this.activeSessions.set(lockKey, run);
+        try {
+            return await run;
+        } finally {
+            this.activeSessions.delete(lockKey);
+        }
+    }
+
+    private static async launchSession(
+        params: CheckoutSessionParams,
+        ctx: {
+            entityKind: PaymentEntityKind; entityId: string; amount: number; currency: string;
+            referenceNumber: string; purpose: string; customerEmail?: string; customerName?: string;
+            customerPhone?: string; customerId?: string; kind?: string; returnRoute: string;
+            isSandbox: boolean; settings: any;
+            prewarmedSession?: { url: string; id: string; transactionId?: string } | null;
+            onStateChange?: (state: PaymentState, message?: string) => void;
+        },
+        lockKey: string
+    ): Promise<CheckoutResult> {
+        const {
+            entityKind, entityId, amount, currency, referenceNumber, purpose,
+            customerEmail, customerName, customerPhone, customerId, kind,
+            returnRoute, isSandbox, settings, prewarmedSession, onStateChange
+        } = ctx;
 
         const baseResult = {
             referenceNumber,
@@ -96,13 +146,17 @@ class HitPayEmbeddedService {
         };
 
         try {
-            onStateChange?.('PENDING', 'Connecting to Secure Payment...');
+            onStateChange?.('PENDING', 'Initializing Payment...');
 
-            // 1. Session — reuse the background pre-warm when available (avoids creating
-            //    a duplicate payment request with the same reference number).
-            let session: { url: string; id: string } | null = prewarmedSession?.url ? prewarmedSession : null;
+            // 1. Session — reuse the background pre-warm when available (the backend
+            //    still owns idempotency: same reference ⇒ same HitPay request).
+            let session: PaymentSession | null = prewarmedSession?.url
+                ? { url: prewarmedSession.url, id: prewarmedSession.id, transactionId: prewarmedSession.transactionId }
+                : null;
 
             if (!session) {
+                onStateChange?.('PENDING', 'Connecting to HitPay...');
+
                 const hitPayService = HitPayService.fromSettings(settings, isSandbox);
                 const liveOrigin = typeof window !== 'undefined' && window.location.origin.startsWith('http') && !window.location.origin.includes('localhost')
                     ? window.location.origin
@@ -122,40 +176,72 @@ class HitPayEmbeddedService {
                     phone: customerPhone,
                     purpose: purpose.slice(0, 250),
                     entityKind,
-                    entityId
+                    entityId,
+                    kind,
+                    customerId
                 });
+            }
+
+            // Already PAID server-side (stale marker / re-tap after success):
+            // show the success state without ever reopening a payment session.
+            if ((session as PaymentSession).alreadyPaid) {
+                onStateChange?.('PAID', 'Payment Successful');
+                setPendingPaymentMarker({
+                    entityKind,
+                    entityId,
+                    returnRoute,
+                    startedAt: Date.now(),
+                    purpose,
+                    transactionId: (session as PaymentSession).transactionId,
+                    paymentRequestId: session.id || undefined,
+                    referenceNumber,
+                    environment: isSandbox ? 'sandbox' : 'production',
+                    initiatedFrom: typeof window !== 'undefined' ? window.location.pathname : undefined
+                });
+                return {
+                    success: true,
+                    paymentState: 'PAID',
+                    redirected: false,
+                    paymentRequestId: session.id || undefined,
+                    transactionId: (session as PaymentSession).transactionId,
+                    ...baseResult
+                };
             }
 
             if (!session?.url) {
                 throw new Error('Server did not return a valid payment session.');
             }
 
-            // 2. Persist recovery marker in case user backgrounds or reloads
+            const transactionId = (session as PaymentSession).transactionId || '';
+            const environment = (session as PaymentSession).environment || (isSandbox ? 'sandbox' : 'production');
+
+            // 2. Persist recovery marker (survives backgrounding / process death)
             setPendingPaymentMarker({
                 entityKind,
                 entityId,
                 returnRoute,
                 startedAt: Date.now(),
                 purpose,
+                transactionId: transactionId || undefined,
                 paymentRequestId: session.id || undefined,
+                referenceNumber,
+                environment,
                 initiatedFrom: typeof window !== 'undefined' ? window.location.pathname : undefined
             });
 
-            // 3. Session sanity check.
             const isAbsoluteUrl = /^https?:\/\//i.test(session.url);
 
-            // 3b. DIRECT INSTANT IN-APP CHECKOUT (Web & Native Android, Sandbox & Live mode)
-            //     Directs user straight to HitPay's official hosted payment gateway inside
-            //     the custom native Android container (or web redirect).
             if (isAbsoluteUrl) {
+                // 3. Secure native presentation (Chrome Custom Tab) + server-truth watcher
                 onStateChange?.('PROCESSING', 'Opening Secure HitPay Checkout...');
-                startPaymentWatcher(entityKind, entityId, returnRoute);
+                startPaymentWatcher(entityKind, entityId, returnRoute, transactionId || undefined);
                 await openPaymentUrl(session.url, purpose || 'Secure Online Payment');
                 return {
                     success: true,
                     paymentState: 'PROCESSING',
                     redirected: true,
                     paymentRequestId: session.id || undefined,
+                    transactionId,
                     ...baseResult
                 };
             }
@@ -168,6 +254,7 @@ class HitPayEmbeddedService {
                 paymentState: 'PROCESSING',
                 redirectTo: portalUrl,
                 paymentRequestId: session.id || undefined,
+                transactionId,
                 ...baseResult
             };
         } catch (err: any) {
@@ -176,11 +263,14 @@ class HitPayEmbeddedService {
             return {
                 success: false,
                 paymentState: 'FAILED',
-                errorMessage: message
+                errorMessage: message,
+                // Lock is released (activeSessions entry removed by caller) so the
+                // customer can retry after a failure — only terminal states and
+                // completed sessions keep the session from re-arming.
+                ...baseResult
             };
         } finally {
-            // Never let the session latch stick — a wedged latch blocked every later checkout.
-            this.isSessionActive = false;
+            void lockKey;
         }
     }
 }

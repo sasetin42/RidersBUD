@@ -31,6 +31,18 @@
                 <data android:scheme="com.sasetin42.ridersbud" />
             </intent-filter>
 
+            <!-- Explicit native payment callback: ridersbud://payment/return
+                 HitPay's redirect_url must be https (custom schemes are rejected by
+                 the gateway), so the hosted checkout returns through the verified
+                 App Link below or the HTTPS page's one-shot scheme handoff. This
+                 filter guarantees the native callback URI always resolves here. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ridersbud" android:host="payment" android:pathPrefix="/return" />
+            </intent-filter>
+
             <!-- App Links / HTTPS Domain Deep Linking -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

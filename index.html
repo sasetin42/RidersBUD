@@ -106,7 +106,9 @@
                     joined.includes('message channel closed before a response was received') ||
                     joined.includes('A listener indicated an asynchronous response') ||
                     joined.includes('Elements requires "width=device-width"') ||
-                    joined.includes('viewport_meta_requirements')
+                    joined.includes('viewport_meta_requirements') ||
+                    joined.includes('Protected Audience API') ||
+                    joined.includes('captchaLoad')
                 ) return;
                 originalWarn.apply(console, args);
             };
@@ -169,7 +171,17 @@
                     joined.includes('evervault.com') ||
                     joined.includes('Failed to load Evervault') ||
                     joined.includes('PaymentMethodCardCybersource') ||
+                    joined.includes('PaymentMethodCardPrimer') ||
+                    joined.includes('PaymentMethodCardAdyen') ||
                     joined.includes('PaymentMethodQrCode') ||
+                    joined.includes('PaymentMethodRedirectUrl') ||
+                    joined.includes('PaymentMethodWifiCardReader') ||
+                    joined.includes('PaymentMethodVirtualAccount') ||
+                    joined.includes('PaymentMethodWalletAdyen') ||
+                    joined.includes('checkout.sandbox.hit-pay.com') ||
+                    joined.includes('Failed to fetch dynamically imported module') ||
+                    joined.includes('Protected Audience API') ||
+                    joined.includes('captchaLoad') ||
                     joined.includes('useCharge') ||
                     joined.includes('CheckoutRequestPage') ||
                     joined.includes('controller-with-preconnect') ||
@@ -264,7 +276,7 @@
                                 return fn.apply(this, arguments);
                             } catch (e) {
                                 var errStr = (e && (e.message || e.stack || String(e))) || '';
-                                if (/starttime|reportallchanges/i.test(errStr)) {
+                                if (/starttime|reportallchanges|closing or closed|websocket|usepusher/i.test(errStr)) {
                                     return;
                                 }
                                 throw e;
@@ -382,7 +394,7 @@
             var originalDebug = console.debug;
             console.debug = function() {};
  
-              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org','checkout-dropin-pr','DataCloneError','hitpay-main.js','hitpay.js','could not be cloned','Grammarly','Grammarly-check','runtime.lastError'];
+              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','PaymentMethodQrCode','PaymentMethodCardPrimer','PaymentMethodCardAdyen','PaymentMethodRedirectUrl','PaymentMethodWifiCardReader','PaymentMethodVirtualAccount','PaymentMethodWalletAdyen','checkout.sandbox.hit-pay.com','Protected Audience API','captchaLoad','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org','checkout-dropin-pr','DataCloneError','hitpay-main.js','hitpay.js','could not be cloned','Grammarly','Grammarly-check','runtime.lastError'];
             // Protect global PerformanceObserver, PerformanceObserverEntryList, PerformanceEntry prototype & performance entries against buggy extension / DevTools callbacks
             try {
                 if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
@@ -580,7 +592,7 @@
                 }
             } catch (_) {}
 
-            // Safe setTimeout wrapper for extension callbacks
+            // Safe setTimeout wrapper for extension and 3rd-party gateway callbacks
             try {
                 const origST = window.setTimeout;
                 window.setTimeout = function(fn, delay, ...args) {
@@ -589,7 +601,8 @@
                             try {
                                 return fn.apply(this, arguments);
                             } catch (e) {
-                                if (e && (e.message || String(e)).toLowerCase().match(/starttime|reportallchanges/)) {
+                                var errStr = (e && (e.message || e.stack || String(e))) || '';
+                                if (/starttime|reportallchanges|closing or closed|websocket|usepusher/i.test(errStr)) {
                                     return;
                                 }
                                 throw e;
@@ -622,6 +635,9 @@
                     filename.includes('chrome-extension://') || 
                     filename.includes('usePusher') || 
                     filename.includes('hcaptcha') || 
+                    msg.includes('CLOSING or CLOSED') ||
+                    msg.includes('WebSocket') ||
+                    msg.includes('usePusher') ||
                     msg.includes('startTime') || 
                     msg.includes('reportAllChanges') || 
                     stack.includes('reportAllChanges') || 
@@ -702,11 +718,7 @@
     <link rel="preconnect" href="https://storage.googleapis.com" />
     <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
     <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
-    <!-- Preconnect & DNS Prefetch for HitPay Payment Gateway -->
-    <link rel="preconnect" href="https://api.sandbox.hit-pay.com" crossorigin />
-    <link rel="preconnect" href="https://checkout.sandbox.hit-pay.com" crossorigin />
-    <link rel="preconnect" href="https://api.hit-pay.com" crossorigin />
-    <link rel="preconnect" href="https://checkout.hit-pay.com" crossorigin />
+    <!-- DNS Prefetch for HitPay Payment Gateway -->
     <link rel="dns-prefetch" href="https://api.sandbox.hit-pay.com" />
     <link rel="dns-prefetch" href="https://checkout.sandbox.hit-pay.com" />
     <link rel="dns-prefetch" href="https://api.hit-pay.com" />
@@ -995,19 +1007,6 @@
             backface-visibility: hidden;
         }
     </style>
-    <!-- HitPay Gateway Network Preconnect & DNS-Prefetch for Fast Checkout Loading -->
-    <link rel="preconnect" href="https://checkout.hit-pay.com" crossorigin />
-    <link rel="preconnect" href="https://api.hit-pay.com" crossorigin />
-    <link rel="preconnect" href="https://checkout.sandbox.hit-pay.com" crossorigin />
-    <link rel="preconnect" href="https://api.sandbox.hit-pay.com" crossorigin />
-    <link rel="dns-prefetch" href="https://checkout.hit-pay.com" />
-    <link rel="dns-prefetch" href="https://api.hit-pay.com" />
-    <link rel="dns-prefetch" href="https://checkout.sandbox.hit-pay.com" />
-    <link rel="dns-prefetch" href="https://api.sandbox.hit-pay.com" />
-
-    <!-- Leaflet mapping library -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
 
 <body class="bg-secondary">

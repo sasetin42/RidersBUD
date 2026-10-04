@@ -1,4 +1,4 @@
-import { PaymentRequest, Settings } from '../types';
+import { PaymentRequest, PaymentSession, Settings } from '../types';
 
 const SANDBOX_API_URL = 'https://api.sandbox.hit-pay.com/v1';
 const PRODUCTION_API_URL = 'https://api.hit-pay.com/v1';
@@ -14,7 +14,7 @@ export const getLiveAppOrigin = (): string => {
 };
 
 /**
- * Returns the absolute proxy endpoint if running inside Capacitor Android APK,
+ * Returns the absolute proxy endpoint if running inside Capacitor Android/iOS APK,
  * or relative endpoint if running on web.
  */
 export const getHitPayProxyEndpoint = (path: string = '/api/hitpay-proxy'): string => {
@@ -30,9 +30,14 @@ export const getHitPayProxyEndpoint = (path: string = '/api/hitpay-proxy'): stri
 /**
  * SECURITY MODEL:
  *
- * The HitPay credentials can be stored server-side or in Firestore settings/main.
- * All gateway calls go through the hitpayProxy endpoint (Vite dev proxy locally,
- * Cloud Function in production / native APK).
+ * HitPay credentials NEVER touch the client. Every gateway call goes through
+ * the hitpayProxy Cloud Function (or the same function via the dev forwarder),
+ * which:
+ *   - resolves credentials server-side (env / settings/hitpaySecrets),
+ *   - enforces the authoritative amount from Firestore,
+ *   - creates/reuses the paymentTransactions record (idempotency),
+ *   - reuses an existing pending HitPay payment request for the same reference
+ *     so double taps cannot spawn duplicate payment sessions.
  */
 class HitPayService {
     private baseUrl: string;
@@ -53,8 +58,8 @@ class HitPayService {
         const isSandbox = typeof overrideIsSandbox === 'boolean'
             ? overrideIsSandbox
             : (settings?.hitpaySandboxMode ?? false);
-        const apiKey = isSandbox 
-            ? (settings?.hitpaySandboxApiKey || '') 
+        const apiKey = isSandbox
+            ? (settings?.hitpaySandboxApiKey || '')
             : (settings?.hitpayApiKey || '');
         return new HitPayService(apiKey, '', isSandbox);
     }
@@ -100,8 +105,9 @@ class HitPayService {
         // 3. Currency: Always uppercase 3 letters (defaults to PHP)
         const currency = (data.currency || 'PHP').toUpperCase();
 
-        // 4. Reference Number: Alphanumeric with hyphens
-        const reference_number = data.reference_number || `REF-${Date.now()}`;
+        // 4. Reference Number: stable idempotency key supplied by the orchestrator.
+        //    (The backend rejects duplicate active sessions for the same reference.)
+        const reference_number = data.reference_number || `RB-${Date.now()}`;
 
         // 5. Purpose: Max 255 chars as enforced by HitPay validation
         const purpose = (data.purpose || 'RidersBUD Service Payment').slice(0, 250);
@@ -109,8 +115,10 @@ class HitPayService {
         // 6. Name: Max 100 chars, non-empty
         const name = (data.name && data.name.trim().length > 0) ? data.name.trim().slice(0, 100) : 'RidersBud Customer';
 
-        // 7. Redirect URL: NEVER allow localhost or capacitor:// to go to HitPay!
-        // On native APK (Capacitor) or localhost, map to the live production domain.
+        // 7. Redirect URL: HitPay ONLY accepts http(s) URIs (custom schemes are
+        //    rejected with 422 — validated against the live API). The HTTPS return
+        //    route is a verified App Link that hands off to ridersbud://payment/return.
+        //    The backend always rewrites this to its authoritative value.
         let redirect_url = data.redirect_url;
         if (!redirect_url || redirect_url.includes('localhost') || redirect_url.includes('127.0.0.1') || redirect_url.startsWith('capacitor:')) {
             const cleanPath = redirect_url
@@ -119,7 +127,8 @@ class HitPayService {
             redirect_url = `${getLiveAppOrigin()}${cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`}`;
         }
 
-        // 8. Webhook: Authoritative Cloud Function webhook endpoint
+        // 8. Webhook: Authoritative Cloud Function endpoint (backend always
+        //    overrides this with the registered endpoint anyway).
         let webhook = data.webhook;
         if (!webhook || webhook.includes('localhost') || webhook.includes('127.0.0.1') || webhook.includes('/payment/webhook')) {
             webhook = 'https://ridersbud-10806.web.app/api/hitpay-webhook';
@@ -136,8 +145,9 @@ class HitPayService {
             purpose
         };
 
-        // 8. Payment Methods filter (e.g. ['gcash'], ['qrph'], ['card'], ['paymaya'])
-        // Map UI method codes to valid gateway codes based on HitPay environment
+        // 8b. Payment methods — only mapped to codes the gateway understands; if the
+        //     account does not expose them the backend retries without the filter so
+        //     HitPay renders all activated channels (never a hard-coded dead method).
         if (data.payment_methods && Array.isArray(data.payment_methods) && data.payment_methods.length > 0) {
             const mappedMethods: string[] = [];
             for (const method of data.payment_methods) {
@@ -151,12 +161,11 @@ class HitPayService {
                 } else if (this.isSandbox && (m === 'gcash' || m === 'gcash_qr')) {
                     mappedMethods.push('gcash');
                 }
-                // For live accounts where GCash is handled via QRPH / InstaPay / HitPay hosted channels,
-                // omitting the restrictive single filter allows HitPay hosted checkout to display all channels
+                // For live accounts where GCash is handled via QRPH / InstaPay / HitPay
+                // hosted channels, omitting the restrictive filter lets hosted checkout
+                // display every activated channel.
             }
 
-            // Only attach payment_methods if we have non-empty mapped methods.
-            // If empty, HitPay renders all activated channels on the business account.
             if (mappedMethods.length > 0) {
                 payload.payment_methods = Array.from(new Set(mappedMethods));
             }
@@ -215,17 +224,17 @@ class HitPayService {
     }
 
     /**
-     * Creates a payment request via the hitpayProxy Cloud Function and returns
-     * the official HitPay hosted checkout URL.
+     * Creates (or reuses) a payment request via the hitpayProxy Cloud Function.
      *
-     * IMPORTANT — payment session ids are NEVER fabricated. HitPay's drop-in resolves
-     * `GET /v1/business/{id}/checkout-dropin-pr`, so a synthetic id (the old
-     * `hitpay_<timestamp>` placeholder) returns 404, the sheet never renders and the
-     * customer is left on an infinite spinner. When the gateway cannot be reached we
-     * instead return `portalFallback: true` with an EMPTY id so callers can route to
-     * the in-app checkout portal.
+     * Guarantees:
+     *  - The backend creates/updates `paymentTransactions/{transactionId}` BEFORE the
+     *    payment UI opens (INITIATED -> PENDING).
+     *  - The SAME reference never spawns two concurrent HitPay requests: a pending
+     *    session is returned as-is (`reused: true`); a PAID session returns
+     *    `alreadyPaid: true` with NO new session.
+     *  - Credentials never leave the server. No synthetic payment ids are fabricated.
      */
-    async createPaymentRequest(data: PaymentRequest): Promise<{ url: string, id: string, portalFallback?: boolean }> {
+    async createPaymentRequest(data: PaymentRequest): Promise<PaymentSession> {
         if (!data?.amount) {
             throw new Error("HitPay payment request requires an amount.");
         }
@@ -233,11 +242,12 @@ class HitPayService {
         const payload = this.sanitizePayload(data);
 
         type Attempt =
-            | { kind: 'ok'; url: string; id: string }
+            | { kind: 'ok'; session: PaymentSession }
+            | { kind: 'paid'; session: PaymentSession }
             | { kind: 'portal'; reason: string }
-            | { kind: 'error'; message: string; retryable: boolean };
+            | { kind: 'error'; message: string; retryable: boolean; retryWithoutMethods?: boolean };
 
-        const dispatch = async (): Promise<Attempt> => {
+        const dispatch = async (payloadToSend: Record<string, any>): Promise<Attempt> => {
             let proxyResp: Response;
             try {
                 proxyResp = await fetch(getHitPayProxyEndpoint('/api/hitpay-proxy'), {
@@ -247,8 +257,13 @@ class HitPayService {
                         isSandbox: this.isSandbox,
                         entityKind: data.entityKind,
                         entityId: data.entityId,
-                        // Credentials are resolved server-side only — never sent from the client
-                        payload
+                        transactionId: data.transactionId,
+                        referenceNumber: data.reference_number,
+                        kind: data.kind,
+                        customerId: data.customerId,
+                        force: data.force === true,
+                        // Credentials are resolved server-side — never sent from the client
+                        payload: payloadToSend
                     })
                 });
             } catch (networkErr: any) {
@@ -271,16 +286,37 @@ class HitPayService {
 
             const proxyResult = await proxyResp.json().catch(() => null);
 
+            if (proxyResult && proxyResult.alreadyPaid) {
+                return {
+                    kind: 'paid',
+                    session: {
+                        url: '',
+                        id: String(proxyResult.paymentRequestId || ''),
+                        transactionId: String(proxyResult.transactionId || ''),
+                        referenceNumber: String(proxyResult.referenceNumber || data.reference_number || ''),
+                        environment: String(proxyResult.environment || ''),
+                        alreadyPaid: true,
+                        status: 'PAID'
+                    }
+                };
+            }
+
             if (proxyResp.ok && proxyResult && proxyResult.url) {
                 return {
                     kind: 'ok',
-                    url: String(proxyResult.url),
-                    id: proxyResult.id ? String(proxyResult.id) : ''
+                    session: {
+                        url: String(proxyResult.url),
+                        id: proxyResult.id ? String(proxyResult.id) : '',
+                        transactionId: proxyResult.transactionId ? String(proxyResult.transactionId) : '',
+                        referenceNumber: proxyResult.referenceNumber ? String(proxyResult.referenceNumber) : data.reference_number,
+                        environment: proxyResult.environment ? String(proxyResult.environment) : (this.isSandbox ? 'sandbox' : 'production'),
+                        status: proxyResult.status ? String(proxyResult.status) : 'PENDING',
+                        reused: proxyResult.reused === true
+                    }
                 };
             }
 
             if (proxyResult && proxyResult.fallbackToPortal) {
-                // Upstream HitPay unreachable at that moment — worth one retry
                 return {
                     kind: 'portal',
                     reason: String(proxyResult.message || proxyResult.reason || 'HitPay gateway is currently unreachable.')
@@ -288,37 +324,43 @@ class HitPayService {
             }
 
             if (proxyResult) {
-                const errorDetail = proxyResult.errors
-                    ? Object.entries(proxyResult.errors).map(([k, v]) => `${k}: ${(v as any[]).join(', ')}`).join('; ')
+                const errors = proxyResult.errors as Record<string, string[]> | undefined;
+                const errorDetail = errors
+                    ? Object.entries(errors).map(([k, v]) => `${k}: ${(v as string[]).join(', ')}`).join('; ')
                     : (proxyResult.message || proxyResult.error || 'Payment request validation error');
                 return {
                     kind: 'error',
                     message: typeof errorDetail === 'string' ? errorDetail : JSON.stringify(errorDetail),
                     // Validation errors are deterministic — retrying would just add latency
-                    retryable: false
+                    retryable: false,
+                    // The account may not expose the requested channel codes — retry once
+                    // without the filter so HitPay renders its activated methods.
+                    retryWithoutMethods: !!(errors && errors.payment_methods) && !!payloadToSend.payment_methods
                 };
             }
 
             return { kind: 'error', message: 'Payment proxy returned an empty response.', retryable: true };
         };
 
-        let attempt = await dispatch();
+        let attempt = await dispatch(payload);
 
-        // One automatic retry for transient network / upstream failures so a single
-        // blip doesn't degrade a healthy checkout into the fallback portal.
-        const retryable = attempt.kind === 'portal' || (attempt.kind === 'error' && attempt.retryable);
-        if (retryable) {
+        // One retry for transient network / upstream failures, and one retry without
+        // payment-method filters if the gateway rejected the channel codes.
+        if (attempt.kind === 'portal' || (attempt.kind === 'error' && attempt.retryable)) {
             await new Promise(r => setTimeout(r, 1500));
-            attempt = await dispatch();
+            attempt = await dispatch(payload);
+        } else if (attempt.kind === 'error' && attempt.retryWithoutMethods) {
+            const { payment_methods: _omitted, ...payloadWithoutMethods } = payload;
+            attempt = await dispatch(payloadWithoutMethods);
         }
 
-        if (attempt.kind === 'ok') {
-            return { url: attempt.url, id: attempt.id };
+        if (attempt.kind === 'ok' || attempt.kind === 'paid') {
+            return attempt.session;
         }
 
         if (attempt.kind === 'portal') {
             // Gateway connection blocked/unavailable — route to the in-app checkout portal,
-            // which creates its own session and surfaces a friendly, retryable error.
+            // which surfaces a friendly, retryable error.
             const params = new URLSearchParams({
                 amount: String(payload.amount),
                 currency: payload.currency || 'PHP',
@@ -334,6 +376,9 @@ class HitPayService {
             return {
                 url: `/hitpay-checkout?${params.toString()}`,
                 id: '',
+                transactionId: data.transactionId || '',
+                referenceNumber: data.reference_number,
+                environment: this.isSandbox ? 'sandbox' : 'production',
                 portalFallback: true
             };
         }

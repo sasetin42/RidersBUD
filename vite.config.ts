@@ -55,7 +55,7 @@ export default defineConfig(({ mode }) => {
                   const port = Number(params.Port || params.port) || 587;
                   const encryption = (params.Encryption || params.encryption || '').toUpperCase();
                   const username = (params.Username || params.username || '').trim();
-                  const password = (params.Password || params.password || '').trim();
+                  const password = params.Password || params.password || '';
                   const authRequired = params.authRequired !== false && params.authRequired !== 'false';
                   const action = (params.Action || params.action || 'verify').toLowerCase();
 
@@ -193,148 +193,47 @@ export default defineConfig(({ mode }) => {
           });
 
 
-          // Native Node.js HitPay Payment Gateway Proxy to bypass CORS during development
-          const hitpayDevAgent = new https.Agent({
-            keepAlive: true,
-            maxSockets: 100,
-            maxFreeSockets: 20,
-            timeout: 60000,
-            keepAliveMsecs: 60000
-          });
-
-          // Pre-warm TCP & TLS connection to HitPay sandbox and live domains in background
-          try {
-            const prewarmReq = https.request({
-              hostname: 'api.sandbox.hit-pay.com',
-              path: '/v1/payment-requests',
-              method: 'OPTIONS',
-              agent: hitpayDevAgent,
-              timeout: 5000
-            });
-            prewarmReq.on('error', () => {});
-            prewarmReq.end();
-          } catch (_) {}
-
+          // HitPay payment proxy (development) — FORWARDS to the deployed Cloud Function.
+          //
+          // The payment-transaction lifecycle (INITIATED -> PENDING -> PAID), idempotent
+          // payment-request reuse, authoritative amount lookup and webhook settlement all
+          // live in the Cloud Function, so dev and production share ONE code path.
+          // No HitPay credentials exist in this file or anywhere in the web bundle.
           server.middlewares.use(async (req, res, next) => {
-              if (req.url?.startsWith('/api/hitpay-proxy')) {
-                // Instantly reply to OPTIONS preflight
-                if (req.method === 'OPTIONS') {
-                  res.statusCode = 204;
-                  res.setHeader('Access-Control-Allow-Origin', '*');
-                  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-                  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-BUSINESS-API-KEY, X-Requested-With');
-                  return res.end();
-                }
-                // Support GET /api/hitpay-proxy?action=status&id=...
-                if (req.method === 'GET') {
-                  const urlObj = new URL(req.url, 'http://localhost');
-                  const id = urlObj.searchParams.get('id');
-                  const isSandbox = urlObj.searchParams.get('sandbox') === 'true';
-                  const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
-                  const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
-                  const apiKey = req.headers['x-business-api-key'] || (isSandbox ? defaultSandboxKey : defaultLiveKey);
-
-                  if (!id) {
-                    res.statusCode = 400;
-                    res.setHeader('Content-Type', 'application/json');
-                    return res.end(JSON.stringify({ error: 'Missing payment request ID' }));
+            if (req.url?.startsWith('/api/hitpay-proxy')) {
+              const chunks: Buffer[] = [];
+              for await (const chunk of req) chunks.push(Buffer.from(chunk));
+              const requestBody = Buffer.concat(chunks);
+              const target = `https://ridersbud-10806.web.app${req.url}`;
+              try {
+                const proxyReq = https.request(target, {
+                  method: req.method,
+                  headers: {
+                    'Content-Type': req.headers['content-type'] || 'application/json',
+                    'Content-Length': requestBody.length
                   }
-
-                  const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
-                  const proxyReq = https.request({
-                    hostname,
-                    path: `/v1/payment-requests/${encodeURIComponent(id)}`,
-                    method: 'GET',
-                    agent: hitpayDevAgent,
-                    headers: {
-                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                      'X-Requested-With': 'XMLHttpRequest',
-                      'X-BUSINESS-API-KEY': apiKey as string
-                    }
-                  }, (proxyRes) => {
-                    let respBody = '';
-                    proxyRes.on('data', chunk => { respBody += chunk; });
-                    proxyRes.on('end', () => {
-                      res.statusCode = proxyRes.statusCode || 200;
-                      res.setHeader('Content-Type', 'application/json');
-                      res.end(respBody);
-                    });
-                  });
-                  proxyReq.on('error', (e) => {
-                    res.statusCode = 502;
-                    res.setHeader('Content-Type', 'application/json');
-                    res.end(JSON.stringify({ error: e.message || 'HitPay connection error' }));
-                  });
-                  proxyReq.end();
-                  return;
-                }
-
-                if (req.method === 'POST') {
-                  let rawBody = '';
-                  req.on('data', chunk => { rawBody += chunk; });
-                  req.on('end', async () => {
-                    try {
-                      const parsed = JSON.parse(rawBody || '{}');
-                      const isSandbox = parsed.isSandbox === true;
-                      const defaultSandboxKey = 'test_8f19363aee170cc711e558a5503ae6176a25cc7f382cc9aa8c0cf3d81f8639f8';
-                      const defaultLiveKey = 'live_ec0ea2cf67cf38d8c57c20b56cca7b56034d66400cbd70e2517529a5baaac2cb';
-                      const apiKey = parsed.apiKey || (isSandbox ? defaultSandboxKey : defaultLiveKey);
-                      const payload = JSON.stringify(parsed.payload || {});
-
-                      const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
-                      console.log(`[HitPay Proxy] Forwarding to https://${hostname}/v1/payment-requests (${isSandbox ? 'SANDBOX' : 'LIVE'})...`);
-                      const proxyReq = https.request({
-                        hostname,
-                        path: '/v1/payment-requests',
-                        method: 'POST',
-                        agent: hitpayDevAgent,
-                        headers: {
-                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                          'Content-Type': 'application/json',
-                          'X-Requested-With': 'XMLHttpRequest',
-                          'X-BUSINESS-API-KEY': apiKey,
-                          'Content-Length': Buffer.byteLength(payload)
-                        }
-                      }, (proxyRes) => {
-                        let respBody = '';
-                        proxyRes.on('data', chunk => { respBody += chunk; });
-                        proxyRes.on('end', () => {
-                          console.log(`[HitPay Proxy] Upstream status: ${proxyRes.statusCode}`);
-                          if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
-                            console.warn(`[HitPay Proxy] Upstream error body:`, respBody);
-                          }
-                          res.statusCode = proxyRes.statusCode || 200;
-                          res.setHeader('Content-Type', 'application/json');
-                          res.end(respBody);
-                        });
-                      });
-
-                      proxyReq.on('error', (e) => {
-                        console.log(`[HitPay Proxy] Upstream unreachable (${e.message}). Directing client to HitPay checkout portal.`);
-                        // Respond with 200 fallbackToPortal so browser avoids 502 Bad Gateway console error
-                        res.statusCode = 200;
-                        res.setHeader('Content-Type', 'application/json');
-                        res.end(JSON.stringify({ 
-                          fallbackToPortal: true, 
-                          isSandbox, 
-                          message: e.message 
-                        }));
-                      });
-
-                      proxyReq.write(payload);
-                      proxyReq.end();
-                    } catch (e: any) {
-                      console.error(`[HitPay Proxy] Internal error:`, e);
-                      res.statusCode = 500;
-                      res.setHeader('Content-Type', 'application/json');
-                      res.end(JSON.stringify({ error: e?.message || 'Proxy failed' }));
-                    }
-                  });
-                  return;
-                }
+                }, (proxyRes) => {
+                  res.statusCode = proxyRes.statusCode || 502;
+                  const contentType = proxyRes.headers['content-type'];
+                  if (contentType) res.setHeader('Content-Type', contentType);
+                  proxyRes.pipe(res);
+                });
+                proxyReq.on('error', (e) => {
+                  // 200 + fallbackToPortal keeps the client on its graceful fallback path
+                  res.statusCode = 200;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ fallbackToPortal: true, message: (e as Error).message }));
+                });
+                proxyReq.end(requestBody);
+              } catch (e: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ error: e?.message || 'Proxy failed' }));
               }
-              next();
-            });
+              return;
+            }
+            next();
+          });
         }
       }
     ],

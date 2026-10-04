@@ -115,58 +115,10 @@ export const HitPayCheckoutScreen: React.FC = () => {
     const prewarmedSessions = useRef<Map<string, { url: string; id: string }>>(new Map());
     const isPrewarmingRef = useRef<boolean>(false);
 
-    // Pre-warm the active payment method immediately in the background
-    useEffect(() => {
-        if (amount <= 0 || !referenceNumber || checkoutState !== 'idle') return;
-
-        let isCancelled = false;
-        const prewarmSession = async (methodCode: string) => {
-            if (prewarmedSessions.current.has(methodCode) || isPrewarmingRef.current) return;
-            try {
-                isPrewarmingRef.current = true;
-                const hitpay = HitPayService.fromSettings(db?.settings, isSandbox);
-                let returnRedirectUrl = redirectUrl;
-                try {
-                    const urlObj = new URL(redirectUrl.startsWith('http') ? redirectUrl : `${window.location.origin}${redirectUrl}`);
-                    urlObj.searchParams.set('reference', referenceNumber);
-                    urlObj.searchParams.set('amount', String(amount));
-                    returnRedirectUrl = urlObj.toString();
-                } catch {
-                    returnRedirectUrl = `${window.location.origin}${redirectUrl}`;
-                }
-
-                const paymentRequest = {
-                    amount,
-                    currency,
-                    reference_number: referenceNumber,
-                    webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                    redirect_url: returnRedirectUrl,
-                    email,
-                    name,
-                    phone,
-                    purpose,
-                    payment_methods: [methodCode]
-                };
-
-                const res = await hitpay.createPaymentRequest(paymentRequest);
-                if (!isCancelled && res && res.url) {
-                    prewarmedSessions.current.set(methodCode, res);
-                }
-            } catch {
-                // Background pre-warm failed silently; normal on-click fallback handles it
-            } finally {
-                isPrewarmingRef.current = false;
-            }
-        };
-
-        const activeOption = paymentMethods.find(m => m.id === selectedMethod);
-        const code = activeOption ? activeOption.hitpayMethodCode : 'gcash';
-        prewarmSession(code);
-
-        return () => {
-            isCancelled = true;
-        };
-    }, [amount, referenceNumber, selectedMethod, db?.settings, isSandbox, email, name, phone, purpose, currency, redirectUrl, checkoutState]);
+    // NOTE: mount-time pre-warming was removed — it created a HitPay payment
+    // request per payment method before the customer ever tapped Pay (duplicate
+    // sessions). The backend now reuses a pending session per reference, so the
+    // on-click path is both fast and duplicate-safe.
 
     // Dynamic Payment Methods list adhering to branding and high mobile clarity
     const paymentMethods: PaymentMethodOption[] = useMemo(() => [
@@ -409,21 +361,8 @@ export const HitPayCheckoutScreen: React.FC = () => {
             // NEVER fabricate a successful payment. Sandbox keeps its local simulation
             // (no real money); live mode reports the failure honestly.
             if (url && url.startsWith('/')) {
-                if (isSandbox) {
-                    setCheckoutState('verifying');
-                    setStatusMessage('Verifying simulated test transaction...');
-                    setTimeout(() => {
-                        setVerifiedTx({
-                            paymentRequestId: id || `sim_${Date.now()}`,
-                            reference: referenceNumber,
-                            amount,
-                            method: selectedMethod,
-                            paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        });
-                        setCheckoutState('completed');
-                    }, 1200);
-                    return;
-                }
+                // NEVER fabricate a success state — sandbox included. The gateway is
+                // unreachable: report honestly and let the customer retry.
                 throw new Error('The HitPay gateway is currently unreachable. Please try again in a moment.');
             }
 

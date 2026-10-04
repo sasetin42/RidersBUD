@@ -68,8 +68,7 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; CARTO',
             subdomains: 'abcd',
-            maxZoom: 20,
-            crossOrigin: true,
+            maxZoom: 20
         }).addTo(mapInstanceRef.current);
 
 

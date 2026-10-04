@@ -297,11 +297,12 @@ const HomeScreen: React.FC = () => {
                 : `${appTitle} — Driver for Hire Balance Settlement (#${targetTx.id.slice(-6).toUpperCase()})`;
 
             const refPrefix = isRental ? 'RNT' : isLiaison ? 'LIA' : 'DRV';
+            const balanceReference = `${refPrefix}-${targetTx.id}-BAL`;
 
-            const { url } = await hitPay.createPaymentRequest({
+            const { url, id: balancePrId, transactionId: balanceTxId } = await hitPay.createPaymentRequest({
                 amount: balanceDue,
                 currency: db?.settings?.currency || 'PHP',
-                reference_number: `${refPrefix}-${targetTx.id}-BAL-${Date.now()}`,
+                reference_number: balanceReference,
                 webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
                 redirect_url: returnUrl,
                 email: user.email || 'customer@example.com',
@@ -318,9 +319,13 @@ const HomeScreen: React.FC = () => {
                     entityId: targetTx.id,
                     returnRoute: `/customer-portal/`,
                     startedAt: Date.now(),
-                    purpose: 'balance-settlement'
+                    purpose: 'balance-settlement',
+                    transactionId: balanceTxId || undefined,
+                    paymentRequestId: balancePrId || undefined,
+                    referenceNumber: balanceReference,
+                    environment: db?.settings?.hitpaySandboxMode === true ? 'sandbox' : 'production'
                 });
-                startPaymentWatcher(balKind, targetTx.id, `/customer-portal/`);
+                startPaymentWatcher(balKind, targetTx.id, `/customer-portal/`, balanceTxId || undefined);
                 openPaymentUrl(url);
             }
         } catch (err) {
@@ -342,102 +347,103 @@ const HomeScreen: React.FC = () => {
             setBookingToCancel(null);
             return;
         }
-        setIsCancelling(true);
+
         const reason = cancelReason.trim();
 
-        try {
-            if (tx.type === 'maintenance') {
-                await cancelBooking(tx.id, reason);
-            } else if (tx.type === 'rental') {
-                await updateRentalBooking(tx.id, { 
-                    status: 'Cancelled', 
-                    cancellationReason: reason,
-                    updatedAt: new Date().toISOString()
-                } as any);
-                addNotification({
-                    recipientId: 'admin',
-                    recipientRole: 'admin',
-                    title: '🚨 Rental Booking Cancelled',
-                    message: `Car rental #${tx.refCode} for ${tx.title} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
-                    type: 'alert'
-                });
-                if (user?.id) {
-                    addNotification({
-                        recipientId: user.id,
-                        recipientRole: 'customer',
-                        title: '❌ Rental Reservation Cancelled',
-                        message: `Your rental reservation for ${tx.title} has been cancelled.`,
-                        type: 'info'
-                    });
-                }
-            } else if (tx.type === 'driver' || tx.type === 'towing') {
-                await updateServiceRequestStatus(tx.id, 'cancelled', reason);
-                addNotification({
-                    recipientId: 'admin',
-                    recipientRole: 'admin',
-                    title: `🚨 ${tx.typeLabel} Cancelled`,
-                    message: `${tx.typeLabel} request #${tx.refCode} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
-                    type: 'alert'
-                });
-                if (user?.id) {
-                    addNotification({
-                        recipientId: user.id,
-                        recipientRole: 'customer',
-                        title: `❌ ${tx.typeLabel} Cancelled`,
-                        message: `Your ${tx.typeLabel.toLowerCase()} request has been cancelled.`,
-                        type: 'info'
-                    });
-                }
-            } else if (tx.type === 'liaison') {
-                await updateLiaisonBookingStatus(tx.id, 'cancelled', reason);
-                addNotification({
-                    recipientId: 'admin',
-                    recipientRole: 'admin',
-                    title: '🚨 LTO Liaison Booking Cancelled',
-                    message: `LTO Liaison #${tx.refCode} (${tx.title}) was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
-                    type: 'alert'
-                });
-                if (user?.id) {
-                    addNotification({
-                        recipientId: user.id,
-                        recipientRole: 'customer',
-                        title: '❌ Liaison Request Cancelled',
-                        message: `Your LTO liaison appointment for ${tx.title} has been cancelled.`,
-                        type: 'info'
-                    });
-                }
-            } else if (tx.type === 'order') {
-                await updateOrderStatus(tx.id, 'Cancelled');
-                addNotification({
-                    recipientId: 'admin',
-                    recipientRole: 'admin',
-                    title: '🚨 Store Order Cancelled',
-                    message: `Order #${tx.refCode} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
-                    type: 'alert'
-                });
-                if (user?.id) {
-                    addNotification({
-                        recipientId: user.id,
-                        recipientRole: 'customer',
-                        title: '❌ Order Cancelled',
-                        message: `Your parts order #${tx.refCode} has been cancelled.`,
-                        type: 'info'
-                    });
-                }
-            }
+        // 1. Optimistic UI update: Instantly close modal and reset inputs
+        setBookingToCancel(null);
+        setCancelReason('');
 
-            setBookingToCancel(null);
-            setCancelReason('');
-        } catch (error) {
-            console.error('Failed to cancel transaction:', error);
-        } finally {
-            setIsCancelling(false);
-        }
+        // 2. Perform background cancellation without blocking the user
+        (async () => {
+            try {
+                if (tx.type === 'maintenance') {
+                    await cancelBooking(tx.id, reason);
+                } else if (tx.type === 'rental') {
+                    await updateRentalBooking(tx.id, { 
+                        status: 'Cancelled', 
+                        cancellationReason: reason,
+                        updatedAt: new Date().toISOString()
+                    } as any);
+                    addNotification({
+                        recipientId: 'admin',
+                        recipientRole: 'admin',
+                        title: '🚨 Rental Booking Cancelled',
+                        message: `Car rental #${tx.refCode} for ${tx.title} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
+                        type: 'alert'
+                    });
+                    if (user?.id) {
+                        addNotification({
+                            recipientId: user.id,
+                            recipientRole: 'customer',
+                            title: '❌ Rental Reservation Cancelled',
+                            message: `Your rental reservation for ${tx.title} has been cancelled.`,
+                            type: 'info'
+                        });
+                    }
+                } else if (tx.type === 'driver' || tx.type === 'towing') {
+                    await updateServiceRequestStatus(tx.id, 'cancelled', reason);
+                    addNotification({
+                        recipientId: 'admin',
+                        recipientRole: 'admin',
+                        title: `🚨 ${tx.typeLabel} Cancelled`,
+                        message: `${tx.typeLabel} request #${tx.refCode} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
+                        type: 'alert'
+                    });
+                    if (user?.id) {
+                        addNotification({
+                            recipientId: user.id,
+                            recipientRole: 'customer',
+                            title: `❌ ${tx.typeLabel} Cancelled`,
+                            message: `Your ${tx.typeLabel.toLowerCase()} request has been cancelled.`,
+                            type: 'info'
+                        });
+                    }
+                } else if (tx.type === 'liaison') {
+                    await updateLiaisonBookingStatus(tx.id, 'cancelled', reason);
+                    addNotification({
+                        recipientId: 'admin',
+                        recipientRole: 'admin',
+                        title: '🚨 LTO Liaison Booking Cancelled',
+                        message: `LTO Liaison #${tx.refCode} (${tx.title}) was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
+                        type: 'alert'
+                    });
+                    if (user?.id) {
+                        addNotification({
+                            recipientId: user.id,
+                            recipientRole: 'customer',
+                            title: '❌ Liaison Request Cancelled',
+                            message: `Your LTO liaison appointment for ${tx.title} has been cancelled.`,
+                            type: 'info'
+                        });
+                    }
+                } else if (tx.type === 'order') {
+                    await updateOrderStatus(tx.id, 'Cancelled');
+                    addNotification({
+                        recipientId: 'admin',
+                        recipientRole: 'admin',
+                        title: '🚨 Store Order Cancelled',
+                        message: `Order #${tx.refCode} was cancelled by ${user?.name || 'Customer'}. Reason: ${reason}`,
+                        type: 'alert'
+                    });
+                    if (user?.id) {
+                        addNotification({
+                            recipientId: user.id,
+                            recipientRole: 'customer',
+                            title: '❌ Order Cancelled',
+                            message: `Your parts order #${tx.refCode} has been cancelled.`,
+                            type: 'info'
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to cancel transaction in background:', error);
+            }
+        })();
     };
 
     const handleRemoveCancelledTransaction = async (tx: any) => {
         if (!tx || !tx.id) return;
-        setIsRemoving(true);
         const targetId = String(tx.id);
 
         // 1. Immediately dismiss locally and persist to localStorage
@@ -452,25 +458,27 @@ const HomeScreen: React.FC = () => {
             return next;
         });
 
-        // 2. Perform database and cloud deletion
-        try {
-            if (tx.type === 'maintenance') {
-                await deleteBooking(targetId);
-            } else if (tx.type === 'rental') {
-                await deleteRentalBooking(targetId);
-            } else if (tx.type === 'driver' || tx.type === 'towing') {
-                await deleteServiceRequest(targetId);
-            } else if (tx.type === 'liaison') {
-                await deleteLiaisonBooking(targetId);
-            } else if (tx.type === 'order') {
-                await deleteOrder(targetId);
+        // Instantly dismiss modal
+        setTransactionToRemove(null);
+
+        // 2. Perform database and cloud deletion in background
+        (async () => {
+            try {
+                if (tx.type === 'maintenance') {
+                    await deleteBooking(targetId);
+                } else if (tx.type === 'rental') {
+                    await deleteRentalBooking(targetId);
+                } else if (tx.type === 'driver' || tx.type === 'towing') {
+                    await deleteServiceRequest(targetId);
+                } else if (tx.type === 'liaison') {
+                    await deleteLiaisonBooking(targetId);
+                } else if (tx.type === 'order') {
+                    await deleteOrder(targetId);
+                }
+            } catch (error) {
+                console.error('Failed to remove cancelled transaction in background:', error);
             }
-        } catch (error) {
-            console.error('Failed to remove cancelled transaction:', error);
-        } finally {
-            setIsRemoving(false);
-            setTransactionToRemove(null);
-        }
+        })();
     };
 
     useEffect(() => {

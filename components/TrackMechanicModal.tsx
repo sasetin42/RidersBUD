@@ -113,8 +113,7 @@ const TrackMechanicModal: React.FC<TrackMechanicModalProps> = ({ booking, onClos
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
             maxZoom: 19,
-            subdomains: 'abc',
-            crossOrigin: true
+            subdomains: 'abc'
         }).addTo(mapInstanceRef.current);
 
         // Home / Customer destination marker

@@ -2609,25 +2609,28 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             };
         });
 
-        await updateDoc(doc(firestore, 'bookings', bookingId), {
+        // Fire doc update
+        const updatePromise = updateDoc(doc(firestore, 'bookings', bookingId), {
             status: 'Cancelled' as BookingStatus,
             cancellationReason: reason
+        }).catch(err => {
+            console.error(`[cancelBooking] Failed to update doc ${bookingId}:`, err);
         });
 
+        // Asynchronously dispatch all notifications and emails in the background without blocking the UI
         if (booking) {
             const serviceName = booking.services?.[0]?.name || booking.service?.name || 'service';
-            await sendNotification({
-                recipientId: 'admin',
-                title: 'Booking Cancelled',
-                message: `Booking for ${serviceName} was cancelled.`,
-                type: 'alert',
-                date: new Date().toISOString(),
-                read: false
-            });
-
-            // Notify the customer
-            if (booking.customerId) {
-                await sendNotification({
+            
+            Promise.allSettled([
+                sendNotification({
+                    recipientId: 'admin',
+                    title: 'Booking Cancelled',
+                    message: `Booking for ${serviceName} was cancelled.`,
+                    type: 'alert',
+                    date: new Date().toISOString(),
+                    read: false
+                }),
+                booking.customerId ? sendNotification({
                     recipientId: `customer-${booking.customerId}`,
                     title: '❌ Booking Cancelled',
                     message: `Your booking for ${serviceName} has been cancelled. Reason: ${reason}`,
@@ -2635,12 +2638,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     date: new Date().toISOString(),
                     read: false,
                     link: `/customer-portal/booking-history`
-                });
-            }
-
-            // Notify mechanic if one was assigned (MAIN FIX)
-            if (booking.mechanicId) {
-                await sendNotification({
+                }) : Promise.resolve(),
+                booking.mechanicId ? sendNotification({
                     recipientId: `mechanic-${booking.mechanicId}`,
                     title: '🚨 Booking Cancelled',
                     message: `Booking for "${serviceName}" from ${booking.customerName || 'Customer'} has been cancelled.`,
@@ -2648,39 +2647,38 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     date: new Date().toISOString(),
                     read: false,
                     link: `/mechanic-portal/jobs`
-                });
-            }
-
-            if (db?.settings?.smtpHost) {
-                const cancelData = {
-                    customerName: booking.customerName || 'Valued Customer',
-                    bookingId: booking.id,
-                    serviceName: serviceName,
-                    reason: reason || 'Requested by user/admin',
-                    refundStatus: 'In Review / Processing'
-                };
-
-                // Admin cancellation alert
-                if (db.settings.emailOnCancellation) {
-                    sendTemplatedEmail(
-                        'booking_cancelled',
-                        db.settings.contactEmail || 'admin@ridersbud.com',
-                        cancelData,
-                        db.settings
-                    ).catch(err => console.warn("Admin SMTP email notification skipped:", err?.message || err));
-                }
-
-                // Customer cancellation notification
-                if (booking.customerEmail) {
-                    sendTemplatedEmail(
-                        'booking_cancelled',
-                        booking.customerEmail,
-                        cancelData,
-                        db.settings
-                    ).catch(err => console.warn("Customer SMTP email notification skipped:", err?.message || err));
-                }
-            }
+                }) : Promise.resolve(),
+                ...(db?.settings?.smtpHost ? [
+                    (async () => {
+                        const cancelData = {
+                            customerName: booking.customerName || 'Valued Customer',
+                            bookingId: booking.id,
+                            serviceName: serviceName,
+                            reason: reason || 'Requested by user/admin',
+                            refundStatus: 'In Review / Processing'
+                        };
+                        if (db.settings.emailOnCancellation) {
+                            sendTemplatedEmail(
+                                'booking_cancelled',
+                                db.settings.contactEmail || 'admin@ridersbud.com',
+                                cancelData,
+                                db.settings
+                            ).catch(err => console.warn("Admin SMTP email notification skipped:", err?.message || err));
+                        }
+                        if (booking.customerEmail) {
+                            sendTemplatedEmail(
+                                'booking_cancelled',
+                                booking.customerEmail,
+                                cancelData,
+                                db.settings
+                            ).catch(err => console.warn("Customer SMTP email notification skipped:", err?.message || err));
+                        }
+                    })()
+                ] : [])
+            ]).catch(err => console.warn('[cancelBooking] Background notifications warning:', err));
         }
+
+        await updatePromise;
     };
 
     const deleteBooking = async (bookingId: string) => {

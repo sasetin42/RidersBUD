@@ -990,7 +990,7 @@ const DriverBookingFlow: React.FC = () => {
                 const createdRequest = await addServiceRequest(requestPayload);
                 const reqId = createdRequest?.id || `DRV-${Date.now()}`;
                 const isSandbox = db?.settings?.hitpaySandboxMode === true;
-                const refNumber = `DRV-${reqId}-${Date.now()}`;
+                const refNumber = `DRV-${reqId}`;
 
                 sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
                     bookingId: reqId,

@@ -213,6 +213,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Payment transactions (paymentTransactions/{transactionId}) are written ONLY
+    // by Cloud Functions (Admin SDK bypasses rules) after webhook + HitPay API
+    // re-verification. Clients may read a record to display verified receipts and
+    // verification state — they can never create or modify one, so a compromised
+    // client cannot fabricate a PAID status.
+    match /paymentTransactions/{transactionId} {
+      allow read: if isAdmin() || isAuth();
+      allow write: if isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if isAdmin();
     }

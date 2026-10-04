@@ -1279,7 +1279,7 @@ const RentCarScreen: React.FC = () => {
 
         const isSandbox = db?.settings?.hitpaySandboxMode === true;
         const downpayment = bookingDetails.totalPrice * 0.5;
-        const refNumber = `RNT-${createdRental.id}-${Date.now()}`;
+        const refNumber = `RNT-${createdRental.id}-DP`;
 
         sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
             bookingId: createdRental.id,

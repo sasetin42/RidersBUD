@@ -13,6 +13,7 @@ import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { normalizeServiceImage } from '../utils/fallbackImages';
 import { seedServices } from '../data/mockData';
 import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
+import { getPendingPaymentMarker } from '../utils/paymentRedirect';
 import { useNotification } from '../context/NotificationContext';
 import { PaymentEntityKind } from '../utils/firestoreCollections';
 
@@ -50,6 +51,9 @@ const BookingConfirmationScreen: React.FC = () => {
         const bookingId = queryParams.get('bookingId') || locationState.bookingId;
 
         if (status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') {
+            // URL parameters are NOT proof: cancellation requires a real local payment
+            // session — a forged deep link alone must never cancel a booking.
+            if (!sessionStorage.getItem('pendingHitPayBookingTx') && !localStorage.getItem('last_hitpay_booking_tx') && !getPendingPaymentMarker()) return;
             // Process gateway cancellation exactly once — never re-cancel on re-renders
             if (cancelProcessedRef.current) return;
             cancelProcessedRef.current = true;
