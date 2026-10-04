@@ -104,7 +104,8 @@ export const getLeafletTileConfig = (settings?: Settings | null) => {
         options: {
             attribution: provider.attribution,
             maxZoom: provider.maxZoom,
-            subdomains: provider.subdomains || 'abc'
+            subdomains: provider.subdomains || 'abc',
+            crossOrigin: true
         }
     };
 };

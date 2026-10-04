@@ -257,6 +257,7 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             subdomains: 'abc',
+            crossOrigin: true,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 

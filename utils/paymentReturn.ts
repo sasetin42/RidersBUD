@@ -452,13 +452,18 @@ export const watchPaymentReturnVerification = (
         timeoutMs
     );
 
-    // Backend status polls — display only, never writes.
+    // Backend status polls — when HitPay reports completed, trigger backend settlement immediately!
     const pollBackend = async () => {
         if (disposed || settled) return;
         const backend = await fetchBackendPaymentStatus(paymentRequestId, isSandbox);
         if (disposed || settled) return;
         if (backend === 'completed') {
             emit('VERIFYING', 'Payment received — finalizing confirmation...');
+            // Actively trigger server-side verification and settlement if webhook is delayed
+            verifyPaymentTransaction({
+                paymentRequestId,
+                isSandbox
+            }).catch(() => { /* watcher will retry on next poll */ });
         } else if (backend === 'failed') {
             settled = true;
             cleanup();

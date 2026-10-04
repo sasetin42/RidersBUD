@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, Clock, ShieldCheck, Lock, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, ShieldCheck, Lock, AlertTriangle, RefreshCw } from 'lucide-react';
 import Spinner from './Spinner';
 import { PaymentEntityKind } from '../utils/firestoreCollections';
 import {
     PaymentVerificationState,
     watchPaymentReturnVerification,
-    watchTransactionReturnVerification
+    watchTransactionReturnVerification,
+    verifyPaymentTransaction
 } from '../utils/paymentReturn';
 import { getPendingPaymentMarker } from '../utils/paymentRedirect';
 
@@ -63,6 +64,27 @@ const PaymentVerificationOverlay: React.FC<PaymentVerificationOverlayProps> = ({
     const [receipt, setReceipt] = useState<ReceiptData>({});
     const stopRef = useRef<(() => void) | null>(null);
     const notifiedRef = useRef(false);
+    const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+
+    const handleManualReverify = async () => {
+        if (isManualRefreshing) return;
+        setIsManualRefreshing(true);
+        try {
+            const marker = getPendingPaymentMarker();
+            const txId = transactionId || marker?.transactionId || '';
+            const prId = paymentRequestId || marker?.paymentRequestId || '';
+            const sb = isSandbox ?? (marker?.environment === 'sandbox');
+            await verifyPaymentTransaction({
+                transactionId: txId || undefined,
+                paymentRequestId: prId || undefined,
+                isSandbox: sb
+            });
+        } catch {
+            // ignore
+        } finally {
+            setTimeout(() => setIsManualRefreshing(false), 2000);
+        }
+    };
 
     useEffect(() => {
         if (!isOpen || (!entityId && !transactionId)) return;
@@ -261,6 +283,15 @@ const PaymentVerificationOverlay: React.FC<PaymentVerificationOverlayProps> = ({
                 )}
                 {!isPaid && !isTerminal && (
                     <div className="space-y-2">
+                        <button
+                            type="button"
+                            onClick={handleManualReverify}
+                            disabled={isManualRefreshing}
+                            className="w-full py-2.5 rounded-xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary hover:text-white text-xs font-bold transition-all flex items-center justify-center gap-2"
+                        >
+                            <RefreshCw size={13} className={isManualRefreshing ? 'animate-spin' : ''} />
+                            <span>{isManualRefreshing ? 'Checking HitPay...' : 'Re-verify Payment Now'}</span>
+                        </button>
                         <p className="text-[10px] text-gray-500 leading-snug">
                             You can safely keep this screen open — we will update you automatically.
                         </p>

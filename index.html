@@ -155,7 +155,10 @@
                     joined.includes('Listen/channel') ||
                     joined.includes('Write/channel') ||
                     joined.includes('webchannel') ||
+                    joined.includes('QUIC') ||
                     joined.includes('QUIC_TOO_MANY_RTOS') ||
+                    joined.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+                    joined.includes('firestore.googleapis.com') ||
                     joined.includes('ERR_CONNECTION_CLOSED') ||
                     joined.includes('ERR_NAME_NOT_RESOLVED') ||
                     joined.includes('ERR_INTERNET_DISCONNECTED') ||
@@ -643,6 +646,9 @@
                     stack.includes('reportAllChanges') || 
                     stack.includes('startTime') || 
                     msg.includes('QUIC') ||
+                    msg.includes('ERR_CACHE_READ_FAILURE') ||
+                    msg.includes('CACHE_READ_FAILURE') ||
+                    msg.includes('tile.openstreetmap.org') ||
                     msg.includes('ERR_BLOCKED_BY_CLIENT') ||
                     msg.includes('ERR_CONNECTION_CLOSED') ||
                     msg.includes('ERR_INTERNET_DISCONNECTED') ||
@@ -673,6 +679,9 @@
                     msg.includes('CLOSING or CLOSED') || 
                     msg.includes('Evervault') || 
                     msg.includes('QUIC') || 
+                    msg.includes('ERR_CACHE_READ_FAILURE') ||
+                    msg.includes('CACHE_READ_FAILURE') ||
+                    msg.includes('tile.openstreetmap.org') ||
                     msg.includes('startTime') || 
                     msg.includes('reportAllChanges') || 
                     stack.includes('reportAllChanges') ||

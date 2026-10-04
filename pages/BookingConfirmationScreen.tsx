@@ -42,6 +42,8 @@ const BookingConfirmationScreen: React.FC = () => {
         entityKind: PaymentEntityKind;
         entityId: string;
         paymentRequestId?: string;
+        transactionId?: string;
+        referenceNumber?: string;
     } | null>(null);
 
     // If return from payment with status=canceled or status=failed, cancel and redirect with modal
@@ -157,17 +159,17 @@ const BookingConfirmationScreen: React.FC = () => {
             }
             reconciledTxRef.current.add(targetBookingId);
             try {
-                const reqId = queryParams.get('payment_request_id') || '';
-
-                sessionStorage.removeItem('pendingHitPayBookingTx');
-                sessionStorage.removeItem('pendingHitPayServiceTx');
-                localStorage.removeItem('last_hitpay_booking_tx');
-                localStorage.removeItem('last_hitpay_service_tx');
+                const reqId = queryParams.get('payment_request_id') || queryParams.get('reference') || '';
+                const marker = getPendingPaymentMarker();
+                const txId = parsedTx?.transactionId || marker?.transactionId || '';
+                const refNum = parsedTx?.referenceNumber || marker?.referenceNumber || '';
 
                 setPaymentReturnTarget({
                     entityKind: 'booking',
                     entityId: targetBookingId,
-                    paymentRequestId: reqId || undefined
+                    paymentRequestId: reqId || marker?.paymentRequestId || undefined,
+                    transactionId: txId || undefined,
+                    referenceNumber: refNum || undefined
                 });
             } catch (e) {
                 console.warn('HitPay return handling error in confirmation screen:', e);
@@ -428,6 +430,7 @@ const BookingConfirmationScreen: React.FC = () => {
                     entityKind={paymentReturnTarget.entityKind}
                     entityId={paymentReturnTarget.entityId}
                     paymentRequestId={paymentReturnTarget.paymentRequestId}
+                    transactionId={paymentReturnTarget.transactionId}
                     isSandbox={database?.settings?.hitpaySandboxMode === true}
                     amount={downpaymentAmount}
                     onVerified={() => {
