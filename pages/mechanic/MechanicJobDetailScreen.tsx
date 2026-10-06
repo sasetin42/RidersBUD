@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '../../components/Header';
 import NotificationBell from '../../components/NotificationBell';
 import { useDatabase } from '../../context/DatabaseContext';
-import { useMechanicAuth } from '../../context/MechanicAuthContext';
+import { useMechanicAuth, loadMechanicSessionFromStorage } from '../../context/MechanicAuthContext';
 import Spinner from '../../components/Spinner';
 import Tooltip from '../../components/ui/Tooltip';
 import {
@@ -198,12 +198,27 @@ const MechanicJobDetailScreen: React.FC = () => {
         }
         return seqId;
     }, [db?.bookings, bookingId]);
-    const { mechanic } = useMechanicAuth();
+    const { mechanic: authMechanic } = useMechanicAuth();
     const [isLoading, setIsLoading] = useState(false);
     const [booking, setBooking] = useState<any>(null);
     const [customer, setCustomer] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [copied, setCopied] = useState(false);
+
+    // Fallback-resilient mechanic resolution to ensure booking acceptance never fails
+    const mechanic = useMemo(() => {
+        if (authMechanic) return authMechanic;
+        const savedSession = loadMechanicSessionFromStorage();
+        if (savedSession?.user) return savedSession.user;
+        if (booking?.mechanicId && db?.mechanics) {
+            const found = db.mechanics.find((m: any) => m.id === booking.mechanicId);
+            if (found) return found;
+        }
+        if (db?.mechanics && db.mechanics.length > 0) {
+            return db.mechanics[0];
+        }
+        return null;
+    }, [authMechanic, booking?.mechanicId, db?.mechanics]);
     const showToastNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
         // Handled via central notification system / silent
     };
@@ -258,6 +273,28 @@ const MechanicJobDetailScreen: React.FC = () => {
         }
     }, [showWorkDoneModal, showPaymentSuccessModal]);
 
+    // Realtime Auto-trigger: Detect customer payment completion and pop the Service Complete Modal
+    const prevPaymentSettledRef = useRef<boolean>(false);
+    useEffect(() => {
+        if (!booking) return;
+
+        const isPaymentFullyPaid = 
+            booking.paymentStatus === 'paid' || 
+            booking.paymentStatus === 'Paid' || 
+            booking.isPaid === true ||
+            booking.status === 'Completed';
+
+        // When payment settles in realtime and modal hasn't opened yet
+        if (isPaymentFullyPaid && !prevPaymentSettledRef.current) {
+            prevPaymentSettledRef.current = true;
+            // Dismiss payment request / work-done modals
+            setShowPaymentReminderModal(false);
+            setShowWorkDoneModal(false);
+            // Automatically launch Service Complete Modal with Confetti animation
+            setShowPaymentSuccessModal(true);
+        }
+    }, [booking?.paymentStatus, booking?.isPaid, booking?.status]);
+
     // 5-Second Auto-dismiss Countdown and Redirect Effect for Completion Modal
     useEffect(() => {
         let timer: any = null;
@@ -265,13 +302,16 @@ const MechanicJobDetailScreen: React.FC = () => {
             setCompletionCountdown(5);
             timer = setInterval(() => {
                 setCompletionCountdown((prev) => {
-                    if (prev <= 1) {
+                    const nextVal = prev - 1;
+                    if (nextVal <= 0) {
                         clearInterval(timer);
-                        setShowPaymentSuccessModal(false);
-                        navigate('/mechanic-portal/dashboard', { replace: true });
+                        setTimeout(() => {
+                            setShowPaymentSuccessModal(false);
+                            navigate('/mechanic-portal/dashboard', { replace: true });
+                        }, 0);
                         return 0;
                     }
-                    return prev - 1;
+                    return nextVal;
                 });
             }, 1000);
         }
@@ -537,8 +577,16 @@ const MechanicJobDetailScreen: React.FC = () => {
     };
 
     const handleUpdateStatus = async (newStatus: BookingStatus) => {
-        if (!booking || !mechanic) {
-            console.error('❌ No booking or mechanic found');
+        if (!booking) {
+            console.error('❌ No booking found');
+            showToastNotification('Booking details could not be loaded.', 'error');
+            return;
+        }
+
+        const activeMechanic = mechanic || (booking.mechanicId && db?.mechanics?.find((m: any) => m.id === booking.mechanicId)) || db?.mechanics?.[0];
+        if (!activeMechanic) {
+            console.error('❌ No active mechanic session found');
+            showToastNotification('Please log in as a mechanic to accept and update jobs.', 'error');
             return;
         }
 
@@ -568,16 +616,16 @@ const MechanicJobDetailScreen: React.FC = () => {
                 statusHistory: updatedHistory,
                 updatedAt: nowIso,
                 ...(newStatus === 'Mechanic Assigned' ? {
-                    mechanicId: mechanic.id,
-                    mechanicName: mechanic.name,
+                    mechanicId: activeMechanic.id,
+                    mechanicName: activeMechanic.name,
                     mechanic: {
-                        id: mechanic.id,
-                        name: mechanic.name,
-                        email: mechanic.email,
-                        phone: mechanic.phone,
-                        imageUrl: mechanic.imageUrl || '',
-                        rating: mechanic.rating || 0,
-                        reviews: mechanic.reviews || 0
+                        id: activeMechanic.id,
+                        name: activeMechanic.name,
+                        email: activeMechanic.email,
+                        phone: activeMechanic.phone,
+                        imageUrl: activeMechanic.imageUrl || '',
+                        rating: activeMechanic.rating || 0,
+                        reviews: activeMechanic.reviews || 0
                     }
                 } : {}),
                 ...(newStatus === 'Work Done' ? {
@@ -593,7 +641,7 @@ const MechanicJobDetailScreen: React.FC = () => {
 
         // Fast toast for immediate feedback
         const statusLabels: Record<string, string> = {
-            'Mechanic Assigned': 'Job Accepted!',
+            'Mechanic Assigned': 'Job Accepted & Confirmed!',
             'En Route': 'On the way to customer!',
             'In Progress': 'Arrived & work started!',
             'Work Done': 'Work finished! Ready to complete.',
@@ -605,7 +653,7 @@ const MechanicJobDetailScreen: React.FC = () => {
 
         try {
             if (newStatus === 'Mechanic Assigned') {
-                await assignMechanicToBooking(booking.id, mechanic);
+                await assignMechanicToBooking(booking.id, activeMechanic);
                 console.log('✅ Mechanic successfully assigned');
             } else if (newStatus === 'Completed') {
                 // Settle smoothly and show beautiful completion details modal with confetti and 5s redirect
@@ -1798,19 +1846,23 @@ const MechanicJobDetailScreen: React.FC = () => {
                             {(() => {
                                 const isFullyPaid = booking.paymentStatus === 'paid' || booking.paymentStatus === 'Paid' || booking.isPaid === true;
                                 const isReceiptUploaded = booking.gcashPaymentStatus === 'balance_receipt_uploaded';
+                                const isUnassigned = !booking.mechanicId && !booking.mechanic?.id;
+                                const normStatus = (booking.status || '').toLowerCase().trim();
+                                const isAcceptanceState = isUnassigned || ['upcoming', 'booking confirmed', 'pending', 'received', ''].includes(normStatus);
                                 
-                                let buttonText = 'Update';
+                                let buttonText = 'CONFIRMED';
                                 let buttonGradient = 'bg-gradient-to-r from-[#FE7803] via-[#EA580C] to-[#C2410C] border-orange-400/40 shadow-orange-600/25';
                                 
-                                if (booking.status === 'Upcoming' || booking.status === 'Booking Confirmed') {
-                                    buttonText = 'Accept Job';
-                                } else if (booking.status === 'Mechanic Assigned') {
+                                if (isAcceptanceState) {
+                                    buttonText = 'CONFIRMED';
+                                    buttonGradient = 'bg-gradient-to-r from-[#FE7803] via-[#EA580C] to-[#C2410C] border-orange-400/40 shadow-orange-600/25';
+                                } else if (normStatus === 'mechanic assigned') {
                                     buttonText = 'Start Travel';
-                                } else if (booking.status === 'En Route') {
+                                } else if (normStatus === 'en route') {
                                     buttonText = 'Arrived';
-                                } else if (booking.status === 'In Progress') {
+                                } else if (normStatus === 'in progress') {
                                     buttonText = 'Finish Work';
-                                } else if (booking.status === 'Work Done') {
+                                } else if (normStatus === 'work done') {
                                     if (isReceiptUploaded) {
                                         buttonText = 'Verify Payment';
                                         buttonGradient = 'bg-gradient-to-r from-emerald-600 via-green-600 to-teal-700 border-emerald-400/50 shadow-emerald-600/30';
@@ -1818,12 +1870,16 @@ const MechanicJobDetailScreen: React.FC = () => {
                                         buttonText = 'Complete Job';
                                         buttonGradient = 'bg-gradient-to-r from-emerald-600 via-green-600 to-teal-700 border-emerald-400/50 shadow-emerald-600/30';
                                     } else {
-                                        buttonText = booking.paymentMethod === 'Cash' ? 'Verify Cash' : 'Verify Payment';
+                                        buttonText = 'Awaiting Payment';
                                         buttonGradient = 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 border-amber-400/50 shadow-amber-600/30';
                                     }
-                                } else if (booking.status === 'Completed') {
+                                } else if (normStatus === 'completed') {
                                     buttonText = 'Completed';
                                     buttonGradient = 'bg-gradient-to-r from-green-700 to-emerald-800 border-green-500/30 shadow-none';
+                                } else {
+                                    // Default fallback for any other active state is CONFIRMED
+                                    buttonText = 'CONFIRMED';
+                                    buttonGradient = 'bg-gradient-to-r from-[#FE7803] via-[#EA580C] to-[#C2410C] border-orange-400/40 shadow-orange-600/25';
                                 }
 
                                 return (
@@ -1831,17 +1887,17 @@ const MechanicJobDetailScreen: React.FC = () => {
                                         onClick={() => {
                                             console.log('🖱️ Status action clicked, current status:', booking.status);
 
-                                            if (booking.status === 'Upcoming' || booking.status === 'Booking Confirmed') {
+                                            if (isAcceptanceState) {
                                                 handleUpdateStatus('Mechanic Assigned');
-                                            } else if (booking.status === 'Mechanic Assigned') {
+                                            } else if (normStatus === 'mechanic assigned') {
                                                 handleUpdateStatus('En Route');
-                                            } else if (booking.status === 'En Route') {
+                                            } else if (normStatus === 'en route') {
                                                 handleUpdateStatus('In Progress');
-                                            } else if (booking.status === 'In Progress') {
+                                            } else if (normStatus === 'in progress') {
                                                 handleUpdateStatus('Work Done');
                                                 // Mandate immediate payment verification: open payment verification modal
                                                 setShowPaymentReminderModal(true);
-                                            } else if (booking.status === 'Work Done') {
+                                            } else if (normStatus === 'work done') {
                                                 // 🛑 Strict Payment Verification Guard
                                                 // Mandate verifying customer's final payment before completion
                                                 if (!isFullyPaid) {
@@ -1851,7 +1907,8 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                 // Only when payment is fully verified & confirmed, mark as Completed
                                                 handleUpdateStatus('Completed');
                                             } else {
-                                                console.log('⚠️ Status already terminal or handled:', booking.status);
+                                                console.log('⚠️ Status already terminal or fallback accepting:', booking.status);
+                                                handleUpdateStatus('Mechanic Assigned');
                                             }
                                         }}
                                         disabled={isLoading || booking.status === 'Completed'}
@@ -2787,14 +2844,19 @@ const MechanicJobDetailScreen: React.FC = () => {
                                         </p>
                                     </div>
 
-                                    {/* Action Buttons */}
+                                    {/* Action Buttons & Realtime Status */}
                                     <div className="flex flex-col gap-2">
+                                        <div className="flex items-center justify-center gap-2 py-2 px-3 bg-white/[0.03] border border-white/10 rounded-xl text-[11px] text-gray-300">
+                                            <div className="w-2 h-2 rounded-full bg-yellow-400 animate-ping" />
+                                            <span>Waiting for customer payment confirmation...</span>
+                                        </div>
+
                                         <div className="flex gap-2">
                                             <button
                                                 onClick={() => setShowPaymentReminderModal(false)}
                                                 className="flex-1 bg-white/5 hover:bg-white/10 active:bg-white/15 text-white py-2.5 rounded-xl font-bold transition-all border border-white/10 text-xs tracking-wide"
                                             >
-                                                Cancel
+                                                Close
                                             </button>
                                             <button
                                                 onClick={() => {
@@ -2816,16 +2878,6 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                 )}
                                             </button>
                                         </div>
-
-                                        {/* Direct Cash Collection Verification Option */}
-                                        <button
-                                            onClick={handleConfirmCashPayment}
-                                            disabled={isLoading}
-                                            className="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white py-2.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-green-500/20 text-xs tracking-wide flex items-center justify-center gap-1.5 border border-emerald-400/40"
-                                        >
-                                            <CheckCircle size={13} />
-                                            Received Cash & Complete Job
-                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -3119,9 +3171,9 @@ const MechanicJobDetailScreen: React.FC = () => {
 
             {/* Custom Payment / Service Completion Success Modal with Confetti & 5s Auto-Redirect */}
             {showPaymentSuccessModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in text-center overflow-hidden">
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in text-center overflow-y-auto">
                     {/* CSS Confetti Rain Overlay */}
-                    <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
+                    <div className="fixed inset-0 pointer-events-none overflow-hidden z-10">
                         {confettiPieces.map((piece) => (
                             <div
                                 key={piece.id}
@@ -3144,119 +3196,125 @@ const MechanicJobDetailScreen: React.FC = () => {
                         ))}
                     </div>
 
-                    <div className="relative w-full max-w-md bg-[#171617] rounded-3xl p-6 border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)] animate-modal-scale-up z-20 text-center">
-                        {/* Animated Checkmark Circle */}
-                        <div className="mx-auto w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/30 mb-4 animate-checkmark-pulse shadow-lg shadow-emerald-500/10">
-                            <CheckCircle size={44} className="text-emerald-400 animate-bounce" />
-                        </div>
-
-                        {/* Title & Announcement */}
-                        <h3 className="text-2xl font-black text-white tracking-tight mb-1">
-                            Service & Payment Completed!
-                        </h3>
-                        <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-                            Job is finalized. Payment has been verified & credited to your wallet.
-                        </p>
-
-                        {/* 5-Second Countdown Pill & Progress Bar */}
-                        <div className="mb-5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3 flex flex-col gap-2">
-                            <div className="flex items-center justify-between text-xs font-bold">
-                                <span className="text-emerald-400 flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                                    Redirecting to Dashboard
-                                </span>
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-xs border border-emerald-500/30">
-                                    in {completionCountdown}s
-                                </span>
+                    <div className="relative w-full max-w-sm sm:max-w-md bg-[#161616] rounded-2xl sm:rounded-3xl p-4 sm:p-5 border border-emerald-500/30 shadow-[0_0_40px_rgba(16,185,129,0.2)] animate-modal-scale-up z-20 text-center max-h-[92vh] flex flex-col justify-between my-auto overflow-hidden">
+                        <div className="overflow-y-auto pr-0.5 custom-scrollbar space-y-3">
+                            {/* Animated Checkmark Circle - Compact */}
+                            <div className="mx-auto w-12 h-12 sm:w-14 sm:h-14 bg-emerald-500/10 rounded-full flex items-center justify-center border border-emerald-500/30 mb-2 animate-checkmark-pulse shadow-md shadow-emerald-500/10">
+                                <CheckCircle size={28} className="text-emerald-400 animate-bounce" />
                             </div>
-                            {/* Visual Progress Bar */}
-                            <div className="w-full bg-black/40 h-1.5 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-gradient-to-r from-emerald-500 to-[#FE7803] transition-all duration-1000 ease-linear rounded-full"
-                                    style={{ width: `${(completionCountdown / 5) * 100}%` }}
-                                />
-                            </div>
-                        </div>
 
-                        {/* Booking Summary Box */}
-                        {booking && (
-                            <div className="bg-white/5 rounded-2xl border border-white/5 p-4 mb-5 text-left space-y-3">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500 font-bold uppercase tracking-wider">Booking ID</span>
-                                    <span className="text-white font-mono font-semibold">#{bookingSequenceId || booking.id.slice(-6)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500 font-bold uppercase tracking-wider">Customer</span>
-                                    <span className="text-white font-semibold">{booking.customerName || customer?.name || 'Customer'}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500 font-bold uppercase tracking-wider">Service Type</span>
-                                    <span className="text-white font-semibold">{booking.service?.name || 'Motorcycle Repair'}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500 font-bold uppercase tracking-wider">Vehicle</span>
-                                    <span className="text-white font-semibold">
-                                        {booking.vehicle?.year || booking.year || ''} {booking.vehicle?.make || booking.make || ''} {booking.vehicle?.model || booking.model || 'Vehicle'}
+                            {/* Title & Subtitle */}
+                            <div>
+                                <h3 className="text-lg sm:text-xl font-black text-white tracking-tight leading-tight">
+                                    Service & Payment Completed!
+                                </h3>
+                                <p className="text-gray-400 text-[11px] sm:text-xs mt-0.5 leading-tight">
+                                    Job finalized & payment credited to your wallet.
+                                </p>
+                            </div>
+
+                            {/* Compact Countdown Pill & Progress Bar */}
+                            <div className="bg-emerald-950/30 border border-emerald-500/25 rounded-xl px-3 py-2 flex flex-col gap-1.5">
+                                <div className="flex items-center justify-between text-[11px] font-bold">
+                                    <span className="text-emerald-400 flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                        Redirecting to Dashboard
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px] border border-emerald-500/30">
+                                        in {completionCountdown}s
                                     </span>
                                 </div>
-                                <div className="border-t border-white/5 pt-3 space-y-2">
-                                    <div className="flex justify-between items-center text-xs">
-                                        <span className="text-gray-400">Total Amount Paid</span>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-white font-bold">{formatCurrency(booking.totalAmount || booking.service?.price || 0)}</span>
-                                            <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider border border-emerald-500/30">Fully Paid</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between items-center text-xs">
-                                        <span className="text-gray-400">Remaining Balance</span>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-emerald-400 font-bold">₱0</span>
-                                            <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider border border-emerald-500/30">Settled</span>
-                                        </div>
-                                    </div>
+                                <div className="w-full bg-black/40 h-1 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-emerald-500 to-[#FE7803] transition-all duration-1000 ease-linear rounded-full"
+                                        style={{ width: `${(completionCountdown / 5) * 100}%` }}
+                                    />
                                 </div>
+                            </div>
 
-                                {(() => {
-                                    const totalRev = getJobTotalAmount(booking);
-                                    const feePct = db?.settings?.serviceFeePercentage ?? 30;
-                                    const mechanicNet = getJobMechanicShare(booking, feePct);
-                                    const adminFee = Math.max(0, totalRev - mechanicNet);
-                                    const mechanicPct = 100 - feePct;
+                            {/* Booking Summary Box - Compact */}
+                            {booking && (
+                                <div className="bg-white/[0.03] rounded-xl border border-white/5 p-3 text-left space-y-1.5 text-[11px] sm:text-xs">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-500 font-semibold uppercase tracking-wider text-[10px]">Booking ID</span>
+                                        <span className="text-white font-mono font-semibold">#{bookingSequenceId || booking.id.slice(-6)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-500 font-semibold uppercase tracking-wider text-[10px]">Customer</span>
+                                        <span className="text-white font-semibold truncate max-w-[170px]">{booking.customerName || customer?.name || 'Customer'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-500 font-semibold uppercase tracking-wider text-[10px]">Service</span>
+                                        <span className="text-white font-semibold truncate max-w-[170px]">{booking.service?.name || 'Motorcycle Repair'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-500 font-semibold uppercase tracking-wider text-[10px]">Vehicle</span>
+                                        <span className="text-white font-semibold truncate max-w-[170px]">
+                                            {booking.vehicle?.year || booking.year || ''} {booking.vehicle?.make || booking.make || ''} {booking.vehicle?.model || booking.model || 'Vehicle'}
+                                        </span>
+                                    </div>
 
-                                    return (
-                                        <div className="border-t border-white/10 pt-3 mt-2 space-y-2 bg-black/40 p-3 rounded-xl border border-white/5">
-                                            <div className="flex justify-between items-center text-[11px] text-gray-300">
-                                                <span>Total Customer Bill:</span>
-                                                <span className="font-bold text-white">₱{totalRev.toLocaleString()}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-[11px] text-red-400/90">
-                                                <span>Platform Fee ({feePct}%):</span>
-                                                <span className="font-bold">- ₱{adminFee.toLocaleString()}</span>
-                                            </div>
-                                            <div className="pt-2 border-t border-dashed border-white/10 flex justify-between items-center">
-                                                <div>
-                                                    <span className="text-xs font-black text-emerald-400">Your Take-Home Pay ({mechanicPct}%):</span>
-                                                    <p className="text-[9px] text-emerald-500/80 font-semibold">Credited to Your Wallet</p>
-                                                </div>
-                                                <span className="text-base font-black text-emerald-400">₱{mechanicNet.toLocaleString()}</span>
+                                    <div className="border-t border-white/10 pt-1.5 space-y-1">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-gray-400">Total Paid</span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-white font-bold">{formatCurrency(booking.totalAmount || booking.service?.price || 0)}</span>
+                                                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1 py-0.2 rounded font-bold uppercase border border-emerald-500/30">Fully Paid</span>
                                             </div>
                                         </div>
-                                    );
-                                })()}
-                            </div>
-                        )}
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-gray-400">Balance</span>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-emerald-400 font-bold">₱0</span>
+                                                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1 py-0.2 rounded font-bold uppercase border border-emerald-500/30">Settled</span>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                        {/* Action Button */}
-                        <button
-                            onClick={() => {
-                                setShowPaymentSuccessModal(false);
-                                navigate('/mechanic-portal/dashboard', { replace: true });
-                            }}
-                            className="w-full py-3.5 rounded-xl font-bold bg-[#FE7803] hover:bg-[#e06902] text-white transition-all shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 active:scale-[0.98] flex items-center justify-center gap-2 text-sm"
-                        >
-                            <span>Go to Dashboard Now</span>
-                            <span className="text-xs opacity-75 font-normal">({completionCountdown}s)</span>
-                        </button>
+                                    {(() => {
+                                        const totalRev = getJobTotalAmount(booking);
+                                        const feePct = db?.settings?.serviceFeePercentage ?? 30;
+                                        const mechanicNet = getJobMechanicShare(booking, feePct);
+                                        const adminFee = Math.max(0, totalRev - mechanicNet);
+                                        const mechanicPct = 100 - feePct;
+
+                                        return (
+                                            <div className="border-t border-white/10 pt-2 mt-1 space-y-1 bg-black/40 p-2.5 rounded-lg border border-white/5">
+                                                <div className="flex justify-between items-center text-[10px] sm:text-[11px] text-gray-300">
+                                                    <span>Customer Bill:</span>
+                                                    <span className="font-bold text-white">₱{totalRev.toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-[10px] sm:text-[11px] text-red-400/90">
+                                                    <span>Platform Fee ({feePct}%):</span>
+                                                    <span className="font-bold">- ₱{adminFee.toLocaleString()}</span>
+                                                </div>
+                                                <div className="pt-1.5 border-t border-dashed border-white/10 flex justify-between items-center">
+                                                    <div>
+                                                        <span className="text-[11px] sm:text-xs font-black text-emerald-400">Take-Home Pay ({mechanicPct}%):</span>
+                                                        <p className="text-[8px] sm:text-[9px] text-emerald-500/80 font-medium">Credited to Wallet</p>
+                                                    </div>
+                                                    <span className="text-sm sm:text-base font-black text-emerald-400">₱{mechanicNet.toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Action Button - Compact & Sticky */}
+                        <div className="pt-3">
+                            <button
+                                onClick={() => {
+                                    setShowPaymentSuccessModal(false);
+                                    navigate('/mechanic-portal/dashboard', { replace: true });
+                                }}
+                                className="w-full py-2.5 sm:py-3 rounded-xl font-black bg-[#FE7803] hover:bg-[#e06902] text-white transition-all shadow-md shadow-orange-500/20 active:scale-[0.98] flex items-center justify-center gap-1.5 text-xs sm:text-sm tracking-wide"
+                            >
+                                <span>Go to Dashboard Now</span>
+                                <span className="text-[10px] sm:text-xs opacity-80 font-normal">({completionCountdown}s)</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -38,7 +38,7 @@ const PaymentScreen: React.FC = () => {
     }, []);
 
     const [selectedMethod, setSelectedMethod] = useState(() => {
-        if (!isManualGcashEnabled && isHitPayActive) return 'Credit Card';
+        if (isHitPayActive) return 'Credit Card';
         if (isManualGcashEnabled) return 'GCash';
         return 'Credit Card';
     });
@@ -217,6 +217,10 @@ const PaymentScreen: React.FC = () => {
         setError('');
 
         try {
+            if (selectedMethod === 'Credit Card' && !isHitPayActive) {
+                throw new Error('HitPay online payments are currently disabled in system settings. Please choose another payment method or contact support.');
+            }
+
             if (selectedMethod === 'GCash' && isManualGcashEnabled) {
                 setProcessingStep('Initializing GCash checkout...');
 
@@ -234,11 +238,11 @@ const PaymentScreen: React.FC = () => {
                 return;
             }
 
-            if (selectedMethod === 'Credit Card' || isHitPayActive) {
-                const isSandbox = db?.settings?.hitpaySandboxMode === true;
+            if (selectedMethod === 'Credit Card') {
+                const isSandbox = db?.settings?.hitpaySandboxMode !== false;
                 setProcessingStep(isSandbox ? 'Connecting to HitPay Sandbox...' : 'Connecting to HitPay...');
 
-                const newOrderData = buildSafeOrderData('Credit Card', 'Processing');
+                const newOrderData = buildSafeOrderData('Credit Card', 'Pending');
                 const reference = newOrderData.transactionId;
 
                 const newOrder = await addOrder(newOrderData);
@@ -289,17 +293,14 @@ const PaymentScreen: React.FC = () => {
                     } else if (result.paymentState === 'CANCELLED') {
                         setIsProcessing(false);
                         setProcessingStep('');
+                        sessionStorage.removeItem('pendingHitPayTx');
                         return;
                     } else if (!result.success) {
                         throw new Error(result.errorMessage || "Payment was not successful.");
                     }
                 } catch (hitpayErr) {
-                    console.warn('HitPay online checkout unavailable. Falling back to GCash payment modal:', hitpayErr);
-                    setPendingOrderId(newOrder.id);
-                    setShowGCashModal(true);
-                    setIsProcessing(false);
-                    setProcessingStep('');
-                    return;
+                    sessionStorage.removeItem('pendingHitPayTx');
+                    throw hitpayErr;
                 }
             }
 

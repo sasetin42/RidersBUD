@@ -6,11 +6,34 @@ import static org.junit.Assert.*;
 public class PaymentNavigationPolicyTest {
 
     @Test
+    public void testAcceptValidLiveAndSandboxInitialCheckoutUrls() {
+        assertTrue(PaymentNavigationPolicy.isValidInitialCheckoutUrl("https://hit-pay.com/checkout/pr_123"));
+        assertTrue(PaymentNavigationPolicy.isValidInitialCheckoutUrl("https://checkout.sandbox.hit-pay.com/pay/pr_123"));
+    }
+
+    @Test
+    public void testRejectUnsafeOrDeceptiveInitialCheckoutUrls() {
+        assertFalse(PaymentNavigationPolicy.isValidInitialCheckoutUrl("http://hit-pay.com/checkout"));
+        assertFalse(PaymentNavigationPolicy.isValidInitialCheckoutUrl("https://hit-pay.com.evil.example/checkout"));
+        assertFalse(PaymentNavigationPolicy.isValidInitialCheckoutUrl("https://user@hit-pay.com/checkout"));
+        assertFalse(PaymentNavigationPolicy.isValidInitialCheckoutUrl("javascript:alert(1)"));
+        assertFalse(PaymentNavigationPolicy.isValidInitialCheckoutUrl("not a URL"));
+    }
+
+    @Test
     public void testInterceptNativeSchemeReturn() {
         PaymentNavigationPolicy.Decision decision = PaymentNavigationPolicy.evaluate(
                 "ridersbud://payment/return?status=completed&reference=RB-12345"
         );
         assertEquals(PaymentNavigationPolicy.PolicyAction.INTERCEPT_RETURN, decision.action);
+    }
+
+    @Test
+    public void testBlockNonPaymentRidersBudCallback() {
+        PaymentNavigationPolicy.Decision decision = PaymentNavigationPolicy.evaluate(
+                "ridersbud://customer-portal/bookings"
+        );
+        assertEquals(PaymentNavigationPolicy.PolicyAction.BLOCK, decision.action);
     }
 
     @Test

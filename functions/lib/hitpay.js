@@ -66,6 +66,14 @@ const COLLECTION_ENTITY_KIND = {
     orders: 'order'
 };
 
+/** Resolve server-authoritative gateway settings; missing mode defaults safely to sandbox. */
+function resolveHitpaySystemConfig(settings = {}) {
+    return {
+        enabled: settings.hitpayEnabled !== false,
+        isSandbox: settings.hitpaySandboxMode !== false
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Credentials & Salts
 // ---------------------------------------------------------------------------
@@ -75,9 +83,9 @@ const credentialCache = { sandbox: null, live: null, expiresAt: 0 };
 /**
  * Resolve HitPay credentials and salts for an environment.
  * Priority order:
- *   1. Environment variables (functions/.env)
- *   2. Admin-only secrets document (settings/hitpaySecrets)
- *   3. Legacy settings document (settings/main)
+ *   1. Admin-only secrets document (settings/hitpaySecrets)
+ *   2. Environment variables (functions/.env) as deployment fallback
+ * Public settings/main is deliberately never consulted for credentials.
  *
  * Returns { apiKey, salt, webhookSalt, source } or null if not provisioned.
  */
@@ -116,48 +124,32 @@ async function resolveHitpayCredentials(isSandbox) {
         ? (process.env.HITPAY_SANDBOX_WEBHOOK_SALT || envSalt)
         : (process.env.HITPAY_WEBHOOK_SALT || envSalt);
 
-    if (envKey) {
+    // Prefer System Settings so credential rotations take effect even if old
+    // deployment environment values remain configured. Fill gaps from env.
+    const secrets = await readDoc('hitpaySecrets');
+    const firestoreApiKey = pick(
+        secrets,
+        isSandbox ? ['hitpaySandboxApiKey', 'sandboxApiKey'] : ['hitpayApiKey', 'liveApiKey', 'apiKey']
+    );
+    const firestoreSalt = pick(
+        secrets,
+        isSandbox ? ['hitpaySandboxSalt', 'sandboxSalt'] : ['hitpaySalt', 'liveSalt', 'salt']
+    );
+    const firestoreWebhookSalt = pick(
+        secrets,
+        isSandbox ? ['hitpaySandboxWebhookSalt', 'sandboxWebhookSalt'] : ['hitpayWebhookSalt', 'webhookSalt']
+    );
+    const apiKey = firestoreApiKey || envKey;
+    const salt = firestoreSalt || envSalt || '';
+    const webhookSalt = firestoreWebhookSalt || envWebhookSalt || salt;
+
+    if (apiKey) {
         resolved = {
-            apiKey: envKey,
-            salt: envSalt || '',
-            webhookSalt: envWebhookSalt || envSalt || '',
-            source: 'env'
+            apiKey,
+            salt,
+            webhookSalt,
+            source: firestoreApiKey ? 'firestore:hitpaySecrets' : 'env'
         };
-    }
-
-    // 2. Admin-only secrets document (settings/hitpaySecrets)
-    if (!resolved) {
-        const secrets = await readDoc('hitpaySecrets');
-        const apiKey = pick(
-            secrets,
-            isSandbox ? ['hitpaySandboxApiKey', 'sandboxApiKey'] : ['hitpayApiKey', 'liveApiKey', 'apiKey']
-        );
-        const salt = pick(
-            secrets,
-            isSandbox ? ['hitpaySandboxSalt', 'sandboxSalt'] : ['hitpaySalt', 'liveSalt', 'salt']
-        );
-        const webhookSalt = pick(
-            secrets,
-            isSandbox ? ['hitpaySandboxWebhookSalt', 'sandboxWebhookSalt'] : ['hitpayWebhookSalt', 'webhookSalt']
-        ) || salt;
-
-        if (apiKey) {
-            resolved = { apiKey, salt, webhookSalt, source: 'firestore:hitpaySecrets' };
-        }
-    }
-
-    // 3. Legacy settings/main document
-    if (!resolved) {
-        const main = await readDoc('main');
-        const apiKey = isSandbox ? (main.hitpaySandboxApiKey || main.sandboxApiKey) : (main.hitpayApiKey || main.apiKey);
-        const salt = isSandbox ? (main.hitpaySandboxSalt || main.sandboxSalt) : (main.hitpaySalt || main.salt);
-        const webhookSalt = isSandbox
-            ? (main.hitpaySandboxWebhookSalt || main.sandboxWebhookSalt || salt)
-            : (main.hitpayWebhookSalt || main.webhookSalt || salt);
-
-        if (apiKey) {
-            resolved = { apiKey, salt, webhookSalt, source: 'firestore:settings/main' };
-        }
     }
 
     if (resolved) {
@@ -412,7 +404,7 @@ function parseReferenceEntity(referenceNumber) {
     if (ref.startsWith('BOK-')) { entityId = ref.split('-')[1] || ''; collectionName = 'bookings'; }
     else if (ref.startsWith('RNT-')) { entityId = ref.split('-')[1] || ''; collectionName = 'rentalBookings'; }
     else if (ref.startsWith('LIA-')) { entityId = ref.split('-')[1] || ''; collectionName = 'liaisonBookings'; }
-    else if (ref.startsWith('TOW-') || ref.startsWith('DRV-')) { entityId = ref.split('-')[1] || ''; collectionName = 'serviceRequests'; }
+    else if (ref.startsWith('TOW-') || ref.startsWith('DRV-') || ref.startsWith('SRV-')) { entityId = ref.split('-')[1] || ''; collectionName = 'serviceRequests'; }
     else if (ref.startsWith('ORD-')) { entityId = ref.split('-')[1] || ''; collectionName = 'orders'; }
 
     if (entityId && entityId.length >= 4 && collectionName) {
@@ -940,6 +932,7 @@ module.exports = {
     TERMINAL_STATUSES,
     ENTITY_COLLECTIONS,
     COLLECTION_ENTITY_KIND,
+    resolveHitpaySystemConfig,
     resolveHitpayCredentials,
     resolveWebhookSalts,
     hitpayApi,

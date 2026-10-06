@@ -29,6 +29,7 @@ import PaymentVerificationOverlay from './components/PaymentVerificationOverlay'
 import { getPendingPaymentMarker, clearPendingPaymentMarker, NAVIGATE_EVENT } from './utils/paymentRedirect';
 import { fetchPaymentEntitySnapshot, isPaymentEntityVerified, handlePaymentReturn, parsePaymentReturnUrl, fetchPaymentTransaction } from './utils/paymentReturn';
 import { PaymentEntityKind } from './utils/firestoreCollections';
+import { HitPayInApp } from './services/payment/PaymentController';
 import { Shield, ShoppingBag, Sparkles, ShieldCheck, Truck, Wrench, Bell, CheckCircle2 } from 'lucide-react';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -430,21 +431,31 @@ const AppContent: React.FC = () => {
 
         // Listen for native deep linking (appUrlOpen from external browser/GCash app redirects)
         let appUrlListener: any = null;
+        let paymentRedirectListener: any = null;
+        let paymentClosedListener: any = null;
+        let paymentErrorListener: any = null;
+        let paymentProviderReturnedListener: any = null;
         if (Capacitor.isNativePlatform()) {
-            CapApp.addListener('appUrlOpen', (event) => {
+            let lastHandledPaymentUrl = '';
+            let lastHandledPaymentAt = 0;
+            const processIncomingUrl = (rawUrl: string) => {
                 try {
-                    console.log('[Capacitor] App opened via deep link:', event.url);
-                    const rawUrl = event.url;
+                    if (!rawUrl) return;
 
                     // Payment return channel (ridersbud://payment/return OR the
                     // HTTPS App Link fallback) — one centralized handler; it only
                     // triggers server-side verification, never trusts URL status.
                     if (parsePaymentReturnUrl(rawUrl)) {
+                        const now = Date.now();
+                        if (rawUrl === lastHandledPaymentUrl && now - lastHandledPaymentAt < 3000) return;
+                        lastHandledPaymentUrl = rawUrl;
+                        lastHandledPaymentAt = now;
                         handlePaymentReturn(rawUrl).catch((err) => {
                             console.warn('[Payment] return handling failed:', err);
                         });
-                        return;
+                        return true;
                     }
+
                     // Handle ridersbud:// or custom scheme or web domain
                     let parsedUrl: URL;
                     if (rawUrl.startsWith('ridersbud://') || rawUrl.startsWith('com.sasetin42.ridersbud://')) {
@@ -466,12 +477,62 @@ const AppContent: React.FC = () => {
                     } else if (pathname && pathname !== '/') {
                         navigate(fullTarget);
                     }
+                    return false;
                 } catch (deepLinkErr) {
                     console.warn('[Capacitor] Failed to parse deep link URL:', deepLinkErr);
+                    return false;
                 }
+            };
+
+            CapApp.addListener('appUrlOpen', (event) => {
+                console.log('[Capacitor] App opened via deep link:', event.url);
+                processIncomingUrl(event.url);
             }).then(handle => {
                 appUrlListener = handle;
             }).catch(console.warn);
+
+            // The in-app Android payment activity returns via this plugin event,
+            // not Capacitor's appUrlOpen event. Funnel both paths to one verifier.
+            HitPayInApp.addListener('paymentRedirect', (event) => {
+                if (typeof event?.url === 'string') processIncomingUrl(event.url);
+            }).then(handle => {
+                paymentRedirectListener = handle;
+            }).catch((err) => console.warn('[Payment] Native redirect listener unavailable:', err));
+
+            const returnToOrigin = (clearMarker: boolean) => {
+                const marker = getPendingPaymentMarker();
+                if (clearMarker) clearPendingPaymentMarker();
+                const target = marker?.initiatedFrom || marker?.returnRoute || '/customer-portal/';
+                navigate(target, { replace: true });
+            };
+            HitPayInApp.addListener('paymentClosed', () => returnToOrigin(true))
+                .then(handle => { paymentClosedListener = handle; })
+                .catch((err) => console.warn('[Payment] Native close listener unavailable:', err));
+            HitPayInApp.addListener('paymentError', (event) => {
+                console.warn('[Payment] Native checkout error:', event?.error || 'Unknown native checkout error');
+                returnToOrigin(false);
+            }).then(handle => { paymentErrorListener = handle; })
+                .catch((err) => console.warn('[Payment] Native error listener unavailable:', err));
+
+            HitPayInApp.addListener('paymentProviderReturned', () => {
+                const marker = getPendingPaymentMarker();
+                if (!marker || window.location.pathname === '/payment/return') return;
+                const params = new URLSearchParams();
+                if (marker.transactionId) params.set('tx', marker.transactionId);
+                if (marker.referenceNumber) params.set('ref', marker.referenceNumber);
+                if (marker.paymentRequestId) params.set('prid', marker.paymentRequestId);
+                if (marker.environment === 'sandbox') params.set('sb', '1');
+                processIncomingUrl(`ridersbud://payment/return?${params.toString()}`);
+            }).then(handle => { paymentProviderReturnedListener = handle; })
+                .catch((err) => console.warn('[Payment] Wallet return listener unavailable:', err));
+
+            // App Links can launch a killed process without firing appUrlOpen.
+            // Register listeners first, then consume Capacitor's launch URL.
+            CapApp.getLaunchUrl()
+                .then((launch) => {
+                    if (launch?.url) processIncomingUrl(launch.url);
+                })
+                .catch((err) => console.warn('[Payment] Unable to read app launch URL:', err));
         }
 
         return () => {
@@ -481,6 +542,10 @@ const AppContent: React.FC = () => {
             if (appUrlListener && typeof appUrlListener.remove === 'function') {
                 appUrlListener.remove();
             }
+            paymentRedirectListener?.remove?.();
+            paymentClosedListener?.remove?.();
+            paymentErrorListener?.remove?.();
+            paymentProviderReturnedListener?.remove?.();
         };
     }, [navigate]);
 

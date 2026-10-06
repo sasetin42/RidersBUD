@@ -68,7 +68,7 @@ const saveMechanicSessionToStorage = (user: Mechanic | null, isBypassed: boolean
     window.dispatchEvent(new Event('mechanicAuthChange'));
 };
 
-const loadMechanicSessionFromStorage = (): { isBypassed: boolean; user: Mechanic | null } => {
+export const loadMechanicSessionFromStorage = (): { isBypassed: boolean; user: Mechanic | null } => {
     const isSession = localStorage.getItem('ridersbud_mechanic_session');
     if (!isSession) return { isBypassed: false, user: null };
     

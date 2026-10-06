@@ -43,12 +43,10 @@ export const getHitPayProxyEndpoint = (path: string = '/api/hitpay-proxy'): stri
 class HitPayService {
     private baseUrl: string;
     private isSandbox: boolean;
-    private apiKey: string;
 
-    constructor(apiKey: string = '', _salt: string = '', isSandbox: boolean = true) {
+    constructor(_apiKey: string = '', _salt: string = '', isSandbox: boolean = true) {
         this.baseUrl = isSandbox ? SANDBOX_API_URL : PRODUCTION_API_URL;
         this.isSandbox = isSandbox;
-        this.apiKey = apiKey;
     }
 
     /**
@@ -58,11 +56,8 @@ class HitPayService {
     static fromSettings(settings: Settings | undefined, overrideIsSandbox?: boolean): HitPayService {
         const isSandbox = typeof overrideIsSandbox === 'boolean'
             ? overrideIsSandbox
-            : (settings?.hitpaySandboxMode ?? false);
-        const apiKey = isSandbox
-            ? (settings?.hitpaySandboxApiKey || '')
-            : (settings?.hitpayApiKey || '');
-        return new HitPayService(apiKey, '', isSandbox);
+            : (settings?.hitpaySandboxMode ?? true);
+        return new HitPayService('', '', isSandbox);
     }
 
     /**

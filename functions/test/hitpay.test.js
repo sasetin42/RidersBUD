@@ -12,8 +12,21 @@ const {
   parseReferenceEntity,
   computeEntityPaymentUpdate,
   normalizeHitPayStatus,
-  parseGatewayAmount
+  parseGatewayAmount,
+  resolveHitpaySystemConfig
 } = require('../lib/hitpay');
+
+test('resolveHitpaySystemConfig - honors Admin enable/mode settings and defaults safely', () => {
+  assert.deepEqual(resolveHitpaySystemConfig(), { enabled: true, isSandbox: true });
+  assert.deepEqual(resolveHitpaySystemConfig({ hitpayEnabled: false, hitpaySandboxMode: false }), {
+    enabled: false,
+    isSandbox: false
+  });
+  assert.deepEqual(resolveHitpaySystemConfig({ hitpayEnabled: true, hitpaySandboxMode: true }), {
+    enabled: true,
+    isSandbox: true
+  });
+});
 
 test('parseGatewayAmount - HitPay comma-formatted amount strings (root-cause of gateway=NaN mismatch)', () => {
   // HitPay returns `{"amount":"1,750.00"}` — Number() of that is NaN, which
@@ -263,6 +276,10 @@ test('parseReferenceEntity - parses prefixes properly', () => {
   const s = parseReferenceEntity('TOW-towing777-DP');
   assert.equal(s.entityKind, 'service-request');
   assert.equal(s.isDeposit, true);
+
+  const genericService = parseReferenceEntity('SRV-8888-FULL');
+  assert.equal(genericService.entityKind, 'service-request');
+  assert.equal(genericService.entityId, '8888');
 });
 
 test('Parameter normalization and sandbox simulation isolation logic', () => {

@@ -191,7 +191,20 @@ service cloud.firestore {
     
     // SECURITY: payment gateway secrets doc & logs — admins only, never public
     match /settings/hitpaySecrets { allow read, write: if isAdmin(); }
-    match /settings/{document=**} { allow read: if true; allow write: if isAdmin(); }
+    // Firestore grants access when ANY matching rule allows it. Keep the
+    // secrets document excluded from this otherwise-public settings rule.
+    match /settings/{document} {
+      allow read: if document != 'hitpaySecrets';
+      allow create, update: if isAdmin() && (
+        document == 'hitpaySecrets' || !request.resource.data.keys().hasAny([
+          'hitpayApiKey', 'hitpaySalt', 'hitpaySandboxApiKey', 'hitpaySandboxSalt',
+          'hitpayWebhookSalt', 'hitpaySandboxWebhookSalt',
+          'liveApiKey', 'liveSalt', 'sandboxApiKey', 'sandboxSalt',
+          'webhookSalt', 'sandboxWebhookSalt', 'apiKey', 'salt'
+        ])
+      );
+      allow delete: if isAdmin();
+    }
     match /promoCodes/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /smtpLogs/{document=**} { allow read, write: if isAdmin(); }
     match /paymentWebhookLogs/{document=**} { allow read, write: if isAdmin(); }

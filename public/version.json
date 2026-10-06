@@ -1,9 +1,9 @@
 {
-  "versionCode": 12,
-  "versionName": "1.1.1",
+  "versionCode": 14,
+  "versionName": "1.1.3",
   "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk",
-  "releaseNotes": "• Complete HitPay payment hardening for Android and iOS\n• Server-side HMAC-SHA256 signature verification\n• Idempotent webhook processing and auto-return\n• Performance optimizations and smooth UI layout",
+  "releaseNotes": "Fix payment breakdown crash and harden Android HitPay checkout recovery",
   "mandatory": false,
   "minSupportedVersionCode": 1,
-  "generatedAt": "2026-10-05T18:53:22.826Z"
+  "generatedAt": "2026-10-06T14:44:37.615Z"
 }

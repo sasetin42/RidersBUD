@@ -66,9 +66,12 @@ class HitPayEmbeddedService {
             customerPhone,
             kind = 'full',
             returnRoute,
-            isSandbox = true,
+            isSandbox: requestedSandbox,
             onStateChange
         } = params;
+        const isSandbox = typeof requestedSandbox === 'boolean'
+            ? requestedSandbox
+            : params.settings?.hitpaySandboxMode !== false;
 
         const controllerRes = await PaymentController.pay({
             entityKind,

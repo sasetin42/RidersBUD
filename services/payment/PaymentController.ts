@@ -7,7 +7,9 @@ import { PaymentEntityKind } from '../../utils/firestoreCollections';
 import { db as firestore } from '../../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 import { auth } from '../../firebase';
+import { setPendingPaymentMarker } from '../../utils/paymentRedirect';
 
 export interface HitPayInAppPluginInterface {
     openPayment(options: {
@@ -18,7 +20,7 @@ export interface HitPayInAppPluginInterface {
     }): Promise<{ success: boolean }>;
     closePayment(): Promise<{ success: boolean }>;
     isPaymentOpen(): Promise<{ isOpen: boolean }>;
-    openProviderApp(options: { url: string }): Promise<{ success: boolean }>;
+    openProviderApp(options: { appUrl: string }): Promise<{ success: boolean }>;
     addListener(
         eventName: 'paymentRedirect' | 'paymentClosed' | 'paymentError' | 'paymentOpened' | 'paymentProviderOpened' | 'paymentProviderReturned',
         listenerFunc: (data: any) => void
@@ -157,7 +159,15 @@ export class PaymentController {
 
         let currentState: PaymentState = 'CREATED';
         const setState = (next: PaymentState, msg?: string, tx?: any) => {
-            currentState = transitionPaymentState(currentState, next, msg);
+            try {
+                currentState = transitionPaymentState(currentState, next, msg);
+            } catch (transitionError) {
+                // Snapshot events can race the native Activity launch. Ignore
+                // stale/reordered states instead of throwing from an async
+                // Firestore callback into the app runtime.
+                console.warn('[PaymentController] Ignoring out-of-order payment state:', transitionError);
+                return;
+            }
             this.sessionState.set(lockKey, currentState);
             onStateChange?.(currentState, msg, tx);
         };
@@ -237,6 +247,23 @@ export class PaymentController {
                 directLinkUrl
             } = data;
 
+            // Persist return context before launching native checkout. The
+            // Android payment activity emits paymentRedirect rather than
+            // Capacitor's appUrlOpen event, and the app can be recreated while
+            // the user is in a wallet or 3-D Secure screen.
+            setPendingPaymentMarker({
+                entityKind,
+                entityId,
+                kind,
+                returnRoute,
+                initiatedFrom: typeof window !== 'undefined' ? window.location.pathname : returnRoute,
+                startedAt: Date.now(),
+                transactionId,
+                paymentRequestId,
+                referenceNumber,
+                environment: data.environment || (isSandbox ? 'sandbox' : 'production')
+            });
+
             // Persist session to local storage for crash/background recovery
             try {
                 localStorage.setItem(STORAGE_ACTIVE_PAYMENT, JSON.stringify({
@@ -285,10 +312,10 @@ export class PaymentController {
                 const targetUrl = directLinkAppUrl || directLinkUrl;
                 if (isNative && directLinkAppUrl) {
                     try {
-                        await HitPayInApp.openProviderApp({ url: directLinkAppUrl });
+                        await HitPayInApp.openProviderApp({ appUrl: directLinkAppUrl });
                     } catch (e) {
                         if (directLinkUrl) {
-                            window.open(directLinkUrl, '_system');
+                            await Browser.open({ url: directLinkUrl, toolbarColor: '#FE7803' });
                         }
                     }
                 } else if (targetUrl) {
@@ -322,7 +349,21 @@ export class PaymentController {
                             reference: referenceNumber
                         });
                     } catch (nativeErr: any) {
-                        console.warn('[PaymentController] Native container error:', nativeErr);
+                        console.warn('[PaymentController] Native container launch failed; trying secure browser fallback:', nativeErr);
+                        try {
+                            await Browser.open({ url: checkoutUrl, toolbarColor: '#FE7803' });
+                        } catch (browserErr: any) {
+                            const errorMessage = browserErr?.message || nativeErr?.message || 'Unable to open HitPay checkout on this device.';
+                            setState('FAILED', errorMessage);
+                            return {
+                                success: false,
+                                state: currentState,
+                                transactionId,
+                                paymentRequestId,
+                                referenceNumber,
+                                errorMessage
+                            };
+                        }
                     }
                 } else if (typeof window !== 'undefined') {
                     window.location.href = checkoutUrl;

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { CreditCard, QrCode, Wallet, X, Lock, ShieldCheck, ChevronRight } from 'lucide-react';
 import { PaymentEntityKind } from '../../utils/firestoreCollections';
 import { PaymentController, PaymentControllerResult } from '../../services/payment/PaymentController';
 import { PaymentState } from '../../services/payment/paymentStateMachine';
 import { NativeQrPayment } from './NativeQrPayment';
 import Spinner from '../Spinner';
+import { useDatabase } from '../../context/DatabaseContext';
 
 interface SecurePaymentSheetProps {
     isOpen: boolean;
@@ -37,16 +38,19 @@ export const SecurePaymentSheet: React.FC<SecurePaymentSheetProps> = ({
     onSuccess,
     onFailed
 }) => {
+    const { db } = useDatabase();
     const [selectedMethod, setSelectedMethod] = useState<'card' | 'qrph' | 'gcash'>('card');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [paymentState, setPaymentState] = useState<PaymentState>('CREATED');
     const [statusMessage, setStatusMessage] = useState<string>('');
     const [qrCodeData, setQrCodeData] = useState<string | null>(null);
     const [activeRefNumber, setActiveRefNumber] = useState<string>('');
+    const settledCallbackFired = useRef(false);
 
     if (!isOpen) return null;
 
     const handlePay = async () => {
+        settledCallbackFired.current = false;
         setIsSubmitting(true);
         setStatusMessage('Initializing secure payment...');
 
@@ -61,10 +65,27 @@ export const SecurePaymentSheet: React.FC<SecurePaymentSheetProps> = ({
                 customerEmail,
                 customerName,
                 customerPhone,
+                isSandbox: db?.settings?.hitpaySandboxMode !== false,
                 preferredMethod: selectedMethod,
-                onStateChange: (state, msg) => {
+                onStateChange: (state, msg, tx) => {
                     setPaymentState(state);
                     if (msg) setStatusMessage(msg);
+                    if (state === 'PAID' && !settledCallbackFired.current) {
+                        settledCallbackFired.current = true;
+                        onSuccess({
+                            success: true,
+                            state: 'PAID',
+                            transactionId: tx?.transactionId,
+                            paymentRequestId: tx?.paymentRequestId,
+                            referenceNumber: tx?.referenceNumber,
+                            amount: Number(tx?.amount) || undefined,
+                            currency: tx?.currency || currency
+                        });
+                        onClose();
+                    } else if ((state === 'FAILED' || state === 'CANCELLED' || state === 'EXPIRED') && !settledCallbackFired.current) {
+                        settledCallbackFired.current = true;
+                        onFailed?.(msg || `Payment ${state.toLowerCase()}.`);
+                    }
                 }
             });
 
@@ -76,8 +97,11 @@ export const SecurePaymentSheet: React.FC<SecurePaymentSheetProps> = ({
             }
 
             if (res.success && res.state === 'PAID') {
-                onSuccess(res);
-                onClose();
+                if (!settledCallbackFired.current) {
+                    settledCallbackFired.current = true;
+                    onSuccess(res);
+                    onClose();
+                }
             } else if (!res.success) {
                 onFailed?.(res.errorMessage || 'Payment was not successful.');
             }

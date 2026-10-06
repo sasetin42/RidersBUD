@@ -60,8 +60,7 @@ export const FinancialsSettingsTab: React.FC<FinancialsSettingsTabProps> = ({
             .catch(e => console.warn('[FinancialsSettingsTab] hitpaySecrets write failed:', e));
     };
 
-    const secretValue = (field: SecretField): string =>
-        secrets[field] ?? ((settings as any)[field] as string) ?? '';
+    const secretValue = (field: SecretField): string => secrets[field] ?? '';
 
     return (
         <div className="space-y-8 animate-fadeIn">

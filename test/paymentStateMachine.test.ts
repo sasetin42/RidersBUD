@@ -5,6 +5,7 @@ import {
     IllegalPaymentStateTransitionError
 } from '../services/payment/paymentStateMachine';
 import { PaymentReturnCoordinator } from '../services/payment/PaymentReturnCoordinator';
+import { parsePaymentReturnUrl } from '../utils/paymentReturn';
 
 describe('Payment State Machine Transitions', () => {
     it('allows valid linear lifecycle transitions', () => {
@@ -78,6 +79,27 @@ describe('PaymentReturnCoordinator URL Parsing', () => {
         expect(PaymentReturnCoordinator.parseUrl('https://ridersbud-10806.web.app/customer-portal/')).toBeNull();
         expect(PaymentReturnCoordinator.parseUrl('ridersbud://customer-portal/bookings')).toBeNull();
         expect(PaymentReturnCoordinator.parseUrl('')).toBeNull();
+    });
+});
+
+describe('Application payment-return URL parsing', () => {
+    it('parses Android in-app activity return URLs with authoritative identifiers', () => {
+        const parsed = parsePaymentReturnUrl(
+            'https://ridersbud-10806.web.app/payment/return?s=RB-SESSION-1&tx=tx_order_1&ref=ORD-123-FULL&status=completed'
+        );
+        expect(parsed).toMatchObject({
+            transactionId: 'tx_order_1',
+            referenceNumber: 'ORD-123-FULL',
+            paymentSessionId: 'RB-SESSION-1',
+            gatewayStatus: 'completed'
+        });
+    });
+
+    it('parses custom-scheme returns and ignores unrelated app URLs', () => {
+        expect(parsePaymentReturnUrl('ridersbud://payment/return?tx=tx_booking_1&ref=BOK-123-DP'))
+            .toMatchObject({ transactionId: 'tx_booking_1', referenceNumber: 'BOK-123-DP' });
+        expect(parsePaymentReturnUrl('ridersbud://customer-portal/bookings')).toBeNull();
+        expect(parsePaymentReturnUrl('https://ridersbud-10806.web.app/customer-portal/')).toBeNull();
     });
 });
 

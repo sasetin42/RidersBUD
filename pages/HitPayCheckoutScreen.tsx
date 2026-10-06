@@ -301,7 +301,13 @@ export const HitPayCheckoutScreen: React.FC = () => {
             if (cachedSession.url.startsWith('https://') || cachedSession.url.startsWith('http://')) {
                 setCheckoutState('redirecting');
                 setStatusMessage('Opening HitPay checkout...');
-                await openPaymentUrl(cachedSession.url);
+                try {
+                    await openPaymentUrl(cachedSession.url);
+                } catch (error: any) {
+                    console.error('Unable to open prewarmed HitPay checkout:', error);
+                    setErrorMessage(error?.message || 'Unable to open HitPay checkout. Please try again.');
+                    setCheckoutState('failed');
+                }
                 return;
             }
         }

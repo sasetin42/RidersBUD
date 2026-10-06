@@ -123,6 +123,11 @@ public class HitPayInAppPlugin extends Plugin {
         String amount = call.getString("amount", "");
         String reference = call.getString("reference", "");
 
+        if (!PaymentNavigationPolicy.isValidInitialCheckoutUrl(checkoutUrl)) {
+            call.reject("Checkout URL must be a valid HTTPS HitPay URL");
+            return;
+        }
+
         Intent intent = new Intent(getContext(), HitPayPaymentActivity.class);
         intent.putExtra(HitPayPaymentActivity.EXTRA_CHECKOUT_URL, checkoutUrl);
         intent.putExtra(HitPayPaymentActivity.EXTRA_SESSION_ID, sessionId);
@@ -130,8 +135,14 @@ public class HitPayInAppPlugin extends Plugin {
         intent.putExtra(HitPayPaymentActivity.EXTRA_REFERENCE, reference);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-        isPaymentOpen = true;
-        getContext().startActivity(intent);
+        try {
+            getContext().startActivity(intent);
+            isPaymentOpen = true;
+        } catch (RuntimeException launchError) {
+            isPaymentOpen = false;
+            call.reject("Could not open the secure HitPay checkout", launchError);
+            return;
+        }
 
         JSObject event = new JSObject();
         event.put("sessionId", sessionId);

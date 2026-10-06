@@ -24,6 +24,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.RenderProcessGoneDetail;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -82,6 +83,11 @@ public class HitPayPaymentActivity extends AppCompatActivity {
 
         if (checkoutUrl == null || checkoutUrl.trim().isEmpty()) {
             broadcastError("Missing checkout URL");
+            finish();
+            return;
+        }
+        if (!PaymentNavigationPolicy.isValidInitialCheckoutUrl(checkoutUrl)) {
+            broadcastError("HitPay returned an unsupported checkout URL");
             finish();
             return;
         }
@@ -244,6 +250,18 @@ public class HitPayPaymentActivity extends AppCompatActivity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame()) {
+                    broadcastError("HitPay checkout could not load. Check your internet connection and try again.");
+                    finish();
+                }
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                broadcastError("The secure checkout closed unexpectedly. No payment status has been assumed.");
+                destroyWebViewSafely();
+                finish();
+                return true;
             }
         });
     }
@@ -311,12 +329,29 @@ public class HitPayPaymentActivity extends AppCompatActivity {
         }
     }
 
+    private void destroyWebViewSafely() {
+        WebView view = webView;
+        webView = null;
+        if (view == null) return;
+        try {
+            ViewGroup parent = (ViewGroup) view.getParent();
+            if (parent != null) parent.removeView(view);
+            view.stopLoading();
+            view.destroy();
+        } catch (Exception ignored) {
+            // Renderer teardown is best-effort; keep the host app alive.
+        }
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         if (waitingForProviderReturn) {
             waitingForProviderReturn = false;
             broadcastProviderReturned(providerPackageName);
+            // Reveal the RidersBUD activity after the wallet returns. The
+            // Capacitor plugin event then routes the app into server verification.
+            finish();
         }
     }
 
@@ -391,12 +426,7 @@ public class HitPayPaymentActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        if (webView != null) {
-            webView.stopLoading();
-            webView.clearHistory();
-            webView.destroy();
-            webView = null;
-        }
+        destroyWebViewSafely();
         super.onDestroy();
     }
 }

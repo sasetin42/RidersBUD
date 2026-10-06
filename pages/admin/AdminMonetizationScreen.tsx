@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db as firestoreDb } from '../../firebase';
 import { useDatabase } from '../../context/DatabaseContext';
 import { useNotification } from '../../context/NotificationContext';
 import { Subscription, PromoCode } from '../../types';
@@ -42,6 +44,22 @@ const AdminMonetizationScreen: React.FC = () => {
     const [activeTab, setActiveTab] = useState<MonetizationTab>('overview');
     const [searchQuery, setSearchQuery] = useState('');
     const [isAddPromoModalOpen, setIsAddPromoModalOpen] = useState(false);
+    const [hitpayCredentialStatus, setHitpayCredentialStatus] = useState({ live: false, sandbox: false });
+
+    useEffect(() => {
+        let cancelled = false;
+        getDoc(doc(firestoreDb, 'settings', 'hitpaySecrets'))
+            .then((snap) => {
+                if (cancelled) return;
+                const secrets = snap.exists() ? snap.data() : {};
+                setHitpayCredentialStatus({
+                    live: Boolean((secrets.hitpayApiKey || secrets.liveApiKey) && (secrets.hitpaySalt || secrets.liveSalt)),
+                    sandbox: Boolean((secrets.hitpaySandboxApiKey || secrets.sandboxApiKey) && (secrets.hitpaySandboxSalt || secrets.sandboxSalt))
+                });
+            })
+            .catch((error) => console.warn('[AdminMonetizationScreen] HitPay credential status unavailable:', error));
+        return () => { cancelled = true; };
+    }, []);
 
     const [newPromo, setNewPromo] = useState<Omit<PromoCode, 'id'>>({
         code: '',
@@ -258,8 +276,8 @@ const AdminMonetizationScreen: React.FC = () => {
                         {(() => {
                             const settings = db.settings;
                             const isSandbox = settings?.hitpaySandboxMode ?? true;
-                            const hasLiveKeys = !!(settings?.hitpayApiKey && settings?.hitpaySalt);
-                            const hasSandboxKeys = !!(settings?.hitpaySandboxApiKey && settings?.hitpaySandboxSalt);
+                            const hasLiveKeys = hitpayCredentialStatus.live;
+                            const hasSandboxKeys = hitpayCredentialStatus.sandbox;
                             const isConnected = isSandbox ? hasSandboxKeys : hasLiveKeys;
 
                             return (
@@ -337,7 +355,7 @@ const AdminMonetizationScreen: React.FC = () => {
                                                     <div>
                                                         <p className="text-[9px] text-gray-500 font-black  tracking-widest">API Key</p>
                                                         <p className="text-sm text-white font-mono mt-1">
-                                                            {hasLiveKeys ? (settings?.hitpayApiKey || '').slice(0, 16) + '••••••••••' : '— Not Set —'}
+                                                            {hasLiveKeys ? '••••••••••••••••' : '— Not Set —'}
                                                         </p>
                                                     </div>
                                                     {hasLiveKeys && <CheckCircle2 size={16} className="text-emerald-400" />}
@@ -374,7 +392,7 @@ const AdminMonetizationScreen: React.FC = () => {
                                                     <div>
                                                         <p className="text-[9px] text-gray-500 font-black  tracking-widest">API Key</p>
                                                         <p className="text-sm text-white font-mono mt-1">
-                                                            {hasSandboxKeys ? (settings?.hitpaySandboxApiKey || '').slice(0, 16) + '••••••••••' : '— Not Set —'}
+                                                            {hasSandboxKeys ? '••••••••••••••••' : '— Not Set —'}
                                                         </p>
                                                     </div>
                                                     {hasSandboxKeys && <CheckCircle2 size={16} className="text-amber-400" />}

@@ -347,14 +347,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             defaultCustomerImageUrl: '/assets/logo.png',
             defaultMechanicImageUrl: '/assets/logo.png',
             hitpayEnabled: true,
-            hitpaySandboxMode: false,
-            // SECURITY: HitPay credentials are NEVER shipped in the client bundle.
-            // They live server-side (Cloud Functions env) or in the admin-only
-            // settings/hitpaySecrets document — see scripts/secureHitpaySecrets.ts.
-            hitpayApiKey: '',
-            hitpaySalt: '',
-            hitpaySandboxApiKey: '',
-            hitpaySandboxSalt: '',
+            hitpaySandboxMode: true,
             modules: [
                 { id: 'rent-a-car', name: 'Rent a Car', enabled: true, bannerMessage: '' },
                 { id: 'driver-for-hire', name: 'Driver for Hire', enabled: true, bannerMessage: '' },
@@ -2524,6 +2517,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             reviews: mechanic.reviews || 0
         };
 
+        const nowIso = new Date().toISOString();
+
         // Immediate optimistic local state update so the mechanic UI instantly proceeds
         setDb(prev => {
             if (!prev) return null;
@@ -2531,7 +2526,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 if (b.id === bookingId) {
                     const newHistory = [...(b.statusHistory || [])];
                     if (!newHistory.some(h => h.status === assignedStatus)) {
-                        newHistory.push({ status: assignedStatus, timestamp: new Date().toISOString() });
+                        newHistory.push({ status: assignedStatus, timestamp: nowIso });
                     }
                     return {
                         ...b,
@@ -2539,7 +2534,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                         mechanicName: mechanic.name,
                         mechanic: mechanicSummary,
                         status: assignedStatus,
-                        statusHistory: newHistory
+                        statusHistory: newHistory,
+                        updatedAt: nowIso
                     };
                 }
                 return b;
@@ -2553,7 +2549,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 mechanicName: mechanic.name,
                 mechanic: mechanicSummary,
                 status: assignedStatus,
-                statusHistory: arrayUnion({ status: assignedStatus, timestamp: new Date().toISOString() })
+                statusHistory: arrayUnion({ status: assignedStatus, timestamp: nowIso }),
+                updatedAt: nowIso
             });
         } catch (e) {
             console.warn(`[Firestore Write Failed] assignMechanicToBooking for ${bookingId} failed, already updated locally:`, e);
@@ -2578,10 +2575,21 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                 message: `${mechanic.name} has accepted your job and will be handling your service.`,
                 type: 'info',
                 link: `/customer-portal/booking-detail/${bookingId}`,
-                date: new Date().toISOString(),
+                date: nowIso,
                 read: false
             }).catch(err => console.warn('[assignMechanicToBooking] Customer notification failed non-critically:', err));
         }
+
+        // Notify Admin in real-time
+        sendNotification({
+            recipientId: 'admin',
+            title: '👨‍🔧 Mechanic Assigned to Booking',
+            message: `${mechanic.name} accepted & was assigned to booking #${bookingId.slice(-6).toUpperCase()} (${booking?.customerName || 'Customer'}).`,
+            type: 'info',
+            link: '/admin/bookings',
+            date: nowIso,
+            read: false
+        }).catch(err => console.warn('[assignMechanicToBooking] Admin notification failed non-critically:', err));
 
         // Notify the mechanic of the assignment
         const serviceName = booking?.services?.[0]?.name || booking?.service?.name || 'Service';
@@ -2591,7 +2599,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             message: `You've been assigned to ${serviceName} for ${booking?.customerName || 'a customer'}.`,
             type: 'success',
             link: `/mechanic-portal/job/${bookingId}`,
-            date: new Date().toISOString(),
+            date: nowIso,
             read: false
         }).catch(err => console.warn('[assignMechanicToBooking] Mechanic notification failed non-critically:', err));
     };

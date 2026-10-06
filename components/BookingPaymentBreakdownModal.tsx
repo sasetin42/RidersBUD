@@ -59,9 +59,13 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
     isSpecialRentalOrDriver,
     rentalDetails
 }) => {
+    const [selectedOptionInternal, setSelectedOptionInternal] = React.useState<'downpayment' | 'full'>(paymentOption);
+    React.useEffect(() => {
+        if (isOpen) setSelectedOptionInternal(paymentOption);
+    }, [isOpen, paymentOption]);
+
     if (!isOpen) return null;
 
-    const [selectedOptionInternal, setSelectedOptionInternal] = React.useState<'downpayment' | 'full'>(paymentOption);
     const activeOption = onPaymentOptionChange ? paymentOption : selectedOptionInternal;
     const handleOptionSelect = (opt: 'downpayment' | 'full') => {
         setSelectedOptionInternal(opt);

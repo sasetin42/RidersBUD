@@ -41,6 +41,22 @@ public class PaymentNavigationPolicy {
             "ridersbud-10806.web.app"
     ));
 
+    /** Initial checkout URLs must be HTTPS HitPay pages, never arbitrary web content. */
+    public static boolean isValidInitialCheckoutUrl(String uriString) {
+        if (uriString == null || uriString.trim().isEmpty()) return false;
+        try {
+            URI uri = URI.create(uriString.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null || !"https".equalsIgnoreCase(scheme)) return false;
+            if (uri.getUserInfo() != null || (uri.getPort() != -1 && uri.getPort() != 443)) return false;
+            host = host.toLowerCase(Locale.ROOT);
+            return host.equals("hit-pay.com") || host.endsWith(".hit-pay.com");
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private static final Set<String> KNOWN_WALLET_SCHEMES = new HashSet<>(Arrays.asList(
             "gcash",
             "paymaya",
@@ -86,7 +102,7 @@ public class PaymentNavigationPolicy {
             if ("payment".equalsIgnoreCase(host) && (path != null && path.startsWith("/return"))) {
                 return new Decision(PolicyAction.INTERCEPT_RETURN, "Native return URI detected");
             }
-            return new Decision(PolicyAction.INTERCEPT_RETURN, "App scheme return detected");
+            return new Decision(PolicyAction.BLOCK, "Unrecognized RidersBUD callback URI");
         }
 
         // https://ridersbud-10806.web.app/payment/return

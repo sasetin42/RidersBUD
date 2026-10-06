@@ -11,6 +11,7 @@ const {
   TERMINAL_STATUSES,
   ENTITY_COLLECTIONS,
   COLLECTION_ENTITY_KIND,
+  resolveHitpaySystemConfig,
   resolveHitpayCredentials,
   resolveWebhookSalts,
   hitpayApi,
@@ -71,9 +72,20 @@ async function authenticateRequest(req) {
 exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
     try {
-      const isSandbox = req.method === 'GET'
+      let isSandbox = req.method === 'GET'
         ? String(req.query.sandbox || 'false') === 'true'
-        : ((req.body || {}).isSandbox === true);
+        : true;
+
+      // Payment environment and gateway availability come from admin settings,
+      // never from a client-controlled request body. Sandbox is the safe default.
+      if (req.method === 'POST') {
+        const settingsSnap = await admin.firestore().collection('settings').doc('main').get();
+        const systemConfig = resolveHitpaySystemConfig(settingsSnap.exists ? settingsSnap.data() : {});
+        if (!systemConfig.enabled) {
+          return res.status(403).json({ error: 'HITPAY_DISABLED', message: 'Online payments are currently disabled in system settings.' });
+        }
+        isSandbox = systemConfig.isSandbox;
+      }
       const environment = isSandbox ? 'sandbox' : 'production';
 
       const creds = await resolveHitpayCredentials(isSandbox);
@@ -494,6 +506,7 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
           checkoutMode: existingActiveTx.checkoutMode || 'dropin',
           status: existingActiveTx.status,
           checkoutUrl: existingActiveTx.checkoutUrl,
+          environment: existingActiveTx.environment || environment,
           qr: existingActiveTx.qr || null,
           directLinkAppUrl: existingActiveTx.directLinkAppUrl || null,
           reused: true
@@ -613,6 +626,7 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
           referenceNumber,
           amount: authoritativeAmount,
           currency,
+          environment,
           checkoutMode,
           checkoutUrl: pr.url,
           dropin: {

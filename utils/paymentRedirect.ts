@@ -31,6 +31,7 @@ export const NAVIGATE_EVENT = 'ridersbud:navigate';
 export interface PendingPaymentMarker {
     entityKind: PaymentEntityKind;
     entityId: string;
+    kind?: 'downpayment' | 'balance' | 'full';
     returnRoute: string;
     startedAt: number;
     purpose?: string;
