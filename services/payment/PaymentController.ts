@@ -40,7 +40,6 @@ export interface PaymentInitiationParams {
     customerPhone?: string;
     customerId?: string;
     purpose?: string;
-    preferredMethod?: 'card' | 'qrph' | 'gcash';
     /**
      * How the gateway presents the checkout. Defaults to 'dropin' — the HitPay
      * hosted-checkout REDIRECTION flow: the payment request is created with
@@ -157,7 +156,6 @@ export class PaymentController {
             customerPhone,
             customerId,
             purpose,
-            preferredMethod = 'card',
             checkoutMode: requestedCheckoutMode = 'dropin',
             returnRoute = window?.location?.pathname || '/customer-portal/',
             isSandbox = true,
@@ -204,7 +202,6 @@ export class PaymentController {
                     kind,
                     expectedAmount,
                     currency,
-                    preferredMethod,
                     // Default payment method = HitPay hosted checkout with
                     // redirection back into the app (backend honours redirect_url).
                     checkoutMode: requestedCheckoutMode,
