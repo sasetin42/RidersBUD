@@ -346,7 +346,15 @@ const AppContent: React.FC = () => {
                 const markerPath = marker.returnRoute.split('?')[0] || '/';
                 const initiatedFrom = marker.initiatedFrom || markerPath;
                 const currentPath = window.location.pathname;
-                if (currentPath !== markerPath && currentPath !== initiatedFrom) return;
+                // Entry paths are included on purpose: after a WebView renderer
+                // recovery, a process death, or a cold App-Link start the bridge
+                // reloads at the app root. A live marker there means a payment is
+                // genuinely in flight (< 30 min TTL) and the customer must be
+                // returned to verification instead of a silent dead screen.
+                const isEntryPoint = currentPath === '/'
+                    || currentPath === '/customer-portal'
+                    || currentPath === '/customer-portal/';
+                if (currentPath !== markerPath && currentPath !== initiatedFrom && !isEntryPoint) return;
 
                 const base = {
                     entityKind: marker.entityKind,

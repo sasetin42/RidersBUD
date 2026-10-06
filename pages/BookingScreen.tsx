@@ -1655,6 +1655,12 @@ const BookingScreen: React.FC = () => {
                 // The user is currently on the checkout page or inside the native payment container.
                 // Do not navigate to booking-confirmation or open PaymentVerificationOverlay.
                 // Let the return coordinator / return route handle the return when payment concludes.
+                //
+                // Close the breakdown modal too: it sits behind the native payment
+                // container, and leaving it open stranded customers on a stale
+                // "Proceed to Pay" sheet whenever they came back from the gateway
+                // (and invited duplicate bookings on a second tap).
+                setShowPaymentBreakdownModal(false);
                 return;
             }
 

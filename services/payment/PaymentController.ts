@@ -41,6 +41,13 @@ export interface PaymentInitiationParams {
     customerId?: string;
     purpose?: string;
     preferredMethod?: 'card' | 'qrph' | 'gcash';
+    /**
+     * How the gateway presents the checkout. Defaults to 'dropin' — the HitPay
+     * hosted-checkout REDIRECTION flow: the payment request is created with
+     * `redirect_url` pointing back at the app's /payment/return screen, so every
+     * completed/cancelled payment returns the customer to the application.
+     */
+    checkoutMode?: 'dropin' | 'qrph-native' | 'gcash';
     returnRoute?: string;
     isSandbox?: boolean;
     userConfirmedRetry?: boolean;
@@ -151,6 +158,7 @@ export class PaymentController {
             customerId,
             purpose,
             preferredMethod = 'card',
+            checkoutMode: requestedCheckoutMode = 'dropin',
             returnRoute = window?.location?.pathname || '/customer-portal/',
             isSandbox = true,
             userConfirmedRetry = false,
@@ -197,6 +205,9 @@ export class PaymentController {
                     expectedAmount,
                     currency,
                     preferredMethod,
+                    // Default payment method = HitPay hosted checkout with
+                    // redirection back into the app (backend honours redirect_url).
+                    checkoutMode: requestedCheckoutMode,
                     customerId: customerId || auth?.currentUser?.uid || '',
                     customerEmail,
                     customerName,

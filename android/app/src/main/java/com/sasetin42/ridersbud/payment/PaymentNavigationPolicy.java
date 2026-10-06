@@ -60,6 +60,7 @@ public class PaymentNavigationPolicy {
     private static final Set<String> KNOWN_WALLET_SCHEMES = new HashSet<>(Arrays.asList(
             "gcash",
             "paymaya",
+            "maya",
             "grabpay",
             "market"
     ));
@@ -143,7 +144,9 @@ public class PaymentNavigationPolicy {
 
             if (pkg != null && ALLOWED_INTENT_PACKAGES.contains(pkg)) {
                 return new Decision(PolicyAction.LAUNCH_PROVIDER_APP, "Allowed wallet intent package: " + pkg, pkg);
-            } else if (pkg == null && (uriString.contains("scheme=gcash") || uriString.contains("scheme=paymaya"))) {
+            } else if (pkg == null && (uriString.contains("scheme=gcash")
+                    || uriString.contains("scheme=paymaya")
+                    || uriString.contains("scheme=maya"))) {
                 return new Decision(PolicyAction.LAUNCH_PROVIDER_APP, "Wallet intent without explicit package");
             }
             return new Decision(PolicyAction.BLOCK, "Disallowed intent package or scheme: " + pkg);

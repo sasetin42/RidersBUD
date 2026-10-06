@@ -278,6 +278,12 @@ const PaymentScreen: React.FC = () => {
                     if (result.redirected) {
                         // User is inside the native payment container or redirecting on web.
                         // Do not open PaymentVerificationOverlay; return coordinator handles post-payment return.
+                        // Reset the local processing state first: when the customer
+                        // backs out of the gateway (paymentClosed → returnToOrigin)
+                        // this page is still mounted, and a leftover `isProcessing`
+                        // left every button disabled with a spinner forever.
+                        setIsProcessing(false);
+                        setProcessingStep('');
                         return;
                     }
 

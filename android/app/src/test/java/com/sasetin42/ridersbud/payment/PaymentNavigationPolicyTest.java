@@ -101,6 +101,22 @@ public class PaymentNavigationPolicyTest {
     }
 
     @Test
+    public void testLaunchMayaDirectScheme() {
+        PaymentNavigationPolicy.Decision decision = PaymentNavigationPolicy.evaluate(
+                "maya://pay?ref=998877"
+        );
+        assertEquals(PaymentNavigationPolicy.PolicyAction.LAUNCH_PROVIDER_APP, decision.action);
+    }
+
+    @Test
+    public void testLaunchWalletIntentWithoutPackageForMayaScheme() {
+        PaymentNavigationPolicy.Decision decision = PaymentNavigationPolicy.evaluate(
+                "intent://pay?data=xyz#Intent;scheme=maya;end"
+        );
+        assertEquals(PaymentNavigationPolicy.PolicyAction.LAUNCH_PROVIDER_APP, decision.action);
+    }
+
+    @Test
     public void testLaunchAllowedWalletIntent() {
         PaymentNavigationPolicy.Decision decision = PaymentNavigationPolicy.evaluate(
                 "intent://pay?data=xyz#Intent;scheme=gcash;package=com.globe.gcash.android;end"

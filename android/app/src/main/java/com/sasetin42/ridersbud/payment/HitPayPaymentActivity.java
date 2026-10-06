@@ -12,6 +12,8 @@ import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Message;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -43,6 +45,8 @@ import java.net.URISyntaxException;
  * and seamless e-wallet intent handoffs.
  */
 public class HitPayPaymentActivity extends AppCompatActivity {
+
+    private static final String TAG = "RidersBUDPay";
 
     public static final String EXTRA_CHECKOUT_URL = "extra_checkout_url";
     public static final String EXTRA_SESSION_ID = "extra_session_id";
@@ -223,6 +227,41 @@ public class HitPayPaymentActivity extends AppCompatActivity {
                     progressBar.setProgress(newProgress);
                 }
             }
+
+            /**
+             * HitPay's hosted checkout (and several 3-D Secure / e-wallet
+             * handoffs) opens its next step with window.open(). With multiple
+             * windows enabled and no handler, that call silently returns null
+             * and the customer is stranded on a frozen checkout — a dead flow.
+             * Capture the popup's first navigation and route it through the
+             * same policy engine as the main WebView (return interception,
+             * wallet launch, load, or block).
+             */
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog,
+                                          boolean isUserGesture, Message resultMsg) {
+                WebView popup = new WebView(HitPayPaymentActivity.this);
+                popup.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
+                        if (request == null || request.getUrl() == null) return false;
+                        return routePopupNavigation(request.getUrl().toString());
+                    }
+
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView v, String url) {
+                        return routePopupNavigation(url);
+                    }
+                });
+                try {
+                    WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                    transport.setWebView(popup);
+                    resultMsg.sendToTarget();
+                } catch (Exception e) {
+                    Log.w(TAG, "Unable to hand off popup window: " + e.getMessage());
+                }
+                return true;
+            }
         });
 
         webView.setWebViewClient(new WebViewClient() {
@@ -250,10 +289,23 @@ public class HitPayPaymentActivity extends AppCompatActivity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
-                if (request != null && request.isForMainFrame()) {
-                    broadcastError("HitPay checkout could not load. Check your internet connection and try again.");
-                    finish();
+                if (request == null || !request.isForMainFrame()) {
+                    return;
                 }
+                // ERROR_UNKNOWN (-1) is what WebView reports for an ABORTED
+                // navigation (bank 3-D Secure hand-offs, redirects to a wallet,
+                // stopLoading()). Treating those as fatal tore the checkout down
+                // mid-payment and left the customer with nowhere to go. Only
+                // definite network failures close the container.
+                int code = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                        ? error.getErrorCode()
+                        : -1;
+                if (code == android.webkit.WebViewClient.ERROR_UNKNOWN || code == 0) {
+                    Log.w(TAG, "Main-frame navigation aborted/error " + code + " — keeping checkout open.");
+                    return;
+                }
+                broadcastError("HitPay checkout could not load. Check your internet connection and try again.");
+                finish();
             }
 
             @Override
@@ -264,6 +316,31 @@ public class HitPayPaymentActivity extends AppCompatActivity {
                 return true;
             }
         });
+    }
+
+    /**
+     * Resolve a popup (window.open) navigation against the policy engine.
+     * LOAD is pulled into the primary WebView so the customer never loses the
+     * checkout context; return/wallet/block decisions behave exactly like a
+     * top-level navigation.
+     */
+    private boolean routePopupNavigation(String url) {
+        if (url == null || url.isEmpty()) return true;
+        PaymentNavigationPolicy.Decision decision = PaymentNavigationPolicy.evaluate(url);
+        if (decision.action == PaymentNavigationPolicy.PolicyAction.LOAD) {
+            final WebView main = webView;
+            if (main != null) {
+                runOnUiThread(() -> {
+                    try {
+                        main.loadUrl(url);
+                    } catch (Exception e) {
+                        Log.w(TAG, "Popup load failed: " + e.getMessage());
+                    }
+                });
+            }
+            return true;
+        }
+        return handleNavigation(url);
     }
 
     private boolean handleNavigation(String url) {
@@ -313,7 +390,11 @@ public class HitPayPaymentActivity extends AppCompatActivity {
             providerPackageName = targetPackage != null ? targetPackage : uriString;
 
             broadcastProviderOpened(providerPackageName);
-        } catch (URISyntaxException | ActivityNotFoundException e) {
+        } catch (Exception e) {
+            // ActivityNotFoundException, SecurityException and malformed intent
+            // URIs all arrive here — none of them may escape as a fatal error
+            // in the middle of a payment.
+            Log.w(TAG, "Provider launch failed: " + e.getMessage());
             // If the provider app is not installed, fallback to market or notify
             if (targetPackage != null) {
                 try {
@@ -356,6 +437,11 @@ public class HitPayPaymentActivity extends AppCompatActivity {
     }
 
     private void showExitConfirmationDialog() {
+        // Never build a dialog for a window that is already going away
+        // (BadTokenException was a fatal crash path during payment exit).
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Leave Payment?")
                 .setMessage("Your payment has not yet been confirmed. If you leave now, the transaction may be cancelled or delayed.")
@@ -370,7 +456,7 @@ public class HitPayPaymentActivity extends AppCompatActivity {
     }
 
     private void broadcastRedirect(String url) {
-        Intent intent = new Intent(ACTION_PAYMENT_REDIRECT);
+        Intent intent = targetedBroadcast(ACTION_PAYMENT_REDIRECT);
         intent.putExtra(EXTRA_RESULT_URL, url);
 
         try {
@@ -396,27 +482,44 @@ public class HitPayPaymentActivity extends AppCompatActivity {
     }
 
     private void broadcastClosed(String reason) {
-        Intent intent = new Intent(ACTION_PAYMENT_CLOSED);
+        Intent intent = targetedBroadcast(ACTION_PAYMENT_CLOSED);
         intent.putExtra(EXTRA_RESULT_ERROR, reason);
         sendBroadcast(intent);
     }
 
     private void broadcastError(String error) {
-        Intent intent = new Intent(ACTION_PAYMENT_ERROR);
+        Intent intent = targetedBroadcast(ACTION_PAYMENT_ERROR);
         intent.putExtra(EXTRA_RESULT_ERROR, error);
         sendBroadcast(intent);
     }
 
     private void broadcastProviderOpened(String pkg) {
-        Intent intent = new Intent(ACTION_PROVIDER_OPENED);
+        Intent intent = targetedBroadcast(ACTION_PROVIDER_OPENED);
         intent.putExtra(EXTRA_PROVIDER_PACKAGE, pkg);
         sendBroadcast(intent);
     }
 
     private void broadcastProviderReturned(String pkg) {
-        Intent intent = new Intent(ACTION_PROVIDER_RETURNED);
+        Intent intent = targetedBroadcast(ACTION_PROVIDER_RETURNED);
         intent.putExtra(EXTRA_PROVIDER_PACKAGE, pkg);
         sendBroadcast(intent);
+    }
+
+    /**
+     * Every payment event must be explicitly addressed to this package.
+     *
+     * Since Android 14 (and this app targets SDK 36), a context-registered
+     * receiver created with RECEIVER_NOT_EXPORTED does NOT receive custom-action
+     * implicit broadcasts — even from the same app (AOSP issue 293487554).
+     * Without setPackage() the paymentRedirect/paymentClosed events were silently
+     * dropped, so the app was never told the payment had returned: the classic
+     * "stuck after paying" dead flow. Targeting the package guarantees delivery
+     * and stops other apps from spoofing payment events.
+     */
+    private Intent targetedBroadcast(String action) {
+        Intent intent = new Intent(action);
+        intent.setPackage(getPackageName());
+        return intent;
     }
 
     private int dpToPx(int dp) {

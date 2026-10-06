@@ -494,6 +494,14 @@ const ServicePaymentScreen: React.FC = () => {
             if (checkoutResult.redirected) {
                 // User is inside the native payment container or redirecting on web.
                 // Do not open PaymentVerificationOverlay; return coordinator handles post-payment return.
+                //
+                // Reset processing state before yielding: on a gateway
+                // cancellation/back the return coordinator brings the customer
+                // straight back to this same mounted screen, where a stale
+                // `isProcessing` + stage text would disable the Pay button
+                // permanently (dead end).
+                setIsProcessing(false);
+                setProcessingStage('');
                 return;
             }
 

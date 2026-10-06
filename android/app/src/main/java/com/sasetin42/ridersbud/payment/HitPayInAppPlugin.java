@@ -104,10 +104,15 @@ public class HitPayInAppPlugin extends Plugin {
         filter.addAction(HitPayPaymentActivity.ACTION_PROVIDER_RETURNED);
 
         Context ctx = getContext();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ctx.registerReceiver(paymentReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            ctx.registerReceiver(paymentReceiver, filter);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ctx.registerReceiver(paymentReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                ctx.registerReceiver(paymentReceiver, filter);
+            }
+        } catch (Exception e) {
+            // Registration failures must degrade to "no events", never crash the app.
+            android.util.Log.w("HitPayInApp", "Payment receiver registration failed: " + e.getMessage());
         }
     }
 
@@ -156,10 +161,18 @@ public class HitPayInAppPlugin extends Plugin {
     @PluginMethod
     public void closePayment(PluginCall call) {
         isPaymentOpen = false;
-        // Broadcast close event or finish current activity
+        // Broadcast close event or finish current activity.
+        // Must be package-targeted: RECEIVER_NOT_EXPORTED receivers only receive
+        // explicitly addressed broadcasts (Android 14+ / AOSP issue 293487554).
         Intent closeIntent = new Intent(HitPayPaymentActivity.ACTION_PAYMENT_CLOSED);
+        closeIntent.setPackage(getContext().getPackageName());
         closeIntent.putExtra(HitPayPaymentActivity.EXTRA_RESULT_ERROR, "Programmatically closed");
-        getContext().sendBroadcast(closeIntent);
+        try {
+            getContext().sendBroadcast(closeIntent);
+        } catch (Exception e) {
+            // A failed close broadcast must never surface as a native crash.
+            android.util.Log.w("HitPayInApp", "closePayment broadcast failed: " + e.getMessage());
+        }
 
         JSObject res = new JSObject();
         res.put("success", true);
