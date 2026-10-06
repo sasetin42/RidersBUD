@@ -153,74 +153,13 @@ const PaymentScreen: React.FC = () => {
         }
     }, [isSuccess]);
 
-    // Handle return from HitPay redirect (Credit Card flow)
+    // Clean URL query params without cancelling orders client-side
     React.useEffect(() => {
         const queryParams = new URLSearchParams(window.location.search);
-        const status = queryParams.get('status');
-        const reference = queryParams.get('reference');
-
-        if (status === 'completed' && reference && !isSuccess) {
-            const pendingTx = sessionStorage.getItem('pendingHitPayTx');
-            const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
-
-            // Ensure this effect only finalizes HitPay orders created before redirect
-            if (!sessionData?.orderId) {
-                window.history.replaceState({}, document.title, window.location.pathname);
-                return;
-            }
-
-            const finalizeOrder = async () => {
-                // The redirect is NOT proof of payment — the verification overlay
-                // waits for the webhook's authoritative Firestore write (which marks
-                // the order Paid) before success is shown (requirement #8).
-                try {
-                    setProcessingStep('Verifying your payment...');
-                    setIsProcessing(true);
-                    sessionStorage.removeItem('pendingHitPayTx');
-                    setPaymentReturnTarget({
-                        entityId: sessionData.orderId,
-                        paymentRequestId: queryParams.get('payment_request_id') || undefined
-                    });
-                } catch (err) {
-                    setError("Failed to finalize order after payment.");
-                    setIsProcessing(false);
-                }
-            };
-            finalizeOrder();
-        } else if (status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') {
-            const pendingTx = sessionStorage.getItem('pendingHitPayTx');
-            const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
-            sessionStorage.removeItem('pendingHitPayTx');
-            sessionStorage.removeItem('pendingHitPayBookingTx');
-            sessionStorage.removeItem('pendingHitPayServiceTx');
-            try {
-                localStorage.removeItem('last_hitpay_booking_tx');
-                localStorage.removeItem('last_hitpay_service_tx');
-            } catch (e) {}
-
-            const rawRef = sessionData?.orderId || reference || 'ORD-CANCELLED';
-            const cancellationInfo = {
-                type: 'Order' as const,
-                referenceId: rawRef.startsWith('#') ? rawRef : `#${rawRef.slice(-8).toUpperCase()}`,
-                amount: total,
-                date: new Date().toLocaleString(),
-                reason: 'Payment process was cancelled by the user at the payment gateway.',
-                items: cartItems.map(item => ({ name: item.name, quantity: item.quantity, price: item.price * item.quantity })),
-                retryPath: '/customer-portal/checkout'
-            };
-
-            // If order was created in DB, update status to Cancelled
-            if (sessionData?.orderId && updateOrderStatus) {
-                updateOrderStatus(sessionData.orderId, 'Cancelled').catch(console.warn);
-            }
+        if (queryParams.has('status') || queryParams.has('reference')) {
             window.history.replaceState({}, document.title, window.location.pathname);
-
-            navigate('/customer-portal/', {
-                state: { cancelledTransaction: cancellationInfo },
-                replace: true
-            });
         }
-    }, [isSuccess, cartItems, total, navigate, db, updateOrderStatus]);
+    }, []);
 
     const buildSafeOrderData = (paymentMethod: string, status: 'Pending' | 'Processing') => {
         const resolvedCustomerId = (user as any)?.uid || (user as any)?.id || '';
@@ -333,12 +272,12 @@ const PaymentScreen: React.FC = () => {
                     });
 
                     if (result.redirected) {
+                        // User is inside the native payment container or redirecting on web.
+                        // Do not open PaymentVerificationOverlay; return coordinator handles post-payment return.
                         return;
                     }
 
-                    if (result.success) {
-                        // The gateway callback is NOT proof of payment — the verification
-                        // overlay waits for the webhook's Firestore write (requirement #8).
+                    if (result.paymentState === 'PAID') {
                         setIsProcessing(false);
                         setProcessingStep('');
                         sessionStorage.removeItem('pendingHitPayTx');
@@ -351,7 +290,7 @@ const PaymentScreen: React.FC = () => {
                         setIsProcessing(false);
                         setProcessingStep('');
                         return;
-                    } else {
+                    } else if (!result.success) {
                         throw new Error(result.errorMessage || "Payment was not successful.");
                     }
                 } catch (hitpayErr) {

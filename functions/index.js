@@ -7,34 +7,66 @@ const crypto = require('crypto');
 const {
   WEBHOOK_URL,
   HTTPS_RETURN_URL,
+  TRANSACTION_STATUSES,
+  TERMINAL_STATUSES,
   ENTITY_COLLECTIONS,
+  COLLECTION_ENTITY_KIND,
   resolveHitpayCredentials,
-  resolveSalt,
+  resolveWebhookSalts,
   hitpayApi,
   fetchPaymentRequest,
   verifyWebhookSignature,
+  calculateAuthoritativeAmount,
   deriveTransactionId,
   locateTransaction,
   settleTransaction,
+  computeEntityPaymentUpdate,
   parseReferenceEntity
 } = require('./lib/hitpay');
 
-admin.initializeApp();
+const { buildDailyFinanceSummary } = require('./lib/financeEmail');
 
-const TERMINAL_STATUSES = ['PAID', 'FAILED', 'CANCELLED', 'EXPIRED'];
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+/**
+ * Authentication & ownership helper for incoming requests.
+ * Extracts the Bearer token, verifies via Firebase Admin Auth, and checks admin or user ID.
+ * Returns isGuest: true if no token is provided, allowing entity-level verification fallback.
+ */
+async function authenticateRequest(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return { authenticated: false, uid: null, isGuest: true, statusCode: 200 };
+  }
+  const token = authHeader.split('Bearer ')[1].trim();
+  if (!token) {
+    return { authenticated: false, uid: null, isGuest: true, statusCode: 200 };
+  }
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    let isAdminUser = false;
+    try {
+      const adminSnap = await admin.firestore().collection('adminUsers').doc(decodedToken.uid).get();
+      isAdminUser = adminSnap.exists;
+    } catch (_) { }
+
+    return {
+      authenticated: true,
+      uid: decodedToken.uid,
+      email: decodedToken.email || '',
+      isAdmin: isAdminUser
+    };
+  } catch (err) {
+    // If token verification fails (e.g. expired or invalid), reject
+    return { authenticated: false, error: 'INVALID_AUTH_TOKEN', detail: err.message, statusCode: 401 };
+  }
+}
 
 /**
  * Cloud Function HTTP Proxy for HitPay API requests.
- * The client sends NO credentials — everything is resolved server-side.
- *
- * POST /hitpayProxy { isSandbox, transactionId?, referenceNumber, entityKind, entityId, payload }
- *     -> creates (or reuses) a HitPay payment request + paymentTransactions record
- * GET  /hitpayProxy?action=status&id=<payment_request_id>&sandbox=true
- *     -> authoritative HitPay payment-request status
- * GET  /hitpayProxy?action=transaction&id=<transactionId|payment_request_id>&ref=<reference>
- *     -> our paymentTransactions record
- * GET  /hitpayProxy?action=verify&id=<...>&sandbox=true
- *     -> re-verifies with HitPay and settles the transaction idempotently
+ * Secure, authenticated, idempotent.
  */
 exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
   return cors(req, res, async () => {
@@ -57,7 +89,12 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
       if (req.method === 'GET') {
         const action = String(req.query.action || '');
 
-        // --- status passthrough (server -> HitPay API) ---
+        const auth = await authenticateRequest(req);
+        if (auth.error === 'INVALID_AUTH_TOKEN') {
+          return res.status(401).json({ error: auth.error, message: 'Invalid authentication token' });
+        }
+
+        // --- status passthrough (authoritative HitPay status) ---
         if (action === 'status') {
           const paymentRequestId = String(req.query.id || '');
           if (!paymentRequestId) return res.status(400).json({ error: 'Use ?action=status&id=<payment_request_id>' });
@@ -72,38 +109,197 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
           }
         }
 
-        // --- our transaction record ---
+        // Helper to normalize transaction query parameters across different client naming styles
+        const extractTxParams = (query) => {
+          const rawTx = String(query.tx || query.transactionId || '').trim();
+          const rawS = String(query.s || query.paymentSessionId || '').trim();
+          const rawId = String(query.id || query.paymentRequestId || '').trim();
+          const rawRef = String(query.ref || query.referenceNumber || '').trim();
+
+          const looksLikeTx = rawId.startsWith('tx_') || Boolean(rawTx);
+          const transactionId = rawTx || (looksLikeTx ? rawId : '');
+          const paymentRequestId = !rawId.startsWith('tx_') ? rawId : '';
+          const paymentSessionId = rawS;
+          const referenceNumber = rawRef;
+
+          return { transactionId, paymentSessionId, paymentRequestId, referenceNumber, rawId, rawTx, rawS, rawRef };
+        };
+
+        // --- transaction record lookup with ownership check ---
         if (action === 'transaction') {
+          const { transactionId, paymentSessionId, paymentRequestId, referenceNumber } = extractTxParams(req.query);
+
           const located = await locateTransaction({
-            transactionId: String(req.query.id || ''),
-            paymentRequestId: String(req.query.id || ''),
-            referenceNumber: String(req.query.ref || req.query.id || '')
+            transactionId,
+            paymentSessionId,
+            paymentRequestId,
+            referenceNumber
           });
           if (!located) return res.status(404).json({ error: 'transaction_not_found' });
-          return res.status(200).json({ transactionId: located.id, ...located.data });
+
+          const txData = located.data;
+          if (auth.authenticated && !auth.isAdmin && txData.customerId && txData.customerId !== auth.uid) {
+            return res.status(403).json({ error: 'ACCESS_DENIED', message: 'You do not have permission to view this transaction' });
+          }
+
+          return res.status(200).json({ transactionId: located.id, ...txData });
         }
 
         // --- authoritative re-verification + idempotent settlement ---
         if (action === 'verify') {
-          const id = String(req.query.id || '');
-          const ref = String(req.query.ref || '');
-          if (!id && !ref) return res.status(400).json({ error: 'Use ?action=verify&id=<transaction|payment_request_id>&ref=<reference>' });
-          const looksLikeTx = id.startsWith('tx_');
+          const { transactionId, paymentSessionId, paymentRequestId, referenceNumber, rawId, rawTx, rawS, rawRef } = extractTxParams(req.query);
+
+          if (!rawId && !rawTx && !rawS && !rawRef) {
+            return res.status(400).json({ error: 'Use ?action=verify&id=<transaction|payment_request_id>&ref=<reference>&tx=<txId>&s=<sessionId>' });
+          }
+
+          const located = await locateTransaction({
+            transactionId,
+            paymentSessionId,
+            paymentRequestId,
+            referenceNumber
+          });
+
+          if (located) {
+            const txData = located.data;
+            if (auth.authenticated && !auth.isAdmin && txData.customerId && txData.customerId !== auth.uid) {
+              return res.status(403).json({ error: 'ACCESS_DENIED', message: 'You do not have permission to verify this transaction' });
+            }
+          }
+
           const result = await settleTransaction({
-            transactionId: looksLikeTx ? id : '',
-            paymentRequestId: looksLikeTx ? '' : id,
-            referenceNumber: ref,
+            transactionId,
+            paymentSessionId,
+            paymentRequestId,
+            referenceNumber,
             trigger: 'verify'
           });
-          const body = { ok: true, result };
+
+          const responsePayload = { ok: true, result };
           if (result.transactionId) {
-            const located = await locateTransaction({ transactionId: result.transactionId });
-            if (located) body.transaction = { transactionId: located.id, ...located.data };
+            const freshLocated = await locateTransaction({ transactionId: result.transactionId });
+            if (freshLocated) responsePayload.transaction = { transactionId: freshLocated.id, ...freshLocated.data };
           }
-          return res.status(200).json(body);
+          return res.status(200).json(responsePayload);
         }
 
-        return res.status(400).json({ error: 'Unknown action. Use ?action=status|transaction|verify' });
+        // --- safe sandbox-only testing simulation ---
+        if (action === 'simulate-sandbox') {
+          // 1. Strictly forbid in production
+          if (!isSandbox) {
+            return res.status(403).json({
+              error: 'FORBIDDEN',
+              message: 'simulate-sandbox is only permitted in the sandbox environment.'
+            });
+          }
+
+          const { transactionId, paymentSessionId, paymentRequestId, referenceNumber, rawId, rawTx, rawS, rawRef } = extractTxParams(req.query);
+
+          if (!rawId && !rawTx && !rawS && !rawRef) {
+            return res.status(400).json({ error: 'Provide transaction identifiers (tx, s, ref, or id) to simulate sandbox payment.' });
+          }
+
+          const located = await locateTransaction({
+            transactionId,
+            paymentSessionId,
+            paymentRequestId,
+            referenceNumber
+          });
+
+          if (!located) {
+            return res.status(404).json({ error: 'transaction_not_found', message: 'Transaction not found to simulate payment.' });
+          }
+
+          const txData = located.data;
+          const txId = located.id;
+          const txRef = located.ref;
+
+          // Double check environment on the transaction itself
+          if (txData.environment && txData.environment !== 'sandbox') {
+            return res.status(403).json({
+              error: 'FORBIDDEN',
+              message: 'Cannot simulate settlement on a non-sandbox transaction.'
+            });
+          }
+
+          // 2. Ownership check: Must be owner or admin
+          if (auth.authenticated && !auth.isAdmin && txData.customerId && txData.customerId !== auth.uid) {
+            return res.status(403).json({
+              error: 'ACCESS_DENIED',
+              message: 'You do not have permission to simulate payment for this transaction.'
+            });
+          }
+
+          // 3. Directly transition sandbox transaction to PAID and update target entity
+          const nowIso = new Date().toISOString();
+          const entityKind = txData.entityKind;
+          const entityId = txData.entityId;
+          const collectionName = ENTITY_COLLECTIONS[entityKind] || '';
+          const txAmount = Number(txData.amount || 0);
+          let entityUpdated = false;
+
+          const db = admin.firestore();
+          await db.runTransaction(async (t) => {
+            // 1. ALL READS FIRST (Firestore rule: all reads before writes)
+            const snap = await t.get(txRef);
+            if (!snap.exists) throw new Error('transaction disappeared');
+            const fresh = snap.data();
+            if (TERMINAL_STATUSES.includes(fresh.status) && fresh.status === 'PAID') {
+              return; // Already paid
+            }
+
+            let eRef = null;
+            let eSnap = null;
+            if (collectionName && entityId) {
+              eRef = db.collection(collectionName).doc(entityId);
+              eSnap = await t.get(eRef);
+            }
+
+            // 2. ALL WRITES AFTER
+            const stateHistory = Array.isArray(fresh.stateHistory) ? [...fresh.stateHistory] : [];
+            stateHistory.push({ status: 'PAID', timestamp: nowIso, reason: 'sandbox_simulation' });
+
+            t.update(txRef, {
+              status: 'PAID',
+              verificationStatus: 'VERIFIED',
+              webhookVerified: true,
+              hitpayStatus: 'completed',
+              hitpayPaymentId: fresh.hitpayPaymentId || `sim_${Date.now()}`,
+              paidAt: nowIso,
+              verifiedAt: nowIso,
+              simulated: true,
+              stateHistory,
+              failureReason: '',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            if (eRef && eSnap && eSnap.exists) {
+              const { update } = computeEntityPaymentUpdate(eSnap.data(), {
+                amount: txAmount,
+                reference: fresh.referenceNumber || referenceNumber,
+                transactionId: txId,
+                kind: fresh.kind || '',
+                paymentMethod: fresh.paymentMethod || 'HitPay Sandbox (Simulated)',
+                paymentRequestId: fresh.paymentRequestId || paymentRequestId || '',
+                collectionName
+              });
+              t.update(eRef, update);
+              entityUpdated = true;
+            }
+          });
+
+          const freshLocated = await locateTransaction({ transactionId: txId });
+          return res.status(200).json({
+            ok: true,
+            simulated: true,
+            transactionId: txId,
+            status: 'PAID',
+            entityUpdated,
+            transaction: freshLocated ? { transactionId: freshLocated.id, ...freshLocated.data } : null
+          });
+        }
+
+        return res.status(400).json({ error: 'Unknown action. Use ?action=status|transaction|verify|simulate-sandbox' });
       }
 
       // ----------------------------------------------------------------- POST --
@@ -111,184 +307,320 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         return res.status(405).json({ error: 'Method Not Allowed. Use POST or GET?action=status.' });
       }
 
+      // Check authentication (Bearer token or entity ownership)
+      const auth = await authenticateRequest(req);
+      if (auth.error === 'INVALID_AUTH_TOKEN') {
+        return res.status(401).json({ error: auth.error, message: 'Invalid authentication token' });
+      }
+
       const body = req.body || {};
       const rawPayload = body.payload || {};
-      const entityKind = body.entityKind || rawPayload.entityKind || '';
-      const entityId = body.entityId || rawPayload.entityId || '';
+      const entityKind = String(body.entityKind || rawPayload.entityKind || '').trim();
+      const entityId = String(body.entityId || rawPayload.entityId || '').trim();
+      const kind = String(body.kind || rawPayload.kind || '').trim(); // 'downpayment' | 'balance' | 'full'
 
-      // Authoritative price verification: look the amount up in Firestore
-      if (entityKind && entityId) {
-        const collectionName = ENTITY_COLLECTIONS[entityKind];
-        if (collectionName) {
-          try {
-            const entitySnap = await admin.firestore().collection(collectionName).doc(entityId).get();
-            if (entitySnap.exists) {
-              const entityData = entitySnap.data() || {};
-              const isDeposit = String(rawPayload.reference_number || '').includes('DP');
-              let authoritativeAmount = 0;
+      // P0 Security: Must have valid entityKind and entityId
+      if (!entityKind || !entityId) {
+        return res.status(400).json({
+          error: 'MISSING_PAYMENT_ENTITY',
+          code: 'ENTITY_REQUIRED',
+          message: 'Payment initiation requires a valid entityKind and entityId.'
+        });
+      }
 
-              if (collectionName === 'bookings') {
-                if (isDeposit) {
-                  authoritativeAmount = Number(entityData.downpaymentAmount || (Number(entityData.totalAmount || 0) * 0.5));
-                } else {
-                  authoritativeAmount = Number(entityData.remainingBalance ?? (Number(entityData.totalAmount || 0) - Number(entityData.paidAmount || 0)));
-                  if (authoritativeAmount <= 0) authoritativeAmount = Number(entityData.totalAmount || 0);
-                }
-              } else if (collectionName === 'orders') {
-                authoritativeAmount = Number(entityData.total || entityData.totalAmount || 0);
-              } else if (collectionName === 'rentalBookings') {
-                if (isDeposit) {
-                  authoritativeAmount = Number(entityData.downpaymentAmount || (Number(entityData.totalAmount || entityData.totalPrice || 0) * 0.5));
-                } else {
-                  authoritativeAmount = Number(entityData.remainingBalance ?? (Number(entityData.totalAmount || entityData.totalPrice || 0) - Number(entityData.paidAmount || 0)));
-                  if (authoritativeAmount <= 0) authoritativeAmount = Number(entityData.totalAmount || entityData.totalPrice || 0);
-                }
-              } else {
-                authoritativeAmount = Number(entityData.totalAmount || entityData.estimatedCost || 0);
-              }
+      const collectionName = ENTITY_COLLECTIONS[entityKind];
+      if (!collectionName) {
+        return res.status(400).json({
+          error: 'INVALID_ENTITY_KIND',
+          code: 'UNKNOWN_ENTITY_KIND',
+          message: `Entity kind "${entityKind}" is not supported.`
+        });
+      }
 
-              if (authoritativeAmount > 0) {
-                rawPayload.amount = Number(authoritativeAmount.toFixed(2));
-                rawPayload.currency = rawPayload.currency || entityData.currency || 'PHP';
-              }
+      // Fetch authoritative entity record from Firestore
+      const entityDocRef = admin.firestore().collection(collectionName).doc(entityId);
+      const entitySnap = await entityDocRef.get();
+      if (!entitySnap.exists) {
+        return res.status(404).json({
+          error: 'ENTITY_NOT_FOUND',
+          code: 'ENTITY_NOT_FOUND',
+          message: `The specified ${entityKind} (${entityId}) does not exist.`
+        });
+      }
+
+      const entityData = entitySnap.data() || {};
+      const entityOwnerId = entityData.customerId || entityData.userId || (entityData.customer && entityData.customer.id) || '';
+      const entityOwnerEmail = entityData.customerEmail || entityData.email || (entityData.customer && entityData.customer.email) || '';
+      const clientProvidedEmail = String(body.customerEmail || rawPayload.email || '').trim().toLowerCase();
+      const clientProvidedId = String(body.customerId || rawPayload.customerId || '').trim();
+
+      // Ownership enforcement:
+      // If signed in with Firebase ID token, verify UID
+      if (auth.authenticated && !auth.isAdmin && entityOwnerId && entityOwnerId !== auth.uid) {
+        return res.status(403).json({
+          error: 'PERMISSION_DENIED',
+          code: 'OWNERSHIP_MISMATCH',
+          message: 'You are not authorized to make payments for this reservation.'
+        });
+      }
+
+      // If guest / local-bypass session without ID token, ensure customerId, customerEmail matches or entity is open/recent
+      if (!auth.authenticated) {
+        const matchesId = Boolean(entityOwnerId && clientProvidedId && entityOwnerId === clientProvidedId);
+        const matchesEmail = Boolean(entityOwnerEmail && clientProvidedEmail && entityOwnerEmail.toLowerCase() === clientProvidedEmail);
+
+        let createdMillis = 0;
+        if (entityData.createdAt) {
+          if (typeof entityData.createdAt.toMillis === 'function') {
+            createdMillis = entityData.createdAt.toMillis();
+          } else if (typeof entityData.createdAt === 'number') {
+            createdMillis = entityData.createdAt;
+          } else {
+            createdMillis = new Date(entityData.createdAt).getTime() || 0;
+          }
+        }
+        const isRecentlyCreated = createdMillis > 0 && Math.abs(Date.now() - createdMillis) < 60 * 60 * 1000;
+        const isEntityOpenForPayment = !entityOwnerId || matchesId || matchesEmail || isRecentlyCreated;
+
+        if (!isEntityOpenForPayment) {
+          return res.status(401).json({
+            error: 'MISSING_AUTH_TOKEN',
+            message: 'Authentication required for payment initiation'
+          });
+        }
+      }
+
+      // Reference format
+      let referenceNumber = String(rawPayload.reference_number || body.referenceNumber || '').trim();
+      if (!referenceNumber) {
+        const prefixMap = {
+          booking: 'BOK',
+          rental: 'RNT',
+          liaison: 'LIA',
+          'service-request': 'SRV',
+          order: 'ORD'
+        };
+        const prefix = prefixMap[entityKind] || 'RB';
+        const suffix = kind === 'downpayment' ? 'DP' : (kind === 'balance' ? 'BAL' : 'FULL');
+        referenceNumber = `${prefix}-${entityId.slice(-8).toUpperCase()}-${suffix}-${Date.now().toString().slice(-4)}`;
+      }
+
+      // Authoritative amount calculation
+      const authAmounts = calculateAuthoritativeAmount(entityData, collectionName, kind, referenceNumber);
+      const authoritativeAmount = authAmounts.amount;
+      const currency = authAmounts.currency || 'PHP';
+
+      // Check if client supplied an expectedAmount or payload.amount
+      const clientAmount = Number(body.expectedAmount ?? body.amount ?? rawPayload.amount);
+      if (Number.isFinite(clientAmount) && clientAmount > 0) {
+        if (Math.abs(clientAmount - authoritativeAmount) > 0.01) {
+          console.warn(`[HitPay] Payment amount mismatch for ${entityKind}/${entityId}: client=${clientAmount}, authoritative=${authoritativeAmount}`);
+          return res.status(400).json({
+            error: 'PAYMENT_AMOUNT_MISMATCH',
+            code: 'AMOUNT_MISMATCH',
+            message: `Amount mismatch: expected ${authoritativeAmount} ${currency}, received ${clientAmount} ${currency}`,
+            authoritativeAmount,
+            clientAmount,
+            currency
+          });
+        }
+      }
+
+      // If authoritative amount <= 0, check if already paid
+      if (authoritativeAmount <= 0) {
+        return res.status(200).json({
+          alreadyPaid: true,
+          status: 'PAID',
+          message: 'This entity has no remaining balance due.',
+          remainingBalance: 0
+        });
+      }
+
+      // Deduplication check: check for active sessions for entityKind + entityId + kind
+      const txCollection = admin.firestore().collection('paymentTransactions');
+      const activeSessionsQuery = await txCollection
+        .where('entityKind', '==', entityKind)
+        .where('entityId', '==', entityId)
+        .limit(10)
+        .get();
+
+      const activeStatuses = ['CREATED', 'INITIALIZING', 'CHECKOUT_OPEN', 'WAITING_FOR_PAYMENT', 'VERIFYING', 'PENDING', 'INITIATED'];
+      let existingActiveTx = null;
+
+      if (!activeSessionsQuery.empty) {
+        const sorted = activeSessionsQuery.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const ta = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis() : 0;
+            const tb = (b.createdAt && b.createdAt.toMillis) ? b.createdAt.toMillis() : 0;
+            return tb - ta;
+          });
+
+        for (const candidate of sorted) {
+          if (candidate.status === 'PAID') {
+            // Already paid for this specific kind or fully paid
+            if (candidate.kind === kind || authAmounts.remainingBalance <= 0) {
+              return res.status(200).json({
+                alreadyPaid: true,
+                status: 'PAID',
+                transactionId: candidate.id,
+                referenceNumber: candidate.referenceNumber,
+                amount: candidate.amount,
+                currency: candidate.currency,
+                paymentRequestId: candidate.paymentRequestId || ''
+              });
             }
-          } catch (lookupErr) {
-            console.warn(`Firestore authoritative price lookup failed for ${entityKind}/${entityId}:`, lookupErr.message);
+          }
+
+          if (activeStatuses.includes(candidate.status) && candidate.paymentRequestId) {
+            const ageMs = Date.now() - ((candidate.createdAt && candidate.createdAt.toMillis) ? candidate.createdAt.toMillis() : 0);
+            if (ageMs < 30 * 60 * 1000 && candidate.checkoutUrl && body.force !== true) {
+              existingActiveTx = candidate;
+              break;
+            }
           }
         }
       }
 
-      // --- Transaction identity (idempotency keys) ---
-      const referenceNumber = String(rawPayload.reference_number || body.referenceNumber || `RB-${Date.now()}`);
-      rawPayload.reference_number = referenceNumber;
-      const transactionId = String(body.transactionId || '') || deriveTransactionId(referenceNumber, '');
-      const txRef = admin.firestore().collection('paymentTransactions').doc(transactionId);
-
-      // --- Reuse check: same reference must never spawn duplicate HitPay requests ---
-      const existing = await locateTransaction({ transactionId, referenceNumber });
-      if (existing && existing.id === transactionId && existing.data.referenceNumber === referenceNumber) {
-        const ex = existing.data;
-        if (ex.status === 'PAID') {
-          return res.status(200).json({
-            alreadyPaid: true,
-            status: 'PAID',
-            transactionId,
-            referenceNumber,
-            amount: ex.amount,
-            currency: ex.currency,
-            paymentRequestId: ex.paymentRequestId || ''
-          });
-        }
-        const ageMs = Date.now() - ((ex.createdAt && ex.createdAt.toMillis) ? ex.createdAt.toMillis() : 0);
-        const reusable = (ex.status === 'PENDING' || ex.status === 'INITIATED')
-          && ex.paymentRequestId && ex.checkoutUrl
-          && ageMs < 30 * 60 * 1000;
-        if (reusable && body.force !== true) {
-          return res.status(200).json({
-            url: ex.checkoutUrl,
-            id: ex.paymentRequestId,
-            transactionId,
-            status: ex.status,
-            environment,
-            referenceNumber,
-            reused: true
-          });
-        }
+      if (existingActiveTx) {
+        return res.status(200).json({
+          success: true,
+          paymentSessionId: existingActiveTx.paymentSessionId || existingActiveTx.id,
+          transactionId: existingActiveTx.id,
+          paymentRequestId: existingActiveTx.paymentRequestId,
+          referenceNumber: existingActiveTx.referenceNumber,
+          amount: existingActiveTx.amount,
+          currency: existingActiveTx.currency,
+          checkoutMode: existingActiveTx.checkoutMode || 'dropin',
+          status: existingActiveTx.status,
+          checkoutUrl: existingActiveTx.checkoutUrl,
+          qr: existingActiveTx.qr || null,
+          directLinkAppUrl: existingActiveTx.directLinkAppUrl || null,
+          reused: true
+        });
       }
 
-      // --- INITIATED record BEFORE the payment UI opens ---
+      // Generate stable IDs
+      const paymentSessionId = `RB-${entityKind}-${entityId}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+      const transactionId = String(body.transactionId || '') || deriveTransactionId(referenceNumber, '');
+      const txRef = txCollection.doc(transactionId);
+
+      // Determine checkout mode and payment methods
+      // If payment_methods is omitted or empty, HitPay's checkout displays ALL merchant-activated channels
+      // (Cards, QR Ph, GCash, Maya, Bank Transfer). Do not force a restrictive filter.
+      const checkoutMode = String(body.checkoutMode || 'dropin').toLowerCase(); // 'dropin' | 'qrph-native' | 'gcash'
+      const requestedMethods = Array.isArray(body.payment_methods) && body.payment_methods.length > 0
+        ? body.payment_methods
+        : (Array.isArray(rawPayload.payment_methods) && rawPayload.payment_methods.length > 0 ? rawPayload.payment_methods : null);
+
+      const hitpayPayload = {
+        amount: authoritativeAmount,
+        currency,
+        reference_number: referenceNumber,
+        name: String(rawPayload.name || entityData.customerName || auth.email || 'Customer').trim(),
+        email: String(rawPayload.email || entityData.customerEmail || auth.email || '').trim(),
+        phone: String(rawPayload.phone || entityData.customerPhone || '').trim(),
+        purpose: String(rawPayload.purpose || `RidersBUD ${entityKind} (${kind || 'payment'})`).slice(0, 100),
+        expires_after: '30 mins',
+        redirect_url: `${HTTPS_RETURN_URL}?s=${encodeURIComponent(paymentSessionId)}&tx=${encodeURIComponent(transactionId)}&ref=${encodeURIComponent(referenceNumber)}`
+      };
+
+      if (checkoutMode === 'qrph-native') {
+        hitpayPayload.generate_qr = true;
+        hitpayPayload.payment_methods = ['qrph_netbank'];
+      } else if (checkoutMode === 'gcash') {
+        hitpayPayload.generate_direct_link = true;
+        hitpayPayload.payment_methods = ['gcash'];
+      } else if (requestedMethods) {
+        hitpayPayload.payment_methods = requestedMethods;
+      }
+
+      // Record INITIALIZING in Firestore
       const baseTxRecord = {
+        paymentSessionId,
+        transactionId,
         entityKind,
         entityId,
         bookingId: entityKind === 'booking' ? entityId : (body.bookingId || ''),
         orderId: entityKind === 'order' ? entityId : (body.orderId || ''),
         referenceNumber,
-        amount: Number(rawPayload.amount || 0),
-        currency: String(rawPayload.currency || 'PHP').toUpperCase(),
-        kind: String(body.kind || ''),
-        paymentMethod: String(rawPayload.payment_methods && rawPayload.payment_methods[0] ? rawPayload.payment_methods.join(',') : 'HitPay Online'),
-        customerId: String(body.customerId || ''),
-        customerName: String(rawPayload.name || ''),
-        customerEmail: String(rawPayload.email || ''),
-        customerPhone: String(rawPayload.phone || ''),
+        amount: authoritativeAmount,
+        currency,
+        kind,
+        checkoutMode,
+        paymentMethod: checkoutMode === 'gcash' ? 'GCash' : (checkoutMode === 'qrph-native' ? 'QR Ph' : 'HitPay (Online)'),
+        customerId: auth.uid,
+        customerName: hitpayPayload.name,
+        customerEmail: hitpayPayload.email,
+        customerPhone: hitpayPayload.phone,
         environment,
-        status: 'INITIATED',
+        status: 'INITIALIZING',
         verificationStatus: 'UNVERIFIED',
-        hitpayStatus: '',
-        failureReason: '',
-        cancelReason: '',
+        stateHistory: [{ status: 'INITIALIZING', timestamp: new Date().toISOString() }],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       };
-      await admin.firestore().runTransaction(async (t) => {
-        const snap = await t.get(txRef);
-        if (snap.exists) {
-          const data = snap.data();
-          if (TERMINAL_STATUSES.includes(data.status)) return; // never reset a terminal record
-          t.update(txRef, Object.assign({}, baseTxRecord, {
-            createdAt: data.createdAt || admin.firestore.FieldValue.serverTimestamp(),
-            status: data.paymentRequestId ? data.status : 'INITIATED'
-          }));
-        } else {
-          t.create(txRef, Object.assign({}, baseTxRecord, {
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-          }));
-        }
-      });
 
-      // --- Authoritative webhook + HTTPS return route ---
-      rawPayload.webhook = WEBHOOK_URL;
-      if (!rawPayload.redirect_url || !/^https?:\/\//i.test(rawPayload.redirect_url)) {
-        // HitPay only accepts http(s) redirect URIs (validated against the live API):
-        // custom schemes like ridersbud:// are rejected with 422.
-        rawPayload.redirect_url = `${HTTPS_RETURN_URL}?tx=${encodeURIComponent(transactionId)}&ref=${encodeURIComponent(referenceNumber)}`;
-      }
+      await txRef.set(baseTxRecord);
 
-      const hostname = isSandbox ? 'api.sandbox.hit-pay.com' : 'api.hit-pay.com';
-      const createRequest = async (payloadObj) => hitpayApi({
-        isSandbox,
-        apiKey: creds.apiKey,
-        method: 'POST',
-        path: '/v1/payment-requests',
-        body: payloadObj
-      });
-
+      // Call HitPay API to create payment request
       let result;
       try {
-        result = await createRequest(rawPayload);
+        result = await hitpayApi({
+          isSandbox,
+          apiKey: creds.apiKey,
+          method: 'POST',
+          path: '/v1/payment-requests',
+          body: hitpayPayload
+        });
       } catch (err) {
-        await txRef.update({ failureReason: err.message || 'HitPay connection failed', updatedAt: admin.firestore.FieldValue.serverTimestamp() }).catch(() => { });
-        return res.status(200).json({ fallbackToPortal: true, reason: 'upstream_unreachable', error: err.message || 'HitPay connection failed' });
-      }
-
-      // One retry without a rejected redirect_url (defensive — scheme/URL validation)
-      if (result.statusCode === 422 && result.json && result.json.errors && result.json.errors.redirect_url) {
-        const retryPayload = Object.assign({}, rawPayload, { redirect_url: HTTPS_RETURN_URL });
-        try {
-          const retry = await createRequest(retryPayload);
-          if (retry.statusCode >= 200 && retry.statusCode < 300) result = retry;
-        } catch (_) { /* fall through to error handling below */ }
+        await txRef.update({
+          status: 'FAILED',
+          failureReason: err.message || 'HitPay connection failed',
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }).catch(() => { });
+        return res.status(200).json({
+          fallbackToPortal: true,
+          reason: 'upstream_unreachable',
+          error: err.message || 'HitPay connection failed'
+        });
       }
 
       if (result.statusCode >= 200 && result.statusCode < 300 && result.json && (result.json.id || result.json.url)) {
         const pr = result.json;
-        // PENDING after HitPay accepted the payment request
+        const qrData = pr.qr_code_data || (pr.qr_code ? { qr_code: pr.qr_code } : null);
+        const directLinkAppUrl = pr.direct_link_app_url || pr.direct_link_url || null;
+
         await txRef.update({
-          status: 'PENDING',
+          status: 'CHECKOUT_OPEN',
           paymentRequestId: String(pr.id || ''),
           checkoutUrl: String(pr.url || ''),
           hitpayStatus: String(pr.status || 'pending'),
-          amount: Number(rawPayload.amount || pr.amount || 0),
-          failureReason: '',
+          qr: qrData,
+          directLinkAppUrl,
+          stateHistory: admin.firestore.FieldValue.arrayUnion({
+            status: 'CHECKOUT_OPEN',
+            timestamp: new Date().toISOString()
+          }),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }).catch((e) => console.warn('tx PENDING update failed:', e.message));
+        }).catch((e) => console.warn('[HitPay] tx CHECKOUT_OPEN update error:', e.message));
 
         return res.status(200).json({
-          url: pr.url,
-          id: pr.id,
+          success: true,
+          paymentSessionId,
           transactionId,
-          status: 'PENDING',
-          environment,
-          referenceNumber
+          paymentRequestId: pr.id,
+          referenceNumber,
+          amount: authoritativeAmount,
+          currency,
+          checkoutMode,
+          checkoutUrl: pr.url,
+          dropin: {
+            defaultUrl: pr.url,
+            domain: isSandbox ? 'sandbox.hit-pay.com' : 'hit-pay.com'
+          },
+          qr: qrData,
+          directLinkAppUrl
         });
       }
 
@@ -296,9 +628,15 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
       const errorDetail = result.json && result.json.errors
         ? Object.entries(result.json.errors).map(([k, v]) => `${k}: ${(v || []).join(', ')}`).join('; ')
         : ((result.json && (result.json.message || result.json.error)) || `HitPay returned HTTP ${result.statusCode}`);
+
       await txRef.update({
         status: 'FAILED',
         failureReason: String(errorDetail).slice(0, 500),
+        stateHistory: admin.firestore.FieldValue.arrayUnion({
+          status: 'FAILED',
+          timestamp: new Date().toISOString(),
+          reason: String(errorDetail).slice(0, 200)
+        }),
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       }).catch(() => { });
 
@@ -306,10 +644,330 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         result.json || { message: errorDetail }
       );
     } catch (e) {
-      console.error('HitPay Proxy General Error:', e);
+      console.error('[HitPay] Proxy General Error:', e);
       return res.status(500).json({ error: e.message || 'Internal proxy error' });
     }
   });
+});
+
+/**
+ * Authoritative HitPay Webhook Endpoint
+ * Validates HMAC-SHA256 signature using raw body buffer against webhook salts.
+ * Enforces deduplication using paymentWebhookLogs / paymentWebhookEvents.
+ */
+exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).send('Method Not Allowed');
+  }
+
+  try {
+    const headers = req.headers || {};
+    const payload = (typeof req.body === 'object' && req.body !== null) ? req.body : {};
+
+    let rawBody = null;
+    if (Buffer.isBuffer(req.rawBody)) rawBody = req.rawBody;
+    else if (typeof req.rawBody === 'string' && req.rawBody.length) rawBody = Buffer.from(req.rawBody, 'utf8');
+    else if (String(headers['content-type'] || '').includes('application/json')) {
+      try { rawBody = Buffer.from(JSON.stringify(req.body), 'utf8'); } catch (_) { rawBody = null; }
+    }
+
+    const paymentRequestId = String(
+      payload.payment_request_id ||
+      (String(headers['hitpay-event-object'] || '') === 'payment_request' ? payload.id : '') ||
+      ''
+    );
+    const referenceNumber = String(payload.reference_number || '');
+    const reportedStatus = String(payload.status || '').toLowerCase();
+
+    // Webhook event deduplication via hash of raw body
+    const rawBodySha256 = crypto.createHash('sha256').update(rawBody || JSON.stringify(payload)).digest('hex');
+    const eventRef = admin.firestore().collection('paymentWebhookEvents').doc(rawBodySha256);
+    const eventSnap = await eventRef.get();
+    if (eventSnap.exists && eventSnap.data().processed === true) {
+      console.log(`[HitPay] Duplicate webhook event skipped (${rawBodySha256})`);
+      return res.status(200).json({ received: true, duplicate: true });
+    }
+
+    // Resolve candidate salts
+    let environment = '';
+    let salts = [];
+
+    if (paymentRequestId || referenceNumber) {
+      try {
+        const located = await locateTransaction({ paymentRequestId, referenceNumber });
+        if (located && located.data.environment) {
+          environment = located.data.environment;
+          salts = await resolveWebhookSalts(environment === 'sandbox');
+        }
+      } catch (e) {
+        console.warn('[HitPay] transaction lookup for environment failed:', e.message);
+      }
+    }
+
+    // The recorded environment can disagree with where the payment actually
+    // happened (environment mismatch), which used to reject VALID webhooks
+    // with 401 because only the recorded env's salts were tried. Validate
+    // against the recorded env's salts first, then against every other
+    // configured salt — the signature must still match a real salt.
+    try {
+      const sandboxSalts = await resolveWebhookSalts(true);
+      const liveSalts = await resolveWebhookSalts(false);
+      salts = Array.from(new Set([...salts, ...sandboxSalts, ...liveSalts]));
+    } catch (e) {
+      console.warn('[HitPay] salt union build failed:', e.message);
+    }
+
+    if (!salts.length) {
+      console.error('[HitPay] Webhook: no salt configured — refusing to process.');
+      return res.status(500).json({ error: 'Webhook salt not configured' });
+    }
+
+    const verdict = verifyWebhookSignature({ rawBody, payload, headers, salts });
+    if (!verdict.valid) {
+      console.warn('[HitPay] Webhook: signature validation failed.', {
+        v2Header: Boolean(headers['hitpay-signature'] || headers['x-hitpay-signature']),
+        legacyHeader: Boolean(headers['hmac'] || payload.hmac),
+        saltsTried: salts.length,
+        paymentRequestId,
+        referenceNumber
+      });
+      return res.status(401).send('Invalid signature');
+    }
+
+    // Mark event record as received
+    await eventRef.set({
+      sha256: rawBodySha256,
+      paymentRequestId,
+      referenceNumber,
+      receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+      processed: false
+    }, { merge: true });
+
+    // Idempotent settlement
+    let result;
+    try {
+      result = await settleTransaction({
+        paymentRequestId,
+        referenceNumber,
+        webhookPayload: payload,
+        trigger: 'webhook'
+      });
+    } catch (settleErr) {
+      console.error('[HitPay] Webhook settlement error:', settleErr);
+      return res.status(500).json({ error: settleErr.message || 'settlement failed' });
+    }
+
+    /**
+     * RETRY SEMANTICS (root-cause fix for stuck "Verifying/Pending" payments):
+     * Some settlement outcomes are transient — e.g. the HitPay API was briefly
+     * unreachable from the function, or a "completed" payment webhook arrived
+     * while the payment request status still read "pending". Previously the
+     * event was marked processed and 200-OKed, so HitPay NEVER resent the
+     * webhook and the transaction stayed unsettled forever.
+     *
+     * For retryable outcomes we now return a non-2xx and leave the event
+     * unprocessed, so HitPay's webhook retry policy redelivers it until the
+     * settlement lands. Definitive outcomes (terminal states, mismatches,
+     * unmatched references) are acknowledged as before.
+     */
+    const isRetryableWebhookOutcome = (r) => {
+      if (!r) return true;
+      if (r.status === 'ERROR') return true;
+      if (r.verificationStatus === 'GATEWAY_UNAVAILABLE') return true;
+      if (r.reason === 'gateway_status_pending' && String(reportedStatus).toLowerCase() === 'completed') return true;
+      return false;
+    };
+
+    if (isRetryableWebhookOutcome(result)) {
+      console.warn(`[HitPay] Webhook outcome retryable (${(result && result.status) || 'no-result'}) — asking HitPay to redeliver.`);
+      await eventRef.update({
+        processed: false,
+        settlementStatus: result.status || '',
+        willRetry: true,
+        lastAttemptAt: admin.firestore.FieldValue.serverTimestamp()
+      }).catch(() => { });
+      return res.status(503).json({
+        received: true,
+        retry: true,
+        status: result.status,
+        verificationStatus: result.verificationStatus || '',
+        transactionId: result.transactionId || ''
+      });
+    }
+
+    await eventRef.update({
+      processed: true,
+      settlementStatus: result.status || '',
+      processedAt: admin.firestore.FieldValue.serverTimestamp()
+    }).catch(() => { });
+
+    // Webhook audit log
+    try {
+      const paymentId = payload.payment_id || '';
+      const logId = paymentRequestId ||
+        (paymentId ? `pid_${String(paymentId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)}` : '') ||
+        `wp_${rawBodySha256.slice(0, 24)}`;
+      const logRef = admin.firestore().collection('paymentWebhookLogs').doc(logId);
+      await admin.firestore().runTransaction(async (t) => {
+        const snap = await t.get(logRef);
+        const common = {
+          paymentId,
+          paymentRequestId,
+          referenceNumber,
+          status: reportedStatus || 'unknown',
+          amount: Number(String(payload.amount || 0).replace(/,/g, '')) || 0,
+          currency: String(payload.currency || ''),
+          paymentMethod: payload.payment_type || payload.payment_method || 'HitPay (Online)',
+          signatureValid: true,
+          signatureMode: verdict.mode,
+          environment,
+          settlementStatus: result.status || '',
+          matched: result.entityUpdated === true,
+          rawPayload: payload
+        };
+        if (snap.exists) {
+          t.update(logRef, Object.assign({}, common, {
+            attempts: (snap.data().attempts || 1) + 1,
+            lastReceivedAt: admin.firestore.FieldValue.serverTimestamp()
+          }));
+        } else {
+          t.create(logRef, Object.assign({}, common, {
+            attempts: 1,
+            receivedAt: admin.firestore.FieldValue.serverTimestamp()
+          }));
+        }
+      });
+    } catch (logErr) {
+      console.warn('[HitPay] Webhook audit log write failed:', logErr.message);
+    }
+
+    return res.status(200).json({
+      received: true,
+      status: result.status,
+      alreadySettled: result.alreadySettled === true,
+      verificationStatus: result.verificationStatus || '',
+      transactionId: result.transactionId || ''
+    });
+  } catch (err) {
+    console.error('[HitPay] Webhook Processing Error:', err);
+    return res.status(500).json({ error: err.message || 'Webhook internal error' });
+  }
+});
+
+/**
+ * Task B12: Callable Cloud Function markOfflinePayment
+ * Allows admins or assigned mechanics to securely record cash or offline manual payments
+ * without granting clients direct write permissions to paymentStatus or paidAmount.
+ */
+exports.markOfflinePayment = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const callerUid = context.auth.uid;
+  const db = admin.firestore();
+
+  // Check admin status
+  const adminSnap = await db.collection('adminUsers').doc(callerUid).get();
+  const isAdmin = adminSnap.exists;
+
+  // Check mechanic status
+  const mechanicSnap = await db.collection('mechanics').doc(callerUid).get();
+  const isMechanic = mechanicSnap.exists;
+
+  if (!isAdmin && !isMechanic) {
+    throw new functions.https.HttpsError('permission-denied', 'Only administrators or mechanics can record offline payments.');
+  }
+
+  const entityKind = String(data.entityKind || '').trim();
+  const entityId = String(data.entityId || '').trim();
+  const amount = Number(data.amount);
+  const paymentMethod = String(data.paymentMethod || 'Cash').trim();
+  const note = String(data.note || '').trim();
+
+  if (!entityKind || !entityId || !Number.isFinite(amount) || amount <= 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Valid entityKind, entityId, and positive amount are required.');
+  }
+
+  const collectionName = ENTITY_COLLECTIONS[entityKind];
+  if (!collectionName) {
+    throw new functions.https.HttpsError('invalid-argument', `Unsupported entity kind: ${entityKind}`);
+  }
+
+  const entityRef = db.collection(collectionName).doc(entityId);
+  let updatedRecord = null;
+
+  await db.runTransaction(async (t) => {
+    const snap = await t.get(entityRef);
+    if (!snap.exists) {
+      throw new functions.https.HttpsError('not-found', `${entityKind} not found.`);
+    }
+
+    const docData = snap.data();
+
+    // Mechanics can only mark payments for bookings assigned to them
+    if (isMechanic && !isAdmin) {
+      if (collectionName !== 'bookings' || docData.mechanicId !== callerUid) {
+        throw new functions.https.HttpsError('permission-denied', 'Mechanics may only record offline payments for bookings assigned to them.');
+      }
+    }
+
+    const currentPaid = Number(docData.paidAmount || 0);
+    const totalAmount = Number(docData.totalAmount || docData.totalPrice || (docData.fees && docData.fees.total) || docData.total || 0);
+    const newPaidAmount = Number((currentPaid + amount).toFixed(2));
+    const isFullyPaid = totalAmount > 0 ? newPaidAmount >= (totalAmount - 0.5) : true;
+    const nowIso = new Date().toISOString();
+    const offlineRef = `OFFLINE-${Date.now().toString().slice(-6)}`;
+
+    const txRecord = {
+      id: `tx_${Date.now()}_offline`,
+      type: isFullyPaid ? 'balance' : 'downpayment',
+      amount,
+      method: paymentMethod,
+      reference: offlineRef,
+      note,
+      recordedBy: callerUid,
+      recordedByRole: isAdmin ? 'admin' : 'mechanic',
+      paidAt: nowIso,
+      status: 'completed'
+    };
+
+    const existingTxs = Array.isArray(docData.paymentTransactions) ? docData.paymentTransactions : [];
+    const updatePayload = {
+      paidAmount: newPaidAmount,
+      remainingBalance: Math.max(0, Number((totalAmount - newPaidAmount).toFixed(2))),
+      paymentStatus: isFullyPaid ? 'paid' : 'partial',
+      isPaid: isFullyPaid,
+      isVerified: true,
+      paymentMethod,
+      paymentTransactions: [...existingTxs, txRecord],
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (isFullyPaid) {
+      updatePayload.balancePaid = true;
+      updatePayload.balancePaidAt = nowIso;
+      updatePayload.balancePaymentRef = offlineRef;
+    } else {
+      updatePayload.downpaymentPaidAt = nowIso;
+      updatePayload.downpaymentRef = offlineRef;
+      updatePayload.downpaymentAmount = amount;
+    }
+
+    t.update(entityRef, updatePayload);
+    updatedRecord = Object.assign({}, docData, updatePayload);
+  });
+
+  return {
+    success: true,
+    entityKind,
+    entityId,
+    amount,
+    paidAmount: updatedRecord.paidAmount,
+    remainingBalance: updatedRecord.remainingBalance,
+    isPaid: updatedRecord.isPaid,
+    paymentStatus: updatedRecord.paymentStatus
+  };
 });
 
 /**
@@ -318,7 +976,7 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
 function createSmtpTransport(params) {
   const host = (params.host || params.Host || '').trim();
   const port = parseInt(params.port || params.Port || '587', 10);
-  const encryption = (params.encryption || params.Encryption || '').toUpperCase(); // 'SSL/TLS' | 'STARTTLS' | 'NONE'
+  const encryption = (params.encryption || params.Encryption || '').toUpperCase();
   const username = (params.username || params.Username || '').trim();
   const password = params.password || params.Password || '';
   const authRequired = params.authRequired !== false && params.authRequired !== 'false';
@@ -330,7 +988,6 @@ function createSmtpTransport(params) {
     throw new Error('Valid SMTP port is required.');
   }
 
-  // Determine secure (direct SSL/TLS) vs STARTTLS vs unencrypted
   let isSecure = false;
   let requireTls = false;
   let ignoreTls = false;
@@ -352,7 +1009,7 @@ function createSmtpTransport(params) {
     requireTLS: requireTls,
     ignoreTLS: ignoreTls,
     tls: {
-      rejectUnauthorized: false // allows self-signed / hosting provider certs
+      rejectUnauthorized: false
     },
     connectionTimeout: 15000,
     greetingTimeout: 15000,
@@ -380,9 +1037,6 @@ function createSmtpTransport(params) {
 
 /**
  * Cloud Function for Real-Time SMTP Gateway
- * Handles:
- * 1. action: 'verify' -> Real TLS handshake and authentication test against the SMTP server
- * 2. action: 'send' -> Real email delivery with SMTP acceptance confirmation & logging to Firestore
  */
 exports.smtpHandler = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
@@ -398,7 +1052,6 @@ exports.smtpHandler = functions.https.onRequest((req, res) => {
       const { transporter, configDetails } = createSmtpTransport(payload);
 
       if (action === 'verify' || action === 'test') {
-        // Real SMTP handshake, EHLO, and AUTH verification
         await transporter.verify();
         const latencyMs = Date.now() - startTime;
 
@@ -440,7 +1093,6 @@ exports.smtpHandler = functions.https.onRequest((req, res) => {
         const sendResult = await transporter.sendMail(mailOptions);
         const latencyMs = Date.now() - startTime;
 
-        // Log transaction to Firestore collection smtpLogs
         try {
           await admin.firestore().collection('smtpLogs').add({
             timestamp: new Date().toISOString(),
@@ -475,7 +1127,6 @@ exports.smtpHandler = functions.https.onRequest((req, res) => {
       const latencyMs = Date.now() - startTime;
       let errorMsg = err.message || 'SMTP operation failed.';
 
-      // Classify common SMTP errors cleanly
       if (err.code === 'EAUTH' || (err.responseCode && err.responseCode === 535)) {
         errorMsg = 'SMTP authentication failed. Please verify your SMTP Username and Password/App Secret.';
       } else if (err.code === 'ESOCKET' || err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED') {
@@ -486,7 +1137,6 @@ exports.smtpHandler = functions.https.onRequest((req, res) => {
         errorMsg = `Sender or recipient rejected by SMTP server (${err.response || errorMsg}).`;
       }
 
-      // Log failure to Firestore collection smtpLogs if sending failed
       if (action === 'send' && payload.to) {
         try {
           await admin.firestore().collection('smtpLogs').add({
@@ -519,156 +1169,282 @@ exports.smtpHandler = functions.https.onRequest((req, res) => {
 });
 
 /**
- * Authoritative HitPay Webhook Endpoint
+ * Payment Recovery Sweep (scheduled every 10 minutes)
  *
- * 1. Validates BOTH signature formats:
- *      - v2     `Hitpay-Signature` = HMAC-SHA256(raw JSON body, salt)  [current docs]
- *      - legacy `hmac` field/header = sorted key+value concatenation
- *    Signature validation is NEVER skipped — no salt or no match => 401/500.
- * 2. Environment (sandbox vs production) is resolved from the transaction record,
- *    never guessed from payload contents; salts never cross environments.
- * 3. Settlement is idempotent: `paymentRequestId` / `referenceNumber` /
- *    `transactionId` are the reconciliation keys, terminal states are immutable,
- *    and the entity update runs exactly once inside a Firestore transaction.
- * 4. The webhook alone does NOT mark anything PAID — settleTransaction() re-verifies
- *    the payment directly against the HitPay API first.
+ * Safety net so a payment can never sit unsettled just because the customer
+ * closed a tab, a webhook was delayed, or the client device went offline:
+ *
+ *  1. Finds `paymentTransactions` stuck in a non-terminal lifecycle state
+ *     (INITIALIZING / CHECKOUT_OPEN / WAITING_FOR_PAYMENT / VERIFYING) whose
+ *     last update is older than 10 minutes.
+ *  2. Re-runs the authoritative settlement for each (HitPay API re-verification
+ *     + idempotent PAID/FAILED/CANCELLED/EXPIRED write). Expired dead sessions
+ *     are closed out as EXPIRED by the same path.
+ *  3. Escalates "unmatched" transactions — still non-terminal after the sweep —
+ *     to `adminNotifications` (type PAYMENT_SETTLEMENT_ESCALATION), deduped per
+ *     transaction with a 6-hour cooldown and a 7-day age guard so historical
+ *     junk is never re-notified.
  */
-exports.hitpayWebhook = functions.https.onRequest(async (req, res) => {
-  if (req.method !== 'POST') {
-    return res.status(405).send('Method Not Allowed');
-  }
+exports.paymentRecoverySweep = functions
+  .runWith({ timeoutSeconds: 540, memory: '256MB' })
+  .pubsub.schedule('every 10 minutes')
+  .timeZone('Asia/Manila')
+  .onRun(async (context) => {
+    const db = admin.firestore();
+    const ACTIVE_STATUSES = ['INITIALIZING', 'CHECKOUT_OPEN', 'WAITING_FOR_PAYMENT', 'VERIFYING'];
+    const STUCK_AFTER_MS = 10 * 60 * 1000;
+    const ESCALATION_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+    const ESCALATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    const MAX_DOCS_PER_RUN = 100;
 
-  try {
-    const headers = req.headers || {};
-    const payload = (typeof req.body === 'object' && req.body !== null) ? req.body : {};
+    const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - STUCK_AFTER_MS);
 
-    // Raw body is required for the v2 signature (HMAC over exact bytes)
-    let rawBody = null;
-    if (Buffer.isBuffer(req.rawBody)) rawBody = req.rawBody;
-    else if (typeof req.rawBody === 'string' && req.rawBody.length) rawBody = Buffer.from(req.rawBody, 'utf8');
-    else if (String(headers['content-type'] || '').includes('application/json')) {
-      try { rawBody = Buffer.from(JSON.stringify(req.body), 'utf8'); } catch (_) { rawBody = null; }
+    let snap;
+    try {
+      // Single-field index on `updatedAt` (auto-indexed) — newest stale docs
+      // first; status is filtered in code to avoid a composite index.
+      snap = await db.collection('paymentTransactions')
+        .where('updatedAt', '<', cutoff)
+        .orderBy('updatedAt', 'desc')
+        .limit(MAX_DOCS_PER_RUN)
+        .get();
+    } catch (e) {
+      console.error('[PaymentSweep] query failed:', e.message);
+      return null;
     }
 
-    const paymentRequestId = String(
-      payload.payment_request_id ||
-      (String(headers['hitpay-event-object'] || '') === 'payment_request' ? payload.id : '') ||
-      ''
-    );
-    const referenceNumber = String(payload.reference_number || '');
-    const reportedStatus = String(payload.status || '').toLowerCase();
+    let candidates = 0;
+    let settledCount = 0;
+    let escalatedCount = 0;
+    let skippedRecent = 0;
+    const outcomes = [];
 
-    // --- Resolve candidate salts (environment-aware, never mixed) ---
-    let environment = '';
-    let salts = [];
+    for (const doc of snap.docs) {
+      const tx = doc.data() || {};
+      const status = String(tx.status || '').toUpperCase();
+      if (!ACTIVE_STATUSES.includes(status)) continue;
 
-    if (paymentRequestId || referenceNumber) {
+      // Recently verified by another path (webhook / client) — leave it alone.
+      const lastVerifyMs = tx.lastVerificationAt && typeof tx.lastVerificationAt.toMillis === 'function'
+        ? tx.lastVerificationAt.toMillis() : 0;
+      if (lastVerifyMs && (Date.now() - lastVerifyMs) < 2 * 60 * 1000) {
+        skippedRecent++;
+        continue;
+      }
+
+      candidates++;
+      let result = null;
       try {
-        const located = await locateTransaction({ paymentRequestId, referenceNumber });
-        if (located && located.data.environment) {
-          environment = located.data.environment;
-          const salt = await resolveSalt(environment === 'sandbox');
-          if (salt) salts = [salt];
-        }
+        result = await settleTransaction({ transactionId: doc.id, trigger: 'scheduled-sweep' });
       } catch (e) {
-        console.warn('transaction lookup for environment failed:', e.message);
+        console.error(`[PaymentSweep] settlement error for ${doc.id}:`, e && e.message);
+        result = { status: 'ERROR', reason: (e && e.message) || 'settlement error' };
+      }
+
+      const resultStatus = String((result && result.status) || '').toUpperCase();
+      const settledNow = TERMINAL_STATUSES.includes(resultStatus);
+      if (settledNow) settledCount++;
+      outcomes.push(`${doc.id}:${status}->${resultStatus || 'NO_RESULT'}`);
+
+      // --- Escalation for unmatched / still-unsettled transactions ---
+      if (settledNow) continue;
+
+      const createdMs = tx.createdAt && typeof tx.createdAt.toMillis === 'function' ? tx.createdAt.toMillis() : 0;
+      if (createdMs && (Date.now() - createdMs) > ESCALATION_MAX_AGE_MS) continue; // historical junk — never notify
+
+      const escalatedAtMs = tx.escalatedAt && typeof tx.escalatedAt.toMillis === 'function' ? tx.escalatedAt.toMillis() : 0;
+      if (escalatedAtMs && (Date.now() - escalatedAtMs) < ESCALATION_COOLDOWN_MS) continue; // already escalated recently
+
+      const reason = String(
+        (result && (result.reason || result.verificationStatus || result.status)) || `stuck_in_${status}`
+      ).slice(0, 200);
+
+      try {
+        await doc.ref.update({
+          escalatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          escalationCount: (tx.escalationCount || 0) + 1,
+          escalationReason: reason
+        });
+        await db.collection('adminNotifications').add({
+          type: 'PAYMENT_SETTLEMENT_ESCALATION',
+          recipientRole: 'admin',
+          recipientId: 'admin',
+          title: '⚠️ Payment needs manual review',
+          message: `Transaction ${doc.id} (${tx.referenceNumber || 'no reference'}, ${tx.amount || '?'} ${tx.currency || 'PHP'}) is still ${status} after automatic re-verification. Reason: ${reason}`,
+          transactionId: doc.id,
+          referenceNumber: tx.referenceNumber || '',
+          paymentRequestId: tx.paymentRequestId || '',
+          entityKind: tx.entityKind || '',
+          entityId: tx.entityId || '',
+          amount: Number(tx.amount) || 0,
+          currency: tx.currency || 'PHP',
+          stuckStatus: status,
+          escalationReason: reason,
+          environment: tx.environment || 'production',
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        escalatedCount++;
+      } catch (e) {
+        console.error(`[PaymentSweep] escalation write failed for ${doc.id}:`, e && e.message);
       }
     }
 
-    let sandboxSalt = '';
-    let liveSalt = '';
-    if (!salts.length) {
-      sandboxSalt = await resolveSalt(true);
-      liveSalt = await resolveSalt(false);
-      salts = [sandboxSalt, liveSalt].filter(Boolean);
-    }
+    console.log(
+      `[PaymentSweep] scanned=${snap.size} candidates=${candidates} settled=${settledCount} ` +
+      `escalated=${escalatedCount} skippedRecent=${skippedRecent}` +
+      (outcomes.length ? ` :: ${outcomes.slice(0, 20).join(', ')}` : '')
+    );
+    return null;
+  });
 
-    if (!salts.length) {
-      console.error('HitPay webhook: no salt configured — refusing to process.');
-      return res.status(500).json({ error: 'Webhook salt not configured' });
-    }
+/**
+ * Daily Finance Email (scheduled every day at 08:00 Asia/Manila)
+ *
+ * Sends the finance/admin inbox a single digest of the trailing 24 hours:
+ *  - settled payments (PAID, verified by webhook or authoritative re-verification)
+ *  - expired sessions (customer never completed checkout — no money moved;
+ *    customers can retry with a fresh session from their booking detail screen)
+ *  - escalations (PENDING_REVIEW mismatches + sweep escalations needing action)
+ *
+ * Reuses the SMTP bridge configuration stored by Admin Settings (settings/main:
+ * smtpHost / smtpPort / smtpEncryption / smtpUsername / smtpPassword / …) through
+ * the same createSmtpTransport() helper the /api/smtp-bridge endpoint uses.
+ * Skips silently (log only) when SMTP or a recipient is not configured so the
+ * schedule never error-spams; every send is audited into admin-visible smtpLogs.
+ */
+exports.paymentDailyFinanceEmail = functions
+  .runWith({ timeoutSeconds: 120, memory: '256MB' })
+  .pubsub.schedule('every day 08:00')
+  .timeZone('Asia/Manila')
+  .onRun(async () => {
+    const db = admin.firestore();
 
-    const verdict = verifyWebhookSignature({ rawBody, payload, headers, salts });
-    if (!verdict.valid) {
-      console.warn('HitPay webhook: signature validation failed. Header present:', !!(headers['hitpay-signature'] || headers['hmac'] || payload.hmac));
-      return res.status(401).send('Invalid signature');
-    }
-
-    if (!environment && verdict.salt) {
-      if (!sandboxSalt) sandboxSalt = await resolveSalt(true);
-      if (!liveSalt) liveSalt = await resolveSalt(false);
-      environment = verdict.salt === sandboxSalt ? 'sandbox' : verdict.salt === liveSalt ? 'production' : '';
-    }
-
-    console.log(`HitPay webhook [${reportedStatus}] ref=${referenceNumber} pr=${paymentRequestId} env=${environment || 'unknown'} sig=${verdict.mode}`);
-
-    // --- Idempotent settlement (webhook payload alone never marks PAID) ---
-    let result;
+    // 1. Load SMTP configuration + recipient from Admin Settings.
+    let settings = {};
     try {
-      result = await settleTransaction({
-        paymentRequestId,
-        referenceNumber,
-        webhookPayload: payload,
-        trigger: 'webhook'
-      });
-    } catch (settleErr) {
-      console.error('HitPay webhook settlement error:', settleErr);
-      // 500 => HitPay retries; settlement is idempotent so a retry is safe.
-      return res.status(500).json({ error: settleErr.message || 'settlement failed' });
+      const settingsSnap = await db.collection('settings').doc('main').get();
+      settings = settingsSnap.exists ? (settingsSnap.data() || {}) : {};
+    } catch (e) {
+      console.error('[FinanceEmail] failed to load settings/main:', e.message);
+      return null;
     }
 
-    // --- Audit log (deterministic id + attempt counter => duplicate-safe) ---
+    const recipient = String(
+      settings.contactEmail || settings.supportEmail || settings.smtpFromEmail || ''
+    ).trim();
+
+    if (!settings.smtpHost || !recipient) {
+      console.log('[FinanceEmail] skipped — SMTP host or recipient not configured (settings/main).');
+      return null;
+    }
+
+    // 2. Trailing 24h window.
+    const windowEndMs = Date.now();
+    const windowStartMs = windowEndMs - 24 * 60 * 60 * 1000;
+    const startTs = admin.firestore.Timestamp.fromMillis(windowStartMs);
+
+    // 3. Transactions touched in the window (single-field auto-index on updatedAt).
+    let txs = [];
     try {
-      const paymentId = payload.payment_id || '';
-      const logId = paymentRequestId ||
-        (paymentId ? `pid_${String(paymentId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40)}` : '') ||
-        `wp_${crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex').slice(0, 24)}`;
-      const logRef = admin.firestore().collection('paymentWebhookLogs').doc(logId);
-      await admin.firestore().runTransaction(async (t) => {
-        const snap = await t.get(logRef);
-        const common = {
-          paymentId,
-          paymentRequestId,
-          referenceNumber,
-          status: reportedStatus || 'unknown',
-          amount: Number(payload.amount || 0),
-          currency: String(payload.currency || ''),
-          paymentMethod: payload.payment_type || payload.payment_method || 'HitPay (Online)',
-          signatureValid: true,
-          signatureMode: verdict.mode,
-          environment,
-          settlementStatus: result.status || '',
-          matched: result.entityUpdated === true,
-          rawPayload: payload
-        };
-        if (snap.exists) {
-          t.update(logRef, Object.assign({}, common, {
-            attempts: (snap.data().attempts || 1) + 1,
-            lastReceivedAt: admin.firestore.FieldValue.serverTimestamp()
-          }));
-        } else {
-          t.create(logRef, Object.assign({}, common, {
-            receivedAt: admin.firestore.FieldValue.serverTimestamp()
-          }));
-        }
-      });
-    } catch (logErr) {
-      console.warn('webhook audit log write failed:', logErr.message);
+      const txSnap = await db.collection('paymentTransactions')
+        .where('updatedAt', '>=', startTs)
+        .limit(500)
+        .get();
+      txs = txSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      console.error('[FinanceEmail] paymentTransactions query failed:', e.message);
     }
 
-    if (result.status === 'UNMATCHED' || result.status === 'NOT_FOUND') {
-      return res.status(200).json({ received: true, status: 'unmatched', reason: result.reason || '' });
+    // 4. Escalation notifications created in the window.
+    let escalations = [];
+    try {
+      const notifSnap = await db.collection('adminNotifications')
+        .where('createdAt', '>=', startTs)
+        .limit(200)
+        .get();
+      escalations = notifSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((n) => ['PAYMENT_MISMATCH_REVIEW', 'PAYMENT_SETTLEMENT_ESCALATION'].includes(String(n.type)));
+    } catch (e) {
+      console.warn('[FinanceEmail] adminNotifications query failed:', e.message);
     }
 
-    return res.status(200).json({
-      received: true,
-      status: result.status,
-      alreadySettled: result.alreadySettled === true,
-      verificationStatus: result.verificationStatus || '',
-      transactionId: result.transactionId || ''
+    // 5. Build the digest and send through the same transport the SMTP bridge uses.
+    const monitorBaseUrl = String(HTTPS_RETURN_URL || 'https://ridersbud-10806.web.app/payment/return')
+      .replace(/\/payment\/return.*$/, '') + '/admin-portal/payment-monitor';
+
+    const summary = buildDailyFinanceSummary({
+      txs,
+      escalations,
+      windowStartMs,
+      windowEndMs,
+      monitorBaseUrl
     });
-  } catch (err) {
-    console.error('HitPay Webhook Processing Error:', err);
-    return res.status(500).json({ error: err.message || 'Webhook internal error' });
-  }
-});
+
+    try {
+      const { transporter, configDetails } = createSmtpTransport({
+        host: settings.smtpHost,
+        port: settings.smtpPort,
+        encryption: settings.smtpEncryption,
+        username: settings.smtpUsername,
+        password: settings.smtpPassword,
+        authRequired: settings.smtpAuthRequired !== false
+      });
+
+      const fromAddress = settings.smtpFromEmail || settings.smtpUsername;
+      const from = settings.smtpFromName ? `"${settings.smtpFromName}" <${fromAddress}>` : fromAddress;
+
+      const info = await transporter.sendMail({
+        from,
+        to: recipient,
+        subject: summary.subject,
+        html: summary.html,
+        text: summary.text,
+        replyTo: settings.smtpReplyTo || undefined
+      });
+
+      console.log(
+        `[FinanceEmail] sent to ${recipient} :: settled=${summary.totals.settled.count} ` +
+        `expired=${summary.totals.expired.count} escalated=${summary.totals.escalated.count} ` +
+        `(${info.messageId || 'no id'}) via ${configDetails.host}:${configDetails.port}`
+      );
+
+      // Audit trail visible in Admin → Settings → SMTP (smtpLogs board).
+      await db.collection('smtpLogs').add({
+        timestamp: new Date().toISOString(),
+        recipient,
+        sender: from,
+        subject: summary.subject,
+        status: 'Accepted by SMTP Server',
+        host: configDetails.host,
+        port: configDetails.port,
+        encryption: configDetails.encryption,
+        serverResponse: info.response || '250 OK',
+        messageId: info.messageId || '',
+        source: 'paymentDailyFinanceEmail',
+        totals: {
+          settled: summary.totals.settled.count,
+          expired: summary.totals.expired.count,
+          escalated: summary.totals.escalated.count
+        }
+      }).catch((e) => console.warn('[FinanceEmail] smtpLogs write failed:', e.message));
+    } catch (err) {
+      console.error('[FinanceEmail] send failed:', err && err.message);
+      try {
+        await db.collection('smtpLogs').add({
+          timestamp: new Date().toISOString(),
+          recipient,
+          sender: settings.smtpFromEmail || settings.smtpUsername || 'Unknown',
+          subject: summary.subject,
+          status: 'Failed',
+          host: settings.smtpHost || 'Unknown',
+          port: settings.smtpPort || 'Unknown',
+          errorMessage: (err && err.message) || 'SMTP dispatch failed',
+          source: 'paymentDailyFinanceEmail'
+        });
+      } catch (_) { /* logging must never throw */ }
+    }
+
+    return null;
+  });

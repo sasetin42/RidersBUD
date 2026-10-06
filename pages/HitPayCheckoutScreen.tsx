@@ -337,7 +337,11 @@ export const HitPayCheckoutScreen: React.FC = () => {
                 name,
                 phone,
                 purpose,
-                payment_methods: channelMethod
+                payment_methods: channelMethod,
+                entityKind: locationState.entityKind || searchParams.get('entityKind') || undefined,
+                entityId: locationState.entityId || searchParams.get('entityId') || searchParams.get('bookingId') || undefined,
+                customerId: locationState.customerId || searchParams.get('customerId') || undefined,
+                kind: locationState.kind || searchParams.get('kind') || undefined
             };
 
             const { url, id } = await hitpay.createPaymentRequest(paymentRequest);

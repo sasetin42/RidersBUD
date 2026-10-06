@@ -11,6 +11,7 @@ import {
     Megaphone,
     Settings,
     ShieldCheck,
+    Activity,
     Package,
     X,
     LogOut,
@@ -23,6 +24,7 @@ import { useAdminAuth } from '../../context/AdminAuthContext';
 import { useDatabase } from '../../context/DatabaseContext';
 import { AdminModule } from '../../types';
 import Tooltip from '../ui/Tooltip';
+import { usePaymentAttentionCount } from '../../hooks/usePaymentAttentionCount';
 
 interface AdminSidebarProps {
     isSidebarOpen: boolean;
@@ -35,6 +37,10 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isSidebarOpen, onClose, isC
     const { logout, totalUnreadChats, adminUser } = useAdminAuth();
     const location = useLocation();
     const { db } = useDatabase();
+
+    // Red badge: stuck / mismatched / retrying payments (1 lightweight query/min).
+    const paymentAttentionCount = usePaymentAttentionCount(!!adminUser);
+    const paymentAttentionBadge = Math.min(paymentAttentionCount, 99);
 
     const menuSections: {
         title: string;
@@ -67,6 +73,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isSidebarOpen, onClose, isC
                 { path: '/admin-portal/orders', name: 'Orders', icon: ShoppingBag, module: 'orders' },
                 { path: '/admin-portal/payouts', name: 'Payouts', icon: CreditCard, module: 'payouts' },
                 { path: '/admin-portal/payment-audit', name: 'Payment Audit', icon: ShieldCheck, module: 'gcash-payments' },
+                { path: '/admin-portal/payment-monitor', name: 'Payment Monitor', icon: Activity, badge: paymentAttentionBadge, module: 'gcash-payments' },
                 { path: '/admin-portal/monetization', name: 'Monetization', icon: Banknote, module: 'monetization' },
             ]
         },

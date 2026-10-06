@@ -26,6 +26,7 @@ import { useLocation } from 'react-router-dom';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import { geocodeAddressOrCity, resolveOrderTrackingLocations } from '../utils/locationHelper';
 import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
+import { PaymentController } from '../services/payment/PaymentController';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
@@ -275,58 +276,24 @@ const HomeScreen: React.FC = () => {
                 return;
             }
 
-            const hitPay = HitPayService.fromSettings(db?.settings);
-            const returnUrl = `${getLiveAppOrigin()}/customer-portal/?bookingId=${targetTx.id}${isRental ? '&isRental=true' : ''}${isLiaison ? '&isLiaison=true' : ''}${isDriver ? '&isDriver=true' : ''}`;
-            const appTitle = db?.settings?.appName || 'RidersBUD';
+            const balKind: PaymentEntityKind = isRental ? 'rental' : isLiaison ? 'liaison' : isDriver ? 'service-request' : 'booking';
 
-            sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
-                bookingId: targetTx.id,
-                amount: balanceDue,
-                totalAmount: total,
-                currentPaid: paid,
-                fullBooking: targetTx.rawBooking || targetTx,
-                isRental,
-                isLiaison,
-                isDriver
-            }));
+            const purpose = `RidersBUD — Remaining Balance Settlement (${targetTx.serviceName || targetTx.carName || targetTx.id})`;
 
-            const purposeText = isRental
-                ? `${appTitle} — Car Rental Balance Settlement (#${targetTx.id.slice(-6).toUpperCase()})`
-                : isLiaison
-                ? `${appTitle} — LTO Liaison Balance Settlement (#${targetTx.id.slice(-6).toUpperCase()})`
-                : `${appTitle} — Driver for Hire Balance Settlement (#${targetTx.id.slice(-6).toUpperCase()})`;
-
-            const refPrefix = isRental ? 'RNT' : isLiaison ? 'LIA' : 'DRV';
-            const balanceReference = `${refPrefix}-${targetTx.id}-BAL`;
-
-            const { url, id: balancePrId, transactionId: balanceTxId } = await hitPay.createPaymentRequest({
-                amount: balanceDue,
+            const res = await PaymentController.pay({
+                entityKind: balKind,
+                entityId: targetTx.id,
+                kind: 'balance',
+                expectedAmount: balanceDue,
                 currency: db?.settings?.currency || 'PHP',
-                reference_number: balanceReference,
-                webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                redirect_url: returnUrl,
-                email: user.email || 'customer@example.com',
-                name: user.name || 'Customer',
-                purpose: purposeText
+                customerEmail: user.email || 'customer@example.com',
+                customerName: user.name || 'Customer',
+                purpose,
+                returnRoute: '/customer-portal/'
             });
 
-            if (url.startsWith('/')) {
-                navigate(url);
-            } else {
-                const balKind: PaymentEntityKind = isRental ? 'rental' : isLiaison ? 'liaison' : isDriver ? 'service-request' : 'booking';
-                setPendingPaymentMarker({
-                    entityKind: balKind,
-                    entityId: targetTx.id,
-                    returnRoute: `/customer-portal/`,
-                    startedAt: Date.now(),
-                    purpose: 'balance-settlement',
-                    transactionId: balanceTxId || undefined,
-                    paymentRequestId: balancePrId || undefined,
-                    referenceNumber: balanceReference,
-                    environment: db?.settings?.hitpaySandboxMode === true ? 'sandbox' : 'production'
-                });
-                startPaymentWatcher(balKind, targetTx.id, `/customer-portal/`, balanceTxId || undefined);
-                openPaymentUrl(url);
+            if (res.success && res.state === 'PAID') {
+                setBalanceBookingForModal(null);
             }
         } catch (err) {
             console.error("Failed to initiate HitPay for balance, navigating to service payment screen:", err);
@@ -2637,8 +2604,8 @@ const HomeScreen: React.FC = () => {
                     ? targetBooking.remainingBalance
                     : Math.max(0, totalAmount - paidDownpayment);
 
-                const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
                 const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+                const isManualGcashEnabled = Boolean(db?.settings?.gcashEnabled) && !isHitPayActive;
                 const itemTitle = isRental
                     ? (targetBooking.title ? targetBooking.title.replace(/^Rental:\s*/i, '') : (targetBooking.rawBooking?.carName || 'Rental Vehicle'))
                     : isLiaison
@@ -2796,7 +2763,7 @@ const HomeScreen: React.FC = () => {
             })()}
 
             {/* Manual GCash Payment Modal for Rental, Liaison & Driver Balance */}
-            {showBalanceGCashModal && balanceBookingForModal && (() => {
+            {showBalanceGCashModal && balanceBookingForModal && (Boolean(db?.settings?.gcashEnabled) && !HitPayService.isGatewayActive(db?.settings)) && (() => {
                 const targetBooking = balanceBookingForModal;
                 const isRental = targetBooking.type === 'rental';
                 const isLiaison = targetBooking.type === 'liaison';

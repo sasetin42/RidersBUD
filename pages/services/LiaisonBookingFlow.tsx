@@ -860,10 +860,10 @@ const LiaisonBookingFlow: React.FC = () => {
                 pickupOption: isRegAssist ? 'Customer brings documents' as const : pickupOption,
                 documents: docArray,
                 status: 'Booking Received' as const,
-                paymentStatus: 'partial' as const,
+                paymentStatus: 'pending' as const,
                 paymentMethod: 'Online (HitPay)',
                 totalAmount: fees.total,
-                paidAmount: fees.total * 0.5,
+                paidAmount: 0,
                 fees,
                 notes: isRegAssist ? (regNotes || '') : '',
                 statusHistory: [{
@@ -944,22 +944,18 @@ const LiaisonBookingFlow: React.FC = () => {
                 });
 
                 if (result.redirected) {
-                    // The browser is already opening the official HitPay checkout URL
-                    // in an in-app Custom Tab — do not SPA-navigate over it.
                     return;
                 }
 
-                if (result.success) {
-                    // Route through the verification overlay (webhook-driven) before celebrating.
+                if (result.paymentState === 'PAID') {
                     const params = new URLSearchParams({
                         bookingId: createdLiaison.id,
-                        isLiaison: 'true',
-                        status: 'completed'
+                        isLiaison: 'true'
                     });
                     if (result.paymentRequestId) params.set('payment_request_id', result.paymentRequestId);
                     if (result.referenceNumber) params.set('reference', result.referenceNumber);
                     navigate(`/customer-portal/?${params.toString()}`, { state: { paymentSuccess: true } });
-                } else if (result.paymentState !== 'CANCELLED') {
+                } else if (result.paymentState !== 'CANCELLED' && !result.success) {
                     alert(result.errorMessage || 'Failed to complete payment.');
                 }
                 return;

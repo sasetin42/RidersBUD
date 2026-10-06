@@ -61,5 +61,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>gcash</string>
+		<string>paymaya</string>
+		<string>grabpay</string>
+	</array>
 </dict>
 </plist>

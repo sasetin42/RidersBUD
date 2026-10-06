@@ -23,7 +23,10 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const scrollDirection = useScrollDirection();
-    const isHidden = scrollDirection === 'up';
+    // Match the BottomNav behaviour: hide while scrolling DOWN (content view
+    // expands), reappear on scroll UP. It used to hide on 'up', which made the
+    // header vanish on every upward swipe — the exact opposite of the footer.
+    const isHidden = scrollDirection === 'down';
 
     const handleLogout = () => {
         logout();

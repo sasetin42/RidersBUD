@@ -70,6 +70,7 @@ const AdminMonetizationScreen = React.lazy(() => import('./pages/admin/AdminMone
 const AdminChatScreen = React.lazy(() => import('./pages/admin/AdminChatScreen'));
 const AdminGCashPaymentsScreen = React.lazy(() => import('./pages/admin/AdminGCashPaymentsScreen'));
 const AdminPaymentAuditScreen = React.lazy(() => import('./pages/admin/AdminPaymentAuditScreen'));
+const AdminPaymentMonitorScreen = React.lazy(() => import('./pages/admin/AdminPaymentMonitorScreen'));
 const AdminSatisfactionScreen = React.lazy(() => import('./pages/admin/AdminSatisfactionScreen'));
 const AdminNotificationsScreen = React.lazy(() => import('./pages/admin/AdminNotificationsScreen'));
 const ServicePaymentScreen = React.lazy(() => import('./pages/ServicePaymentScreen'));
@@ -397,6 +398,12 @@ const AppContent: React.FC = () => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // The centralized status screen owns verification while it is open — close
+    // the resume overlay so two watchers never compete for the same payment.
+    useEffect(() => {
+        if (location.pathname === '/payment/return') setResumeVerification(null);
+    }, [location.pathname]);
 
     useEffect(() => {
         const handleOnline = () => setIsOnline(true);
@@ -1578,6 +1585,7 @@ const AppContent: React.FC = () => {
                                             <Route path="chat" element={<AdminChatScreen />} />
                                             <Route path="gcash-payments" element={<Navigate to="/admin-portal/payment-audit" replace />} />
                                             <Route path="payment-audit" element={<AdminPaymentAuditScreen />} />
+                                            <Route path="payment-monitor" element={<AdminPaymentMonitorScreen />} />
                                             <Route path="satisfaction" element={<AdminSatisfactionScreen />} />
                                             <Route path="notifications" element={<AdminNotificationsScreen />} />
                                             <Route path="*" element={<Navigate to="/admin-portal/dashboard" replace />} />

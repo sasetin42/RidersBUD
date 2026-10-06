@@ -1265,7 +1265,7 @@ const RentCarScreen: React.FC = () => {
             } : undefined,
             pickupLocation: confirmedLocation?.address || '',
             status: 'Pending',
-            paymentStatus: 'partial',
+            paymentStatus: 'pending',
             isPaid: false,
             isRental: true
         };
@@ -1317,17 +1317,15 @@ const RentCarScreen: React.FC = () => {
             return;
         }
 
-        if (result.success) {
-            // Route through the verification overlay (webhook-driven) before celebrating.
+        if (result.paymentState === 'PAID') {
             const params = new URLSearchParams({
                 bookingId: createdRental.id,
-                isRental: 'true',
-                status: 'completed'
+                isRental: 'true'
             });
             if (result.paymentRequestId) params.set('payment_request_id', result.paymentRequestId);
             if (result.referenceNumber) params.set('reference', result.referenceNumber);
             navigate(`/customer-portal/?${params.toString()}`, { state: { rentalSuccess: true } });
-        } else if (result.paymentState !== 'CANCELLED') {
+        } else if (result.paymentState !== 'CANCELLED' && !result.success) {
             alert(result.errorMessage || 'Failed to complete payment.');
         }
         return;

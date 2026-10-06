@@ -70,6 +70,9 @@ const EXTENSION_WARN_PATTERNS = [
   'unload is not allowed',
   'Blocked aria-hidden on a <body>',
   'hcaptcha',
+  'recaptcha',
+  'google.com/recaptcha',
+  'Content Security Policy',
   // Firestore SDK permission errors (e.g. 'Payouts listener: FirebaseError: Missing or insufficient permissions.')
   'Missing or insufficient permissions',
   'FirebaseError',
@@ -135,6 +138,10 @@ const EXTENSION_ERROR_PATTERNS = [
   'unload is not allowed',
   'Blocked aria-hidden on a <body>',
   'hcaptcha',
+  'recaptcha',
+  'google.com/recaptcha',
+  'Content Security Policy',
+  'violates the document\'s Content Security Policy',
   'startTime',
   'reportAllChanges',
   'Cannot read properties of undefined (reading \'startTime\')',
@@ -232,6 +239,8 @@ window.addEventListener('error', (event) => {
     errorMsg.includes('CLOSING or CLOSED') ||
     errorMsg.includes('Evervault') ||
     errorMsg.includes('hcaptcha') ||
+    errorMsg.includes('recaptcha') ||
+    errorMsg.includes('Content Security Policy') ||
     errorMsg.includes('startTime') ||
     errorMsg.includes('reportAllChanges') ||
     errorStack.includes('startTime') ||
@@ -282,6 +291,8 @@ window.addEventListener('unhandledrejection', (event) => {
     reasonStr.includes('reportAllChanges') ||
     reasonStr.includes('Evervault') ||
     reasonStr.includes('hcaptcha') ||
+    reasonStr.includes('recaptcha') ||
+    reasonStr.includes('Content Security Policy') ||
     reasonStr.includes('QuotaExceededError') ||
     reasonStr.includes('quota') ||
     reasonStr.includes('firestore_mutations')

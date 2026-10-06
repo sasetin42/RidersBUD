@@ -188,58 +188,7 @@ const ServicePaymentScreen: React.FC = () => {
         readyResult?: { url: string; id: string };
     } | null>(null);
 
-    // Eagerly pre-warm HitPay payment session as soon as booking details load
-    useEffect(() => {
-        if (!booking || amountToPay <= 0 || !user || !db?.settings) return;
-        const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
-        if (!isHitPayActive) return;
-
-        if (
-            prewarmedSessionRef.current &&
-            prewarmedSessionRef.current.bookingId === booking.id &&
-            prewarmedSessionRef.current.amount === amountToPay
-        ) {
-            return;
-        }
-
-        try {
-            const isSandbox = db?.settings?.hitpaySandboxMode === true;
-            const hitPay = HitPayService.fromSettings(db?.settings, isSandbox);
-            const returnUrl = `${getLiveAppOrigin()}${window.location.pathname}?bookingId=${booking.id}`;
-            const purpose = isDeposit
-                ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
-                : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
-            const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}`;
-
-            const paymentPromise = hitPay.createPaymentRequest({
-                amount: amountToPay,
-                currency: db?.settings?.currency || 'PHP',
-                reference_number: refNumber,
-                webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                redirect_url: returnUrl,
-                email: user.email || 'customer@ridersbud.com',
-                name: user.name || 'Valued Customer',
-                phone: user.phone || '09171234567',
-                purpose: purpose
-            }).then(res => {
-                if (prewarmedSessionRef.current?.bookingId === booking.id) {
-                    prewarmedSessionRef.current.readyResult = res;
-                }
-                return res;
-            }).catch(err => {
-                console.warn('[ServicePaymentScreen] Pre-warm notice:', err?.message || err);
-                throw err;
-            });
-
-            prewarmedSessionRef.current = {
-                bookingId: booking.id,
-                amount: amountToPay,
-                promise: paymentPromise
-            };
-        } catch (e) {
-            console.warn('[ServicePaymentScreen] Pre-warm exception:', e);
-        }
-    }, [booking?.id, amountToPay, user?.email, db?.settings, isDeposit]);
+    // Automatic pre-warm removed: payment requests are created strictly on user payment intent.
 
     /**
      * Runs ONLY after the webhook's authoritative Firestore write is observed
@@ -543,13 +492,12 @@ const ServicePaymentScreen: React.FC = () => {
             });
 
             if (checkoutResult.redirected) {
+                // User is inside the native payment container or redirecting on web.
+                // Do not open PaymentVerificationOverlay; return coordinator handles post-payment return.
                 return;
             }
 
-            if (checkoutResult.success) {
-                // The gateway callback is NOT proof of payment — the verification
-                // overlay waits for the webhook's authoritative Firestore write
-                // (requirement #8) before showing success and continuing.
+            if (checkoutResult.paymentState === 'PAID') {
                 setPaymentReturnTarget({
                     entityKind,
                     entityId: booking.id,
@@ -563,7 +511,7 @@ const ServicePaymentScreen: React.FC = () => {
                 setProcessingStage('');
                 sessionStorage.removeItem('pendingHitPayServiceTx');
                 return;
-            } else {
+            } else if (!checkoutResult.success) {
                 throw new Error(checkoutResult.errorMessage || "Payment could not be completed.");
             }
         } catch (err) {

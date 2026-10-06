@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, XCircle, Clock, ShieldCheck, Lock, Loader2, AlertTriangle, ArrowLeft, Receipt } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, ShieldCheck, Lock, Loader2, AlertTriangle, ArrowLeft, Receipt, FlaskConical } from 'lucide-react';
 import {
     PaymentVerificationState,
     PaymentReturnInfo,
     verifyPaymentTransaction,
-    watchTransactionReturnVerification
+    watchTransactionReturnVerification,
+    simulateSandboxPayment
 } from '../utils/paymentReturn';
 import { clearPendingPaymentMarker, getPendingPaymentMarker } from '../utils/paymentRedirect';
 import Spinner from '../components/Spinner';
@@ -77,14 +78,16 @@ const PaymentStatusScreen: React.FC = () => {
     const [entityKind, setEntityKind] = useState<string>('');
     const [entityId, setEntityId] = useState<string>('');
     const [isSandbox, setIsSandbox] = useState(false);
+    const [isSimulating, setIsSimulating] = useState(false);
     const stopRef = useRef<(() => void) | null>(null);
     const startedRef = useRef(false);
 
     // Resolve identity: URL params first, then the local pending marker.
     const urlInfo: PaymentReturnInfo = {
-        transactionId: searchParams.get('tx') || undefined,
-        referenceNumber: searchParams.get('ref') || undefined,
-        paymentRequestId: searchParams.get('prid') || undefined
+        transactionId: searchParams.get('tx') || searchParams.get('transaction') || undefined,
+        referenceNumber: searchParams.get('ref') || searchParams.get('reference_number') || undefined,
+        paymentRequestId: searchParams.get('prid') || searchParams.get('payment_request_id') || searchParams.get('reference') || undefined,
+        paymentSessionId: searchParams.get('s') || searchParams.get('session') || searchParams.get('paymentSessionId') || undefined
     };
 
     useEffect(() => {
@@ -97,6 +100,7 @@ const PaymentStatusScreen: React.FC = () => {
         const transactionId = urlInfo.transactionId || marker?.transactionId || '';
         const referenceNumber = urlInfo.referenceNumber || marker?.referenceNumber || '';
         const paymentRequestId = urlInfo.paymentRequestId || marker?.paymentRequestId || '';
+        const paymentSessionId = urlInfo.paymentSessionId || '';
         const sandbox = searchParams.get('sb') === '1' || marker?.environment === 'sandbox';
 
         setIsSandbox(sandbox);
@@ -105,7 +109,7 @@ const PaymentStatusScreen: React.FC = () => {
             setEntityId(marker.entityId || '');
         }
 
-        if (!transactionId && !referenceNumber && !paymentRequestId) {
+        if (!transactionId && !referenceNumber && !paymentRequestId && !paymentSessionId) {
             setPhase('failed');
             setMessage('We could not find a payment session to verify. If you completed a payment, it will be reflected in your booking shortly.');
             return;
@@ -115,7 +119,7 @@ const PaymentStatusScreen: React.FC = () => {
         setMessage('Verifying your payment with HitPay…');
 
         // Immediate server-side re-verification (safe before/after the webhook)
-        verifyPaymentTransaction({ transactionId, paymentRequestId, reference: referenceNumber, isSandbox: sandbox })
+        verifyPaymentTransaction({ transactionId, paymentRequestId, reference: referenceNumber, paymentSessionId, isSandbox: sandbox })
             .catch(() => { /* watcher keeps retrying */ });
 
         // Authoritative watcher: Firestore transaction doc + backoff verify calls
@@ -123,21 +127,41 @@ const PaymentStatusScreen: React.FC = () => {
             transactionId,
             paymentRequestId,
             referenceNumber,
+            paymentSessionId,
             isSandbox: sandbox,
-            timeoutMs: 3 * 60 * 1000,
+            // Honest progression: VERIFYING → PENDING after 90s (was 3 min —
+            // customers perceived it as "stuck forever on Verifying").
+            timeoutMs: 90 * 1000,
             onState: (state, msg, tx) => {
-                setPhase(stateToPhase(state));
-                setMessage(msg);
+                const nextPhase = stateToPhase(state);
+                setPhase(prev => (prev === nextPhase ? prev : nextPhase));
+                setMessage(prev => (prev === msg ? prev : msg));
                 if (tx) {
-                    setReceipt({
-                        reference: tx.referenceNumber || referenceNumber,
-                        amount: Number(tx.amount) || undefined,
-                        currency: tx.currency || 'PHP',
-                        paymentMethod: methodLabel(tx.paymentMethod),
-                        paidAt: tx.paidAt || tx.verifiedAt || undefined
+                    setReceipt(prev => {
+                        const newRef = tx.referenceNumber || referenceNumber || prev.reference;
+                        const newAmt = Number(tx.amount) || prev.amount;
+                        const newCurr = tx.currency || prev.currency || 'PHP';
+                        const newMethod = methodLabel(tx.paymentMethod) || prev.paymentMethod;
+                        const newPaidAt = tx.paidAt || tx.verifiedAt || prev.paidAt;
+                        if (
+                            prev.reference === newRef &&
+                            prev.amount === newAmt &&
+                            prev.currency === newCurr &&
+                            prev.paymentMethod === newMethod &&
+                            prev.paidAt === newPaidAt
+                        ) {
+                            return prev;
+                        }
+                        return {
+                            reference: newRef,
+                            amount: newAmt,
+                            currency: newCurr,
+                            paymentMethod: newMethod,
+                            paidAt: newPaidAt
+                        };
                     });
-                    if (tx.entityKind) setEntityKind(tx.entityKind);
-                    if (tx.entityId) setEntityId(tx.entityId);
+                    if (tx.entityKind) setEntityKind(prev => (prev === tx.entityKind ? prev : tx.entityKind));
+                    if (tx.entityId) setEntityId(prev => (prev === tx.entityId ? prev : tx.entityId));
                     if (tx.environment === 'sandbox') setIsSandbox(true);
                 }
             },
@@ -146,13 +170,29 @@ const PaymentStatusScreen: React.FC = () => {
                 // marker can hijack a later payment session.
                 clearPendingPaymentMarker();
                 if (tx) {
-                    setReceipt(prev => ({
-                        reference: tx.referenceNumber || prev.reference,
-                        amount: Number(tx.amount) || prev.amount,
-                        currency: tx.currency || prev.currency,
-                        paymentMethod: methodLabel(tx.paymentMethod),
-                        paidAt: tx.paidAt || tx.verifiedAt || prev.paidAt
-                    }));
+                    setReceipt(prev => {
+                        const newRef = tx.referenceNumber || prev.reference;
+                        const newAmt = Number(tx.amount) || prev.amount;
+                        const newCurr = tx.currency || prev.currency;
+                        const newMethod = methodLabel(tx.paymentMethod) || prev.paymentMethod;
+                        const newPaidAt = tx.paidAt || tx.verifiedAt || prev.paidAt;
+                        if (
+                            prev.reference === newRef &&
+                            prev.amount === newAmt &&
+                            prev.currency === newCurr &&
+                            prev.paymentMethod === newMethod &&
+                            prev.paidAt === newPaidAt
+                        ) {
+                            return prev;
+                        }
+                        return {
+                            reference: newRef,
+                            amount: newAmt,
+                            currency: newCurr,
+                            paymentMethod: newMethod,
+                            paidAt: newPaidAt
+                        };
+                    });
                 }
             }
         });
@@ -160,6 +200,12 @@ const PaymentStatusScreen: React.FC = () => {
         return () => {
             stopRef.current?.();
             stopRef.current = null;
+            // React StrictMode mounts → cleans up → mounts again in development.
+            // The old guard kept `startedRef.current = true` across the remount,
+            // so the SECOND mount never started a watcher at all (no verification,
+            // no timeout, screen frozen on "Verifying Payment"). Resetting here
+            // makes the effect restart-safe in every environment.
+            startedRef.current = false;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -356,18 +402,165 @@ const PaymentStatusScreen: React.FC = () => {
                         )}
 
                         {!isTerminal && (
-                            <div className="space-y-2">
+                            <div className="space-y-3">
+                                {isSandbox && (phase === 'verifying' || phase === 'pending') && (
+                                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-400/30 text-left space-y-2">
+                                        <div className="flex items-center gap-1.5 text-amber-300 text-xs font-bold">
+                                            <FlaskConical size={14} />
+                                            <span>HitPay Sandbox Testing Helper</span>
+                                        </div>
+                                        <p className="text-[11px] text-gray-400 leading-snug">
+                                            Testing in Sandbox mode? In Sandbox, HitPay requires manual webhook triggering or checkout simulation. Click below to instantly simulate a successful settlement.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            disabled={isSimulating}
+                                            onClick={async () => {
+                                                const marker = getPendingPaymentMarker();
+                                                const txId = urlInfo.transactionId || marker?.transactionId || '';
+                                                const ref = urlInfo.referenceNumber || marker?.referenceNumber || '';
+                                                const prId = urlInfo.paymentRequestId || marker?.paymentRequestId || '';
+                                                const sId = urlInfo.paymentSessionId || '';
+
+                                                setIsSimulating(true);
+                                                setMessage('🧪 Simulating HitPay sandbox payment completion…');
+
+                                                try {
+                                                    const simRes = await simulateSandboxPayment({
+                                                        transactionId: txId,
+                                                        paymentRequestId: prId,
+                                                        reference: ref,
+                                                        paymentSessionId: sId
+                                                    });
+
+                                                    if (simRes && (simRes.ok || simRes.status === 'PAID' || simRes.result?.status === 'PAID')) {
+                                                        const tx = simRes.transaction || simRes.result?.transaction;
+                                                        if (tx) {
+                                                            setReceipt(prev => ({
+                                                                reference: tx.referenceNumber || prev.reference,
+                                                                amount: Number(tx.amount) || prev.amount,
+                                                                currency: tx.currency || prev.currency,
+                                                                paymentMethod: methodLabel(tx.paymentMethod) || prev.paymentMethod,
+                                                                paidAt: tx.paidAt || tx.verifiedAt || prev.paidAt
+                                                            }));
+                                                        }
+                                                        setPhase('success');
+                                                        setMessage('✓ Sandbox test payment simulated and verified successfully.');
+                                                        clearPendingPaymentMarker();
+                                                    } else {
+                                                        // Re-verify immediately to fetch latest state
+                                                        const verifyRes = await verifyPaymentTransaction({
+                                                            transactionId: txId,
+                                                            paymentRequestId: prId,
+                                                            reference: ref,
+                                                            paymentSessionId: sId,
+                                                            isSandbox: true
+                                                        });
+                                                        if (verifyRes?.result?.status === 'PAID') {
+                                                            setPhase('success');
+                                                            setMessage('✓ Payment successfully settled in sandbox.');
+                                                            clearPendingPaymentMarker();
+                                                        } else {
+                                                            setMessage(simRes?.message || 'Sandbox simulation dispatched. Checking confirmation…');
+                                                        }
+                                                    }
+                                                } catch (err: any) {
+                                                    setMessage(`Simulation request error: ${err?.message || 'Failed to simulate'}`);
+                                                } finally {
+                                                    setIsSimulating(false);
+                                                }
+                                            }}
+                                            className="w-full py-2.5 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-black text-xs uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                        >
+                                            {isSimulating ? (
+                                                <>
+                                                    <Spinner size="sm" color="text-black" />
+                                                    <span>Simulating Settlement…</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span>🧪 Simulate Sandbox Payment</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                )}
+
                                 <div className="flex items-center justify-center gap-2 text-[10px] text-gray-500">
                                     <Spinner size="sm" />
                                     <span>Verification continues automatically — keep this screen open or come back later.</span>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={goDone}
-                                    className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold transition-all"
-                                >
-                                    Close
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            const marker = getPendingPaymentMarker();
+                                            const txId = urlInfo.transactionId || marker?.transactionId || '';
+                                            const ref = urlInfo.referenceNumber || marker?.referenceNumber || '';
+                                            const prId = urlInfo.paymentRequestId || marker?.paymentRequestId || '';
+                                            const sId = urlInfo.paymentSessionId || '';
+                                            setMessage('Checking with HitPay now…');
+                                            try {
+                                                const res = await verifyPaymentTransaction({
+                                                    transactionId: txId,
+                                                    paymentRequestId: prId,
+                                                    reference: ref,
+                                                    paymentSessionId: sId,
+                                                    isSandbox
+                                                });
+                                                if (res?.result?.status === 'PAID') {
+                                                    const tx = res.transaction;
+                                                    if (tx) {
+                                                        setReceipt(prev => ({
+                                                            reference: tx.referenceNumber || prev.reference,
+                                                            amount: Number(tx.amount) || prev.amount,
+                                                            currency: tx.currency || prev.currency,
+                                                            paymentMethod: methodLabel(tx.paymentMethod) || prev.paymentMethod,
+                                                            paidAt: tx.paidAt || tx.verifiedAt || prev.paidAt
+                                                        }));
+                                                    }
+                                                    setPhase('success');
+                                                    setMessage('Your payment has been verified by HitPay.');
+                                                    clearPendingPaymentMarker();
+                                                } else if (res?.result?.status === 'FAILED') {
+                                                    setPhase('failed');
+                                                    setMessage('HitPay reported that the payment failed.');
+                                                } else if (res?.result?.status === 'CANCELLED') {
+                                                    setPhase('cancelled');
+                                                    setMessage('The payment was cancelled.');
+                                                } else if (res?.result?.status === 'EXPIRED') {
+                                                    setPhase('expired');
+                                                    setMessage('This payment request has expired.');
+                                                } else if (
+                                                    res?.result?.status === 'PENDING_REVIEW' ||
+                                                    res?.result?.verificationStatus === 'AMOUNT_MISMATCH' ||
+                                                    res?.result?.verificationStatus === 'CURRENCY_MISMATCH' ||
+                                                    res?.result?.verificationStatus === 'REFERENCE_MISMATCH'
+                                                ) {
+                                                    setPhase('pending');
+                                                    setMessage('We received your payment but it needs manual review. Our team will update you shortly.');
+                                                } else if (res?.result?.status === 'NOT_FOUND') {
+                                                    setPhase('pending');
+                                                    setMessage('We could not find this payment session on the server yet. Keep this screen open — verification continues automatically.');
+                                                } else {
+                                                    setMessage('Payment status is still pending with HitPay. We are actively checking.');
+                                                }
+                                            } catch {
+                                                setMessage('Could not connect to payment server. Please check your network.');
+                                            }
+                                        }}
+                                        className="flex-1 py-2.5 rounded-lg bg-primary/20 border border-primary/40 text-primary text-xs font-bold transition-all hover:bg-primary/30"
+                                    >
+                                        Check Status Now
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={goDone}
+                                        className="py-2.5 px-4 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold transition-all"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>

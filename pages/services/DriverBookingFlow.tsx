@@ -1026,22 +1026,18 @@ const DriverBookingFlow: React.FC = () => {
                 });
 
                 if (result.redirected) {
-                    // The browser is already opening the official HitPay checkout URL
-                    // in an in-app Custom Tab — do not SPA-navigate over it.
                     return;
                 }
 
-                if (result.success) {
-                    // Route through the verification overlay (webhook-driven) before celebrating.
+                if (result.paymentState === 'PAID') {
                     const params = new URLSearchParams({
                         bookingId: reqId,
-                        isDriver: 'true',
-                        status: 'completed'
+                        isDriver: 'true'
                     });
                     if (result.paymentRequestId) params.set('payment_request_id', result.paymentRequestId);
                     if (result.referenceNumber) params.set('reference', result.referenceNumber);
                     navigate(`/customer-portal/?${params.toString()}`, { state: { paymentSuccess: true } });
-                } else if (result.paymentState !== 'CANCELLED') {
+                } else if (result.paymentState !== 'CANCELLED' && !result.success) {
                     alert(result.errorMessage || 'Failed to complete payment.');
                 }
                 return;

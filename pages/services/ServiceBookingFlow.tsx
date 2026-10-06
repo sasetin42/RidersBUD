@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, CheckCircle, Car, Calendar, MapPin, FileText
 import Spinner from '../../components/Spinner';
 import { ServiceRequest } from '../../types';
 import { HitPayService, getLiveAppOrigin } from '../../services/HitPayService';
+import { PaymentController } from '../../services/payment/PaymentController';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 
 const ServiceBookingFlow: React.FC = () => {
@@ -77,8 +78,8 @@ const ServiceBookingFlow: React.FC = () => {
                     ...dynamicFields,
                     totalAmount: totalPrice,
                     downpaymentAmount: downpaymentAmount,
-                    paidAmount: isTowing ? downpaymentAmount : 0,
-                    paymentStatus: isTowing ? 'partial' : 'Pending',
+                    paidAmount: 0,
+                    paymentStatus: 'Pending',
                     paymentMethod: isTowing ? 'Online (HitPay)' : 'Cash / Direct'
                 },
                 vehicleId: selectedVehicle,
@@ -86,8 +87,8 @@ const ServiceBookingFlow: React.FC = () => {
                 notes,
                 price: totalPrice,
                 totalAmount: totalPrice,
-                paidAmount: isTowing ? downpaymentAmount : 0,
-                paymentStatus: isTowing ? 'partial' : 'Pending',
+                paidAmount: 0,
+                paymentStatus: 'Pending',
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             };
@@ -95,62 +96,22 @@ const ServiceBookingFlow: React.FC = () => {
             const createdRequest = await addServiceRequest(request);
 
             if (isTowing && createdRequest && isHitPayActive) {
-                const hitPay = HitPayService.fromSettings(db?.settings);
-                const returnUrl = `${getLiveAppOrigin()}/customer-portal/service-payment?bookingId=${createdRequest.id || ''}&isServiceRequest=true`;
-
-                sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
-                    bookingId: createdRequest.id,
-                    amount: downpaymentAmount,
-                    totalAmount: totalPrice,
-                    currentPaid: 0,
-                    isServiceRequest: true,
-                    isTowing: true,
-                    leavingTimestamp: Date.now(),
-                    fullBooking: {
-                        ...request,
-                        id: createdRequest.id,
-                        isServiceRequest: true,
-                        isTowing: true,
-                        totalAmount: totalPrice,
-                        paidAmount: 0,
-                        services: [{ name: `Towing Service: ${service.name}`, price: totalPrice }]
-                    }
-                }));
-
-                const refNumber = `TOW-${createdRequest.id || Date.now()}`;
-                const purpose = `RidersBUD — Emergency Towing 50% Deposit (${service.name})`;
-
-                const { url } = await hitPay.createPaymentRequest({
-                    amount: downpaymentAmount,
+                const res = await PaymentController.pay({
+                    entityKind: 'service-request',
+                    entityId: createdRequest.id,
+                    kind: 'downpayment',
+                    expectedAmount: downpaymentAmount,
                     currency: db?.settings?.currency || 'PHP',
-                    reference_number: refNumber,
-                    webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                    redirect_url: returnUrl,
-                    email: user.email || 'customer@example.com',
-                    name: user.name || 'Customer',
-                    phone: user.phone || '',
-                    purpose: purpose
+                    customerEmail: user.email || 'customer@example.com',
+                    customerName: user.name || 'Customer',
+                    purpose: `RidersBUD — Emergency Towing 50% Deposit (${service.name})`,
+                    returnRoute: `/customer-portal/?bookingId=${createdRequest.id}`
                 });
 
-                if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-                    setPendingPaymentMarker({
-                        entityKind: 'service-request',
-                        entityId: createdRequest.id,
-                        returnRoute: `/customer-portal/?bookingId=${createdRequest.id}`,
-                        startedAt: Date.now(),
-                        purpose: 'towing-downpayment'
-                    });
-                    startPaymentWatcher('service-request', createdRequest.id, `/customer-portal/?bookingId=${createdRequest.id}`);
-                    await openPaymentUrl(url);
+                if (res.success && res.state === 'PAID') {
+                    navigate('/customer-portal/my-service-requests', { replace: true });
                     return;
                 }
-
-                if (url && url.startsWith('/')) {
-                    navigate(url);
-                    return;
-                }
-
-                throw new Error("Unable to obtain payment gateway URL.");
             }
 
             navigate('/customer-portal/my-service-requests', { replace: true });

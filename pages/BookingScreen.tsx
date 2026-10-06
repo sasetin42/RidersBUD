@@ -342,80 +342,8 @@ const BookingScreen: React.FC = () => {
                     console.error("Error processing return from HitPay", e);
                 }
             }
-        } else if (statusParam === 'canceled' || statusParam === 'cancelled' || statusParam === 'failed' || statusParam === 'expired' || statusParam === 'abort' || hitpayParam === 'canceled' || hitpayParam === 'cancelled') {
-            // URL parameters are NOT proof: only react when this session really started a payment.
-            const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
-            if (!pendingTx && !getPendingPaymentMarker()) return;
-            let parsedBookingId = '';
-            let cancelAmount = 0;
-            let cancelledItems: Array<{ name: string; quantity?: number; price?: number }> = [];
-
-            if (pendingTx) {
-                try {
-                    const parsed = JSON.parse(pendingTx);
-                    parsedBookingId = parsed.bookingId || '';
-                    cancelAmount = parsed.amount || parsed.totalAmount || 0;
-                    if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
-                        cancelledItems = parsed.items;
-                    } else if (parsed.services && Array.isArray(parsed.services)) {
-                        cancelledItems = parsed.services.map((s: any) => ({
-                            name: s.name || 'Vehicle Service',
-                            price: s.price || 0
-                        }));
-                    }
-                } catch (e) {}
-            }
-
-            const targetBookingId = parsedBookingId || query.get('bookingId') || '';
-            const existingBooking = db?.bookings?.find(b => b.id === targetBookingId);
-
-            if (existingBooking) {
-                if (cancelAmount === 0) {
-                    cancelAmount = existingBooking.totalAmount || existingBooking.price || 0;
-                }
-                if (cancelledItems.length === 0 && existingBooking.services && existingBooking.services.length > 0) {
-                    cancelledItems = existingBooking.services.map((s: any) => ({
-                        name: s.name || 'Vehicle Service',
-                        price: s.price || 0
-                    }));
-                } else if (cancelledItems.length === 0 && (existingBooking as any).service) {
-                    cancelledItems = [{
-                        name: (existingBooking as any).service.name || 'Vehicle Service',
-                        price: (existingBooking as any).service.price || cancelAmount
-                    }];
-                }
-            }
-
-            sessionStorage.removeItem('pendingHitPayBookingTx');
-            sessionStorage.removeItem('pendingHitPayServiceTx');
-            sessionStorage.removeItem('pendingHitPayTx');
-            try {
-                localStorage.removeItem('last_hitpay_booking_tx');
-                localStorage.removeItem('last_hitpay_service_tx');
-            } catch (e) {}
-
-            if (targetBookingId && cancelBooking) {
-                cancelBooking(targetBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
-            }
-
-            const cancellationInfo = {
-                type: 'Service Booking' as const,
-                referenceId: targetBookingId ? (targetBookingId.startsWith('#') ? targetBookingId : `#${targetBookingId.slice(-8).toUpperCase()}`) : '#TXN-CANCELLED',
-                amount: cancelAmount,
-                date: new Date().toLocaleString(),
-                reason: 'Payment process was cancelled by the user at the payment gateway.',
-                items: cancelledItems,
-                retryPath: '/customer-portal/booking'
-            };
-
-            window.history.replaceState({}, document.title, window.location.pathname);
-
-            navigate('/customer-portal/', {
-                state: { cancelledTransaction: cancellationInfo },
-                replace: true
-            });
         }
-    }, [location.search, db?.bookings, navigate, cancelBooking]);
+    }, [location.search, navigate]);
 
     // Native: resume any pending HitPay payment watch from a previous session/Custom Tab.
     useEffect(() => {
@@ -511,6 +439,7 @@ const BookingScreen: React.FC = () => {
     const [showGCashModal, setShowGCashModal] = useState(false);
     const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
     const [showPaymentBreakdownModal, setShowPaymentBreakdownModal] = useState(false);
+    const [selectedPaymentOption, setSelectedPaymentOption] = useState<'downpayment' | 'full'>('downpayment');
     const [showVehicleSelectorModal, setShowVehicleSelectorModal] = useState(false);
     const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
     const [temporaryBookingData, setTemporaryBookingData] = useState<any>(null);
@@ -568,16 +497,7 @@ const BookingScreen: React.FC = () => {
     const [showStartSuggestions, setShowStartSuggestions] = useState(false);
     const [showEndSuggestions, setShowEndSuggestions] = useState(false);
 
-    // High-performance HitPay Payment Pre-warming Cache
-    const prewarmedHitPaySessionRef = useRef<{
-        bookingId: string;
-        paymentResultPromise: Promise<{ url: string; id: string }>;
-        readyResult?: { url: string; id: string };
-        error?: any;
-        downpaymentAmount: number;
-        computedTotalPrice: number;
-        createdAt: number;
-    } | null>(null);
+
 
     useEffect(() => {
         if (user && user.vehicles.length > 0 && !selectedVehiclePlate) {
@@ -1387,68 +1307,7 @@ const BookingScreen: React.FC = () => {
         return price;
     }, [selectedServiceIds, services, db, isCarRental, selectedCar, isDriverHire, selectedDriver, rentalDays]);
 
-    // Aggressive Background Pre-warm HitPay Session as early as Step 2 (Date/Time selection) or Step 3 (Mechanic)
-    useEffect(() => {
-        const isEligibleStep = step >= 2 || showPaymentBreakdownModal || (step === 1 && selectedServiceIds.size > 0);
-        if (!isEligibleStep || totalPrice <= 0 || !user) return;
-        const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
-        if (!isHitPayActive) return;
-
-        const downpaymentAmount = Math.round(totalPrice * 0.5);
-        if (
-            prewarmedHitPaySessionRef.current &&
-            !prewarmedHitPaySessionRef.current.error &&
-            prewarmedHitPaySessionRef.current.downpaymentAmount === downpaymentAmount &&
-            prewarmedHitPaySessionRef.current.computedTotalPrice === totalPrice &&
-            Date.now() - prewarmedHitPaySessionRef.current.createdAt < 10 * 60 * 1000
-        ) {
-            return;
-        }
-
-        try {
-            const hitPay = HitPayService.fromSettings(db?.settings);
-            const appTitle = db?.settings?.appName || 'RidersBUD';
-            const bookingId = doc(collection(firestore, 'bookings')).id;
-            const returnUrl = `${getLiveAppOrigin()}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
-            const refNumber = `BOK-${bookingId}-DP`;
-            const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
-
-            const paymentPromise = hitPay.createPaymentRequest({
-                amount: downpaymentAmount,
-                currency: db?.settings?.currency || 'PHP',
-                reference_number: refNumber,
-                webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                redirect_url: returnUrl,
-                email: user.email || 'customer@example.com',
-                name: user.name || 'Customer',
-                phone: user.phone || '',
-                purpose: purpose
-            }).then(res => {
-                if (prewarmedHitPaySessionRef.current?.bookingId === bookingId) {
-                    prewarmedHitPaySessionRef.current.readyResult = res;
-                    console.log('⚡ [BookingScreen] HitPay checkout session READY for instant (<100ms) redirect:', res.url);
-                }
-                return res;
-            }).catch(err => {
-                console.warn('[BookingScreen] Background HitPay pre-warm notice:', err?.message || err);
-                if (prewarmedHitPaySessionRef.current?.bookingId === bookingId) {
-                    prewarmedHitPaySessionRef.current.error = err;
-                }
-                throw err;
-            });
-
-            prewarmedHitPaySessionRef.current = {
-                bookingId,
-                paymentResultPromise: paymentPromise,
-                downpaymentAmount,
-                computedTotalPrice: totalPrice,
-                createdAt: Date.now()
-            };
-            console.log('⚡ [BookingScreen] Aggressive HitPay pre-warming started in background (Step:', step, ')');
-        } catch (e) {
-            console.warn('[BookingScreen] Background HitPay pre-warm initiation notice:', e);
-        }
-    }, [step, showPaymentBreakdownModal, totalPrice, user, db?.settings, selectedServiceIds]);
+    // Automatic background pre-warm removed: payment sessions are created strictly upon checkout button click.
 
     const isQuoteRequest = useMemo(() => {
         if (!db || selectedServiceIds.size === 0) return false;
@@ -1673,6 +1532,8 @@ const BookingScreen: React.FC = () => {
                 if (isDriverHire && selectedDriver) computedTotalPrice += selectedDriver.pricePerDay * rentalDays;
             }
 
+            const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+
             const newBookingData: any = {
                 customerId: user.id,
                 customerName: user.name,
@@ -1686,8 +1547,9 @@ const BookingScreen: React.FC = () => {
                 paymentStatus: 'pending' as const,
                 paidAmount: 0,
                 totalAmount: computedTotalPrice,
-                paymentMethod: 'GCash' as const,
-                gcashPaymentStatus: 'awaiting_payment' as const,
+                paymentMethod: isHitPayActive ? ('Online (HitPay)' as any) : ('GCash' as any),
+                gcashPaymentStatus: isHitPayActive ? undefined : ('awaiting_payment' as any),
+                paymentGateway: isHitPayActive ? 'hitpay' : 'manual_gcash',
                 isVerified: false,
             };
 
@@ -1723,31 +1585,22 @@ const BookingScreen: React.FC = () => {
                 });
                 return;
             }
-            const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+            const isFullPayment = selectedPaymentOption === 'full';
             const downpaymentAmount = Math.round(computedTotalPrice * 0.5);
+            const checkoutAmount = isFullPayment ? computedTotalPrice : downpaymentAmount;
 
             if (!isHitPayActive) {
                 throw new Error("Online Payment Gateway (HitPay) is required for checkout but currently inactive in system settings. Please contact the administrator.");
             }
 
-            // Check if HitPay session was already pre-warmed for this exact amount
-            const prewarmed = prewarmedHitPaySessionRef.current;
-            const isPrewarmValid = Boolean(
-                prewarmed && 
-                !prewarmed.error &&
-                prewarmed.downpaymentAmount === downpaymentAmount && 
-                prewarmed.computedTotalPrice === computedTotalPrice &&
-                (Date.now() - prewarmed.createdAt < 10 * 60 * 1000)
-            );
-
-            // Use the pre-warmed booking ID if available, otherwise generate synchronously
-            const bookingId = isPrewarmValid ? prewarmed!.bookingId : doc(collection(firestore, 'bookings')).id;
+            const bookingId = doc(collection(firestore, 'bookings')).id;
 
             // Keep pending transaction saved immediately in storage
             const txDetails = {
                 bookingId: bookingId,
-                amount: downpaymentAmount,
+                amount: checkoutAmount,
                 totalAmount: computedTotalPrice,
+                isFullPayment,
                 items: selectedServices.map(s => ({
                     name: s.name || 'Vehicle Service',
                     price: s.price || 0
@@ -1760,14 +1613,14 @@ const BookingScreen: React.FC = () => {
                 localStorage.setItem('last_hitpay_booking_tx', JSON.stringify(txDetails));
             } catch (e) {}
 
-            const hitPay = HitPayService.fromSettings(db?.settings);
             const appTitle = db?.settings?.appName || 'RidersBUD';
-            const returnUrl = `${getLiveAppOrigin()}/customer-portal/booking-confirmation?bookingId=${bookingId}`;
-            const refNumber = `BOK-${bookingId}-DP`;
-            const purpose = `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
+            const refNumber = isFullPayment ? `BOK-${bookingId}-FULL` : `BOK-${bookingId}-DP`;
+            const purpose = isFullPayment
+                ? `${appTitle} — Full Payment (Booking #${bookingId.slice(-6).toUpperCase()})`
+                : `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
-            // Non-blocking parallel booking registration in Firestore
-            const bookingPromise = addBooking({
+            setBookingProcessingStage('Registering Booking...');
+            await addBooking({
                 ...newBookingData,
                 status: 'Pending',
                 paymentStatus: 'pending',
@@ -1775,87 +1628,40 @@ const BookingScreen: React.FC = () => {
                 paymentMethod: 'Online (HitPay)'
             }, bookingId);
 
-            let paymentResult: { url: string; id: string } | undefined;
-
-            if (isPrewarmValid && prewarmed?.readyResult) {
-                // INSTANT PATH (<100ms): Session already generated in background while user was selecting options!
-                setBookingProcessingStage('Redirecting to HitPay...');
-                paymentResult = prewarmed.readyResult;
-                await bookingPromise;
-            } else {
-                // PROGRESSIVE PATH: Pre-warm is in-flight or fresh request needed
-                setBookingProcessingStage('Securing Payment Session...');
-                
-                const fallbackPaymentRequest = () => hitPay.createPaymentRequest({
-                    amount: downpaymentAmount,
-                    currency: db?.settings?.currency || 'PHP',
-                    reference_number: refNumber,
-                    webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                    redirect_url: returnUrl,
-                    email: user.email || 'customer@example.com',
-                    name: user.name || 'Customer',
-                    phone: user.phone || '',
-                    purpose: purpose
-                });
-
-                const paymentPromise = isPrewarmValid
-                    ? prewarmed!.paymentResultPromise.catch((err) => {
-                        console.warn('[BookingScreen] In-flight prewarm rejected, falling back to fresh request:', err);
-                        return fallbackPaymentRequest();
-                    })
-                    : fallbackPaymentRequest();
-
-                // Dynamic progress feedback if upstream HitPay takes more than 1 second
-                const progressTimer = setTimeout(() => {
-                    setBookingProcessingStage('Connecting to HitPay Gateway...');
-                }, 1000);
-
-                const [_, resolvedPayment] = await Promise.all([
-                    bookingPromise,
-                    paymentPromise
-                ]);
-                clearTimeout(progressTimer);
-                paymentResult = resolvedPayment;
-            }
-
-            // Clear cache after successful consumption
-            prewarmedHitPaySessionRef.current = null;
-
             setBookingProcessingStage('Opening Payment Gateway...');
 
             const isSandbox = db?.settings?.hitpaySandboxMode === true;
             const checkoutResult = await HitPayEmbeddedService.startCheckout({
                 entityKind: 'booking',
                 entityId: bookingId,
-                amount: downpaymentAmount,
+                amount: checkoutAmount,
+                kind: isFullPayment ? 'full' : 'downpayment',
                 currency: db?.settings?.currency || 'PHP',
                 referenceNumber: refNumber,
                 purpose: purpose,
-                customerEmail: user.email || 'customer@example.com',
-                customerName: user.name || 'Customer',
-                customerPhone: user.phone || undefined,
+                customerId: user?.id || (user as any)?.uid || '',
+                customerEmail: user?.email || 'customer@example.com',
+                customerName: user?.name || 'Customer',
+                customerPhone: user?.phone || undefined,
                 returnRoute: `/customer-portal/booking-confirmation?bookingId=${bookingId}`,
                 isSandbox,
                 settings: db?.settings,
-                prewarmedSession: (paymentResult?.url && paymentResult?.id) ? paymentResult : null,
                 onStateChange: (state, msg) => {
                     if (msg) setBookingProcessingStage(msg);
                 }
             });
 
             if (checkoutResult.redirected) {
-                // The browser is already opening or redirecting to the official HitPay checkout URL.
-                // Do not perform SPA navigation or clear in-progress state.
+                // The user is currently on the checkout page or inside the native payment container.
+                // Do not navigate to booking-confirmation or open PaymentVerificationOverlay.
+                // Let the return coordinator / return route handle the return when payment concludes.
                 return;
             }
 
-            if (checkoutResult.success) {
+            if (checkoutResult.paymentState === 'PAID') {
                 sessionStorage.removeItem(BOOKING_STATE_KEY);
-                // Route through the verification overlay (webhook-driven) before the
-                // confirmation screen claims success — never trust the gateway alone.
                 const confirmParams = new URLSearchParams({
-                    bookingId,
-                    status: 'completed'
+                    bookingId
                 });
                 if (checkoutResult.paymentRequestId) {
                     confirmParams.set('payment_request_id', checkoutResult.paymentRequestId);
@@ -1871,7 +1677,7 @@ const BookingScreen: React.FC = () => {
                 setIsBooking(false);
                 setBookingProcessingStage('');
                 return;
-            } else {
+            } else if (!checkoutResult.success) {
                 throw new Error(checkoutResult.errorMessage || "Unable to complete payment.");
             }
         } catch (err: any) {
@@ -3758,6 +3564,8 @@ const BookingScreen: React.FC = () => {
                         onProceed={async () => {
                             await handleBooking();
                         }}
+                        paymentOption={selectedPaymentOption}
+                        onPaymentOptionChange={(opt) => setSelectedPaymentOption(opt)}
                         isProcessing={isBooking}
                         processingStage={bookingProcessingStage}
                         services={selectedServices.map(s => ({

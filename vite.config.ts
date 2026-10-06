@@ -275,5 +275,9 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       include: ['react', 'react-dom', 'react-router-dom', 'firebase/app'],
     },
+    test: {
+      include: ['test/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+      exclude: ['**/node_modules/**', '**/dist/**', '**/functions/**']
+    }
   };
 });

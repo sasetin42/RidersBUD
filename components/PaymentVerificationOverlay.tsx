@@ -106,7 +106,7 @@ const PaymentVerificationOverlay: React.FC<PaymentVerificationOverlayProps> = ({
                 transactionId: effectiveTxId,
                 paymentRequestId: effectivePrId,
                 isSandbox: effectiveSandbox,
-                timeoutMs: 3 * 60 * 1000,
+                timeoutMs: 90 * 1000,
                 onState: (nextState, nextMessage, tx) => {
                     setState(nextState);
                     setMessage(nextMessage);

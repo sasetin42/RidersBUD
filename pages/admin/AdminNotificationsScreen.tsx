@@ -1,8 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDatabase } from '../../context/DatabaseContext';
 import Spinner from '../../components/Spinner';
 import { useNotification } from '../../context/NotificationContext';
-import { Bell, BellOff, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle, AlertOctagon, Search, Users, Wrench, ChevronDown, ArrowUpDown } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
+import { db as firestore } from '../../firebase';
+import { toMillis, formatRelativeTime } from '../../utils/paymentMonitor';
+import { Bell, BellOff, CheckCheck, Trash2, Info, AlertTriangle, CheckCircle, AlertOctagon, Search, Users, Wrench, ChevronDown, ArrowUpDown, CreditCard, ChevronRight } from 'lucide-react';
 
 const typeConfig: Record<string, { icon: any; bg: string; text: string; }> = {
     success: { icon: CheckCircle, bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
@@ -20,7 +24,37 @@ const formatDate = (d?: string | number) => {
 const AdminNotificationsScreen: React.FC = () => {
     const { db, clearAllNotificationsByPrefix, markAllNotificationsAsReadByPrefix } = useDatabase();
     const { addNotification, deleteNotification } = useNotification();
+    const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
+
+    // Payment escalations (adminNotifications — written by settlement + the sweep).
+    // Tapping one deep-links straight to the transaction in the Payment Monitor.
+    const [escalations, setEscalations] = useState<any[]>([]);
+    useEffect(() => {
+        try {
+            const escQuery = query(
+                collection(firestore, 'adminNotifications'),
+                orderBy('createdAt', 'desc'),
+                limit(30)
+            );
+            const unsub = onSnapshot(escQuery,
+                (snap) => setEscalations(snap.docs.map((d) => ({ id: d.id, ...d.data() } as any))),
+                (err) => console.warn('[AdminNotifications] escalations listener:', err?.message || err)
+            );
+            return () => { try { unsub(); } catch { /* ignore */ } };
+        } catch (e: any) {
+            console.warn('[AdminNotifications] escalations subscription failed:', e?.message || e);
+            return undefined;
+        }
+    }, []);
+
+    const openEscalationInMonitor = async (n: any) => {
+        if (n?.id && !n.read) {
+            updateDoc(doc(firestore, 'adminNotifications', n.id), { read: true }).catch(() => { /* non-fatal */ });
+        }
+        const txId = String(n?.transactionId || n?.referenceNumber || '');
+        if (txId) navigate(`/admin-portal/payment-monitor?tx=${encodeURIComponent(txId)}`);
+    };
     const [processing, setProcessing] = useState<'customer-clear' | 'customer-mark' | 'mechanic-clear' | 'mechanic-mark' | null>(null);
     const [customerConfirm, setCustomerConfirm] = useState(false);
     const [mechanicConfirm, setMechanicConfirm] = useState(false);
@@ -247,6 +281,74 @@ const AdminNotificationsScreen: React.FC = () => {
                     <button onClick={() => setSortAsc(!sortAsc)} className="p-3 bg-white/5 hover:bg-white/10 rounded-xl text-gray-400 hover:text-white transition-all" title={sortAsc ? 'Newest first' : 'Oldest first'}>
                         <ArrowUpDown size={16} className={sortAsc ? 'rotate-180' : ''} />
                     </button>
+                </div>
+            </div>
+
+            {/* Payment Escalations — tappable, deep-links into the Payment Monitor */}
+            <div className="bg-[#121212]/60 backdrop-blur-xl border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden">
+                <div className="p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${escalations.some((e) => !e.read) ? 'bg-rose-500/10 border border-rose-500/20' : 'bg-white/5 border border-white/10'}`}>
+                            <AlertOctagon size={22} className={escalations.some((e) => !e.read) ? 'text-rose-400' : 'text-gray-500'} />
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-black text-white tracking-tight">Payment Escalations</h2>
+                            <p className="text-sm text-gray-500 font-bold tracking-wide">
+                                {escalations.length} total · {escalations.filter((e) => !e.read).length} unread
+                            </p>
+                        </div>
+                    </div>
+                    <p className="hidden md:block text-[10px] text-gray-600 font-bold tracking-widest uppercase">
+                        Tap an escalation to open it in the Payment Monitor
+                    </p>
+                </div>
+                <div className="divide-y divide-white/5">
+                    {escalations.length === 0 ? (
+                        <div className="py-10 text-center text-gray-500">
+                            <CreditCard size={26} className="mx-auto mb-2 text-gray-600" />
+                            <p className="text-sm font-bold">No payment escalations right now</p>
+                            <p className="text-[11px] text-gray-600 mt-1">
+                                Mismatch reviews and settlement escalations will appear here the moment they are raised.
+                            </p>
+                        </div>
+                    ) : escalations.map((n) => {
+                        const isMismatch = String(n.type) === 'PAYMENT_MISMATCH_REVIEW';
+                        const label = isMismatch ? 'Mismatch Review' : 'Settlement Escalation';
+                        const amount = Number(n.amount) || Number(n.gatewayAmount) || 0;
+                        return (
+                            <button
+                                key={n.id}
+                                type="button"
+                                onClick={() => openEscalationInMonitor(n)}
+                                className="w-full text-left px-6 py-4 flex items-center gap-4 hover:bg-white/[0.03] transition-colors group"
+                            >
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${n.read ? 'bg-gray-600' : isMismatch ? 'bg-rose-400' : 'bg-amber-400'} ${!n.read ? 'animate-pulse' : ''}`} />
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border ${isMismatch ? 'bg-rose-500/15 text-rose-300 border-rose-500/40' : 'bg-amber-500/15 text-amber-300 border-amber-500/40'}`}>
+                                            {label}
+                                        </span>
+                                        {n.referenceNumber && (
+                                            <span className="font-mono text-[11px] font-bold text-white break-all">{String(n.referenceNumber)}</span>
+                                        )}
+                                        {amount > 0 && (
+                                            <span className="text-[11px] font-black text-gray-300">
+                                                ₱{amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                        )}
+                                        <span className="text-[10px] text-gray-500">{formatRelativeTime(toMillis(n.createdAt))}</span>
+                                    </div>
+                                    <p className="text-[11px] text-gray-400 mt-1 truncate">
+                                        {n.message || n.reason || String(n.stuckStatus || 'Needs manual review')}
+                                    </p>
+                                </div>
+                                <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-primary shrink-0">
+                                    Open in Monitor
+                                    <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 

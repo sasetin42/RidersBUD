@@ -193,6 +193,8 @@ const FIRESTORE_SUPPRESS = [
     'Listen/channel',
     'webchannel',
     'contentscript',
+    'recaptcha',
+    'google.com/recaptcha',
 ];
 
 

@@ -10,8 +10,10 @@ import ReviewModal from '../components/ReviewModal';
 import ReviewDeclinedModal from '../components/ReviewDeclinedModal';
 import GCashPaymentModal from '../components/GCashPaymentModal';
 import { HitPayService, getLiveAppOrigin } from '../services/HitPayService';
+import HitPayEmbeddedService from '../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative, PaymentEntityKind } from '../utils/paymentRedirect';
 import { fetchPaymentEntitySnapshot } from '../utils/paymentReturn';
+import { toMillis } from '../utils/paymentMonitor';
 import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
 import { CallButton } from '../components/CallUI';
 import { useCall } from '../context/CallContext';
@@ -25,7 +27,7 @@ import {
 } from 'lucide-react';
 
 import { ref, onValue, set, get } from 'firebase/database';
-import { doc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc, collection, query as fsQuery, where as fsWhere, limit as fsLimit } from 'firebase/firestore';
 import { db as firestore, rtdb } from '../firebase';
 import LiveRouteMapModal from '../components/LiveRouteMapModal';
 import { startPreciseWatch, safeClearWatch, isGeolocationPermissionDenied, RIDERSBUD_STORE_LOCATION } from '../utils/locationHelper';
@@ -562,6 +564,9 @@ const BookingDetailScreen: React.FC = () => {
     const [isInitiatingHitPay, setIsInitiatingHitPay] = useState(false);
     const [hitPayLoadingStage, setHitPayLoadingStage] = useState<string>('Preparing Balance Settlement...');
     const [isVerifyingFinalPayment, setIsVerifyingFinalPayment] = useState(false);
+    // Gateway payment attempts for this entity — `paymentTransactions` is the
+    // single source of truth (backend-written only; owner/admin readable).
+    const [entityPaymentTxs, setEntityPaymentTxs] = useState<any[]>([]);
     const [showVehicleDetails, setShowVehicleDetails] = useState(false);
     const [selectedProgressPhoto, setSelectedProgressPhoto] = useState<string | null>(null);
     
@@ -714,89 +719,24 @@ const BookingDetailScreen: React.FC = () => {
         return () => clearTimeout(safetyTimer);
     }, [isVerifyingFinalPayment]);
 
-    // Pre-warming ref for instant final balance payment checkout
-    const prewarmedBalanceHitPayRef = useRef<{
-        bookingId: string;
-        amount: number;
-        promise: Promise<{ url: string; reference_number: string }>;
-        readyResult?: { url: string; reference_number: string };
-    } | null>(null);
-
-    // Pre-warm HitPay balance payment as soon as work is done and balance is unpaid
+    // Realtime subscription to this entity's gateway payment attempts.
+    // Sorted client-side so no composite index is needed (entityId == + createdAt).
     useEffect(() => {
-        const activeB = fetchedBooking || initialBookingSeed || navPassedBooking;
-        if (!activeB || !user || !db?.settings) return;
-
-        const isFinished = activeB.status === 'Work Done' || 
-            activeB.status === 'Completed' ||
-            (activeB as any).workStatus === 'completed' ||
-            (activeB as any).status === 'Ready for Release';
-        const isPaid = activeB.isPaid || activeB.paymentStatus === 'paid' || (activeB as any).balancePaid === true;
-
-        if (!isFinished || isPaid) return;
-
-        const originalServicesFee = activeB.services && activeB.services.length > 0
-            ? activeB.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
-            : (Number(activeB.service?.price) || Number(activeB.totalAmount) || 0);
-        const paidDownpayment = Number(activeB.paidAmount) || (originalServicesFee * 0.5);
-        const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
-        const additionalCostsTotal = ((activeB as any).additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-        const finalBalanceAmount = Math.max(0, serviceBalance + additionalCostsTotal);
-
-        if (finalBalanceAmount <= 0) return;
-
-        // If already pre-warmed for this exact booking & amount, avoid duplicates
-        if (
-            prewarmedBalanceHitPayRef.current &&
-            prewarmedBalanceHitPayRef.current.bookingId === activeB.id &&
-            prewarmedBalanceHitPayRef.current.amount === finalBalanceAmount
-        ) {
-            return;
-        }
-
-        const isRentalTarget = (activeB as any).isRental === true || 
-            (activeB as any).serviceName?.toLowerCase().includes('rental') ||
-            activeB.id.startsWith('RNT-') || 
-            activeB.id.startsWith('RN-');
-        const isDriverTarget = (activeB as any).isDriverHire || (activeB as any).serviceName === 'Driver for Hire';
-        const isLiaisonTarget = (activeB as any).isLiaison || (activeB as any).serviceName?.toLowerCase().includes('liaison') || activeB.id.startsWith('LIA-');
-
-        const hitPay = HitPayService.fromSettings(db?.settings);
-        const returnUrl = `${getLiveAppOrigin()}${window.location.pathname}?bookingId=${activeB.id}${isRentalTarget ? '&isRental=true' : ''}${isDriverTarget ? '&isDriver=true' : ''}${isLiaisonTarget ? '&isLiaison=true' : ''}`;
-        const appTitle = db?.settings?.appName || 'RidersBUD';
-        const purposePrefix = isRentalTarget 
-            ? 'Car Rental Balance Settlement' 
-            : isDriverTarget 
-            ? 'Driver for Hire Balance Settlement' 
-            : isLiaisonTarget
-            ? 'LTO Liaison Balance Settlement'
-            : 'Final Balance Settlement';
-
-        const paymentPromise = hitPay.createPaymentRequest({
-            amount: finalBalanceAmount,
-            currency: db?.settings?.currency || 'PHP',
-            reference_number: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${activeB.id}-BAL-${Date.now()}`,
-            webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-            redirect_url: returnUrl,
-            email: user.email || 'customer@example.com',
-            name: user.name || 'Customer',
-            purpose: `${appTitle} — ${purposePrefix} (#${activeB.id.slice(-6).toUpperCase()})`
-        }).then(res => {
-            if (prewarmedBalanceHitPayRef.current?.bookingId === activeB.id) {
-                prewarmedBalanceHitPayRef.current.readyResult = res;
-            }
-            return res;
-        }).catch(err => {
-            console.warn('[Prewarm] HitPay balance pre-warm notice:', err?.message || err);
-            throw err;
+        if (!bookingId) return;
+        const txQuery = fsQuery(
+            collection(firestore, 'paymentTransactions'),
+            fsWhere('entityId', '==', bookingId),
+            fsLimit(10)
+        );
+        const unsub = onSnapshot(txQuery, (snap) => {
+            const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+            rows.sort((a, b) => toMillis(b?.createdAt) - toMillis(a?.createdAt));
+            setEntityPaymentTxs(rows);
+        }, (err: any) => {
+            console.warn('[BookingDetailScreen] paymentTransactions listener error:', err?.message || err);
         });
-
-        prewarmedBalanceHitPayRef.current = {
-            bookingId: activeB.id,
-            amount: finalBalanceAmount,
-            promise: paymentPromise
-        };
-    }, [fetchedBooking?.status, fetchedBooking?.paidAmount, (fetchedBooking as any)?.additionalCosts, initialBookingSeed?.status, user?.email, db?.settings]);
+        return () => { try { unsub(); } catch { /* ignore */ } };
+    }, [bookingId]);
 
     const handleInitiateHitPayBalance = async (targetBooking: Booking) => {
         if (!targetBooking || !user) return;
@@ -817,22 +757,9 @@ const BookingDetailScreen: React.FC = () => {
 
             const isDriverTarget = (targetBooking as any).isDriverHire || (targetBooking as any).serviceName === 'Driver for Hire';
             const isLiaisonTarget = (targetBooking as any).isLiaison || (targetBooking as any).serviceName?.toLowerCase().includes('liaison') || targetBooking.id.startsWith('LIA-');
+            const entityKind: PaymentEntityKind = isRentalTarget ? 'rental' : isLiaisonTarget ? 'liaison' : isDriverTarget ? 'service-request' : 'booking';
 
-            const hitPay = HitPayService.fromSettings(db?.settings);
-            const returnUrl = `${getLiveAppOrigin()}${window.location.pathname}?bookingId=${targetBooking.id}${isRentalTarget ? '&isRental=true' : ''}${isDriverTarget ? '&isDriver=true' : ''}${isLiaisonTarget ? '&isLiaison=true' : ''}`;
             const appTitle = db?.settings?.appName || 'RidersBUD';
-
-            sessionStorage.setItem('pendingHitPayServiceTx', JSON.stringify({
-                bookingId: targetBooking.id,
-                amount: finalBalanceAmount,
-                totalAmount: originalServicesFee + additionalCostsTotal,
-                currentPaid: paidDownpayment,
-                fullBooking: targetBooking,
-                isRental: isRentalTarget,
-                isDriver: isDriverTarget,
-                isLiaison: isLiaisonTarget
-            }));
-
             const purposePrefix = isRentalTarget 
                 ? 'Car Rental Balance Settlement' 
                 : isDriverTarget 
@@ -843,56 +770,118 @@ const BookingDetailScreen: React.FC = () => {
 
             setHitPayLoadingStage('Connecting to HitPay Gateway...');
 
-            // Check if we have an active pre-warmed payment session for instant launch
-            let paymentRes: { url: string; reference_number?: string } | null = null;
-            const prewarmed = prewarmedBalanceHitPayRef.current;
-            if (prewarmed && prewarmed.bookingId === targetBooking.id && prewarmed.amount === finalBalanceAmount) {
-                if (prewarmed.readyResult?.url) {
-                    paymentRes = prewarmed.readyResult;
-                } else {
-                    try {
-                        paymentRes = await prewarmed.promise;
-                    } catch (_) {
-                        paymentRes = null;
-                    }
-                }
+            const checkoutResult = await HitPayEmbeddedService.startCheckout({
+                entityKind,
+                entityId: targetBooking.id,
+                amount: finalBalanceAmount,
+                currency: db?.settings?.currency || 'PHP',
+                referenceNumber: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${targetBooking.id}-BAL-${Date.now()}`,
+                purpose: `${appTitle} — ${purposePrefix} (#${targetBooking.id.slice(-6).toUpperCase()})`,
+                customerEmail: user.email || 'customer@example.com',
+                customerName: user.name || 'Customer',
+                customerId: user.id || user.uid,
+                kind: 'balance',
+                returnRoute: `/customer-portal/booking-detail/${targetBooking.id}`,
+                settings: db?.settings
+            });
+
+            if (checkoutResult.redirected) {
+                // User is inside native payment container or redirecting on web.
+                // Return coordinator will handle post-settlement return.
+                return;
             }
 
-            if (!paymentRes) {
-                paymentRes = await hitPay.createPaymentRequest({
-                    amount: finalBalanceAmount,
-                    currency: db?.settings?.currency || 'PHP',
-                    reference_number: `${isRentalTarget ? 'RNT' : isLiaisonTarget ? 'LIA' : 'BOK'}-${targetBooking.id}-BAL-${Date.now()}`,
-                    webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                    redirect_url: returnUrl,
-                    email: user.email || 'customer@example.com',
-                    name: user.name || 'Customer',
-                    purpose: `${appTitle} — ${purposePrefix} (#${targetBooking.id.slice(-6).toUpperCase()})`
-                });
-            }
-
-            const { url } = paymentRes;
-            setHitPayLoadingStage('Opening Checkout...');
-
-            if (url.startsWith('/')) {
-                navigate(url);
-            } else {
-                const entityKind: PaymentEntityKind = isRentalTarget ? 'rental' : isLiaisonTarget ? 'liaison' : isDriverTarget ? 'service-request' : 'booking';
-                setPendingPaymentMarker({
+            if (checkoutResult.paymentState === 'PAID') {
+                setPaymentReturnTarget({
                     entityKind,
                     entityId: targetBooking.id,
-                    returnRoute: `/customer-portal/booking-detail/${targetBooking.id}`,
-                    startedAt: Date.now(),
-                    purpose: 'balance-settlement'
+                    paymentRequestId: checkoutResult.paymentRequestId || undefined
                 });
-                startPaymentWatcher(entityKind, targetBooking.id, `/customer-portal/booking-detail/${targetBooking.id}`);
-                await openPaymentUrl(url);
+                return;
             }
         } catch (err: any) {
-            console.info("ℹ️ Online gateway requires manual/service payment verification. Redirecting to payment screen.");
-            const isRentalTarget = (targetBooking as any).isRental === true || targetBooking.id.startsWith('RNT-') || targetBooking.id.startsWith('RN-');
-            const isLiaisonTarget = (targetBooking as any).isLiaison || (targetBooking as any).serviceName?.toLowerCase().includes('liaison') || targetBooking.id.startsWith('LIA-');
-            navigate(`/customer-portal/service-payment/${targetBooking.id}${isRentalTarget ? '?isRental=true' : isLiaisonTarget ? '?isLiaison=true' : ''}`);
+            console.error("❌ Failed to initiate HitPay balance payment:", err);
+            alert('Failed to initialize HitPay balance payment. Please try again or check connection.');
+        } finally {
+            setIsInitiatingHitPay(false);
+            setHitPayLoadingStage('Preparing Balance Settlement...');
+        }
+    };
+
+    /**
+     * Retry Payment — starts a FRESH HitPay session after a previous attempt
+     * expired or failed. The backend only reuses sessions younger than 30 min
+     * in an active status, so a terminal (EXPIRED/FAILED) transaction always
+     * results in a brand-new checkout. The amount is recomputed authoritatively
+     * server-side, so no stale expectedAmount is sent.
+     */
+    const handleRetryExpiredPayment = async (tx: any) => {
+        if (!user || !bookingId || isInitiatingHitPay) return;
+        try {
+            setIsInitiatingHitPay(true);
+            setHitPayLoadingStage('Starting a fresh HitPay session...');
+
+            const knownKinds = ['rental', 'liaison', 'service-request', 'booking', 'order'];
+            const entityKind: PaymentEntityKind = (knownKinds.includes(String(tx?.entityKind))
+                ? tx.entityKind
+                : (booking as any)?.isRental
+                    ? 'rental'
+                    : (booking as any)?.isLiaison
+                        ? 'liaison'
+                        : (booking as any)?.isDriverHire
+                            ? 'service-request'
+                            : 'booking') as PaymentEntityKind;
+            const retryKind = (['downpayment', 'balance', 'full'].includes(String(tx?.kind)) ? tx.kind : 'full') as 'downpayment' | 'balance' | 'full';
+
+            const checkoutResult = await HitPayEmbeddedService.startCheckout({
+                entityKind,
+                entityId: bookingId,
+                kind: retryKind,
+                // No expectedAmount: the backend recomputes the authoritative amount
+                // from the entity, so a price edited since the expired attempt can
+                // never deadlock the retry with PAYMENT_AMOUNT_MISMATCH.
+                currency: String(tx?.currency || db?.settings?.currency || 'PHP'),
+                referenceNumber: String(tx?.referenceNumber || ''),
+                purpose: `RidersBUD — Payment Retry (${String(tx?.referenceNumber || bookingId).slice(-16).toUpperCase()})`,
+                customerEmail: user.email || 'customer@ridersbud.com',
+                customerName: user.name || 'Customer',
+                customerId: user.id || user.uid,
+                returnRoute: `/customer-portal/booking-detail/${bookingId}`,
+                settings: db?.settings
+            });
+
+            if (checkoutResult.redirected) {
+                // Inside the native payment container or redirecting on web — the
+                // return coordinator / resume overlay handles post-payment verification.
+                return;
+            }
+
+            if (checkoutResult.paymentState === 'PAID') {
+                setPaymentReturnTarget({
+                    entityKind,
+                    entityId: bookingId,
+                    paymentRequestId: checkoutResult.paymentRequestId || undefined
+                });
+                return;
+            }
+
+            if (checkoutResult.success) {
+                // Fresh session created without a redirect (QR / direct-link modes) —
+                // open the webhook-driven verification overlay so settlement is realtime.
+                setPaymentReturnTarget({
+                    entityKind,
+                    entityId: bookingId,
+                    paymentRequestId: checkoutResult.paymentRequestId || undefined
+                });
+                return;
+            }
+
+            throw new Error(checkoutResult.errorMessage || 'Could not start a fresh payment session.');
+        } catch (err: any) {
+            console.warn('[BookingDetailScreen] retry payment failed:', err?.message || err);
+            const isRentalTarget = (booking as any)?.isRental || bookingId.startsWith('RNT-') || bookingId.startsWith('RN-');
+            const isLiaisonTarget = (booking as any)?.isLiaison || bookingId.startsWith('LIA-');
+            navigate(`/customer-portal/service-payment/${bookingId}${isRentalTarget ? '?isRental=true' : isLiaisonTarget ? '?isLiaison=true' : ''}`);
         } finally {
             setIsInitiatingHitPay(false);
             setHitPayLoadingStage('Preparing Balance Settlement...');
@@ -1414,14 +1403,18 @@ const BookingDetailScreen: React.FC = () => {
     useEffect(() => {
         if (!booking) return;
 
+        const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+        const isManualGcashEnabled = Boolean(db?.settings?.gcashEnabled) && !isHitPayActive;
+
         const shouldAutoPop =
-            (booking.status === 'Work Done' && !booking.isPaid && booking.paymentMethod === 'GCash') ||
-            (booking.paymentStatus === 'partial' && booking.gcashPaymentStatus === 'awaiting_payment');
+            isManualGcashEnabled &&
+            ((booking.status === 'Work Done' && !booking.isPaid && booking.paymentMethod === 'GCash') ||
+            (booking.paymentStatus === 'partial' && booking.gcashPaymentStatus === 'awaiting_payment'));
 
         if (shouldAutoPop) {
             setShowGCashPaymentModal(true);
         }
-    }, [booking?.status, booking?.paymentStatus, booking?.gcashPaymentStatus, booking?.isPaid, booking?.paymentMethod]);
+    }, [booking?.status, booking?.paymentStatus, booking?.gcashPaymentStatus, booking?.isPaid, booking?.paymentMethod, db?.settings]);
 
     // Monitor for Completed status to trigger success modal with confetti ONLY AFTER complete fulfillment of payment
     useEffect(() => {
@@ -1492,6 +1485,20 @@ const BookingDetailScreen: React.FC = () => {
     }
 
     const { vehicle, status, date, time, location, notes } = booking;
+
+    // Retry surface: the latest EXPIRED/FAILED gateway attempt while balance is still due.
+    const bookingTotalDue = Number(booking.totalAmount ?? booking.totalPrice ?? 0);
+    const bookingPaidSoFar = Number(booking.paidAmount || 0);
+    const isBookingFullySettled = booking.isPaid === true ||
+        (bookingTotalDue > 0 && bookingPaidSoFar >= bookingTotalDue - 0.5);
+    const retryablePaymentTx = (() => {
+        if (isBookingFullySettled || entityPaymentTxs.length === 0) return null;
+        if (String(booking.status || '').toUpperCase().includes('CANCEL')) return null;
+        return entityPaymentTxs.find((t) => {
+            const s = String(t?.status || '').toUpperCase();
+            return s === 'EXPIRED' || s === 'FAILED';
+        }) || null;
+    })();
     const services = booking.services || (booking.service ? [booking.service] : []);
     const serviceNames = services.map(s => s.name).join(', ') || 'Unknown Service';
     const serviceCategories = [...new Set(services.map(s => s.category))].filter(Boolean).join(', ');
@@ -1862,7 +1869,7 @@ const BookingDetailScreen: React.FC = () => {
                     const finalBalanceAmount = booking.remainingBalance !== undefined && booking.remainingBalance > 0
                         ? booking.remainingBalance
                         : Math.max(0, serviceBalance + additionalCostsTotal);
-                    const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+                    const isManualGcashEnabled = Boolean(db?.settings?.gcashEnabled) && !HitPayService.isGatewayActive(db?.settings);
                     const isBalanceReceiptUnderReview = (booking as any).gcashPaymentStatus === 'balance_receipt_uploaded';
 
                     if (finalBalanceAmount <= 0) return null;
@@ -2122,6 +2129,40 @@ const BookingDetailScreen: React.FC = () => {
                                     className="w-full py-1.5 bg-red-500 text-white text-[10px] font-bold rounded-lg transition-all"
                                 >
                                     Resubmit Payment
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Expired / failed gateway session — one-tap fresh HitPay retry */}
+                        {retryablePaymentTx && (
+                            <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2">
+                                <p className="text-[10px] font-bold text-amber-300 flex items-start gap-1 leading-relaxed">
+                                    <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                                    <span>
+                                        {String(retryablePaymentTx.status || '').toUpperCase() === 'FAILED'
+                                            ? 'Your last online payment attempt failed before any money was collected.'
+                                            : 'Your last online payment session expired before any money was collected.'}
+                                        {Number(retryablePaymentTx.amount) > 0
+                                            ? ` Amount due: ${formatCurrency(retryablePaymentTx.amount, String(retryablePaymentTx.currency || DEFAULT_CURRENCY))}.`
+                                            : ' Start a fresh session to settle your balance.'}
+                                    </span>
+                                </p>
+                                <button
+                                    onClick={() => handleRetryExpiredPayment(retryablePaymentTx)}
+                                    disabled={isInitiatingHitPay}
+                                    className="w-full py-2 bg-gradient-to-r from-[#FE7803] to-[#EA580C] text-white text-[10px] font-black rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                                >
+                                    {isInitiatingHitPay ? (
+                                        <>
+                                            <Loader2 size={12} className="animate-spin" />
+                                            {hitPayLoadingStage || 'Starting fresh session...'}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CreditCard size={12} />
+                                            Retry Payment — Fresh HitPay Session
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         )}
@@ -3705,7 +3746,7 @@ const BookingDetailScreen: React.FC = () => {
                 </div>
             )}
 
-            {showGCashPaymentModal && (() => {
+            {showGCashPaymentModal && (Boolean(db?.settings?.gcashEnabled) && !HitPayService.isGatewayActive(db?.settings)) && (() => {
                 const originalServicesFee = booking.services && booking.services.length > 0
                     ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
                     : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
@@ -3747,7 +3788,7 @@ const BookingDetailScreen: React.FC = () => {
                 const finalBalanceAmount = booking.remainingBalance !== undefined && booking.remainingBalance > 0
                     ? booking.remainingBalance
                     : Math.max(0, serviceBalance + additionalCostsTotal);
-                const isManualGcashEnabled = db?.settings?.gcashEnabled ?? false;
+                const isManualGcashEnabled = Boolean(db?.settings?.gcashEnabled) && !HitPayService.isGatewayActive(db?.settings);
                 const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
 
                 if (finalBalanceAmount <= 0) return null;

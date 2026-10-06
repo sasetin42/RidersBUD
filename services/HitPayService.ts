@@ -1,4 +1,5 @@
 import { PaymentRequest, PaymentSession, Settings } from '../types';
+import { auth } from '../firebase';
 
 const SANDBOX_API_URL = 'https://api.sandbox.hit-pay.com/v1';
 const PRODUCTION_API_URL = 'https://api.hit-pay.com/v1';
@@ -200,6 +201,14 @@ class HitPayService {
             };
         }
 
+        // 11. Payment lifecycle metadata for backend authoritative verification
+        if (data.entityKind) payload.entityKind = data.entityKind;
+        if (data.entityId) payload.entityId = data.entityId;
+        if (data.transactionId) payload.transactionId = data.transactionId;
+        if (data.kind) payload.kind = data.kind;
+        if (data.customerId) payload.customerId = data.customerId;
+        if (data.force) payload.force = data.force;
+
         return payload;
     }
 
@@ -250,9 +259,23 @@ class HitPayService {
         const dispatch = async (payloadToSend: Record<string, any>): Promise<Attempt> => {
             let proxyResp: Response;
             try {
+                let token: string | null = null;
+                try {
+                    if (auth && auth.currentUser) {
+                        token = await auth.currentUser.getIdToken();
+                    }
+                } catch (_) {}
+
+                const headers: Record<string, string> = {
+                    'Content-Type': 'application/json'
+                };
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+
                 proxyResp = await fetch(getHitPayProxyEndpoint('/api/hitpay-proxy'), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers,
                     body: JSON.stringify({
                         isSandbox: this.isSandbox,
                         entityKind: data.entityKind,
@@ -260,7 +283,8 @@ class HitPayService {
                         transactionId: data.transactionId,
                         referenceNumber: data.reference_number,
                         kind: data.kind,
-                        customerId: data.customerId,
+                        customerId: data.customerId || auth?.currentUser?.uid || '',
+                        customerEmail: data.email || payloadToSend.email || '',
                         force: data.force === true,
                         // Credentials are resolved server-side — never sent from the client
                         payload: payloadToSend

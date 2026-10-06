@@ -1,5 +1,5 @@
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { db as firestore } from '../firebase';
+import { db as firestore, auth } from '../firebase';
 import { PaymentEntityKind, collectionForEntity } from './firestoreCollections';
 import { getHitPayProxyEndpoint } from '../services/HitPayService';
 import {
@@ -58,6 +58,8 @@ export interface PaymentReturnInfo {
     referenceNumber?: string;
     /** HitPay appends `reference` = payment request id on redirect. */
     paymentRequestId?: string;
+    /** HitPay session ID `s` or `session` from redirect params. */
+    paymentSessionId?: string;
     /** DISPLAY ONLY — never used as proof of payment. */
     gatewayStatus?: string;
 }
@@ -83,6 +85,7 @@ export const parsePaymentReturnUrl = (url: string): PaymentReturnInfo | null => 
             transactionId: params.get('tx') || params.get('transaction') || undefined,
             referenceNumber: params.get('ref') || params.get('reference_number') || undefined,
             paymentRequestId: params.get('payment_request_id') || params.get('reference') || undefined,
+            paymentSessionId: params.get('s') || params.get('session') || params.get('paymentSessionId') || undefined,
             gatewayStatus: params.get('status') || undefined
         };
     } catch {
@@ -91,7 +94,7 @@ export const parsePaymentReturnUrl = (url: string): PaymentReturnInfo | null => 
 };
 
 // ---------------------------------------------------------------------------
-// Backend access (client sends no credentials)
+// Backend access (client sends auth token if available)
 // ---------------------------------------------------------------------------
 
 /** Fetch our authoritative paymentTransactions record. */
@@ -99,15 +102,24 @@ export const fetchPaymentTransaction = async (opts: {
     transactionId?: string;
     paymentRequestId?: string;
     reference?: string;
+    paymentSessionId?: string;
 }): Promise<any | null> => {
     const id = opts.transactionId || opts.paymentRequestId || '';
     const ref = opts.reference || '';
-    if (!id && !ref) return null;
+    const s = opts.paymentSessionId || '';
+    const tx = opts.transactionId || '';
+    if (!id && !ref && !s && !tx) return null;
     try {
+        // ROOT-CAUSE FIX: `auth?.currentUser?.getIdToken().catch(...)` throws a
+        // TypeError when currentUser is null (auth still restoring after the
+        // redirect reload) — every verify request died client-side and never
+        // reached the server, leaving the screen spinning with no diagnostics.
+        const token = auth?.currentUser ? await auth.currentUser.getIdToken().catch(() => null) : null;
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
         const endpoint = getHitPayProxyEndpoint(
-            `/api/hitpay-proxy?action=transaction&id=${encodeURIComponent(id)}&ref=${encodeURIComponent(ref)}`
+            `/api/hitpay-proxy?action=transaction&id=${encodeURIComponent(id)}&tx=${encodeURIComponent(tx)}&s=${encodeURIComponent(s)}&ref=${encodeURIComponent(ref)}`
         );
-        const resp = await fetch(endpoint);
+        const resp = await fetch(endpoint, { headers });
         if (!resp.ok) return null;
         return await resp.json();
     } catch {
@@ -123,19 +135,77 @@ export const verifyPaymentTransaction = async (opts: {
     transactionId?: string;
     paymentRequestId?: string;
     reference?: string;
+    paymentSessionId?: string;
     isSandbox?: boolean;
 }): Promise<any | null> => {
     const id = opts.transactionId || opts.paymentRequestId || '';
     const ref = opts.reference || '';
-    if (!id && !ref) return null;
+    const s = opts.paymentSessionId || '';
+    const tx = opts.transactionId || '';
+    if (!id && !ref && !s && !tx) return null;
     try {
+        // ROOT-CAUSE FIX: `auth?.currentUser?.getIdToken().catch(...)` throws a
+        // TypeError when currentUser is null (auth still restoring after the
+        // redirect reload) — every verify request died client-side and never
+        // reached the server, leaving the screen spinning with no diagnostics.
+        const token = auth?.currentUser ? await auth.currentUser.getIdToken().catch(() => null) : null;
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
         const endpoint = getHitPayProxyEndpoint(
-            `/api/hitpay-proxy?action=verify&id=${encodeURIComponent(id)}&ref=${encodeURIComponent(ref)}&sandbox=${opts.isSandbox ? 'true' : 'false'}`
+            `/api/hitpay-proxy?action=verify&id=${encodeURIComponent(id)}&tx=${encodeURIComponent(tx)}&s=${encodeURIComponent(s)}&ref=${encodeURIComponent(ref)}&sandbox=${opts.isSandbox ? 'true' : 'false'}`
         );
-        const resp = await fetch(endpoint);
-        if (!resp.ok) return null;
+        const resp = await fetch(endpoint, { headers });
+        if (!resp.ok) {
+            // ROOT-CAUSE VISIBILITY: silent failures here used to make the
+            // "Verifying" screen spin forever with zero diagnostics.
+            console.warn(`[PaymentVerify] verify endpoint responded HTTP ${resp.status}`, {
+                transactionId: opts.transactionId || '',
+                paymentRequestId: opts.paymentRequestId || '',
+                paymentSessionId: opts.paymentSessionId || '',
+                reference: ref
+            });
+            return null;
+        }
         return await resp.json();
-    } catch {
+    } catch (e: any) {
+        console.warn('[PaymentVerify] verify request failed:', e?.message || e);
+        return null;
+    }
+};
+
+/**
+ * Simulate completing a payment in the HitPay Sandbox environment for testing.
+ * Calls backend /api/hitpay-proxy?action=simulate-sandbox with Bearer auth token.
+ */
+export const simulateSandboxPayment = async (opts: {
+    transactionId?: string;
+    paymentRequestId?: string;
+    reference?: string;
+    paymentSessionId?: string;
+}): Promise<any | null> => {
+    const id = opts.transactionId || opts.paymentRequestId || '';
+    const ref = opts.reference || '';
+    const s = opts.paymentSessionId || '';
+    const tx = opts.transactionId || '';
+    if (!id && !ref && !s && !tx) return null;
+    try {
+        // ROOT-CAUSE FIX: `auth?.currentUser?.getIdToken().catch(...)` throws a
+        // TypeError when currentUser is null (auth still restoring after the
+        // redirect reload) — every verify request died client-side and never
+        // reached the server, leaving the screen spinning with no diagnostics.
+        const token = auth?.currentUser ? await auth.currentUser.getIdToken().catch(() => null) : null;
+        const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+        const endpoint = getHitPayProxyEndpoint(
+            `/api/hitpay-proxy?action=simulate-sandbox&id=${encodeURIComponent(id)}&tx=${encodeURIComponent(tx)}&s=${encodeURIComponent(s)}&ref=${encodeURIComponent(ref)}&sandbox=true`
+        );
+        const resp = await fetch(endpoint, { headers });
+        if (!resp.ok) {
+            const errBody = await resp.json().catch(() => null);
+            console.warn(`[PaymentVerify] simulate-sandbox responded HTTP ${resp.status}`, errBody);
+            return errBody || { error: `HTTP ${resp.status}` };
+        }
+        return await resp.json();
+    } catch (e: any) {
+        console.warn('[PaymentVerify] simulate-sandbox failed:', e?.message || e);
         return null;
     }
 };
@@ -199,18 +269,20 @@ export const handlePaymentReturn = async (url: string): Promise<{ handled: boole
     const transactionId = info.transactionId || resolved?.transactionId || '';
     const referenceNumber = info.referenceNumber || resolved?.referenceNumber || '';
     const paymentRequestId = info.paymentRequestId || resolved?.paymentRequestId || '';
+    const paymentSessionId = info.paymentSessionId || '';
     const isSandbox = resolved?.environment === 'sandbox';
 
     // Kick off server-side verification immediately — if the webhook already
     // settled the transaction this is a no-op; if the webhook is still in
     // flight this makes the app independent of its timing.
-    verifyPaymentTransaction({ transactionId, paymentRequestId, reference: referenceNumber, isSandbox })
+    verifyPaymentTransaction({ transactionId, paymentRequestId, reference: referenceNumber, paymentSessionId, isSandbox })
         .catch(() => { /* watcher keeps retrying */ });
 
     const params = new URLSearchParams();
     if (transactionId) params.set('tx', transactionId);
     if (referenceNumber) params.set('ref', referenceNumber);
     if (paymentRequestId) params.set('prid', paymentRequestId);
+    if (paymentSessionId) params.set('s', paymentSessionId);
     if (isSandbox) params.set('sb', '1');
     const target = `/payment/return${params.toString() ? `?${params.toString()}` : ''}`;
 
@@ -230,8 +302,9 @@ export interface TransactionWatchParams {
     transactionId?: string;
     paymentRequestId?: string;
     referenceNumber?: string;
+    paymentSessionId?: string;
     isSandbox?: boolean;
-    /** How long to keep verifying before reporting PENDING (default 3 min). */
+    /** How long to keep verifying before reporting PENDING (default 90s). */
     timeoutMs?: number;
     onState: (state: PaymentVerificationState, message: string, tx?: any) => void;
     /** Fired exactly once when the server settles the transaction as PAID. */
@@ -257,8 +330,9 @@ export const watchTransactionReturnVerification = (params: TransactionWatchParam
         transactionId,
         paymentRequestId,
         referenceNumber,
+        paymentSessionId,
         isSandbox = false,
-        timeoutMs = 3 * 60 * 1000,
+        timeoutMs = 90 * 1000,
         onState,
         onVerified
     } = params;
@@ -286,8 +360,139 @@ export const watchTransactionReturnVerification = (params: TransactionWatchParam
 
     emit('VERIFYING', 'Verifying your payment with HitPay…');
 
-    // 1. Realtime listener on the authoritative transaction record
-    if (transactionId && firestore) {
+    // ---- verification timeline state ------------------------------------------------
+    const startedAt = Date.now();
+    let pendingAnnounced = false;   // true once the PENDING timeout message is shown
+    let gatewayFailures = 0;        // consecutive unreachable/failed verify calls
+    let verifyStep = 0;             // position in the backoff schedule below
+    let verifyInFlight = false;
+    let verifyTimer: number | null = null;
+    let pendingTimer: number | null = null;
+    let listenerAttached = false;
+    let authWaitRegistered = false;
+
+    // ROOT-CAUSE FIX (stuck on "Verifying Payment" forever): the old watcher
+    // pre-registered 8 one-shot timers from page load. Mobile WebViews FREEZE
+    // or RESET timers while the app is backgrounded (e.g. when the customer
+    // switches to the HitPay/GCash app to pay), so the schedule silently died —
+    // the screen never reached PENDING and never polled again. Verification is
+    // now a SELF-RESCHEDULING loop that (a) never leaves a dead gap, (b) re-arms
+    // itself whenever the page becomes visible again, and (c) always announces
+    // PENDING once timeoutMs has elapsed since the original start time.
+
+    /**
+     * Shared handler for every backend verify response (backoff timers and the
+     * slow post-PENDING poll). Converts the settlement result into honest UI
+     * state instead of spinning blindly.
+     */
+    const handleVerifyResponse = (res: any) => {
+        if (disposed || settled) return;
+        if (!res) {
+            gatewayFailures += 1;
+            if (!pendingAnnounced && gatewayFailures >= 2) {
+                emit('VERIFYING', 'Reconnecting to the payment server — your payment details are safe…');
+            }
+            return;
+        }
+        // Server without HitPay credentials answers HTTP 200
+        // {fallbackToPortal:true} with NO settlement result — never render
+        // that as "this usually takes a few seconds".
+        if (res.fallbackToPortal === true || (res.error && !res.result)) {
+            gatewayFailures += 1;
+            if (!pendingAnnounced && gatewayFailures >= 2) {
+                emit('VERIFYING', 'The payment server cannot reach HitPay right now — we keep retrying automatically. Your payment is safe.');
+            }
+            return;
+        }
+        gatewayFailures = 0;
+        const tx = res.transaction || null;
+        const result = res.result || {};
+        const terminal = stateFromTxStatus(result.status || tx?.status);
+        if (terminal === 'PAID') {
+            finish('PAID', 'Your payment has been verified by HitPay.', tx);
+        } else if (terminal) {
+            finish(terminal, terminal === 'FAILED' ? 'HitPay could not complete your payment.'
+                : terminal === 'CANCELLED' ? 'The payment was cancelled.'
+                    : 'This payment request has expired.', tx);
+        } else if (
+            result.status === 'PENDING_REVIEW' ||
+            result.verificationStatus === 'AMOUNT_MISMATCH' ||
+            result.verificationStatus === 'CURRENCY_MISMATCH' ||
+            result.verificationStatus === 'REFERENCE_MISMATCH'
+        ) {
+            finish('PENDING', 'We received your payment but it needs manual review. Our team will update you shortly.', tx);
+        } else if (result.status === 'NOT_FOUND') {
+            if (!pendingAnnounced) emit('VERIFYING', 'Confirming your payment session with the server…');
+        } else if (result.verificationStatus === 'GATEWAY_UNAVAILABLE' && result.reason === 'gateway_amount_unreadable') {
+            if (!pendingAnnounced) {
+                emit('VERIFYING', 'HitPay confirmed activity on your payment but we could not read its amount — we keep retrying and our team has been alerted.', tx);
+            }
+        } else if (result.verificationStatus === 'GATEWAY_UNAVAILABLE') {
+            gatewayFailures += 1;
+            if (!pendingAnnounced && gatewayFailures >= 2) {
+                emit('VERIFYING', 'Reconnecting to HitPay — we keep retrying automatically…');
+            }
+        } else if (
+            result.verificationStatus === 'GATEWAY_PENDING' ||
+            result.verificationStatus === 'AWAITING_GATEWAY_VERIFICATION' ||
+            String(result.reason || '').startsWith('gateway_status_')
+        ) {
+            // The gateway answered but has not confirmed the payment yet — be
+            // honest instead of promising "a few seconds" forever.
+            if (!pendingAnnounced) {
+                emit('VERIFYING', 'HitPay has not confirmed this payment yet — we keep checking automatically.', tx);
+            }
+        } else if (!pendingAnnounced) {
+            emit('VERIFYING', 'Waiting for HitPay confirmation — this usually takes a few seconds…', tx);
+        }
+    };
+
+    const BACKOFF_DELAYS = [500, 2000, 4000, 8000, 15000, 30000, 30000, 30000];
+    const STEADY_POLL_MS = 20000;
+    const PENDING_POLL_MS = 45000;
+
+    const scheduleVerify = (delayMs: number) => {
+        if (disposed || settled) return;
+        if (verifyTimer !== null) window.clearTimeout(verifyTimer);
+        verifyTimer = window.setTimeout(runVerify, delayMs);
+    };
+
+    const runVerify = async () => {
+        if (disposed || settled || verifyInFlight) return;
+        verifyInFlight = true;
+        try {
+            const res = await verifyPaymentTransaction({
+                transactionId,
+                paymentRequestId,
+                reference: referenceNumber,
+                paymentSessionId,
+                isSandbox
+            }).catch(() => null);
+            handleVerifyResponse(res);
+        } catch { /* keep the loop alive below */ }
+        finally {
+            verifyInFlight = false;
+            if (!disposed && !settled) {
+                const delay = pendingAnnounced ? PENDING_POLL_MS
+                    : verifyStep < BACKOFF_DELAYS.length ? BACKOFF_DELAYS[verifyStep]
+                        : STEADY_POLL_MS;
+                verifyStep += 1;
+                scheduleVerify(delay);
+            }
+        }
+    };
+
+    // 1. Realtime listener on the authoritative transaction record.
+    //    ROOT-CAUSE FIX: after the HitPay redirect the page fully reloads and
+    //    Firebase Auth restores ASYNCHRONOUSLY. Attaching the listener before
+    //    auth resolves triggers permission-denied (firestore.rules require an
+    //    authenticated owner read) and Firestore never re-attaches a listener
+    //    after a permission error — the realtime path died for the whole
+    //    session. We now wait for the first auth resolution (max 8s) first.
+    const attachTxListener = () => {
+        if (!transactionId || !firestore) return;
+        if (listenerAttached || disposed || settled) return;
+        listenerAttached = true;
         try {
             const unsub = onSnapshot(
                 doc(firestore, 'paymentTransactions', transactionId),
@@ -301,7 +506,7 @@ export const watchTransactionReturnVerification = (params: TransactionWatchParam
                         finish(terminal, terminal === 'FAILED' ? 'HitPay could not complete your payment.'
                             : terminal === 'CANCELLED' ? 'The payment was cancelled.'
                                 : 'This payment request has expired.', tx);
-                    } else {
+                    } else if (!pendingAnnounced) {
                         emit('VERIFYING', 'Payment received — finalizing confirmation…', tx);
                     }
                 },
@@ -309,48 +514,81 @@ export const watchTransactionReturnVerification = (params: TransactionWatchParam
             );
             cleanups.push(unsub);
         } catch { /* ignore */ }
+    };
+
+    const ensureTxListener = () => {
+        if (!transactionId || !firestore) return;
+        if (listenerAttached || disposed || settled) return;
+        try {
+            if (auth?.currentUser) {
+                attachTxListener();
+            } else if (auth && typeof auth.onAuthStateChanged === 'function') {
+                if (authWaitRegistered) return;
+                authWaitRegistered = true;
+                const authTimer = window.setTimeout(attachTxListener, 8000);
+                cleanups.push(() => window.clearTimeout(authTimer));
+                const unsubAuth = auth.onAuthStateChanged(() => attachTxListener());
+                cleanups.push(unsubAuth);
+            } else {
+                attachTxListener();
+            }
+        } catch {
+            attachTxListener();
+        }
+    };
+    ensureTxListener();
+
+    // 2. Kick off verification and arm the PENDING deadline (measured from the
+    //    ORIGINAL start time — see the re-arm on visibility below).
+    const announcePending = () => {
+        if (disposed || settled || pendingAnnounced) return;
+        pendingAnnounced = true;
+        emit('PENDING', 'Payment verification is still in progress. We will notify you automatically once HitPay confirms — you can safely close this screen.');
+    };
+
+    const armPendingTimeout = () => {
+        if (pendingTimer !== null) {
+            window.clearTimeout(pendingTimer);
+            pendingTimer = null;
+        }
+        if (disposed || settled || pendingAnnounced) return;
+        const remaining = timeoutMs - (Date.now() - startedAt);
+        if (remaining <= 0) {
+            announcePending();
+            return;
+        }
+        pendingTimer = window.setTimeout(announcePending, remaining);
+    };
+
+    // 3. Page-lifecycle resilience: returning from the HitPay/GCash app, a
+    //    WebView thaw or a bfcache restore can leave the old timer chain dead.
+    //    On every visible transition we re-arm the PENDING deadline from the
+    //    original start time (so an overdue watcher announces PENDING right
+    //    away), make sure the realtime listener is attached, and verify NOW.
+    const handlePageVisible = () => {
+        if (disposed || settled) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        armPendingTimeout();
+        ensureTxListener();
+        scheduleVerify(400);
+    };
+    if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', handlePageVisible);
+    }
+    if (typeof window !== 'undefined') {
+        window.addEventListener('pageshow', handlePageVisible);
     }
 
-    // 2. Backend verify calls with exponential backoff
-    const delays = [500, 2000, 4000, 8000, 15000, 30000, 30000, 30000];
-    let elapsed = 0;
-    delays.forEach((delay) => {
-        elapsed += delay;
-        if (elapsed > timeoutMs) return;
-        const timer = window.setTimeout(async () => {
-            if (disposed || settled) return;
-            const res = await verifyPaymentTransaction({
-                transactionId,
-                paymentRequestId,
-                reference: referenceNumber,
-                isSandbox
-            }).catch(() => null);
-            if (disposed || settled || !res) return;
-            const tx = res.transaction || null;
-            const terminal = stateFromTxStatus(res.result?.status || tx?.status);
-            if (terminal === 'PAID') {
-                finish('PAID', 'Your payment has been verified by HitPay.', tx);
-            } else if (terminal) {
-                finish(terminal, terminal === 'FAILED' ? 'HitPay could not complete your payment.'
-                    : terminal === 'CANCELLED' ? 'The payment was cancelled.'
-                        : 'This payment request has expired.', tx);
-            } else if (res.result?.verificationStatus === 'AMOUNT_MISMATCH') {
-                finish('PENDING', 'We received your payment but it needs manual review. Our team will update you shortly.', tx);
-            } else {
-                emit('VERIFYING', 'Waiting for HitPay confirmation — this usually takes a few seconds…', tx);
-            }
-        }, delay);
-        cleanups.push(() => window.clearTimeout(timer));
-    });
+    verifyStep = 1;
+    scheduleVerify(BACKOFF_DELAYS[0]);
+    armPendingTimeout();
 
-    // 3. Timeout → PENDING display state (verification continues server-side)
-    const timeoutTimer = window.setTimeout(() => {
-        if (disposed || settled) return;
-        settled = true;
-        cleanup();
-        emit('PENDING', 'Payment verification is still in progress. We will notify you automatically once HitPay confirms.');
-    }, timeoutMs);
-    cleanups.push(() => window.clearTimeout(timeoutTimer));
+    cleanups.push(() => {
+        if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', handlePageVisible);
+        if (typeof window !== 'undefined') window.removeEventListener('pageshow', handlePageVisible);
+    });
+    cleanups.push(() => { if (verifyTimer !== null) window.clearTimeout(verifyTimer); });
+    cleanups.push(() => { if (pendingTimer !== null) window.clearTimeout(pendingTimer); });
 
     function cleanup() {
         while (cleanups.length) {
@@ -374,7 +612,7 @@ export interface PaymentReturnVerificationParams {
     entityId: string;
     paymentRequestId?: string;
     isSandbox?: boolean;
-    /** How long to wait for the webhook before reporting PENDING (default 3 min). */
+    /** How long to wait for the webhook before reporting PENDING (default 90s). */
     timeoutMs?: number;
     onState: (state: PaymentVerificationState, message: string) => void;
     /** Fired exactly once, only when the webhook's Firestore write is observed. */
@@ -393,7 +631,7 @@ export const watchPaymentReturnVerification = (
         entityId,
         paymentRequestId,
         isSandbox = false,
-        timeoutMs = 3 * 60 * 1000,
+        timeoutMs = 90 * 1000,
         onState,
         onVerified
     } = params;

@@ -53,78 +53,7 @@ const BookingConfirmationScreen: React.FC = () => {
         const bookingId = queryParams.get('bookingId') || locationState.bookingId;
 
         if (status === 'canceled' || status === 'cancelled' || status === 'failed' || status === 'expired' || status === 'abort') {
-            // URL parameters are NOT proof: cancellation requires a real local payment
-            // session — a forged deep link alone must never cancel a booking.
-            if (!sessionStorage.getItem('pendingHitPayBookingTx') && !localStorage.getItem('last_hitpay_booking_tx') && !getPendingPaymentMarker()) return;
-            // Process gateway cancellation exactly once — never re-cancel on re-renders
-            if (cancelProcessedRef.current) return;
-            cancelProcessedRef.current = true;
-            const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx') || localStorage.getItem('last_hitpay_booking_tx');
-            let parsedBookingId = bookingId;
-            let cancelAmount = 0;
-            let cancelledItems: Array<{ name: string; quantity?: number; price?: number }> = [];
-
-            if (pendingTx) {
-                try {
-                    const parsed = JSON.parse(pendingTx);
-                    parsedBookingId = parsed.bookingId || parsedBookingId;
-                    cancelAmount = parsed.amount || parsed.totalAmount || 0;
-                    if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
-                        cancelledItems = parsed.items;
-                    } else if (parsed.services && Array.isArray(parsed.services)) {
-                        cancelledItems = parsed.services.map((s: any) => ({
-                            name: s.name || 'Vehicle Service',
-                            price: s.price || 0
-                        }));
-                    }
-                } catch (e) {}
-            }
-
-            const existingBooking = database?.bookings?.find(b => b.id === parsedBookingId);
-            if (existingBooking) {
-                if (cancelAmount === 0) {
-                    cancelAmount = existingBooking.totalAmount || existingBooking.price || 0;
-                }
-                if (cancelledItems.length === 0 && existingBooking.services && existingBooking.services.length > 0) {
-                    cancelledItems = existingBooking.services.map((s: any) => ({
-                        name: s.name || 'Vehicle Service',
-                        price: s.price || 0
-                    }));
-                } else if (cancelledItems.length === 0 && (existingBooking as any).service) {
-                    cancelledItems = [{
-                        name: (existingBooking as any).service.name || 'Vehicle Service',
-                        price: (existingBooking as any).service.price || cancelAmount
-                    }];
-                }
-            }
-
-            sessionStorage.removeItem('pendingHitPayBookingTx');
-            sessionStorage.removeItem('pendingHitPayServiceTx');
-            sessionStorage.removeItem('pendingHitPayTx');
-            try {
-                localStorage.removeItem('last_hitpay_booking_tx');
-                localStorage.removeItem('last_hitpay_service_tx');
-            } catch (e) {}
-
-            if (parsedBookingId && cancelBooking) {
-                cancelBooking(parsedBookingId, 'Payment process was cancelled by customer at payment gateway.').catch(console.warn);
-            }
-
-            const cancellationInfo = {
-                type: 'Service Booking' as const,
-                referenceId: parsedBookingId ? (parsedBookingId.startsWith('#') ? parsedBookingId : `#${parsedBookingId.slice(-8).toUpperCase()}`) : '#TXN-CANCELLED',
-                amount: cancelAmount,
-                date: new Date().toLocaleString(),
-                reason: 'Payment process was cancelled by the user at the payment gateway.',
-                items: cancelledItems,
-                retryPath: '/customer-portal/booking'
-            };
-
             window.history.replaceState({}, document.title, window.location.pathname);
-            navigate('/customer-portal/', {
-                state: { cancelledTransaction: cancellationInfo },
-                replace: true
-            });
             return;
         }
 

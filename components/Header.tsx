@@ -23,7 +23,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false
     const { mechanic, isMechanicAuthenticated } = useMechanicAuth();
     const { db } = useDatabase();
     const scrollDirection = useScrollDirection();
-    const isHidden = scrollDirection === 'up';
+    const isHidden = scrollDirection === 'down';
 
     // Pick appropriate logo based on context (Mechanic portal vs Customer portal vs General)
     const headerLogoUrl = isMechanicAuthenticated || mechanic

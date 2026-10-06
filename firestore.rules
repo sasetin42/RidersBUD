@@ -6,9 +6,6 @@ service cloud.firestore {
       return request.auth != null;
     }
     
-    // We use a small trick: since checking admin status might be expensive if done on every read,
-    // we'll allow reading if the document matches the user's ID, or if they are admin.
-    // However, to check if admin, we do: exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
     function isAdmin() {
       return isAuth() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
     }
@@ -21,6 +18,29 @@ service cloud.firestore {
       return isAuth() && exists(/databases/$(database)/documents/customers/$(request.auth.uid));
     }
 
+    // Guard: Prevent client writes from altering authoritative payment fields
+    // Payment status & verification MUST only be modified server-side via Cloud Functions
+    // (HitPay webhook, authoritative settlement, or markOfflinePayment callable).
+    function cannotTamperPaymentFields() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'paymentStatus',
+        'isPaid',
+        'isVerified',
+        'paidAmount',
+        'remainingBalance',
+        'balancePaid',
+        'balancePaidAt',
+        'balancePaymentRef',
+        'downpaymentPaidAt',
+        'downpaymentRef',
+        'downpaymentAmount',
+        'hitpayPaymentRequestId',
+        'hitpayReference',
+        'hitpayStatus',
+        'paymentTransactions'
+      ]);
+    }
+
     // Customers
     match /customers/{userId} {
       allow read: if true;
@@ -29,7 +49,7 @@ service cloud.firestore {
 
     // Mechanics
     match /mechanics/{mechanicId} {
-      allow read: if true; // Everyone can read mechanics (fixes public snapshot issue)
+      allow read: if true;
       allow create: if isAuth();
       allow update: if isAuth();
       allow delete: if isAdmin();
@@ -37,8 +57,6 @@ service cloud.firestore {
 
     // Bookings
     match /bookings/{bookingId} {
-      // Mechanics can read ALL bookings — they need to see unassigned job requests
-      // to accept them from the dashboard. Customers and admins also see their own.
       allow read: if isAuth() && (
         isAdmin() || 
         isMechanic() ||
@@ -47,14 +65,24 @@ service cloud.firestore {
       );
       allow create: if isAuth() && (
         isAdmin() || 
-        request.resource.data.customerId == request.auth.uid
+        (
+          request.resource.data.customerId == request.auth.uid &&
+          (!("isPaid" in request.resource.data) || request.resource.data.isPaid == false) &&
+          (!("isVerified" in request.resource.data) || request.resource.data.isVerified == false) &&
+          (!("paymentStatus" in request.resource.data) || request.resource.data.paymentStatus in ['pending', 'unpaid', 'deposit', null]) &&
+          (!("paidAmount" in request.resource.data) || request.resource.data.paidAmount == 0 || request.resource.data.paidAmount == null)
+        )
       );
       allow update: if isAuth() && (
         isAdmin() || 
-        resource.data.customerId == request.auth.uid || 
-        resource.data.mechanicId == request.auth.uid ||
-        // Allow a verified mechanic to accept/claim an unassigned booking
-        (isMechanic() && (!("mechanicId" in resource.data) || resource.data.mechanicId == null))
+        (
+          (
+            resource.data.customerId == request.auth.uid || 
+            resource.data.mechanicId == request.auth.uid ||
+            (isMechanic() && (!("mechanicId" in resource.data) || resource.data.mechanicId == null))
+          ) &&
+          cannotTamperPaymentFields()
+        )
       );
       allow delete: if isAdmin();
 
@@ -86,8 +114,21 @@ service cloud.firestore {
         isAdmin() || 
         resource.data.customerId == request.auth.uid
       );
-      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
-      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (
+        isAdmin() || 
+        (
+          request.resource.data.customerId == request.auth.uid &&
+          (!("isPaid" in request.resource.data) || request.resource.data.isPaid == false) &&
+          (!("paymentStatus" in request.resource.data) || request.resource.data.paymentStatus in ['pending', 'unpaid', null])
+        )
+      );
+      allow update: if isAuth() && (
+        isAdmin() || 
+        (
+          resource.data.customerId == request.auth.uid &&
+          cannotTamperPaymentFields()
+        )
+      );
       allow delete: if isAdmin();
     }
 
@@ -106,15 +147,6 @@ service cloud.firestore {
     }
 
     // Notifications
-    // Notes:
-    // - The code stores recipientId WITHOUT the "customer-" or "mechanic-" prefix
-    //   (stripped by sendNotification/addNotification). Rules match the raw UID directly.
-    // - Every notification MUST carry an explicit recipientRole so reads are strictly
-    //   scoped to the matching role — this prevents cross-account notification mixing.
-    // - Writes are constrained: recipientRole must be one of the 3 valid roles so a
-    //   mis-tagged document can never be created (keeps per-role feeds strictly isolated).
-    // - Delete is limited to the recipient or admin, so one user can never wipe
-    //   another user's notifications.
     match /notifications/{notificationId} {
       function validNotifRole() {
         return request.resource.data.recipientRole in ['customer', 'mechanic', 'admin'];
@@ -151,32 +183,52 @@ service cloud.firestore {
       );
     }
 
-    // Public readable collections (Services, Parts, Banners, FAQs, Settings, etc.)
+    // Public readable collections
     match /services/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /parts/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /banners/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /faqs/{document=**} { allow read: if true; allow write: if isAdmin(); }
-    // SECURITY: payment gateway secrets doc — admins only, never public
+    
+    // SECURITY: payment gateway secrets doc & logs — admins only, never public
     match /settings/hitpaySecrets { allow read, write: if isAdmin(); }
     match /settings/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /promoCodes/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /smtpLogs/{document=**} { allow read, write: if isAdmin(); }
+    match /paymentWebhookLogs/{document=**} { allow read, write: if isAdmin(); }
+    match /paymentWebhookEvents/{document=**} { allow read, write: if isAdmin(); }
+    match /adminNotifications/{document=**} { allow read, write: if isAdmin(); }
     
     // Admin Users
     match /adminUsers/{adminId} {
-      allow read: if true; // To let clients check if they are admin without throwing permission errors
+      allow read: if true;
       allow write: if isAdmin();
     }
 
     match /roles/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /rentalCars/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /hireDrivers/{document=**} { allow read: if true; allow write: if isAdmin(); }
-    match /rentalBookings/{document=**} { 
+    
+    // Rental Bookings
+    match /rentalBookings/{rentalId} { 
       allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
-      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
-      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (
+        isAdmin() || 
+        (
+          request.resource.data.customerId == request.auth.uid &&
+          (!("isPaid" in request.resource.data) || request.resource.data.isPaid == false) &&
+          (!("paidAmount" in request.resource.data) || request.resource.data.paidAmount == 0 || request.resource.data.paidAmount == null)
+        )
+      );
+      allow update: if isAuth() && (
+        isAdmin() || 
+        (
+          resource.data.customerId == request.auth.uid &&
+          cannotTamperPaymentFields()
+        )
+      );
       allow delete: if isAdmin();
     }
+    
     match /subscriptions/{document=**} { allow read: if true; allow write: if isAdmin(); }
     
     // RidersBud Services
@@ -184,10 +236,24 @@ service cloud.firestore {
     match /serviceProviders/{document=**} { allow read: if true; allow write: if isAdmin(); }
     match /servicePricing/{document=**} { allow read: if true; allow write: if isAdmin(); }
 
+    // Service Requests (Driver hire, Towing, Roadside Assistance)
     match /serviceRequests/{requestId} {
       allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
-      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
-      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (
+        isAdmin() || 
+        (
+          request.resource.data.customerId == request.auth.uid &&
+          (!("isPaid" in request.resource.data) || request.resource.data.isPaid == false) &&
+          (!("paidAmount" in request.resource.data) || request.resource.data.paidAmount == 0 || request.resource.data.paidAmount == null)
+        )
+      );
+      allow update: if isAuth() && (
+        isAdmin() || 
+        (
+          resource.data.customerId == request.auth.uid &&
+          cannotTamperPaymentFields()
+        )
+      );
       allow delete: if isAdmin();
     }
 
@@ -197,6 +263,7 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+    
     // Liaison System
     match /liaisonStaff/{document=**} {
       allow read: if true;
@@ -208,19 +275,33 @@ service cloud.firestore {
     }
     match /liaisonBookings/{bookingId} {
       allow read: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
-      allow create: if isAuth() && (isAdmin() || request.resource.data.customerId == request.auth.uid);
-      allow update: if isAuth() && (isAdmin() || resource.data.customerId == request.auth.uid);
+      allow create: if isAuth() && (
+        isAdmin() || 
+        (
+          request.resource.data.customerId == request.auth.uid &&
+          (!("isPaid" in request.resource.data) || request.resource.data.isPaid == false) &&
+          (!("paidAmount" in request.resource.data) || request.resource.data.paidAmount == 0 || request.resource.data.paidAmount == null)
+        )
+      );
+      allow update: if isAuth() && (
+        isAdmin() || 
+        (
+          resource.data.customerId == request.auth.uid &&
+          cannotTamperPaymentFields()
+        )
+      );
       allow delete: if isAdmin();
     }
 
     // Payment transactions (paymentTransactions/{transactionId}) are written ONLY
-    // by Cloud Functions (Admin SDK bypasses rules) after webhook + HitPay API
-    // re-verification. Clients may read a record to display verified receipts and
-    // verification state — they can never create or modify one, so a compromised
-    // client cannot fabricate a PAID status.
+    // by Cloud Functions (Admin SDK bypasses rules). Clients can ONLY read transactions
+    // belonging to them or if they are admin. Direct client writes are strictly forbidden.
     match /paymentTransactions/{transactionId} {
-      allow read: if isAdmin() || isAuth();
-      allow write: if isAdmin();
+      allow read: if isAuth() && (
+        isAdmin() ||
+        resource.data.customerId == request.auth.uid
+      );
+      allow write: if false;
     }
 
     match /{document=**} {

@@ -43,15 +43,24 @@
                 <data android:scheme="ridersbud" android:host="payment" android:pathPrefix="/return" />
             </intent-filter>
 
-            <!-- App Links / HTTPS Domain Deep Linking -->
+            <!-- App Links / HTTPS Domain Deep Linking (restricted to /payment/return to avoid hijacking normal routes) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="ridersbud-10806.web.app" />
+                <data android:scheme="https" android:host="ridersbud-10806.web.app" android:pathPrefix="/payment/return" />
             </intent-filter>
 
         </activity>
+
+        <!-- Native In-App Payment Container Activity -->
+        <activity
+            android:name=".payment.HitPayPaymentActivity"
+            android:label="Secure Payment"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density"
+            android:launchMode="singleTop"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

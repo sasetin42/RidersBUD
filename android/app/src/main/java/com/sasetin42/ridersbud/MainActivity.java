@@ -7,8 +7,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // HitPayInAppPlugin (uncontrolled WebView payment dialog) was removed —
-        // payments are presented in a Chrome Custom Tab via @capacitor/browser.
+        registerPlugin(com.sasetin42.ridersbud.payment.HitPayInAppPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

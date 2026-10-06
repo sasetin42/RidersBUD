@@ -1,4 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { collection, query, orderBy, limit as fsLimit, onSnapshot } from 'firebase/firestore';
+import { db as firestoreDb } from '../../firebase';
+import { countByCategory, sumAttentionAmount } from '../../utils/paymentMonitor';
 import { Booking, Mechanic } from '../../types';
 import LiveMap from '../../components/admin/LiveMap';
 import { useDatabase } from '../../context/DatabaseContext';
@@ -12,7 +15,7 @@ import {
     Download, Plus, Clock, Users, ArrowRight, CheckCircle, AlertCircle,
     ShoppingBag, Map, Activity, Wifi, WifiOff, Server, DollarSign,
     Star, TrendingUp, Calendar, BarChart3, CreditCard, Settings,
-    RefreshCw, Zap, UserCheck, XCircle, ShieldCheck
+    RefreshCw, Zap, UserCheck, XCircle, ShieldCheck, ShieldAlert
 } from 'lucide-react';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -70,6 +73,42 @@ const AdminDashboardScreen: React.FC = () => {
             window.removeEventListener('offline', handleOffline);
         };
     }, []);
+
+    // ---- Payment Monitor live attention count (stuck / mismatched / retrying) ----
+    // Small realtime board over the latest 200 paymentTransactions; same pure
+    // categorization as the Payment Monitor screen (utils/paymentMonitor.ts).
+    const [paymentTxs, setPaymentTxs] = useState<any[]>([]);
+    const [paymentNow, setPaymentNow] = useState(Date.now());
+    useEffect(() => {
+        const t = window.setInterval(() => setPaymentNow(Date.now()), 30_000);
+        return () => window.clearInterval(t);
+    }, []);
+    useEffect(() => {
+        try {
+            const monitorQuery = query(
+                collection(firestoreDb, 'paymentTransactions'),
+                orderBy('createdAt', 'desc'),
+                fsLimit(200)
+            );
+            const unsub = onSnapshot(monitorQuery,
+                (snap) => setPaymentTxs(snap.docs.map((d) => ({ id: d.id, ...d.data() } as any))),
+                (err: any) => console.warn('[Dashboard] payment monitor listener:', err?.message || err)
+            );
+            return () => { try { unsub(); } catch { /* ignore */ } };
+        } catch (e: any) {
+            console.warn('[Dashboard] payment monitor subscription failed:', e?.message || e);
+            return undefined;
+        }
+    }, []);
+    const paymentAttention = useMemo(() => {
+        const counts = countByCategory(paymentTxs, paymentNow);
+        return {
+            counts,
+            amount: sumAttentionAmount(paymentTxs, paymentNow)
+        };
+    }, [paymentTxs, paymentNow]);
+    const formatAttentionPeso = (n: number) =>
+        `₱${(Number.isFinite(n) ? n : 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     // Voice Dispatch System
     const prevBookingsCount = React.useRef(db?.bookings.length || 0);
@@ -395,6 +434,7 @@ const AdminDashboardScreen: React.FC = () => {
         { label: 'Mechanics', icon: Users, onClick: () => navigate('/admin-portal/mechanics'), color: 'from-blue-600 to-blue-800' },
         { label: 'Analytics', icon: BarChart3, onClick: () => navigate('/admin-portal/analytics'), color: 'from-purple-600 to-purple-800' },
         { label: 'Payment Audit', icon: ShieldCheck, onClick: () => navigate('/admin-portal/payment-audit'), color: 'from-emerald-600 to-emerald-800' },
+        { label: 'Payment Monitor', icon: ShieldAlert, onClick: () => navigate('/admin-portal/payment-monitor'), color: 'from-rose-600 to-rose-800' },
     ];
 
     return (
@@ -577,13 +617,97 @@ const AdminDashboardScreen: React.FC = () => {
                 </div>
             </div>
 
+            {/* Payment Monitor — live attention board (stuck / mismatched / retrying) */}
+            <button
+                type="button"
+                onClick={() => navigate('/admin-portal/payment-monitor')}
+                className={`w-full text-left p-6 bg-[#121212]/80 backdrop-blur-2xl border rounded-[2rem] shadow-2xl transition-all hover:scale-[1.005] active:scale-[0.995] group ${paymentAttention.counts.attention > 0 ? 'border-rose-500/40 hover:border-rose-500/60' : 'border-white/10 hover:border-white/20'}`}
+            >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${paymentAttention.counts.attention > 0 ? 'bg-rose-500/10 border border-rose-500/30' : 'bg-emerald-500/10 border border-emerald-500/20'}`}>
+                            <ShieldAlert size={22} className={paymentAttention.counts.attention > 0 ? 'text-rose-400' : 'text-emerald-400'} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-lg font-extrabold text-white">Payment Monitor</h3>
+                                {paymentAttention.counts.attention > 0 ? (
+                                    <span className="px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[9px] font-black uppercase animate-pulse">Action needed</span>
+                                ) : (
+                                    <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[9px] font-black uppercase">All settled</span>
+                                )}
+                            </div>
+                            <p className="text-xs text-gray-500 font-bold tracking-wider truncate">
+                                {paymentAttention.counts.attention > 0
+                                    ? `${formatAttentionPeso(paymentAttention.amount)} awaiting settlement across ${paymentAttention.counts.attention} transaction${paymentAttention.counts.attention === 1 ? '' : 's'}`
+                                    : 'No stuck, mismatched, or retrying payments right now.'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="px-2.5 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-300 text-[10px] font-black">
+                            Stuck {paymentAttention.counts.stuck}
+                        </span>
+                        <span className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-black">
+                            Mismatch {paymentAttention.counts.mismatch}
+                        </span>
+                        <span className="px-2.5 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[10px] font-black">
+                            Retrying {paymentAttention.counts.retrying}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-primary">
+                            Open Monitor
+                            <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                        </span>
+                    </div>
+                </div>
+            </button>
+
+            {/* Stuck Transactions — direct deep link into the monitor's Stuck view */}
+            <button
+                type="button"
+                onClick={() => navigate('/admin-portal/payment-monitor?filter=stuck')}
+                className={`w-full text-left p-5 bg-[#121212]/80 backdrop-blur-2xl border rounded-[2rem] shadow-2xl transition-all hover:scale-[1.005] active:scale-[0.995] group ${paymentAttention.counts.stuck > 0 ? 'border-orange-500/40 hover:border-orange-500/60' : 'border-white/10 hover:border-white/20'}`}
+            >
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${paymentAttention.counts.stuck > 0 ? 'bg-orange-500/10 border border-orange-500/30' : 'bg-white/5 border-white/10'}`}>
+                            <Clock size={20} className={paymentAttention.counts.stuck > 0 ? 'text-orange-400' : 'text-gray-500'} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-base font-extrabold text-white">Stuck Transactions</h3>
+                                {paymentAttention.counts.stuck > 0 && (
+                                    <span className="px-2 py-0.5 rounded-lg bg-orange-500/15 border border-orange-500/40 text-orange-300 text-[9px] font-black uppercase animate-pulse">
+                                        No movement 10+ min
+                                    </span>
+                                )}
+                            </div>
+                            <p className="text-xs text-gray-500 font-bold tracking-wider truncate">
+                                {paymentAttention.counts.stuck > 0
+                                    ? `${paymentAttention.counts.stuck} settlement${paymentAttention.counts.stuck === 1 ? '' : 's'} stalled — oldest first, with each transaction's last verification reason`
+                                    : 'No stalled settlements — every transaction has moved in the last 10 minutes.'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                        <span className={`text-2xl font-black ${paymentAttention.counts.stuck > 0 ? 'text-orange-300' : 'text-gray-600'}`}>
+                            {paymentAttention.counts.stuck}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-orange-300">
+                            Open Stuck View
+                            <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                        </span>
+                    </div>
+                </div>
+            </button>
+
             {/* Quick Actions */}
             <div>
                 <div className="flex items-center gap-2 mb-4">
                     <Zap size={16} className="text-primary" />
                     <h3 className="text-sm font-black text-gray-400 tracking-widest uppercase">Quick Actions</h3>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     {quickActions.map(action => (
                         <button
                             key={action.label}
