@@ -226,6 +226,18 @@ public class HitPayPaymentActivity extends AppCompatActivity {
             settings.setSafeBrowsingEnabled(true);
         }
 
+        // HitPay, banks, and GCash/Maya web portals require a standard modern Chrome mobile user-agent.
+        // Some financial gateways block or misrender WebViews containing 'wv' in their UA.
+        String defaultUa = settings.getUserAgentString();
+        if (defaultUa != null) {
+            String cleanUa = defaultUa.replace("; wv", "");
+            settings.setUserAgentString(cleanUa);
+        }
+
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onProgressChanged(WebView view, int newProgress) {

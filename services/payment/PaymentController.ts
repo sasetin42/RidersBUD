@@ -80,6 +80,12 @@ export interface PaymentControllerResult {
 
 const STORAGE_ACTIVE_PAYMENT = 'rb_active_payment_session';
 const VERIFY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes timeout -> PENDING
+/**
+ * Hard cap on the payment-create request. A stalled fetch used to hold the
+ * single-flight `activePromises` lock forever, after which EVERY payment was
+ * refused with "A payment session is already active" until the app restarted.
+ */
+const CREATE_TIMEOUT_MS = 45 * 1000;
 
 /**
  * PaymentController:
@@ -193,6 +199,53 @@ export class PaymentController {
         return null;
     }
 
+    /**
+     * Maps backend error codes to messages a customer can act on. The raw codes
+     * (PAYMENT_AMOUNT_MISMATCH, HITPAY_DISABLED, PERMISSION_DENIED, ...) used to
+     * be shown verbatim in the UI — which read as "online payment is broken"
+     * with no way forward.
+     */
+    private static describeCreateFailure(status: number, data: any): string {
+        const code = String(data?.error || '');
+        const message = String(data?.message || '');
+        switch (code) {
+            case 'HITPAY_DISABLED':
+                return message || 'Online payments are currently disabled in system settings.';
+            case 'PAYMENT_AMOUNT_MISMATCH': {
+                const authoritative = Number(data?.authoritativeAmount);
+                if (Number.isFinite(authoritative) && authoritative > 0) {
+                    return `Your payment amount was updated to \u20b1${authoritative.toFixed(2)} ${String(data?.currency || 'PHP')}. Please try again.`;
+                }
+                return 'The amount for this booking changed. Please refresh and try again.';
+            }
+            case 'ENTITY_NOT_FOUND':
+                // The server message only echoes the raw entity id — always use
+                // the customer-facing text here.
+                return 'We could not find this booking. Please refresh your bookings and try again.';
+            case 'MISSING_PAYMENT_ENTITY':
+            case 'INVALID_ENTITY_KIND':
+                return message || 'This payment is not linked to a valid booking. Please start again from your booking.';
+            case 'PERMISSION_DENIED':
+            case 'ACCESS_DENIED':
+            case 'FORBIDDEN':
+                return message || 'You are not authorized to pay for this booking. Please contact support.';
+            case 'INVALID_AUTH_TOKEN':
+            case 'MISSING_AUTH_TOKEN':
+                return 'Your session has expired. Please log out and log in again, then retry.';
+            default:
+                if (status === 401) {
+                    return message || 'Your session has expired. Please log out and log in again, then retry.';
+                }
+                if (data?.errors && typeof data.errors === 'object') {
+                    const detail = Object.entries(data.errors as Record<string, unknown>)
+                        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+                        .join('; ');
+                    if (detail) return `The payment gateway rejected the request: ${detail}`;
+                }
+                return message || code || `Payment server error: HTTP ${status}`;
+        }
+    }
+
     private static async executePaymentFlow(
         params: PaymentInitiationParams,
         lockKey: string
@@ -246,38 +299,69 @@ export class PaymentController {
             const isNative = Capacitor.isNativePlatform();
             const proxyBase = isNative ? 'https://ridersbud-10806.web.app/api/hitpay-proxy' : '/api/hitpay-proxy';
 
-            const resp = await fetch(proxyBase, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({
-                    action: 'create',
-                    entityKind,
-                    entityId,
-                    kind,
-                    referenceNumber: clientReferenceNumber,
-                    expectedAmount,
-                    currency,
-                    // Default payment method = HitPay hosted checkout with
-                    // redirection back into the app (backend honours redirect_url).
-                    checkoutMode: requestedCheckoutMode,
-                    paymentMethods: Array.isArray(paymentMethods) && paymentMethods.length > 0
-                        ? paymentMethods
-                        : undefined,
-                    customerId: customerId || auth?.currentUser?.uid || '',
-                    customerEmail,
-                    customerName,
-                    customerPhone,
-                    purpose,
-                    returnRoute,
-                    isSandbox,
-                    userConfirmedRetry
-                })
-            });
+            const hasMethods = Array.isArray(paymentMethods) && paymentMethods.length > 0;
+            // One create attempt, hard-capped so a stalled request always
+            // releases the single-flight lock when it gives up.
+            const sendCreate = async (amountHint: number | undefined) => {
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), CREATE_TIMEOUT_MS);
+                try {
+                    return await fetch(proxyBase, {
+                        method: 'POST',
+                        headers,
+                        signal: ctrl.signal,
+                        body: JSON.stringify({
+                            action: 'create',
+                            entityKind,
+                            entityId,
+                            kind,
+                            referenceNumber: clientReferenceNumber,
+                            expectedAmount: amountHint,
+                            currency,
+                            // Default payment method = HitPay hosted checkout with
+                            // redirection back into the app (backend honours redirect_url).
+                            checkoutMode: requestedCheckoutMode,
+                            // The backend reads snake_case `payment_methods`; the
+                            // camelCase alias is kept for older deployments.
+                            payment_methods: hasMethods ? paymentMethods : undefined,
+                            paymentMethods: hasMethods ? paymentMethods : undefined,
+                            customerId: customerId || auth?.currentUser?.uid || '',
+                            customerEmail,
+                            customerName,
+                            customerPhone,
+                            purpose,
+                            returnRoute,
+                            isSandbox,
+                            userConfirmedRetry
+                        })
+                    });
+                } finally {
+                    clearTimeout(timer);
+                }
+            };
 
-            const data = await resp.json().catch(() => null);
+            let resp = await sendCreate(expectedAmount);
+            let data = await resp.json().catch(() => null);
+
+            // Self-heal PAYMENT_AMOUNT_MISMATCH: a screen's amount hint can drift
+            // from the backend's authoritative computation (explicit
+            // downpaymentAmount, edited totals, partially paid records). The
+            // backend answers with ITS amount — adopt it and retry exactly once
+            // instead of failing the customer's payment with a hard HTTP 400.
+            if (data?.error === 'PAYMENT_AMOUNT_MISMATCH') {
+                const authoritative = Number(data.authoritativeAmount);
+                const hinted = Number(expectedAmount);
+                if (Number.isFinite(authoritative) && authoritative > 0 &&
+                    (!Number.isFinite(hinted) || Math.abs(authoritative - hinted) > 0.01)) {
+                    console.warn(`[PaymentController] Amount hint ${expectedAmount} != authoritative ${authoritative}; retrying once with the server amount.`);
+                    setState('INITIALIZING', 'Updating the amount to match your booking...');
+                    resp = await sendCreate(authoritative);
+                    data = await resp.json().catch(() => null);
+                }
+            }
 
             if (!resp.ok || !data) {
-                const err = data?.error || data?.message || `Payment server error: HTTP ${resp.status}`;
+                const err = this.describeCreateFailure(resp.status, data);
                 console.warn('[PaymentController] Payment creation failed:', resp.status, data);
                 setState('FAILED', err);
                 return {
@@ -498,7 +582,10 @@ export class PaymentController {
             };
 
         } catch (err: any) {
-            const msg = err?.message || 'Payment initiation failed';
+            const aborted = err?.name === 'AbortError' || /\babort/i.test(String(err?.message || ''));
+            const msg = aborted
+                ? 'The payment request timed out. Please check your internet connection and try again.'
+                : (err?.message || 'Payment initiation failed');
             setState('FAILED', msg);
             this.unregisterReturnHandler([params.referenceNumber]);
             return {

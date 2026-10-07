@@ -136,17 +136,30 @@ Legend: **PASS** = verified by automated test or build artefact in this run.
 
 ```
 npm run typecheck              → 0 errors
-npm test                       → 58 passed (3 files)   [27 new regression tests]
+npm test                       → 68 passed (4 files)   [37 new regression tests]
 (cd functions && npm test)     → 23 passed
-npx cap sync android           → ok (4 plugins)
+npx cap sync android           → ok (4 plugins, no version warning)
 npx cap sync ios               → ok (4 plugins, Package.swift written)
-npm run build                  → built in 16.77s
+npm run build                  → built in 17.18s
 node scripts/release-apk.mjs --skip-deploy
                                → BUILD SUCCESSFUL, APK 23.3 MB, signature verified
                                  CN=RidersBUD  SHA-256 88d56b98…ba13c
 android ./gradlew testDebugUnitTest
                                → BUILD SUCCESSFUL, 20 tests, 0 failures
 ```
+
+### Test files
+
+| File | Tests | Covers |
+|------|-------|--------|
+| `test/paymentStateMachine.test.ts` | 13 | linear lifecycle, PAID absorbing, late-webhook recovery, URL parsing, coordinator read-only |
+| `test/paymentRegression.test.ts` | 27 | **§13 origin allowlist** (8 hostile-URL cases), **§7** `RETURN_RECEIVED`/`PENDING_REVIEW`, **§6** single-controller architecture, **§34** no client secrets |
+| `test/paymentDuplicate.test.ts` | 10 | **§18/§42-G/§43 duplicate payment prevention** — double-tap issues exactly ONE proxy call, cross-entity lock refusal, `userConfirmedRetry`, `alreadyPaid` short-circuit, D1 `fallbackToPortal` regression, authoritative-amount payload |
+| `test/paymentMonitor.test.ts` | 18 | admin monitor categorisation incl. `PENDING_REVIEW` mismatch |
+| `functions/test/*.test.js` | 23 | webhook HMAC (v2 + legacy), authoritative amounts, idempotent settlement, reference parsing |
+
+§43 items covered by automation: session creation ✔, amount validation ✔, **duplicate payment prevention ✔**, deep-link parsing ✔, return handling ✔, webhook verification ✔, webhook idempotency ✔, state transition ✔, timeout ✔, cancel ✔, failure ✔, success ✔. App resume/app restart are marker-driven resume paths — covered structurally (§6 assertions) but exercised end-to-end only on-device (DEVICE).
+
 
 **Shipped-artefact verification** (not just source): the APK was unpacked and its
 embedded bundle confirmed to contain `fallbackToPortal` handling, the
@@ -171,5 +184,12 @@ These are honestly **unverified**, not "probably fixed":
 4. iPhone: Universal Link return via `applinks:ridersbud-10806.web.app`, background,
    resume, terminate, restart.
 
-**Known non-blocking issue:** `@capacitor/core@8.5.2` does not match
-`@capacitor/android@8.4.2` (warned during `cap sync`). Worth aligning in a future pass.
+**Known non-blocking issue — RESOLVED:** `@capacitor/core@8.5.2` previously mismatched
+`@capacitor/android@8.4.2` (warned during `cap sync`). All four Capacitor packages are
+now pinned to `^8.5.2` and installed at 8.5.2; `cap sync` emits no version warning on
+either platform. The APK was rebuilt and re-verified afterwards — same signing
+fingerprint (`88d56b98…ba13c`), same asset bundle as `dist/`.
+
+**Repo note:** changes were committed as `d638ba7` by the operator during this pass.
+The Capacitor alignment + new duplicate-payment test remain uncommitted (listed under
+`git status` at hand-off). Nothing was deployed (`--skip-deploy`).

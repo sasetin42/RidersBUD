@@ -106,12 +106,12 @@ public class PaymentNavigationPolicy {
             return new Decision(PolicyAction.BLOCK, "Unrecognized RidersBUD callback URI");
         }
 
-        // https://ridersbud-10806.web.app/payment/return
+        // https://ridersbud-10806.web.app/payment/return or firebaseapp.com
         if ("https".equals(scheme)) {
             String host = uri.getHost();
             if (host != null) {
                 host = host.toLowerCase(Locale.ROOT);
-                if (host.equals("ridersbud-10806.web.app")) {
+                if (host.equals("ridersbud-10806.web.app") || host.equals("ridersbud-10806.firebaseapp.com")) {
                     String path = uri.getPath();
                     if (path != null && path.startsWith("/payment/return")) {
                         return new Decision(PolicyAction.INTERCEPT_RETURN, "HTTPS return URL detected");

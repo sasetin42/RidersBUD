@@ -13,6 +13,7 @@ import GCashPaymentModal from '../components/GCashPaymentModal';
 import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay';
 import { resumePendingPaymentVerification, isNativePlatform as isNative, openPaymentUrl, getPendingPaymentMarker, PaymentEntityKind } from '../utils/paymentRedirect';
 import { fetchPaymentEntitySnapshot } from '../utils/paymentReturn';
+import { resolveServiceAmounts, computeAmountDue } from '../utils/paymentAmount';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
 
@@ -52,7 +53,7 @@ const ServicePaymentScreen: React.FC = () => {
         if (isRentalParam) {
             const rental = db.rentalBookings?.find(b => b.id === bookingIdParam);
             if (rental) {
-                const totalAmt = Number(rental.totalAmount || rental.totalPrice) || 0;
+                const totalAmt = Number(rental.totalPrice ?? rental.totalAmount) || 0;
                 const paidAmt = Number(rental.paidAmount) || 0;
                 return {
                     ...rental,
@@ -68,7 +69,7 @@ const ServicePaymentScreen: React.FC = () => {
         if (isDriverParam) {
             const drvReq = db.serviceRequests?.find(r => r.id === bookingIdParam);
             if (drvReq) {
-                const totalAmt = Number(drvReq.totalAmount) || 0;
+                const totalAmt = Number(drvReq.totalAmount ?? drvReq.details?.totalAmount ?? drvReq.estimatedCost) || 0;
                 return {
                     ...drvReq,
                     isDriver: true,
@@ -88,7 +89,7 @@ const ServicePaymentScreen: React.FC = () => {
                 bookingIdParam.toLowerCase().includes(l.id?.toLowerCase())
             );
             if (liaison) {
-                const totalAmt = Number(liaison.totalAmount) || 0;
+                const totalAmt = Number(liaison.totalAmount ?? liaison.fees?.total ?? liaison.price ?? 1500);
                 const paidAmt = Number(liaison.paidAmount) || 0;
                 return {
                     ...liaison,
@@ -103,7 +104,7 @@ const ServicePaymentScreen: React.FC = () => {
         // General Service Requests (Towing, Liaison, etc.)
         const genServiceReq = db.serviceRequests?.find(r => r.id === bookingIdParam);
         if (genServiceReq) {
-            const totalAmt = Number(genServiceReq.totalAmount) || 0;
+            const totalAmt = Number(genServiceReq.totalAmount ?? genServiceReq.details?.totalAmount ?? genServiceReq.estimatedCost) || 0;
             return {
                 ...genServiceReq,
                 isServiceRequest: true,
@@ -136,9 +137,15 @@ const ServicePaymentScreen: React.FC = () => {
         return booking.services && booking.services.length > 0 ? booking.services : booking.service ? [booking.service] : [];
     }, [booking]);
 
-    const total = useMemo(() => {
-        return services.reduce((sum: number, s: any) => sum + (s.price || 0), 0);
-    }, [services]);
+    // Mirrors the backend's calculateAuthoritativeAmount field precedence so the
+    // amount shown here is exactly what the server charges (a divergence is
+    // rejected as HTTP 400 PAYMENT_AMOUNT_MISMATCH — "payment not working").
+    const amounts = useMemo(
+        () => resolveServiceAmounts(booking, services.reduce((sum: number, s: any) => sum + (Number(s?.price) || 0), 0)),
+        [booking, services]
+    );
+    const total = amounts.total;
+    const downpaymentDue = amounts.downpaymentDue;
 
     const paid = useMemo(() => {
         if (!booking) return 0;
@@ -158,11 +165,10 @@ const ServicePaymentScreen: React.FC = () => {
     }, [booking, paid]);
 
     const amountToPay = useMemo(() => {
-        if (isDeposit && paid === 0) {
-            return total / 2;
-        }
-        return Math.max(0, total - paid);
-    }, [total, paid, isDeposit]);
+        // Mirror of the backend deposit branch: charge the downpayment while it
+        // is still outstanding, otherwise the remaining balance. 0 = nothing due.
+        return computeAmountDue({ isDeposit, paid, total, downpaymentDue });
+    }, [total, paid, isDeposit, downpaymentDue]);
 
     const [showGCashModal, setShowGCashModal] = useState(false);
     // HitPay return → webhook-driven verification overlay (never trusted from redirect params)
@@ -447,6 +453,8 @@ const ServicePaymentScreen: React.FC = () => {
     const handleProcessPayment = async () => {
         if (!user) { setError("User not found. Please log in again."); return; }
         if (!selectedMethod) { setError("Please select a payment method."); return; }
+        if (total <= 0) { setError("We could not determine the amount due for this booking. Please refresh and try again."); return; }
+        if (amountToPay <= 0) { setError("This booking is already fully paid — no payment is due."); return; }
 
         if (selectedMethod === 'Manual GCash' || selectedMethod === 'GCash') {
             setShowGCashModal(true);
@@ -473,8 +481,8 @@ const ServicePaymentScreen: React.FC = () => {
             const entityKind = entityKindForBooking(booking);
             const prefix = entityKind === 'rental' ? 'RNT' : entityKind === 'liaison' ? 'LIA' : entityKind === 'service-request' ? 'SRV' : 'BOK';
             const purpose = isDeposit
-                ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
-                : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
+                ? `RidersBUD — Initial Down Payment (Booking #${booking.id.slice(-6).toUpperCase()})`
+                : `RidersBUD — Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
             const refNumber = `${prefix}-${booking.id}-${isDeposit ? 'DP' : 'BAL'}`;
 
             const prewarmed = (prewarmedSessionRef.current?.readyResult?.url && prewarmedSessionRef.current?.bookingId === booking.id)
@@ -542,7 +550,7 @@ const ServicePaymentScreen: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full bg-secondary">
-            <CustomerHeader title={isDeposit ? "Pay Deposit (50%)" : "Pay Remaining Balance"} showBackButton icon={<CreditCard size={22} />} />
+            <CustomerHeader title={isDeposit ? "Pay Deposit" : "Pay Remaining Balance"} showBackButton icon={<CreditCard size={22} />} />
             <div className="flex-grow p-4 pb-32 space-y-4 overflow-y-auto">
                 {/* Service Summary */}
                 <div className="bg-dark-gray p-4 rounded-lg">
@@ -558,7 +566,7 @@ const ServicePaymentScreen: React.FC = () => {
                         </div>
                     )}
                     <div className="flex justify-between items-center text-sm pt-2 border-t border-white/10 mt-2">
-                        <span className="text-light-gray font-bold">{isDeposit ? "Deposit Due (50%)" : "Balance Due"}</span>
+                        <span className="text-light-gray font-bold">{isDeposit ? "Deposit Due" : "Balance Due"}</span>
                         <span className="text-primary font-bold text-lg">₱{amountToPay.toFixed(2)}</span>
                     </div>
                 </div>
@@ -594,11 +602,13 @@ const ServicePaymentScreen: React.FC = () => {
             {/* Footer */}
             <div className="p-4 bg-gradient-to-t from-secondary via-secondary/95 to-transparent shrink-0 z-30 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3">
                 {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+                {!error && total > 0 && amountToPay <= 0 && <p className="text-green-400 text-xs text-center">This booking is fully paid — nothing else is due.</p>}
+                {!error && total <= 0 && <p className="text-yellow-400 text-xs text-center">We could not determine the amount due. Please refresh.</p>}
                 <div className="flex justify-between items-center text-lg">
                     <span className="text-light-gray">Amount to Pay:</span>
                     <span className="font-bold text-2xl text-primary">₱{amountToPay.toFixed(2)}</span>
                 </div>
-                <button onClick={handleProcessPayment} disabled={isProcessing || !selectedMethod} className="w-full bg-primary text-white font-bold py-4 rounded-2xl hover:bg-orange-600 transition flex items-center justify-center disabled:opacity-50 shadow-lg shadow-primary/20">
+                <button onClick={handleProcessPayment} disabled={isProcessing || !selectedMethod || amountToPay <= 0} className="w-full bg-primary text-white font-bold py-4 rounded-2xl hover:bg-orange-600 transition flex items-center justify-center disabled:opacity-50 shadow-lg shadow-primary/20">
                     {isProcessing ? <Spinner size="sm" /> : (selectedMethod === 'Manual GCash' || selectedMethod === 'GCash') ? `Proceed with GCash` : `Pay with HitPay`}
                 </button>
             </div>
@@ -608,7 +618,7 @@ const ServicePaymentScreen: React.FC = () => {
                     bookingId={booking.id}
                     totalAmount={total}
                     paymentAmount={amountToPay}
-                    paymentLabel={isDeposit ? 'Deposit (50%)' : 'Remaining Balance'}
+                    paymentLabel={isDeposit ? 'Deposit' : 'Remaining Balance'}
                     customerName={user?.name || 'Customer'}
                     services={services.map(s => ({ name: s.name, price: s.price }))}
                     onPaymentVerified={async () => {
