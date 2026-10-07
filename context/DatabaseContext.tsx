@@ -27,6 +27,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { paymentService } from '../services/PaymentService';
 import { sendEmail, sendTemplatedEmail } from '../services/emailService';
 import { getJobTotalAmount, calculateMechanicWalletLedger } from '../utils/mechanicLedger';
+import { loadLiveData } from '../utils/loadLiveData';
 
 interface DatabaseContextType {
     db: Database | null;
@@ -486,7 +487,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
         const loadLocalFallback = async <T,>(colName: string, onNext: (data: T[]) => void) => {
             try {
                 if (!cachedLiveData) {
-                    cachedLiveData = (await import('../data/liveData.json')).default;
+                    cachedLiveData = await loadLiveData();
                 }
                 const localCollection = cachedLiveData[colName];
                 if (Array.isArray(localCollection) && localCollection.length > 0) {

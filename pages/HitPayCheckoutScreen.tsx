@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
     ShieldCheck, 
@@ -21,8 +21,9 @@ import {
     Check
 } from 'lucide-react';
 import { HitPayService } from '../services/HitPayService';
+import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import { useDatabase } from '../context/DatabaseContext';
-import { openPaymentUrl, PaymentEntityKind } from '../utils/paymentRedirect';
+import { PaymentEntityKind } from '../utils/paymentRedirect';
 import { watchPaymentReturnVerification } from '../utils/paymentReturn';
 
 /**
@@ -111,14 +112,9 @@ export const HitPayCheckoutScreen: React.FC = () => {
         }
     };
 
-    // High-Performance Pre-warming Cache: silences network latency by pre-creating session in background
-    const prewarmedSessions = useRef<Map<string, { url: string; id: string }>>(new Map());
-    const isPrewarmingRef = useRef<boolean>(false);
-
-    // NOTE: mount-time pre-warming was removed — it created a HitPay payment
-    // request per payment method before the customer ever tapped Pay (duplicate
-    // sessions). The backend now reuses a pending session per reference, so the
-    // on-click path is both fast and duplicate-safe.
+    // NOTE: pre-warming was removed entirely — creating a HitPay request before
+    // the customer taps Pay produced duplicate sessions. PaymentController now
+    // owns session creation, so this screen must never pre-create one either.
 
     // Dynamic Payment Methods list adhering to branding and high mobile clarity
     const paymentMethods: PaymentMethodOption[] = useMemo(() => [
@@ -290,93 +286,79 @@ export const HitPayCheckoutScreen: React.FC = () => {
         }
     }, [searchParams, checkoutState, db?.settings, isSandbox, referenceNumber, amount]);
 
-    // Handle primary action: Create official HitPay payment session
+    // Handle primary action: Create official HitPay payment session.
+    //
+    // ARCHITECTURE (spec §6): this screen NEVER calls createPaymentRequest or
+    // Browser.open itself — every HitPay request goes through the single
+    // PaymentController so duplicate-session locking, the state machine, the
+    // pending marker and the return coordinator all apply here too.
     const handleInitiatePayment = async () => {
+        if (checkoutState === 'processing' || checkoutState === 'redirecting') return; // double-tap guard
+
         const selectedOption = paymentMethods.find(m => m.id === selectedMethod);
         const channelMethodCode = selectedOption ? selectedOption.hitpayMethodCode : 'gcash';
-
-        // Check if session was already pre-warmed in the background for 0ms instant launch
-        const cachedSession = prewarmedSessions.current.get(channelMethodCode);
-        if (cachedSession && cachedSession.url) {
-            if (cachedSession.url.startsWith('https://') || cachedSession.url.startsWith('http://')) {
-                setCheckoutState('redirecting');
-                setStatusMessage('Opening HitPay checkout...');
-                try {
-                    await openPaymentUrl(cachedSession.url);
-                } catch (error: any) {
-                    console.error('Unable to open prewarmed HitPay checkout:', error);
-                    setErrorMessage(error?.message || 'Unable to open HitPay checkout. Please try again.');
-                    setCheckoutState('failed');
-                }
-                return;
-            }
-        }
 
         setCheckoutState('processing');
         setStatusMessage('Connecting to HitPay Secure Gateway...');
         setErrorMessage('');
 
         try {
-            const hitpay = HitPayService.fromSettings(db?.settings, isSandbox);
-            const channelMethod = [channelMethodCode];
+            // Resolve the entity behind this payment. The backend REQUIRES a
+            // valid entityKind/entityId, so derive it from the reference number
+            // (BOK-/RNT-/LIA-/TOW-/DRV-/ORD-) when the route did not carry one.
+            const entity = parseReferenceEntity(referenceNumber);
+            const entityKind = (locationState.entityKind || searchParams.get('entityKind') || entity?.kind || '') as PaymentEntityKind;
+            const entityId = locationState.entityId || searchParams.get('entityId') || searchParams.get('bookingId') || entity?.id || '';
+
+            if (!entityKind || !entityId) {
+                throw new Error('This payment reference is not linked to a booking or order. Please start again from your booking.');
+            }
 
             setStatusMessage(`Creating secure ${selectedOption?.name || 'HitPay'} checkout session...`);
 
-            // Return URL after user completes or cancels in HitPay
-            let returnRedirectUrl = redirectUrl;
-            try {
-                const urlObj = new URL(redirectUrl.startsWith('http') ? redirectUrl : `${window.location.origin}${redirectUrl}`);
-                urlObj.searchParams.set('reference', referenceNumber);
-                urlObj.searchParams.set('amount', String(amount));
-                returnRedirectUrl = urlObj.toString();
-            } catch (e) {
-                returnRedirectUrl = `${window.location.origin}${redirectUrl}`;
-            }
-
-            const paymentRequest = {
+            const checkoutResult = await HitPayEmbeddedService.startCheckout({
+                entityKind,
+                entityId,
+                kind: referenceNumber.includes('-DP')
+                    ? 'downpayment'
+                    : (referenceNumber.includes('-BAL') ? 'balance' : 'full'),
                 amount,
                 currency,
-                reference_number: referenceNumber,
-                webhook: 'https://ridersbud-10806.web.app/api/hitpay-webhook',
-                redirect_url: returnRedirectUrl,
-                email,
-                name,
-                phone,
+                referenceNumber,
                 purpose,
-                payment_methods: channelMethod,
-                entityKind: locationState.entityKind || searchParams.get('entityKind') || undefined,
-                entityId: locationState.entityId || searchParams.get('entityId') || searchParams.get('bookingId') || undefined,
-                customerId: locationState.customerId || searchParams.get('customerId') || undefined,
-                kind: locationState.kind || searchParams.get('kind') || undefined
-            };
+                customerEmail: email,
+                customerName: name,
+                customerPhone: phone,
+                paymentMethods: [channelMethodCode],
+                returnRoute: redirectUrl.startsWith('/') ? redirectUrl : '/payment/return',
+                isSandbox,
+                settings: db?.settings,
+                onStateChange: (state, msg) => {
+                    if (msg) setStatusMessage(msg);
+                    if (state === 'CHECKOUT_OPEN') setCheckoutState('redirecting');
+                }
+            });
 
-            const { url, id } = await hitpay.createPaymentRequest(paymentRequest);
-
-            // Store in prewarm cache for subsequent re-clicks
-            if (url) {
-                prewarmedSessions.current.set(channelMethodCode, { url, id });
-            }
-
-            setCheckoutState('redirecting');
-            setStatusMessage('Opening HitPay checkout...');
-
-            // Official HitPay checkout URLs send 'frame-ancestors self ecwid.com' which prohibits iframe framing.
-            // Launch via openPaymentUrl (Chrome Custom Tab on native Android, top-level window redirect on web)
-            if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-                await openPaymentUrl(url);
+            if (checkoutResult.paymentState === 'PAID') {
+                setVerifiedTx({
+                    paymentRequestId: checkoutResult.paymentRequestId,
+                    reference: checkoutResult.referenceNumber || referenceNumber,
+                    amount: checkoutResult.amount || amount,
+                    method: 'HitPay (Online)',
+                    paidAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+                setCheckoutState('completed');
                 return;
             }
 
-            // If proxy returned an in-app fallback portal route (gateway unreachable):
-            // NEVER fabricate a successful payment. Sandbox keeps its local simulation
-            // (no real money); live mode reports the failure honestly.
-            if (url && url.startsWith('/')) {
-                // NEVER fabricate a success state — sandbox included. The gateway is
-                // unreachable: report honestly and let the customer retry.
-                throw new Error('The HitPay gateway is currently unreachable. Please try again in a moment.');
+            if (!checkoutResult.success) {
+                throw new Error(checkoutResult.errorMessage || 'The HitPay gateway is currently unreachable. Please try again in a moment.');
             }
 
-            throw new Error('Unable to obtain payment session URL from HitPay gateway.');
+            // Checkout is open (native container or browser). Our job is done —
+            // the return coordinator / pending marker bring the customer back.
+            setCheckoutState('redirecting');
+            setStatusMessage('Opening HitPay checkout...');
         } catch (err: any) {
             console.error('HitPay Initiation Error:', err);
             setErrorMessage(err?.message || 'Failed to connect to HitPay. Please try again or choose another method.');

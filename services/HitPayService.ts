@@ -117,9 +117,12 @@ class HitPayService {
         //    The backend always rewrites this to its authoritative value.
         let redirect_url = data.redirect_url;
         if (!redirect_url || redirect_url.includes('localhost') || redirect_url.includes('127.0.0.1') || redirect_url.startsWith('capacitor:')) {
+            // Default to the verified App-Link return route — /customer-portal/
+            // is NOT covered by the App Links intent filter, so landing there
+            // from a Custom Tab stranded the customer outside the app.
             const cleanPath = redirect_url
                 ? redirect_url.replace(/^(https?:\/\/[^\/]+|capacitor:\/\/localhost)/i, '')
-                : '/customer-portal/';
+                : '/payment/return';
             redirect_url = `${getLiveAppOrigin()}${cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`}`;
         }
 
@@ -384,7 +387,7 @@ class HitPayService {
                 amount: String(payload.amount),
                 currency: payload.currency || 'PHP',
                 reference: payload.reference_number,
-                redirect_url: payload.redirect_url || (typeof window !== 'undefined' ? `${window.location.origin}/customer-portal/` : ''),
+                redirect_url: payload.redirect_url || `${getLiveAppOrigin()}/payment/return`,
                 email: payload.email || 'customer@ridersbud.com',
                 name: payload.name || 'Valued Customer',
                 purpose: payload.purpose || 'RidersBUD Payment',

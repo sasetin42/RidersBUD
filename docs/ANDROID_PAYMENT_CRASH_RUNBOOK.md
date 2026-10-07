@@ -1,6 +1,35 @@
 # Android payment crash: diagnosis, confirmed root causes, and full-fix procedure
 
-Build: **v1.1.4 (versionCode 15)** — every confirmed defect below is fixed in this build.
+Build: **v1.1.5 (versionCode 16)** — every confirmed defect below is fixed in this build
+(v1.1.4 fixed root causes 1–8; v1.1.5 adds the hardening in "v1.1.5 additions").
+
+## v1.1.5 additions (this build)
+
+- **Custom Tab auto-return wired.** `startPaymentWatcher` previously had zero call sites:
+  if the native payment container failed to launch and the Chrome Custom Tab fallback was
+  used, nothing ever closed the tab or brought the customer back. Now every `Browser.open`
+  checkout path (`openPaymentUrl`, both `PaymentController` fallbacks) starts
+  `watchPendingPaymentReturn()` — on server settlement the tab auto-closes and the app
+  routes to the return route. On `/payment/return` the centralized status screen keeps
+  ownership (no yank off the receipt).
+- **Legacy redirect defaults fixed.** `HitPayService` fell back to `/customer-portal/`,
+  which the App Links intent filter does not cover (pathPrefix `/payment/return`), so a
+  gateway return there never opened the app. Fallbacks now target `/payment/return`.
+- **Default payment method = HitPay redirect.** `ServicePaymentScreen` no longer starts
+  with an empty selection (which disabled the pay button); it preselects the HitPay
+  hosted-redirect option. Manual GCash stays opt-in.
+- **Popup WebView leak fixed.** `onCreateWindow` popups were never destroyed — each leaked
+  WebView keeps a renderer alive and adds to the memory pressure that kills the main
+  renderer during payment. Popups are now tracked and destroyed in
+  `destroyWebViewSafely()` (render-process death and `onDestroy`).
+- **`android:largeHeap="true"`** — raises the app heap headroom at the exact moment two
+  WebViews (bridge + payment) plus Firestore listeners coexist.
+- **Stack traces symbolicated** — `-keepattributes SourceFile,LineNumberTable` enabled so
+  any future native crash is readable from logcat / Play Console.
+- **App Link verification re-checked for 1.1.5:** release-keystore SHA-256
+  `88:D5:6B:98:2A:4E:33:ED:EB:6C:5D:0E:72:3B:A6:17:FF:56:FD:05:82:AC:A1:32:72:83:1E:0C:27:6B:A1:3C`
+  matches `public/assetlinks.json`, and `https://ridersbud-10806.web.app/.well-known/assetlinks.json`
+  serves it live (fetched OK).
 
 ## What was reported
 

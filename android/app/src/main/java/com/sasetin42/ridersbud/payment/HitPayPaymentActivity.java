@@ -38,6 +38,8 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Native Payment Activity hosting a hardened Android WebView for HitPay Drop-In & Hosted Checkout.
@@ -74,6 +76,13 @@ public class HitPayPaymentActivity extends AppCompatActivity {
     private TextView subtitleTextView;
     private boolean waitingForProviderReturn = false;
     private String providerPackageName = null;
+
+    // Popup WebViews created by onCreateWindow (window.open 3-D Secure / wallet
+    // handoffs). They are never attached to the view hierarchy, so nothing else
+    // disposes of them: each leaked WebView keeps its renderer alive, and repeated
+    // popups push the app toward the memory pressure that kills the MAIN renderer
+    // (the payment-crash path). Track them and destroy them with the activity.
+    private final List<WebView> popupWebViews = new ArrayList<>();
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -241,6 +250,9 @@ public class HitPayPaymentActivity extends AppCompatActivity {
             public boolean onCreateWindow(WebView view, boolean isDialog,
                                           boolean isUserGesture, Message resultMsg) {
                 WebView popup = new WebView(HitPayPaymentActivity.this);
+                synchronized (popupWebViews) {
+                    popupWebViews.add(popup);
+                }
                 popup.setWebViewClient(new WebViewClient() {
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
@@ -411,6 +423,21 @@ public class HitPayPaymentActivity extends AppCompatActivity {
     }
 
     private void destroyWebViewSafely() {
+        // Tear down every popup WebView captured from window.open first.
+        List<WebView> popups;
+        synchronized (popupWebViews) {
+            popups = new ArrayList<>(popupWebViews);
+            popupWebViews.clear();
+        }
+        for (WebView popup : popups) {
+            try {
+                popup.stopLoading();
+                popup.destroy();
+            } catch (Exception ignored) {
+                // Renderer teardown is best-effort; keep the host app alive.
+            }
+        }
+
         WebView view = webView;
         webView = null;
         if (view == null) return;

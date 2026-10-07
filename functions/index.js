@@ -402,8 +402,23 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         }
       }
 
-      // Reference format
+      // Reference format & Kind resolution
       let referenceNumber = String(rawPayload.reference_number || body.referenceNumber || '').trim();
+      let resolvedKind = kind;
+      if (!resolvedKind) {
+        if (referenceNumber.toUpperCase().includes('-DP')) {
+          resolvedKind = 'downpayment';
+        } else if (referenceNumber.toUpperCase().includes('-BAL')) {
+          resolvedKind = 'balance';
+        } else if (referenceNumber.toUpperCase().includes('-FULL')) {
+          resolvedKind = 'full';
+        } else if (entityData.paymentStatus === 'deposit' || entityData.paymentStatus === 'partial') {
+          resolvedKind = 'balance';
+        } else {
+          resolvedKind = 'full';
+        }
+      }
+
       if (!referenceNumber) {
         const prefixMap = {
           booking: 'BOK',
@@ -413,12 +428,12 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
           order: 'ORD'
         };
         const prefix = prefixMap[entityKind] || 'RB';
-        const suffix = kind === 'downpayment' ? 'DP' : (kind === 'balance' ? 'BAL' : 'FULL');
+        const suffix = resolvedKind === 'downpayment' ? 'DP' : (resolvedKind === 'balance' ? 'BAL' : 'FULL');
         referenceNumber = `${prefix}-${entityId.slice(-8).toUpperCase()}-${suffix}-${Date.now().toString().slice(-4)}`;
       }
 
       // Authoritative amount calculation
-      const authAmounts = calculateAuthoritativeAmount(entityData, collectionName, kind, referenceNumber);
+      const authAmounts = calculateAuthoritativeAmount(entityData, collectionName, resolvedKind, referenceNumber);
       const authoritativeAmount = authAmounts.amount;
       const currency = authAmounts.currency || 'PHP';
 
@@ -533,7 +548,7 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         name: String(rawPayload.name || entityData.customerName || auth.email || 'Customer').trim(),
         email: String(rawPayload.email || entityData.customerEmail || auth.email || '').trim(),
         phone: String(rawPayload.phone || entityData.customerPhone || '').trim(),
-        purpose: String(rawPayload.purpose || `RidersBUD ${entityKind} (${kind || 'payment'})`).slice(0, 100),
+        purpose: String(rawPayload.purpose || `RidersBUD ${entityKind} (${resolvedKind || 'payment'})`).slice(0, 100),
         expires_after: '30 mins',
         redirect_url: `${HTTPS_RETURN_URL}?s=${encodeURIComponent(paymentSessionId)}&tx=${encodeURIComponent(transactionId)}&ref=${encodeURIComponent(referenceNumber)}`
       };
@@ -559,7 +574,7 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         referenceNumber,
         amount: authoritativeAmount,
         currency,
-        kind,
+        kind: resolvedKind,
         checkoutMode,
         paymentMethod: checkoutMode === 'gcash' ? 'GCash' : (checkoutMode === 'qrph-native' ? 'QR Ph' : 'HitPay (Online)'),
         customerId: auth.uid,

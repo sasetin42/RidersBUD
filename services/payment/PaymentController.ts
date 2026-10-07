@@ -9,7 +9,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { auth } from '../../firebase';
-import { setPendingPaymentMarker } from '../../utils/paymentRedirect';
+import { setPendingPaymentMarker, watchPendingPaymentReturn } from '../../utils/paymentRedirect';
 
 export interface HitPayInAppPluginInterface {
     openPayment(options: {
@@ -33,6 +33,7 @@ export interface PaymentInitiationParams {
     entityKind: PaymentEntityKind;
     entityId: string;
     kind?: 'downpayment' | 'balance' | 'full';
+    referenceNumber?: string;
     expectedAmount?: number;
     currency?: string;
     customerEmail?: string;
@@ -47,6 +48,12 @@ export interface PaymentInitiationParams {
      * completed/cancelled payment returns the customer to the application.
      */
     checkoutMode?: 'dropin' | 'qrph-native' | 'gcash';
+    /**
+     * Optional HitPay channel filter (e.g. ['gcash']) so a screen can still
+     * preselect a method. Passed straight through to the backend — the
+     * customer never controls the amount, only the channel presentation.
+     */
+    paymentMethods?: string[];
     returnRoute?: string;
     isSandbox?: boolean;
     userConfirmedRetry?: boolean;
@@ -83,6 +90,51 @@ export class PaymentController {
     private static activePromises = new Map<string, Promise<PaymentControllerResult>>();
     private static sessionState = new Map<string, PaymentState>();
     private static snapshotUnsubscribers = new Map<string, () => void>();
+    /**
+     * Identifiers -> live `setState` for in-flight sessions, so the return
+     * coordinator can move a session to RETURN_RECEIVED (spec §7) without
+     * re-entering `pay()` and without ever creating a second payment.
+     */
+    private static returnHandlers = new Map<string, (state: PaymentState, msg?: string, tx?: any) => void>();
+
+    /**
+     * Called by the payment return coordinator when a verified return URL
+     * arrives. Verification-only: it advances the state machine to
+     * RETURN_RECEIVED and never opens a checkout or creates a session.
+     * No-op (returns false) when nothing is in flight or the session already
+     * settled — a late/duplicate return can never disturb PAID.
+     */
+    static noteReturnReceived(ids: {
+        transactionId?: string;
+        paymentRequestId?: string;
+        referenceNumber?: string;
+    }): boolean {
+        const keys = [ids.transactionId, ids.paymentRequestId, ids.referenceNumber]
+            .filter((k): k is string => Boolean(k));
+        for (const key of keys) {
+            const advance = this.returnHandlers.get(key);
+            if (advance) {
+                advance('RETURN_RECEIVED', 'Payment return received. Verifying with the payment network...');
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static registerReturnHandler(
+        identifiers: (string | undefined)[],
+        advance: (state: PaymentState, msg?: string, tx?: any) => void
+    ): void {
+        identifiers.forEach((key) => {
+            if (key) this.returnHandlers.set(key, advance);
+        });
+    }
+
+    private static unregisterReturnHandler(identifiers: (string | undefined)[]): void {
+        identifiers.forEach((key) => {
+            if (key) this.returnHandlers.delete(key);
+        });
+    }
 
     /**
      * Check if any payment is currently in an active, non-terminal state.
@@ -149,6 +201,7 @@ export class PaymentController {
             entityKind,
             entityId,
             kind = 'full',
+            referenceNumber: clientReferenceNumber,
             expectedAmount,
             currency = 'PHP',
             customerEmail,
@@ -156,6 +209,7 @@ export class PaymentController {
             customerPhone,
             customerId,
             purpose,
+            paymentMethods,
             checkoutMode: requestedCheckoutMode = 'dropin',
             returnRoute = window?.location?.pathname || '/customer-portal/',
             isSandbox = true,
@@ -200,11 +254,15 @@ export class PaymentController {
                     entityKind,
                     entityId,
                     kind,
+                    referenceNumber: clientReferenceNumber,
                     expectedAmount,
                     currency,
                     // Default payment method = HitPay hosted checkout with
                     // redirection back into the app (backend honours redirect_url).
                     checkoutMode: requestedCheckoutMode,
+                    paymentMethods: Array.isArray(paymentMethods) && paymentMethods.length > 0
+                        ? paymentMethods
+                        : undefined,
                     customerId: customerId || auth?.currentUser?.uid || '',
                     customerEmail,
                     customerName,
@@ -220,6 +278,29 @@ export class PaymentController {
 
             if (!resp.ok || !data) {
                 const err = data?.error || data?.message || `Payment server error: HTTP ${resp.status}`;
+                console.warn('[PaymentController] Payment creation failed:', resp.status, data);
+                setState('FAILED', err);
+                return {
+                    success: false,
+                    state: 'FAILED',
+                    errorMessage: err
+                };
+            }
+
+            // Backend could not reach HitPay (or credentials are not
+            // provisioned): it answers 200 with {fallbackToPortal:true} and NO
+            // transactionId / checkoutUrl. Falling through used to reach
+            // `setState('WAITING_FOR_PAYMENT')` and return success:true with no
+            // checkout to open — every screen then sat on its spinner forever
+            // ("Creating secure payment..."). Fail loudly and let the customer
+            // retry; never mark this as paid and never leave a stale pending
+            // marker that would trigger a phantom resume overlay.
+            if (data.fallbackToPortal === true) {
+                const portalReason = String(data.reason || '');
+                const err = portalReason === 'credentials_not_configured'
+                    ? 'Online payments are not enabled yet. Please try again later or contact support.'
+                    : String(data.message || data.error || 'The HitPay gateway is currently unreachable. Please try again in a moment.');
+                console.warn('[PaymentController] Gateway unavailable (fallbackToPortal):', portalReason || 'unspecified');
                 setState('FAILED', err);
                 return {
                     success: false,
@@ -290,9 +371,14 @@ export class PaymentController {
 
             // Start listening to the authoritative paymentTransactions doc in Firestore
             if (transactionId) {
+                const identifiers = [transactionId, paymentRequestId, referenceNumber];
+                this.registerReturnHandler(identifiers, setState);
                 this.listenToTransaction(transactionId, (txState, txMsg, txDoc) => {
                     if (currentState !== txState && !TERMINAL_STATES.has(currentState)) {
                         setState(txState, txMsg, txDoc);
+                    }
+                    if (TERMINAL_STATES.has(currentState)) {
+                        this.unregisterReturnHandler(identifiers);
                     }
                 });
             }
@@ -324,6 +410,8 @@ export class PaymentController {
                     } catch (e) {
                         if (directLinkUrl) {
                             await Browser.open({ url: directLinkUrl, toolbarColor: '#FE7803' });
+                            // Custom Tab fallback: auto-close + return on settlement
+                            watchPendingPaymentReturn();
                         }
                     }
                 } else if (targetUrl) {
@@ -360,6 +448,10 @@ export class PaymentController {
                         console.warn('[PaymentController] Native container launch failed; trying secure browser fallback:', nativeErr);
                         try {
                             await Browser.open({ url: checkoutUrl, toolbarColor: '#FE7803' });
+                            // Custom Tab fallback: the tab has no bridge — watch the
+                            // transaction so settlement closes it and returns the
+                            // customer to the app (marker was persisted above).
+                            watchPendingPaymentReturn();
                         } catch (browserErr: any) {
                             const errorMessage = browserErr?.message || nativeErr?.message || 'Unable to open HitPay checkout on this device.';
                             setState('FAILED', errorMessage);
@@ -408,6 +500,7 @@ export class PaymentController {
         } catch (err: any) {
             const msg = err?.message || 'Payment initiation failed';
             setState('FAILED', msg);
+            this.unregisterReturnHandler([params.referenceNumber]);
             return {
                 success: false,
                 state: 'FAILED',
@@ -467,6 +560,14 @@ export class PaymentController {
                     this.clearStoredSession();
                 } else if (status === 'VERIFYING') {
                     onUpdate('VERIFYING', 'Verifying payment with payment network...', data);
+                } else if (status === 'PENDING_REVIEW') {
+                    // Backend detected an amount/currency/reference mismatch and
+                    // parked the transaction for manual review. Surface it as a
+                    // NON-terminal state (spec §7): never claim success, never
+                    // claim failure, and never auto-retry into a second payment.
+                    clearTimeout(timer);
+                    onUpdate('PENDING_REVIEW', 'We received your payment but it needs a quick review. We will update your booking automatically.', data);
+                    this.stopListening(transactionId);
                 }
             });
 

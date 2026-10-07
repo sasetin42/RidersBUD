@@ -16,6 +16,18 @@ export interface ReturnVerificationResult {
 const NATIVE_SCHEMES = ['ridersbud:', 'com.sasetin42.ridersbud:'];
 
 /**
+ * §13 RETURN-URL VALIDATION — only a verified RidersBUD HTTPS origin may drive
+ * the payment return handler; anything else is rejected before it can touch
+ * session state or trigger verification.
+ */
+const ALLOWED_RETURN_HOSTS = new Set([
+    'ridersbud-10806.web.app',
+    'ridersbud-10806.firebaseapp.com',
+    'ridersbud.web.app',
+    'ridersbud.firebaseapp.com'
+]);
+
+/**
  * PaymentReturnCoordinator:
  * Single place for parsing return deep links and App Links.
  * CRITICAL RULE: ONLY performs verification. NEVER re-initiates payments or opens external browser!
@@ -36,6 +48,10 @@ export class PaymentReturnCoordinator {
         try {
             const parsed = new URL(url);
             const isNative = NATIVE_SCHEMES.includes(parsed.protocol.toLowerCase());
+            const isTrusted = isNative
+                || (parsed.protocol.toLowerCase() === 'https:'
+                    && ALLOWED_RETURN_HOSTS.has(parsed.hostname.toLowerCase()));
+            if (!isTrusted) return null;
             const isReturn = isNative
                 ? (parsed.host === 'payment' && parsed.pathname.startsWith('/return'))
                 : (parsed.pathname === '/payment/return' || parsed.pathname.startsWith('/payment/return'));

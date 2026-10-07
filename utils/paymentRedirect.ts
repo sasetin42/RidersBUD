@@ -286,6 +286,11 @@ export const openPaymentUrl = async (url: string, _title?: string): Promise<void
                 toolbarColor: '#FE7803',
                 presentationStyle: 'popover'
             });
+            // A Custom Tab has no Capacitor bridge, so nothing inside it can
+            // hand the customer back. Watch the pending payment and auto-close
+            // the tab (then route to the return route) as soon as the server
+            // settles the transaction.
+            watchPendingPaymentReturn();
             return;
         } catch (browserErr) {
             console.warn('Browser.open failed:', browserErr);
@@ -383,6 +388,11 @@ export const startPaymentWatcher = (
         if (isNativePlatform()) {
             closeInAppPayment().catch(() => { });
         }
+        // The centralized return screen owns the customer-facing flow once we
+        // are on it — never yank them off the verified result/receipt screen.
+        if (typeof window !== 'undefined' && window.location.pathname === '/payment/return') {
+            return;
+        }
         if (!atRoute(returnRoute)) {
             navigateTo(returnRoute);
         }
@@ -397,5 +407,27 @@ export const startPaymentWatcher = (
         watchPaymentVerification(entityKind, entityId, finish, () => {
             // Timeout: marker TTL cleans up
         });
+    }
+};
+
+/**
+ * Start the auto-return watcher from the persisted pending-payment marker.
+ *
+ * Fire-and-forget helper for every place that opens a bridge-less Chrome
+ * Custom Tab for checkout (openPaymentUrl, PaymentController fallbacks).
+ * No-op when no payment is in flight.
+ */
+export const watchPendingPaymentReturn = (): void => {
+    try {
+        const marker = getPendingPaymentMarker();
+        if (!marker) return;
+        startPaymentWatcher(
+            marker.entityKind,
+            marker.entityId,
+            marker.returnRoute,
+            marker.transactionId
+        );
+    } catch {
+        // Never let the watcher break checkout presentation
     }
 };

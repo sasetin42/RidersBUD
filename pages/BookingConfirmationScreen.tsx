@@ -16,6 +16,7 @@ import PaymentVerificationOverlay from '../components/PaymentVerificationOverlay
 import { getPendingPaymentMarker } from '../utils/paymentRedirect';
 import { useNotification } from '../context/NotificationContext';
 import { PaymentEntityKind } from '../utils/firestoreCollections';
+import { loadLiveData } from '../utils/loadLiveData';
 
 declare const L: any;
 
@@ -152,8 +153,8 @@ const BookingConfirmationScreen: React.FC = () => {
                 }
                 if (isLocalhost) {
                     try {
-                        const liveDataMod = await import('../data/liveData.json');
-                        const localBooking = liveDataMod.default.bookings.find((b: any) => b.id === targetBookingId);
+                        const liveData = await loadLiveData();
+                        const localBooking = (liveData.bookings || []).find((b: any) => b.id === targetBookingId);
                         if (localBooking) {
                             if (['Mechanic Assigned', 'En Route', 'In Progress', 'Completed'].includes(localBooking.status)) {
                                 navigate(`/customer-portal/booking-detail/${localBooking.id}`, { replace: true });
@@ -242,8 +243,8 @@ const BookingConfirmationScreen: React.FC = () => {
                 }
             }, async (error) => {
                 if (error?.code === 'permission-denied' && isLocalhost) {
-                    const liveDataMod = await import('../data/liveData.json');
-                    const localBooking = liveDataMod.default.bookings.find((b: any) => b.id === booking.id);
+                    const liveData = await loadLiveData();
+                    const localBooking = (liveData.bookings || []).find((b: any) => b.id === booking.id);
                     if (localBooking) {
                         setBookings(prev => prev.map(b => b.id === booking.id ? localBooking as unknown as Booking : b));
                     }

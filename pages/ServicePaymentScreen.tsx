@@ -356,6 +356,15 @@ const ServicePaymentScreen: React.FC = () => {
         return options;
     }, [isHitPayActive, isManualGcashEnabled]);
 
+    // Default payment method = HitPay hosted redirect checkout. Preselect it so
+    // the customer can proceed to pay immediately (HitPay is always the first
+    // option when the gateway is active); manual GCash stays opt-in.
+    useEffect(() => {
+        if (selectedMethod) return;
+        const preferred = paymentOptions.find(o => o.name.startsWith('HitPay')) || paymentOptions[0];
+        if (preferred) setSelectedMethod(preferred.name);
+    }, [paymentOptions, selectedMethod]);
+
     // Verification overlay element (webhook-driven) — rendered in both return trees
     const overlayEl = paymentReturnTarget ? (
         <PaymentVerificationOverlay
@@ -461,12 +470,12 @@ const ServicePaymentScreen: React.FC = () => {
                 isRental: booking.isRental
             }));
 
+            const entityKind = entityKindForBooking(booking);
+            const prefix = entityKind === 'rental' ? 'RNT' : entityKind === 'liaison' ? 'LIA' : entityKind === 'service-request' ? 'SRV' : 'BOK';
             const purpose = isDeposit
                 ? `RidersBUD — 50% Initial DP (Booking #${booking.id.slice(-6).toUpperCase()})`
                 : `RidersBUD — 50% Balance Settlement (Booking #${booking.id.slice(-6).toUpperCase()})`;
-            const refNumber = `BOK-${booking.id}-${isDeposit ? 'DP' : 'BAL'}`;
-
-            const entityKind = entityKindForBooking(booking);
+            const refNumber = `${prefix}-${booking.id}-${isDeposit ? 'DP' : 'BAL'}`;
 
             const prewarmed = (prewarmedSessionRef.current?.readyResult?.url && prewarmedSessionRef.current?.bookingId === booking.id)
                 ? prewarmedSessionRef.current.readyResult
@@ -475,10 +484,12 @@ const ServicePaymentScreen: React.FC = () => {
             const checkoutResult = await HitPayEmbeddedService.startCheckout({
                 entityKind,
                 entityId: booking.id,
+                kind: isDeposit ? 'downpayment' : 'balance',
                 amount: amountToPay,
                 currency: db?.settings?.currency || 'PHP',
                 referenceNumber: refNumber,
                 purpose,
+                customerId: user?.id || (user as any)?.uid || '',
                 customerEmail: user.email || 'customer@ridersbud.com',
                 customerName: user.name || 'Valued Customer',
                 customerPhone: user.phone || '09171234567',

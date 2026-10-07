@@ -1,9 +1,9 @@
 {
-  "versionCode": 15,
-  "versionName": "1.1.4",
+  "versionCode": 16,
+  "versionName": "1.1.5",
   "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk",
-  "releaseNotes": "• Fixed Android crash during online payment (renderer recovery, hardened checkout)\n• You are now always returned to the app after a HitPay payment\n• 3-D Secure / e-wallet popup handoffs no longer freeze the checkout\n• Checkout screens no longer get stuck after cancelling a payment",
+  "releaseNotes": "• HitPay redirect is now the default payment method\n• Payment Custom Tab auto-closes and returns you to the app after paying\n• Crash fix: released leaked payment popup WebViews + added memory headroom\n• Gateway returns always land on the in-app payment return screen\n• Pay button ready immediately (no extra selection step)",
   "mandatory": false,
   "minSupportedVersionCode": 1,
-  "generatedAt": "2026-10-06T18:02:14.881Z"
+  "generatedAt": "2026-10-07T01:56:25.905Z"
 }

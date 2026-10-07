@@ -8,6 +8,7 @@ import {
     navigateTo,
     watchPaymentVerification
 } from './paymentRedirect';
+import { PaymentController } from '../services/payment/PaymentController';
 
 /**
  * Server-verified payment return handling for HitPay checkout.
@@ -67,6 +68,24 @@ export interface PaymentReturnInfo {
 const NATIVE_SCHEMES = ['ridersbud:', 'com.sasetin42.ridersbud:'];
 
 /**
+ * §13 RETURN-URL VALIDATION — an HTTPS return is only honoured when it comes
+ * from a verified RidersBUD origin. Without this check any site could mint
+ * `https://attacker.tld/payment/return?...` and drive the payment-return
+ * handler. Custom schemes stay restricted to `ridersbud://payment/return`.
+ */
+const ALLOWED_RETURN_HOSTS = new Set([
+    'ridersbud-10806.web.app',
+    'ridersbud-10806.firebaseapp.com',
+    'ridersbud.web.app',
+    'ridersbud.firebaseapp.com'
+]);
+
+const isTrustedReturnOrigin = (parsed: URL): boolean => {
+    if (parsed.protocol.toLowerCase() !== 'https:') return false;
+    return ALLOWED_RETURN_HOSTS.has(parsed.hostname.toLowerCase());
+};
+
+/**
  * Parse a payment-return URL from either channel. Returns null for
  * non-return URLs so callers can fall through to generic deep-link handling.
  */
@@ -75,6 +94,7 @@ export const parsePaymentReturnUrl = (url: string): PaymentReturnInfo | null => 
     try {
         const parsed = new URL(url);
         const isNative = NATIVE_SCHEMES.includes(parsed.protocol.toLowerCase());
+        if (!isNative && !isTrustedReturnOrigin(parsed)) return null;
         const isReturn = isNative
             ? parsed.host === 'payment' && parsed.pathname.startsWith('/return')
             : parsed.pathname === '/payment/return';
@@ -262,6 +282,19 @@ const matchesMarker = (marker: ReturnType<typeof getPendingPaymentMarker>, info:
 export const handlePaymentReturn = async (url: string): Promise<{ handled: boolean; info?: PaymentReturnInfo }> => {
     const info = parsePaymentReturnUrl(url);
     if (!info) return { handled: false };
+
+    // Spec §7: a verified return URL advances the in-flight session to
+    // RETURN_RECEIVED (verification-only). It never creates a payment and
+    // never marks anything paid — the backend remains authoritative.
+    try {
+        PaymentController.noteReturnReceived({
+            transactionId: info.transactionId,
+            paymentRequestId: info.paymentRequestId,
+            referenceNumber: info.referenceNumber
+        });
+    } catch {
+        // controller unavailable — verification below still proceeds
+    }
 
     const marker = getPendingPaymentMarker();
     const resolved = matchesMarker(marker, info) ? marker : null;

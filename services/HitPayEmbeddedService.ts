@@ -21,6 +21,8 @@ export interface CheckoutSessionParams {
     customerId?: string;
     /** 'downpayment' | 'balance' | 'full' — how settlement applies to the entity. */
     kind?: 'downpayment' | 'balance' | 'full';
+    /** Optional HitPay channel filter (presentation only — never the amount). */
+    paymentMethods?: string[];
     returnRoute: string;
     isSandbox?: boolean;
     settings?: any;
@@ -77,6 +79,7 @@ class HitPayEmbeddedService {
             entityKind,
             entityId,
             kind,
+            referenceNumber,
             expectedAmount: amount,
             currency,
             customerEmail,
@@ -86,6 +89,7 @@ class HitPayEmbeddedService {
             purpose,
             returnRoute,
             isSandbox,
+            paymentMethods: params.paymentMethods,
             onStateChange: (state, msg) => {
                 onStateChange?.(state, msg);
             }
