@@ -2,8 +2,8 @@
   "versionCode": 18,
   "versionName": "1.1.7",
   "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk",
-  "releaseNotes": "• Fixed HitPay payment checkout flow on Android\n• Removed WebView UA restriction for 100% bank & e-wallet compatibility\n• Instant native return to app with server verification",
+  "releaseNotes": "• Payments auto-return to the app\n• 70/30 mechanic commission\n• True fullscreen on Android\n• Works offline (bundled app)",
   "mandatory": false,
   "minSupportedVersionCode": 1,
-  "generatedAt": "2026-10-07T05:03:54.257Z"
+  "generatedAt": "2026-10-07T10:35:50.278Z"
 }

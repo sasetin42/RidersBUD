@@ -469,9 +469,11 @@ public class HitPayPaymentActivity extends AppCompatActivity {
         if (waitingForProviderReturn) {
             waitingForProviderReturn = false;
             broadcastProviderReturned(providerPackageName);
-            // Reveal the RidersBUD activity after the wallet returns. The
-            // Capacitor plugin event then routes the app into server verification.
-            finish();
+            // DO NOT immediately finish() here. Prematurely finishing the activity
+            // causes the host app to navigate away to customer portal before the
+            // payment is confirmed or redirect URL is captured. Keep the payment
+            // container alive and let the redirect or manual completion close it.
+            Log.d(TAG, "Returned from provider app (" + providerPackageName + "), keeping checkout alive.");
         }
     }
 
