@@ -315,6 +315,18 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 }, true);
 
+// Handle stale chunks or network blips during dynamic imports
+window.addEventListener('vite:preloadError', (event) => {
+  console.warn('[Vite] Preload error detected, reloading page to fetch latest chunks...', event);
+  const reloadKey = 'ridersbud_last_chunk_reload';
+  const lastReload = parseInt(sessionStorage.getItem(reloadKey) || '0', 10);
+  const now = Date.now();
+  if (now - lastReload > 10000) {
+    sessionStorage.setItem(reloadKey, String(now));
+    window.location.reload();
+  }
+});
+
 // Disable browser scroll restoration before React mounts — ensures every route starts at top
 if ('scrollRestoration' in window.history) {
   window.history.scrollRestoration = 'manual';

@@ -480,9 +480,18 @@ export const watchTransactionReturnVerification = (params: TransactionWatchParam
         }
     };
 
-    const BACKOFF_DELAYS = [500, 2000, 4000, 8000, 15000, 30000, 30000, 30000];
-    const STEADY_POLL_MS = 20000;
-    const PENDING_POLL_MS = 45000;
+    const isSuccessHint = typeof window !== 'undefined' && (
+        window.location.search.includes('status=completed') ||
+        window.location.search.includes('status=success') ||
+        window.location.search.includes('hitpay=completed') ||
+        window.location.search.includes('hitpay=success')
+    );
+
+    const BACKOFF_DELAYS = isSuccessHint 
+        ? [150, 800, 1800, 3500, 6000, 12000, 20000, 30000]
+        : [500, 2000, 4000, 8000, 15000, 30000, 30000, 30000];
+    const STEADY_POLL_MS = 15000;
+    const PENDING_POLL_MS = 30000;
 
     const scheduleVerify = (delayMs: number) => {
         if (disposed || settled) return;
@@ -515,14 +524,47 @@ export const watchTransactionReturnVerification = (params: TransactionWatchParam
         }
     };
 
-    // 1. Realtime listener on the authoritative transaction record.
-    //    ROOT-CAUSE FIX: after the HitPay redirect the page fully reloads and
-    //    Firebase Auth restores ASYNCHRONOUSLY. Attaching the listener before
-    //    auth resolves triggers permission-denied (firestore.rules require an
-    //    authenticated owner read) and Firestore never re-attaches a listener
-    //    after a permission error — the realtime path died for the whole
-    //    session. We now wait for the first auth resolution (max 8s) first.
+    // 1. Realtime listener on the authoritative transaction record + target entity doc
+    const marker = getPendingPaymentMarker();
+    const effectiveEntityId = marker?.entityId || (referenceNumber ? referenceNumber.split('-')[1] : '');
+    const rawKind = marker?.entityKind || (
+        referenceNumber?.startsWith('BOK-') ? 'booking' :
+        referenceNumber?.startsWith('ORD-') ? 'order' :
+        referenceNumber?.startsWith('LIA-') ? 'liaison' :
+        referenceNumber?.startsWith('RNT-') ? 'rental' :
+        (referenceNumber?.startsWith('TOW-') || referenceNumber?.startsWith('DRV-')) ? 'service-request' : null
+    );
+
+    let entityListenerAttached = false;
+    const attachEntityListener = () => {
+        if (!effectiveEntityId || !rawKind || !firestore || entityListenerAttached || disposed || settled) return;
+        entityListenerAttached = true;
+        try {
+            const collectionName = collectionForEntity(rawKind as PaymentEntityKind);
+            const unsubEntity = onSnapshot(
+                doc(firestore, collectionName, effectiveEntityId),
+                (snap) => {
+                    if (disposed || settled || !snap.exists()) return;
+                    const data: any = snap.data();
+                    if (isPaymentEntityVerified(data)) {
+                        finish('PAID', 'Your payment has been verified by HitPay.', {
+                            referenceNumber: referenceNumber || data.hitpayReference || data.referenceNumber,
+                            entityKind: rawKind,
+                            entityId: effectiveEntityId,
+                            amount: data.paidAmount || data.downpaymentAmount || data.totalAmount,
+                            paymentMethod: data.paymentMethod || 'HitPay (Online)',
+                            paidAt: data.paidAt || data.downpaymentPaidAt || data.balancePaidAt || new Date().toISOString()
+                        });
+                    }
+                },
+                () => { /* ignore */ }
+            );
+            cleanups.push(unsubEntity);
+        } catch { /* ignore */ }
+    };
+
     const attachTxListener = () => {
+        attachEntityListener();
         if (!transactionId || !firestore) return;
         if (listenerAttached || disposed || settled) return;
         listenerAttached = true;
@@ -550,6 +592,7 @@ export const watchTransactionReturnVerification = (params: TransactionWatchParam
     };
 
     const ensureTxListener = () => {
+        attachEntityListener();
         if (!transactionId || !firestore) return;
         if (listenerAttached || disposed || settled) return;
         try {

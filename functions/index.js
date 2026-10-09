@@ -76,6 +76,30 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         ? String(req.query.sandbox || 'false') === 'true'
         : true;
 
+      // Resolve GET verification/status requests against the transaction's
+      // persisted environment. A return URL's sandbox query can be stale or
+      // missing after an app restart, and must not select the wrong API key.
+      if (req.method === 'GET') {
+        const action = String(req.query.action || '');
+        const queryId = String(req.query.id || req.query.paymentRequestId || '');
+        const queryTx = String(req.query.tx || req.query.transactionId || '');
+        const querySession = String(req.query.s || req.query.paymentSessionId || '');
+        const queryReference = String(req.query.ref || req.query.referenceNumber || '');
+        try {
+          const located = await locateTransaction({
+            transactionId: queryTx || (queryId.startsWith('tx_') ? queryId : ''),
+            paymentRequestId: queryId.startsWith('tx_') ? '' : queryId,
+            paymentSessionId: querySession,
+            referenceNumber: queryReference
+          });
+          if (located && located.data.environment) {
+            isSandbox = located.data.environment === 'sandbox';
+          }
+        } catch (lookupError) {
+          console.warn(`[HitPay] Could not resolve environment for GET ${action}:`, lookupError.message);
+        }
+      }
+
       // Payment environment and gateway availability come from admin settings,
       // never from a client-controlled request body. Sandbox is the safe default.
       if (req.method === 'POST') {
@@ -486,7 +510,7 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         for (const candidate of sorted) {
           if (candidate.status === 'PAID') {
             // Already paid for this specific kind or fully paid
-            if (candidate.kind === kind || authAmounts.remainingBalance <= 0) {
+            if (candidate.kind === resolvedKind || authAmounts.remainingBalance <= 0) {
               return res.status(200).json({
                 alreadyPaid: true,
                 status: 'PAID',
@@ -499,7 +523,11 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
             }
           }
 
-          if (activeStatuses.includes(candidate.status) && candidate.paymentRequestId) {
+          const matchesCheckout = candidate.kind === resolvedKind &&
+            Number(candidate.amount) === Number(authoritativeAmount) &&
+            String(candidate.currency || 'PHP').toUpperCase() === String(currency || 'PHP').toUpperCase() &&
+            String(candidate.environment || environment) === environment;
+          if (matchesCheckout && activeStatuses.includes(candidate.status) && candidate.paymentRequestId) {
             const ageMs = Date.now() - ((candidate.createdAt && candidate.createdAt.toMillis) ? candidate.createdAt.toMillis() : 0);
             if (ageMs < 30 * 60 * 1000 && candidate.checkoutUrl && body.force !== true) {
               existingActiveTx = candidate;
@@ -614,9 +642,17 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         });
       }
 
-      if (result.statusCode >= 200 && result.statusCode < 300 && result.json && (result.json.id || result.json.url)) {
+      const returnedRequest = result.json || {};
+      const returnedQr = returnedRequest.qr_code_data || (returnedRequest.qr_code ? { qr_code: returnedRequest.qr_code } : null);
+      const hasPresentableResult = checkoutMode === 'qrph-native'
+        ? Boolean(returnedQr || returnedRequest.url)
+        : checkoutMode === 'gcash'
+          ? Boolean(returnedRequest.direct_link_app_url || returnedRequest.direct_link_url || returnedRequest.url)
+          : Boolean(returnedRequest.url);
+
+      if (result.statusCode >= 200 && result.statusCode < 300 && returnedRequest.id && hasPresentableResult) {
         const pr = result.json;
-        const qrData = pr.qr_code_data || (pr.qr_code ? { qr_code: pr.qr_code } : null);
+        const qrData = returnedQr;
         const directLinkAppUrl = pr.direct_link_app_url || pr.direct_link_url || null;
 
         await txRef.update({
@@ -644,6 +680,7 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
           environment,
           checkoutMode,
           checkoutUrl: pr.url,
+          qrCodeData: qrData,
           dropin: {
             defaultUrl: pr.url,
             domain: isSandbox ? 'sandbox.hit-pay.com' : 'hit-pay.com'

@@ -38,6 +38,9 @@ import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-s
 import { isGeolocationPermissionDenied, safeGetCurrentPosition, safeClearWatch, initPermissionMonitor, onPermissionChange, startPreciseWatch } from './utils/locationHelper';
 import { AppUpdateService, AppVersionInfo } from './services/AppUpdateService';
 import { UpdateModal } from './components/UpdateModal';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { OfflineBanner } from './components/OfflineBanner';
+import { syncDynamicManifest } from './utils/pwaManifestHelper';
 
 const LoginScreen = React.lazy(() => import('./pages/LoginScreen'));
 const SignUpScreen = React.lazy(() => import('./pages/SignUpScreen'));
@@ -143,7 +146,7 @@ const App: React.FC = () => {
 };
 
 const AppInitializer: React.FC = () => {
-    const { loading: dbLoading } = useDatabase();
+    const { db, loading: dbLoading } = useDatabase();
     const [appLoading, setAppLoading] = useState(true);
 
     useEffect(() => {
@@ -157,6 +160,33 @@ const AppInitializer: React.FC = () => {
             return () => clearTimeout(safetyTimer);
         }
     }, [dbLoading]);
+
+    // Dynamic browser tab favicon synchronization from Admin Settings (faviconUrl or appLogoUrl)
+    useEffect(() => {
+        const targetFavicon = db?.settings?.faviconUrl || db?.settings?.appLogoUrl || '/favicon.png';
+        if (!targetFavicon) return;
+
+        const updateLinkRel = (rel: string, href: string) => {
+            let link = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+            if (!link) {
+                link = document.createElement('link');
+                link.rel = rel;
+                document.head.appendChild(link);
+            }
+            link.href = href;
+        };
+
+        updateLinkRel('icon', targetFavicon);
+        updateLinkRel('shortcut icon', targetFavicon);
+        updateLinkRel('apple-touch-icon', db?.settings?.pwaAppleTouchIconUrl || targetFavicon);
+    }, [db?.settings?.faviconUrl, db?.settings?.appLogoUrl, db?.settings?.pwaAppleTouchIconUrl]);
+
+    // Dynamic PWA Web Manifest & Display Mode synchronization
+    useEffect(() => {
+        if (db?.settings) {
+            syncDynamicManifest(db.settings);
+        }
+    }, [db?.settings]);
 
     if (appLoading || dbLoading) {
         return <AppLoadingScreen message={dbLoading ? 'Connecting to server...' : undefined} />;
@@ -443,6 +473,7 @@ const AppContent: React.FC = () => {
         let paymentClosedListener: any = null;
         let paymentErrorListener: any = null;
         let paymentProviderReturnedListener: any = null;
+        let backButtonListener: any = null;
         if (Capacitor.isNativePlatform()) {
             let lastHandledPaymentUrl = '';
             let lastHandledPaymentAt = 0;
@@ -541,6 +572,32 @@ const AppContent: React.FC = () => {
                     if (launch?.url) processIncomingUrl(launch.url);
                 })
                 .catch((err) => console.warn('[Payment] Unable to read app launch URL:', err));
+
+            // Intercept native/hardware Android back button during payment flow
+            CapApp.addListener('backButton', ({ canGoBack }) => {
+                const currentPath = window.location.pathname;
+                const isPaying = currentPath.startsWith('/payment') || 
+                                currentPath.startsWith('/hitpay-checkout') ||
+                                currentPath.startsWith('/service-payment');
+
+                if (isPaying) {
+                    const confirmLeave = window.confirm(
+                        'Are you sure you want to cancel payment? Your transaction has not been completed.'
+                    );
+                    if (confirmLeave) {
+                        clearPendingPaymentMarker();
+                        navigate('/customer-portal');
+                    }
+                    return;
+                }
+
+                if (canGoBack) {
+                    window.history.back();
+                } else {
+                    CapApp.exitApp();
+                }
+            }).then(handle => { backButtonListener = handle; })
+              .catch(err => console.warn('[App] Back button listener unavailable:', err));
         }
 
         return () => {
@@ -554,6 +611,7 @@ const AppContent: React.FC = () => {
             paymentClosedListener?.remove?.();
             paymentErrorListener?.remove?.();
             paymentProviderReturnedListener?.remove?.();
+            backButtonListener?.remove?.();
         };
     }, [navigate]);
 
@@ -712,6 +770,15 @@ const AppContent: React.FC = () => {
 
     // Location enforcement check function wrapped in useCallback
     const checkLocationPermission = useCallback(() => {
+        if (typeof window !== 'undefined') {
+            const path = window.location.pathname || '';
+            if (path.startsWith('/payment') || path.startsWith('/hitpay-checkout')) {
+                setIsLocationBlocked(false);
+                setLocationChecking(false);
+                return;
+            }
+        }
+
         setLocationChecking(true);
         setLocationError(null);
 
@@ -725,8 +792,9 @@ const AppContent: React.FC = () => {
                 lng: position.coords.longitude
             };
 
-            // Save to localStorage for future fallback
+            // Save to localStorage for future fallback and mark as allowed
             localStorage.setItem('ridersbud_last_known_location', JSON.stringify(coords));
+            localStorage.setItem('ridersbud_location_allowed', 'true');
 
             try {
                 if (isAuthenticated && user && updateCustomerLocation) {
@@ -843,7 +911,8 @@ const AppContent: React.FC = () => {
 
         if (isNative) {
             Geolocation.checkPermissions().then((permissions) => {
-                if (permissions.location === 'granted') {
+                if (permissions.location === 'granted' || permissions.coarseLocation === 'granted') {
+                    localStorage.setItem('ridersbud_location_allowed', 'true');
                     Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 })
                         .then((position) => {
                             handleSuccess({
@@ -853,7 +922,7 @@ const AppContent: React.FC = () => {
                                 }
                             } as GeolocationPosition);
                         })
-                        .catch((err) => {
+                        .catch(() => {
                             Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 15000 })
                                 .then((position) => {
                                     handleSuccess({
@@ -863,9 +932,9 @@ const AppContent: React.FC = () => {
                                         }
                                     } as GeolocationPosition);
                                 })
-                                .catch(() => {
+                                .catch((err) => {
                                     handleError({
-                                        code: 2, // POSITION_UNAVAILABLE
+                                        code: 2,
                                         message: err?.message || "Position unavailable",
                                         PERMISSION_DENIED: 1,
                                         POSITION_UNAVAILABLE: 2,
@@ -874,11 +943,12 @@ const AppContent: React.FC = () => {
                                 });
                         });
                 } else {
+                    // Check if already previously allowed to avoid repeated popups
+                    const previouslyAllowed = localStorage.getItem('ridersbud_location_allowed') === 'true';
                     Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] }).then((reqStatus) => {
                         if (reqStatus.location === 'granted' || reqStatus.coarseLocation === 'granted') {
-                            // Run the standard check again
+                            localStorage.setItem('ridersbud_location_allowed', 'true');
                             setLocationChecking(false);
-                            // Set a micro-timeout or direct call
                             Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 })
                                 .then((position) => {
                                     handleSuccess({
@@ -889,20 +959,48 @@ const AppContent: React.FC = () => {
                                     } as GeolocationPosition);
                                 })
                                 .catch(() => {
-                                    runWebGeolocation();
+                                    handleError({
+                                        code: 2,
+                                        message: "Position unavailable",
+                                        PERMISSION_DENIED: 1,
+                                        POSITION_UNAVAILABLE: 2,
+                                        TIMEOUT: 3
+                                    } as GeolocationPositionError);
                                 });
                         } else {
-                            // Fallback to web geolocation instead of blocking immediately
-                            runWebGeolocation();
+                            if (previouslyAllowed) {
+                                // Don't block repeatedly, use cached location
+                                handleError({
+                                    code: 1,
+                                    message: "Location permission denied",
+                                    PERMISSION_DENIED: 1,
+                                    POSITION_UNAVAILABLE: 2,
+                                    TIMEOUT: 3
+                                } as GeolocationPositionError);
+                            } else {
+                                setIsLocationBlocked(true);
+                                setLocationChecking(false);
+                            }
                         }
                     }).catch((err) => {
                         console.warn("[Location] requestPermissions rejected:", err);
-                        // Fallback to web geolocation
-                        runWebGeolocation();
+                        handleError({
+                            code: 1,
+                            message: "Location permission rejected",
+                            PERMISSION_DENIED: 1,
+                            POSITION_UNAVAILABLE: 2,
+                            TIMEOUT: 3
+                        } as GeolocationPositionError);
                     });
                 }
             }).catch(() => {
-                runWebGeolocation();
+                handleError({
+                    code: 2,
+                    message: "Native location unavailable",
+                    PERMISSION_DENIED: 1,
+                    POSITION_UNAVAILABLE: 2,
+                    TIMEOUT: 3
+                } as GeolocationPositionError);
             });
         } else {
             runWebGeolocation();
@@ -914,8 +1012,11 @@ const AppContent: React.FC = () => {
         checkLocationPermissionRef.current = checkLocationPermission;
     }, [checkLocationPermission]);
 
-    // Watch permission state change if API available
+    // Watch permission state change if API available (Web only — native uses Geolocation plugin)
     useEffect(() => {
+        if (Capacitor.isNativePlatform()) return;
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/payment')) return;
+
         if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
             navigator.permissions.query({ name: 'geolocation' })
                 .then((status) => {
@@ -941,6 +1042,7 @@ const AppContent: React.FC = () => {
     // Fix 3: Visibility-change polling fallback for browsers that don't fire onchange after returning from settings
     useEffect(() => {
         const handleVisibilityChange = () => {
+            if (typeof window !== 'undefined' && window.location.pathname.startsWith('/payment')) return;
             if (document.visibilityState === 'visible' && isLocationBlocked && (isAuthenticated || isMechanicAuthenticated)) {
                 setTimeout(() => {
                     checkLocationPermissionRef.current();
@@ -953,6 +1055,10 @@ const AppContent: React.FC = () => {
 
     // Prompt location permissions immediately upon login/session start
     useEffect(() => {
+        if (typeof window !== 'undefined' && (window.location.pathname.startsWith('/payment') || window.location.pathname.startsWith('/hitpay-checkout'))) {
+            setIsLocationBlocked(false);
+            return;
+        }
         const isLoggedIn = isAuthenticated || isMechanicAuthenticated;
         if (isLoggedIn) {
             checkLocationPermissionRef.current();
@@ -1469,7 +1575,12 @@ const AppContent: React.FC = () => {
 
     }, [isAuthenticated, isMechanicAuthenticated, user, mechanic, db, addNotification, openChatIds]);
 
-    if (isLocationBlocked && (isAuthenticated || isMechanicAuthenticated)) {
+    const isPaymentPath = typeof window !== 'undefined' && (
+        window.location.pathname.startsWith('/payment') || 
+        window.location.pathname.startsWith('/hitpay-checkout')
+    );
+
+    if (!isPaymentPath && isLocationBlocked && (isAuthenticated || isMechanicAuthenticated)) {
         const handleLogout = () => {
             if (isAuthenticated) {
                 customerLogout();
@@ -1483,6 +1594,7 @@ const AppContent: React.FC = () => {
             setIsLocationBlocked(false);
             setLocationError(null);
             localStorage.setItem('ridersbud_last_known_location', JSON.stringify(defaultCoords));
+            localStorage.setItem('ridersbud_location_allowed', 'true');
             
             const saveLocation = async () => {
                 try {
@@ -1619,8 +1731,9 @@ const AppContent: React.FC = () => {
             )}
             <GlobalChatListener />
             <ChatOverlay />
-            <React.Suspense fallback={<AppLoadingScreen />}>
-                <Routes>
+            <ErrorBoundary>
+                <React.Suspense fallback={<AppLoadingScreen />}>
+                    <Routes>
                     {/* Admin Routes */}
                     <Route 
                         path="/admin-login" 
@@ -1678,7 +1791,7 @@ const AppContent: React.FC = () => {
                             mechLoading && localStorage.getItem('ridersbud_mechanic_session') === 'true' ? (
                                 <AppLoadingScreen />
                             ) : isMechanicAuthenticated ? (
-                                <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans pb-20 overflow-x-hidden relative">
+                                <div className={`w-full md:max-w-md md:mx-auto min-h-[100dvh] bg-secondary text-white font-sans pb-13 overflow-x-hidden relative`}>
                                     <ErrorBoundary fallback={
                                         <div className="flex flex-col items-center justify-center h-screen p-8 text-center gap-6">
                                             <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center border border-red-500/20">
@@ -1721,12 +1834,12 @@ const AppContent: React.FC = () => {
                             authLoading && localStorage.getItem('ridersbud_customer_session') === 'true' ? (
                                 <AppLoadingScreen />
                             ) : (
-                                <div className={`max-w-md mx-auto bg-secondary text-white font-sans ${
+                                <div className={`w-full md:max-w-md md:mx-auto bg-secondary text-white font-sans ${
                                     isMapScreen 
                                         ? 'h-[100dvh] overflow-hidden' 
                                         : isAuthenticated && !hideCustomerBottomPadding 
-                                            ? 'min-h-screen pb-20' 
-                                            : 'min-h-screen'
+                                            ? 'min-h-[100dvh] pb-13' 
+                                            : 'min-h-[100dvh]'
                                 }`}>
                                     <div className={`${isMapScreen ? 'h-full' : 'min-h-full'} flex-1 flex flex-col`}>
                                         <React.Suspense fallback={<AppLoadingScreen />}>
@@ -1803,7 +1916,7 @@ const AppContent: React.FC = () => {
                     <Route
                         path="/payment/return"
                         element={
-                            <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans flex flex-col">
+                            <div className="w-full md:max-w-md md:mx-auto min-h-[100dvh] bg-secondary text-white font-sans flex flex-col">
                                 <PaymentStatusScreen />
                             </div>
                         }
@@ -1813,7 +1926,7 @@ const AppContent: React.FC = () => {
                     <Route
                         path="/hitpay-checkout"
                         element={
-                            <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans flex flex-col">
+                            <div className="w-full md:max-w-md md:mx-auto min-h-[100dvh] bg-secondary text-white font-sans flex flex-col">
                                 <HitPayCheckoutScreen />
                             </div>
                         }
@@ -1830,7 +1943,7 @@ const AppContent: React.FC = () => {
                             ) : isAuthenticated ? (
                                 <Navigate to="/customer-portal/" replace />
                             ) : (
-                                <div className="max-w-md mx-auto min-h-screen bg-secondary text-white font-sans flex flex-col">
+                                <div className="w-full min-h-[100dvh] bg-secondary text-white font-sans flex flex-col items-center justify-center">
                                     <LoginScreen />
                                 </div>
                             )
@@ -1858,7 +1971,12 @@ const AppContent: React.FC = () => {
                     updateInfo={updateInfo}
                     onClose={() => setShowUpdateModal(false)}
                 />
-            </React.Suspense>
+
+                {/* PWA Install Prompt & Offline Connectivity Banner */}
+                <OfflineBanner />
+                <PWAInstallPrompt />
+                </React.Suspense>
+            </ErrorBoundary>
         </>
     )
 }

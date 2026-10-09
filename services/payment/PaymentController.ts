@@ -264,7 +264,7 @@ export class PaymentController {
             purpose,
             paymentMethods,
             checkoutMode: requestedCheckoutMode = 'dropin',
-            returnRoute = window?.location?.pathname || '/customer-portal/',
+            returnRoute = typeof window !== 'undefined' ? window.location.pathname : '/customer-portal/',
             isSandbox = true,
             userConfirmedRetry = false,
             onStateChange
@@ -340,8 +340,25 @@ export class PaymentController {
                 }
             };
 
+            const buildInAppPortalUrl = (amt?: number) => {
+                const query = new URLSearchParams();
+                if (amt !== undefined && amt !== null) query.set('amount', String(amt));
+                else if (expectedAmount) query.set('amount', String(expectedAmount));
+                if (currency) query.set('currency', currency);
+                if (clientReferenceNumber) query.set('reference', clientReferenceNumber);
+                if (customerEmail) query.set('email', customerEmail);
+                if (customerName) query.set('name', customerName);
+                if (customerPhone) query.set('phone', customerPhone);
+                if (purpose) query.set('purpose', purpose);
+                if (entityKind) query.set('entityKind', entityKind);
+                if (entityId) query.set('entityId', entityId);
+                if (kind) query.set('kind', kind);
+                query.set('sandbox', isSandbox ? 'true' : 'false');
+                return `/hitpay-checkout?${query.toString()}`;
+            };
+
             let resp = await sendCreate(expectedAmount);
-            let data = await resp.json().catch(() => null);
+            let data: any = await resp.json().catch(() => null);
 
             // Self-heal PAYMENT_AMOUNT_MISMATCH: a screen's amount hint can drift
             // from the backend's authoritative computation (explicit
@@ -355,8 +372,12 @@ export class PaymentController {
                     (!Number.isFinite(hinted) || Math.abs(authoritative - hinted) > 0.01)) {
                     console.warn(`[PaymentController] Amount hint ${expectedAmount} != authoritative ${authoritative}; retrying once with the server amount.`);
                     setState('INITIALIZING', 'Updating the amount to match your booking...');
-                    resp = await sendCreate(authoritative);
-                    data = await resp.json().catch(() => null);
+                    try {
+                        resp = await sendCreate(authoritative);
+                        data = await resp.json().catch(() => null);
+                    } catch (retryFetchErr) {
+                        console.warn('[PaymentController] Retry fetch failed:', retryFetchErr);
+                    }
                 }
             }
 
@@ -415,10 +436,30 @@ export class PaymentController {
                 amount,
                 checkoutMode,
                 checkoutUrl,
-                qrCodeData,
+                qrCodeData: rawQrCodeData,
                 directLinkAppUrl,
                 directLinkUrl
             } = data;
+            const qrCodeData = rawQrCodeData || data.qr?.qr_code_data || data.qr?.qr_code || data.qr;
+
+            const canPresentCheckout = checkoutMode === 'qrph_native'
+                ? Boolean(qrCodeData || checkoutUrl)
+                : checkoutMode === 'gcash_direct'
+                    ? Boolean(directLinkAppUrl || directLinkUrl || checkoutUrl)
+                    : Boolean(checkoutUrl);
+            if (!canPresentCheckout) {
+                const err = 'The payment provider did not return a usable checkout. No payment was started; please try again.';
+                console.error('[PaymentController] Incomplete HitPay checkout response:', {
+                    hasTransactionId: Boolean(transactionId),
+                    hasPaymentRequestId: Boolean(paymentRequestId),
+                    checkoutMode,
+                    hasCheckoutUrl: Boolean(checkoutUrl),
+                    hasQrCode: Boolean(qrCodeData),
+                    hasDirectLink: Boolean(directLinkAppUrl || directLinkUrl)
+                });
+                setState('FAILED', err);
+                return { success: false, state: 'FAILED', errorMessage: err };
+            }
 
             // Persist return context before launching native checkout. The
             // Android payment activity emits paymentRedirect rather than
@@ -520,7 +561,13 @@ export class PaymentController {
             // Card / dropin modal or native container
             if (checkoutUrl) {
                 setState('CHECKOUT_OPEN', 'Opening secure checkout...');
-                if (isNative) {
+                // If it's a relative URL (like /hitpay-checkout?...), always navigate internally!
+                if (checkoutUrl.startsWith('/')) {
+                    if (typeof window !== 'undefined') {
+                        window.location.href = checkoutUrl;
+                    }
+                } else if (isNative) {
+                    // Prioritize native embedded HitPayInApp container to run as true in-app sheet without Chrome UI
                     try {
                         await HitPayInApp.openPayment({
                             checkoutUrl,
@@ -529,15 +576,16 @@ export class PaymentController {
                             reference: referenceNumber
                         });
                     } catch (nativeErr: any) {
-                        console.warn('[PaymentController] Native container launch failed; trying secure browser fallback:', nativeErr);
+                        console.warn('[PaymentController] HitPayInApp.openPayment failed; falling back to Browser.open:', nativeErr);
                         try {
-                            await Browser.open({ url: checkoutUrl, toolbarColor: '#FE7803' });
-                            // Custom Tab fallback: the tab has no bridge — watch the
-                            // transaction so settlement closes it and returns the
-                            // customer to the app (marker was persisted above).
+                            await Browser.open({
+                                url: checkoutUrl,
+                                toolbarColor: '#FE7803',
+                                presentationStyle: 'popover'
+                            });
                             watchPendingPaymentReturn();
                         } catch (browserErr: any) {
-                            const errorMessage = browserErr?.message || nativeErr?.message || 'Unable to open HitPay checkout on this device.';
+                            const errorMessage = nativeErr?.message || browserErr?.message || 'Unable to open HitPay checkout on this device.';
                             setState('FAILED', errorMessage);
                             return {
                                 success: false,

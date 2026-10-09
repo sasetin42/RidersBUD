@@ -332,6 +332,35 @@ export interface Settings {
     // Webhooks & Integrations
     webhooks?: WebhookConfig[];
     thirdPartyIntegrations?: Record<string, { enabled: boolean; apiKey?: string; endpoint?: string; status?: string }>;
+
+    // PWA & Mobile App Customization
+    pwaAppName?: string;
+    pwaShortName?: string;
+    pwaDescription?: string;
+    pwaThemeColor?: string;
+    pwaBackgroundColor?: string;
+    pwaStartUrl?: string;
+    pwaDisplayMode?: 'standalone' | 'fullscreen' | 'minimal-ui' | 'browser';
+    pwaLogoUrl?: string;
+    pwaIcon192Url?: string;
+    pwaIcon512Url?: string;
+    pwaSplashLogoUrl?: string;
+    pwaSplashTitle?: string;
+    pwaSplashTagline?: string;
+    pwaInstallModalTitle?: string;
+    pwaInstallModalSubtitle?: string;
+    pwaAutoPromptDelaySeconds?: number;
+    pwaApkDownloadUrl?: string;
+    pwaShowApkDownloadOption?: boolean;
+    pwaScope?: string;
+    pwaOrientation?: 'portrait' | 'landscape' | 'any' | 'portrait-primary' | 'natural';
+    pwaMaskableIconUrl?: string;
+    pwaAppleTouchIconUrl?: string;
+    pwaPromptCooldownDays?: number;
+    pwaCategories?: string[];
+    pwaEnableOfflineCaching?: boolean;
+    pwaEnableLiveShortcuts?: boolean;
+    pwaForceFullscreenInStandalone?: boolean;
 }
 
 export interface WebhookConfig {

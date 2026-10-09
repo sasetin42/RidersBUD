@@ -1,9 +1,9 @@
 {
-  "versionCode": 18,
-  "versionName": "1.1.7",
+  "versionCode": 20,
+  "versionName": "1.1.9",
   "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk",
-  "releaseNotes": "• Payments auto-return to the app\n• 70/30 mechanic commission\n• True fullscreen on Android\n• Works offline (bundled app)",
+  "releaseNotes": "• Hardened HitPay payment crash fixes (lenient URL parsing + clean programmatic close)",
   "mandatory": false,
   "minSupportedVersionCode": 1,
-  "generatedAt": "2026-10-07T10:35:50.278Z"
+  "generatedAt": "2026-10-09T11:57:23.976Z"
 }

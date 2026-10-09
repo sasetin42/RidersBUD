@@ -1,7 +1,7 @@
 {
   "name": "ridersbud",
   "private": true,
-  "version": "1.1.7",
+  "version": "1.1.9",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,9 @@
     "fetch-live-data": "tsx scripts/fetchLiveData.ts",
     "release:apk": "node scripts/release-apk.mjs",
     "sync-data": "tsx scripts/syncData.ts",
+    "sync:ios": "cap sync ios && node scripts/ensure-ios-hitpay-plugin.mjs",
+    "sync:android": "cap sync android",
+    "postinstall": "node scripts/ensure-ios-hitpay-plugin.mjs || true",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

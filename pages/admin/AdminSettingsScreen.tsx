@@ -17,6 +17,7 @@ import { SettingsToolbar } from '../../components/admin/settings/SettingsToolbar
 
 import { GeneralSettingsTab } from '../../components/admin/settings/tabs/GeneralSettingsTab';
 import { AppearanceSettingsTab } from '../../components/admin/settings/tabs/AppearanceSettingsTab';
+import { PwaSettingsTab } from '../../components/admin/settings/tabs/PwaSettingsTab';
 import { OperationsSettingsTab } from '../../components/admin/settings/tabs/OperationsSettingsTab';
 import { ServicesSettingsTab } from '../../components/admin/settings/tabs/ServicesSettingsTab';
 import { FinancialsSettingsTab } from '../../components/admin/settings/tabs/FinancialsSettingsTab';
@@ -36,7 +37,7 @@ import { WebhooksTab } from '../../components/admin/settings/tabs/WebhooksTab';
 import { DataManagementTab } from '../../components/admin/settings/tabs/DataManagementTab';
 
 import {
-    Globe, Layout, Clock, DollarSign, Bell, Server, Sparkles, MapPin, 
+    Globe, Layout, Smartphone, Clock, DollarSign, Bell, Server, Sparkles, MapPin, 
     FileCheck, MessageSquare, Shield, Lock, History, HardDrive, 
     Download, Layers, Webhook, Database, ChevronRight, CheckCircle2, SlidersHorizontal
 } from 'lucide-react';
@@ -44,6 +45,7 @@ import {
 type SettingsTab = 
     | 'general' 
     | 'appearance' 
+    | 'pwa' 
     | 'operations' 
     | 'services'
     | 'financials' 
@@ -73,6 +75,7 @@ interface TabConfig {
 const TABS: TabConfig[] = [
     { id: 'general', label: 'General', icon: <Globe size={17} />, description: 'App identity & contacts', keywords: ['name', 'logo', 'favicon', 'address', 'timezone', 'language', 'avatar', 'social'] },
     { id: 'appearance', label: 'Appearance', icon: <Layout size={17} />, description: 'Logos & Branding', keywords: ['theme', 'dark', 'light', 'color', 'accent', 'css', 'radius', 'density'] },
+    { id: 'pwa', label: 'PWA & Mobile App', icon: <Smartphone size={17} />, description: 'Installation, Icons & Splash', keywords: ['pwa', 'install', 'splash', 'logo', 'mobile', 'apk', 'manifest', 'download', 'icon'] },
     { id: 'operations', label: 'Operations', icon: <Clock size={17} />, description: 'Booking logic & mechanics', keywords: ['booking', 'hours', 'slot', 'cancellation', 'radius', 'dispatch', 'modules'] },
     { id: 'services', label: 'Services Config', icon: <SlidersHorizontal size={17} />, description: 'Rental, Driver, Liaison & Towing', keywords: ['rental', 'driver', 'liaison', 'towing', 'rates', 'fees', 'car rental', 'driver for hire'] },
     { id: 'financials', label: 'Financials', icon: <DollarSign size={17} />, description: 'Currency, fees & HitPay', keywords: ['currency', 'vat', 'tax', 'hitpay', 'gcash', 'payout', 'fee', 'invoice'] },
@@ -612,6 +615,15 @@ const AdminSettingsScreen: React.FC = () => {
 
                     {activeTab === 'appearance' && (
                         <AppearanceSettingsTab
+                            settings={localSettings}
+                            onChange={handleFieldChange}
+                            onUploadAsset={handleUploadAsset}
+                            onRemoveAsset={handleRemoveAsset}
+                        />
+                    )}
+
+                    {activeTab === 'pwa' && (
+                        <PwaSettingsTab
                             settings={localSettings}
                             onChange={handleFieldChange}
                             onUploadAsset={handleUploadAsset}

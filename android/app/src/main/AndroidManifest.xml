@@ -8,6 +8,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/AppTheme">
 
         <activity
@@ -44,23 +45,32 @@
                 <data android:scheme="ridersbud" android:host="payment" android:pathPrefix="/return" />
             </intent-filter>
 
-            <!-- App Links / HTTPS Domain Deep Linking (restricted to /payment/return to avoid hijacking normal routes) -->
+            <!-- App Links / HTTPS Domain Deep Linking (restricted to /payment/return to avoid hijacking normal routes).
+                 BOTH hosts are registered: the iOS entitlements and the client
+                 return-host allow-list (utils/paymentReturn.ts) already accept
+                 ridersbud-10806.web.app AND ridersbud-10806.firebaseapp.com.
+                 Firebase Hosting serves the app on either host, so a HitPay
+                 return landing on .firebaseapp.com MUST also resolve to this
+                 activity — otherwise it opened Chrome mid-payment and stranded
+                 the customer. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="ridersbud-10806.web.app" android:pathPrefix="/payment/return" />
+                <data android:scheme="https" android:host="ridersbud-10806.firebaseapp.com" android:pathPrefix="/payment/return" />
             </intent-filter>
 
         </activity>
 
-        <!-- Native In-App Payment Container Activity -->
+        <!-- Native In-App Payment Container Activity (isolated process prevents OOM renderer death in main app) -->
         <activity
             android:name=".payment.HitPayPaymentActivity"
             android:label="Secure Payment"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density"
             android:launchMode="singleTop"
+            android:process=":payment"
             android:exported="false" />
 
         <provider

@@ -3,8 +3,10 @@ package com.sasetin42.ridersbud.payment;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.IntentFilter;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -36,10 +38,14 @@ import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Native Payment Activity hosting a hardened Android WebView for HitPay Drop-In & Hosted Checkout.
@@ -50,6 +56,13 @@ public class HitPayPaymentActivity extends AppCompatActivity {
 
     private static final String TAG = "RidersBUDPay";
 
+    /**
+     * True while a HitPayPaymentActivity instance is alive in ANY process.
+     * The plugin (main process) reads this to decide whether closePayment()
+     * should send a close-request broadcast or a direct "closed" event.
+     */
+    public static final AtomicBoolean isAlive = new AtomicBoolean(false);
+
     public static final String EXTRA_CHECKOUT_URL = "extra_checkout_url";
     public static final String EXTRA_SESSION_ID = "extra_session_id";
     public static final String EXTRA_AMOUNT = "extra_amount";
@@ -57,6 +70,14 @@ public class HitPayPaymentActivity extends AppCompatActivity {
 
     public static final String ACTION_PAYMENT_REDIRECT = "com.sasetin42.ridersbud.PAYMENT_REDIRECT";
     public static final String ACTION_PAYMENT_CLOSED = "com.sasetin42.ridersbud.PAYMENT_CLOSED";
+
+    /**
+     * The payment activity lives in the isolated ":payment" process, so the
+     * Capacitor plugin (main process) cannot directly finish() it.
+     * closePayment() broadcasts this action; the activity listens for it here
+     * and dismisses itself with the standard "payment closed" event.
+     */
+    public static final String ACTION_PAYMENT_CLOSE_REQUESTED = "com.sasetin42.ridersbud.PAYMENT_CLOSE_REQUESTED";
     public static final String ACTION_PAYMENT_ERROR = "com.sasetin42.ridersbud.PAYMENT_ERROR";
     public static final String ACTION_PROVIDER_OPENED = "com.sasetin42.ridersbud.PROVIDER_OPENED";
     public static final String ACTION_PROVIDER_RETURNED = "com.sasetin42.ridersbud.PROVIDER_RETURNED";
@@ -89,6 +110,25 @@ public class HitPayPaymentActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Smooth Edge-to-Edge immersive mobile layout for payment
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            getWindow().getAttributes().layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        }
+        androidx.core.view.WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        if (controller != null) {
+            controller.setAppearanceLightStatusBars(false);
+            controller.setAppearanceLightNavigationBars(false);
+        }
+
+        isAlive.set(true);
+
         String checkoutUrl = getIntent().getStringExtra(EXTRA_CHECKOUT_URL);
         String sessionId = getIntent().getStringExtra(EXTRA_SESSION_ID);
         String amount = getIntent().getStringExtra(EXTRA_AMOUNT);
@@ -112,14 +152,21 @@ public class HitPayPaymentActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         rootLayout.setBackgroundColor(Color.parseColor("#121212"));
 
-        // Native Top Bar
+        // Native Top Bar - sleek, compact, fits system status bar
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(56)));
-        topBar.setBackgroundColor(Color.parseColor("#1A1A1A"));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        topBar.setBackgroundColor(Color.parseColor("#161822"));
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dpToPx(16), 0, dpToPx(16), 0);
+        topBar.setPadding(dpToPx(16), dpToPx(10), dpToPx(16), dpToPx(10));
+
+        // Adjust topBar padding for status bar insets
+        ViewCompat.setOnApplyWindowInsetsListener(topBar, (v, insets) -> {
+            int statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            v.setPadding(dpToPx(16), statusBarHeight + dpToPx(8), dpToPx(16), dpToPx(8));
+            return insets;
+        });
 
         // Close / Cancel Button
         TextView closeBtn = new TextView(this);
@@ -178,6 +225,13 @@ public class HitPayPaymentActivity extends AppCompatActivity {
         webView.setBackgroundColor(Color.WHITE);
         rootLayout.addView(webView);
 
+        // Apply navigation bar window insets to rootLayout bottom
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
+            int navBarHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            v.setPadding(0, 0, 0, navBarHeight);
+            return insets;
+        });
+
         setContentView(rootLayout);
 
         // Hardening WebView configuration
@@ -197,7 +251,39 @@ public class HitPayPaymentActivity extends AppCompatActivity {
 
         // Load the checkout or dropin URL
         webView.loadUrl(checkoutUrl);
+
+        // Listen for a programmatic close request from the plugin (other process).
+        // Without this listener, closePayment() only reached the JS layer and the
+        // native payment sheet stayed open after the customer finished paying.
+        closeRequestReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                runOnUiThread(() -> {
+                    try {
+                        webView.stopLoading();
+                    } catch (Exception ignored) { }
+                    broadcastClosed("Programmatically closed");
+                    finish();
+                });
+            }
+        };
+
+        Context appCtx = getApplicationContext();
+        IntentFilter closeFilter = new IntentFilter(ACTION_PAYMENT_CLOSE_REQUESTED);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appCtx.registerReceiver(closeRequestReceiver, closeFilter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                appCtx.registerReceiver(closeRequestReceiver, closeFilter);
+            }
+        } catch (Exception e) {
+            closeRequestReceiver = null;
+            Log.w(TAG, "Close-request receiver registration failed: " + e.getMessage());
+        }
     }
+
+    /** Application-context receiver for closePayment() requests (see onCreate). */
+    private BroadcastReceiver closeRequestReceiver;
 
     @SuppressLint("SetJavaScriptEnabled")
     private void configureHardenedWebView() {
@@ -570,6 +656,13 @@ public class HitPayPaymentActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (closeRequestReceiver != null) {
+            try {
+                unregisterReceiver(closeRequestReceiver);
+            } catch (Exception ignored) { }
+            closeRequestReceiver = null;
+        }
+        isAlive.set(false);
         destroyWebViewSafely();
         super.onDestroy();
     }

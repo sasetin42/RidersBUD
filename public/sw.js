@@ -1,210 +1,232 @@
-const CACHE_NAME = 'ridersbud-v6';
+const CACHE_NAME = 'ridersbud-pwa-v7';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/offline.html',
+  '/manifest.webmanifest',
   '/manifest.json',
   '/favicon.png',
-  '/riders-logo.png'
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon-180.png',
+  '/leaflet/leaflet.css',
+  '/leaflet/MarkerCluster.css',
+  '/leaflet/MarkerCluster.Default.css'
 ];
 
-// Immediately self-destruct on localhost (dev mode) to prevent stale SW errors
-if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1') {
-  self.registration?.unregister();
-  // Don't register any event handlers in dev mode
-} else {
+// URLs/patterns that must NEVER be cached by the service worker
+const SECURITY_EXCLUSIONS = [
+  'identitytoolkit.googleapis.com',
+  'securetoken.googleapis.com',
+  'firestore.googleapis.com',
+  'firebaseinstallations.googleapis.com',
+  '/api/hitpay-proxy',
+  '/api/hitpay-webhook',
+  '/payment/webhook',
+  '/api/smtp-bridge',
+  'hit-pay.com',
+  'stripe.com',
+  'pusher.com',
+  'evervault.com',
+  'accounts:lookup'
+];
 
-// Handle message events without indicating async — prevents "listener indicated" errors
-self.addEventListener('message', (event) => {
-  event.waitUntil(Promise.resolve());
-});
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
-      );
-    })
-  );
-  self.clients.claim();
-});
-
-function isViteInternal(url) {
-  return url.pathname.startsWith('/@vite') ||
-    url.pathname.startsWith('/@react-refresh') ||
-    url.pathname.startsWith('/__vite') ||
-    url.search.includes('t=');
+function isSecurityExcluded(urlStr) {
+  return SECURITY_EXCLUSIONS.some(term => urlStr.includes(term));
 }
 
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+// Development safeguard: Immediately unregister and bypass on localhost
+if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1') {
+  self.registration?.unregister();
+} else {
 
-  if (url.origin !== location.origin) return;
-  if (request.method !== 'GET') return;
+  // Communication message channel handling
+  self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+      self.skipWaiting();
+    }
+  });
 
-  // 1. Navigation / HTML Requests (SPA Routes like /customer-portal/profile, /customer-portal/*, etc.)
-  const isHtmlRequest = request.mode === 'navigate' ||
-    (request.headers.get('accept') && request.headers.get('accept').includes('text/html')) ||
-    (!url.pathname.includes('.') && !url.pathname.startsWith('/api/'));
-
-  if (isHtmlRequest) {
-    event.respondWith(
-      (async () => {
-        try {
-          const networkResponse = await fetch(request);
-          if (networkResponse && (networkResponse.ok || networkResponse.status === 304)) {
-            const copy = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy)).catch(() => {});
-            return networkResponse;
-          }
-        } catch {
-          // Network failed or offline - fall back to cached shell
-        }
-
-        const cache = await caches.open(CACHE_NAME);
-        const cached = (await cache.match('/index.html')) || (await cache.match('/'));
-        if (cached) return cached;
-
-        try {
-          const shellResponse = await fetch('/index.html');
-          if (shellResponse && shellResponse.ok) {
-            const copy = shellResponse.clone();
-            cache.put('/index.html', copy).catch(() => {});
-            return shellResponse;
-          }
-        } catch {
-          // Last resort fallback
-        }
-
-        // Return a clean HTML offline shell rather than Response.error()
-        return new Response(
-          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>RidersBUD</title></head><body><div id="root"></div></body></html>',
-          { headers: { 'Content-Type': 'text/html' } }
-        );
-      })()
+  // Installation: Pre-cache static shell & offline fallback
+  self.addEventListener('install', (event) => {
+    event.waitUntil(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.addAll(STATIC_ASSETS).catch((err) => {
+          console.warn('[SW] Non-critical static cache warning:', err);
+        });
+      })
     );
-    return;
+    self.skipWaiting();
+  });
+
+  // Activation: Clean up obsolete caches and claim clients immediately
+  self.addEventListener('activate', (event) => {
+    event.waitUntil(
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => name !== CACHE_NAME)
+            .map((name) => caches.delete(name))
+        );
+      }).then(() => self.clients.claim())
+    );
+  });
+
+  // Helper to detect Vite HMR / internal files
+  function isViteInternal(url) {
+    return url.pathname.startsWith('/@vite') ||
+      url.pathname.startsWith('/@react-refresh') ||
+      url.pathname.startsWith('/__vite') ||
+      url.search.includes('t=');
   }
 
-  if (isViteInternal(url)) return;
-  if (request.headers.get('upgrade') === 'websocket') return;
-  if (url.pathname.match(/\.(ts|tsx|jsx|vue|svelte)$/)) return;
+  // Fetch interceptor
+  self.addEventListener('fetch', (event) => {
+    const { request } = event;
+    const url = new URL(request.url);
 
-  const safeRespond = (promise) => {
-    event.respondWith(
-      promise.catch(async () => {
-        try {
-          return await fetch(request);
-        } catch {
+    // Bypass non-GET requests immediately (mutations, posts, payments, webhook calls)
+    if (request.method !== 'GET') return;
+
+    // Strict Security Exclusions: Auth tokens, payment gateways, live cloud functions
+    if (isSecurityExcluded(request.url)) return;
+
+    // WebSocket or Vite development channels
+    if (request.headers.get('upgrade') === 'websocket') return;
+    if (isViteInternal(url)) return;
+    if (url.pathname.match(/\.(ts|tsx|jsx|vue|svelte)$/)) return;
+
+    // 1. Navigation / HTML Requests (SPA Routes like /customer-portal/*, /mechanic-portal/*, etc.)
+    const isNavigation = request.mode === 'navigate' ||
+      (request.headers.get('accept') && request.headers.get('accept').includes('text/html'));
+
+    if (isNavigation) {
+      event.respondWith(
+        (async () => {
+          try {
+            // Network-first for navigations so users always get fresh app updates
+            const networkResponse = await fetch(request);
+            if (networkResponse && (networkResponse.ok || networkResponse.status === 304)) {
+              const copy = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy)).catch(() => {});
+              return networkResponse;
+            }
+          } catch {
+            // Network failed or offline - fall back to cached application shell
+          }
+
+          const cache = await caches.open(CACHE_NAME);
+          const cachedShell = (await cache.match('/index.html')) || (await cache.match('/'));
+          if (cachedShell) return cachedShell;
+
+          // If index shell is not cached, return branded offline.html
+          const offlineFallback = await cache.match('/offline.html');
+          if (offlineFallback) return offlineFallback;
+
+          return new Response(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>RidersBUD Offline</title></head><body style="background:#0A0A0C;color:#FFF;text-align:center;padding:40px;font-family:sans-serif;"><h1>RidersBUD Offline</h1><p>Please check your internet connection.</p></body></html>',
+            { headers: { 'Content-Type': 'text/html' } }
+          );
+        })()
+      );
+      return;
+    }
+
+    // 2. Only cache same-origin assets or specific static CDNs (e.g. google fonts, openstreetmap tiles)
+    const isSameOrigin = url.origin === location.origin;
+    const isFontCdn = url.hostname.includes('fonts.googleapis.com') || url.hostname.includes('fonts.gstatic.com');
+
+    if (!isSameOrigin && !isFontCdn) {
+      return;
+    }
+
+    // 3. Static Assets (images, fonts, css, scripts)
+    // Stale-While-Revalidate for images and fonts
+    if (url.pathname.match(/\.(png|jpg|jpeg|svg|webp|woff2?|ico)$/) || isFontCdn) {
+      event.respondWith(
+        caches.open(CACHE_NAME).then(async (cache) => {
+          const cached = await cache.match(request);
+          const fetchPromise = fetch(request).then((networkResponse) => {
+            if (networkResponse && networkResponse.ok) {
+              cache.put(request, networkResponse.clone()).catch(() => {});
+            }
+            return networkResponse;
+          }).catch(() => null);
+
+          return cached || (await fetchPromise) || new Response(null, { status: 404 });
+        })
+      );
+      return;
+    }
+
+    // Network-First for JS and CSS bundles with cache fallback (to prevent stale version locking)
+    if (url.pathname.match(/\.(js|css)$/)) {
+      event.respondWith(
+        fetch(request).then((networkResponse) => {
+          if (networkResponse && networkResponse.ok) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+          }
+          return networkResponse;
+        }).catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
           return new Response(null, { status: 504, statusText: 'Gateway Timeout' });
+        })
+      );
+      return;
+    }
+
+    // Default: fetch from network
+    event.respondWith(
+      fetch(request).catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        return new Response(null, { status: 504, statusText: 'Gateway Timeout' });
+      })
+    );
+  });
+
+  // Push notifications handling
+  self.addEventListener('push', (event) => {
+    let payload = { title: 'RidersBUD', body: 'New notification', url: '/' };
+    try {
+      if (event.data) {
+        payload = Object.assign(payload, event.data.json());
+      }
+    } catch {
+      if (event.data) payload.body = event.data.text();
+    }
+
+    const options = {
+      body: payload.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      vibrate: [100, 50, 100],
+      data: { url: payload.url || '/' }
+    };
+
+    event.waitUntil(
+      self.registration.showNotification(payload.title, options)
+    );
+  });
+
+  self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const targetUrl = event.notification.data?.url || '/';
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+        for (const client of clientList) {
+          if (client.url === targetUrl && 'focus' in client) {
+            return client.focus();
+          }
+        }
+        if (clients.openWindow) {
+          return clients.openWindow(targetUrl);
         }
       })
     );
-  };
+  });
 
-  if (url.pathname.startsWith('/api/')) {
-    safeRespond(networkFirst(request));
-    return;
-  }
-
-  if (url.pathname.includes('/fonts/')) {
-    safeRespond(cacheFirst(request));
-    return;
-  }
-
-  if (url.pathname.match(/\.(png|jpg|jpeg|svg|webp|woff2?|ico)$/)) {
-    safeRespond(staleWhileRevalidate(request));
-    return;
-  }
-
-  if (url.pathname.match(/\.(js|css)$/)) {
-    safeRespond(networkFirst(request));
-    return;
-  }
-
-  safeRespond(networkFirst(request));
-});
-
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone()).catch(() => {});
-    }
-    return response;
-  } catch {
-    return new Response(null, { status: 404, statusText: 'Not Found' });
-  }
-}
-
-async function networkFirst(request) {
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone()).catch(() => {});
-    }
-    return response;
-  } catch {
-    const cached = await caches.match(request);
-    if (cached) return cached;
-    return new Response(null, { status: 504, statusText: 'Gateway Timeout' });
-  }
-}
-
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
-  if (cached) {
-    fetch(request).then((response) => {
-      if (response && response.ok) cache.put(request, response.clone()).catch(() => {});
-    }).catch(() => {});
-    return cached;
-  }
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) cache.put(request, response.clone()).catch(() => {});
-    return response;
-  } catch {
-    return new Response(null, { status: 404, statusText: 'Not Found' });
-  }
-}
-
-self.addEventListener('push', (event) => {
-  const data = event.data?.json() || {};
-  const options = {
-    body: data.body || 'New notification',
-    icon: '/favicon.png',
-    badge: '/favicon.png',
-    vibrate: [100, 50, 100],
-    data: { url: data.url || '/' }
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'RidersBud', options)
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(
-    clients.openWindow(event.notification.data?.url || '/')
-  );
-});
-
-} // end of self-destruct conditional (localhost dev mode)
+} // end conditional

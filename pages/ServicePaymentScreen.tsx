@@ -241,8 +241,17 @@ const ServicePaymentScreen: React.FC = () => {
         const status = queryParams.get('status') || queryParams.get('hitpay');
 
         if ((status === 'completed' || status === 'success') && !isProcessing && !finalizeRun.current) {
+            // MOBILE CRASH FIX: after the WebView is backgrounded/killed during
+            // checkout, sessionStorage may hold truncated JSON. An unguarded
+            // JSON.parse threw inside this effect and blanked the app via the
+            // ErrorBoundary. Parse defensively and always clear the key.
             const pendingTx = sessionStorage.getItem('pendingHitPayServiceTx');
-            const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
+            let sessionData: any = null;
+            try {
+                sessionData = pendingTx ? JSON.parse(pendingTx) : null;
+            } catch (parseErr) {
+                console.warn('[ServicePayment] Discarding corrupt pending HitPay transaction:', parseErr);
+            }
             const targetBookingId = sessionData?.bookingId || bookingIdParam || booking?.id;
 
             if (targetBookingId) {
@@ -265,7 +274,12 @@ const ServicePaymentScreen: React.FC = () => {
             // when this app session actually started the payment (forged deep links no-op).
             const pendingTx = sessionStorage.getItem('pendingHitPayServiceTx');
             if (!pendingTx && !getPendingPaymentMarker()) return;
-            const sessionData = pendingTx ? JSON.parse(pendingTx) : null;
+            let sessionData: any = null;
+            try {
+                sessionData = pendingTx ? JSON.parse(pendingTx) : null;
+            } catch (parseErr) {
+                console.warn('[ServicePayment] Discarding corrupt pending HitPay transaction (cancel path):', parseErr);
+            }
             sessionStorage.removeItem('pendingHitPayServiceTx');
             sessionStorage.removeItem('pendingHitPayBookingTx');
             sessionStorage.removeItem('pendingHitPayTx');

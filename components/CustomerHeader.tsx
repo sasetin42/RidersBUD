@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 import CustomerSearchModal from './CustomerSearchModal';
-import { Settings, LogOut, ChevronLeft, User, Search } from 'lucide-react';
+import { Settings, LogOut, ChevronLeft, User, Search, Smartphone } from 'lucide-react';
 import { getProfileImage } from '../utils/imageConstants';
-import { useScrollDirection } from '../hooks/useScrollDirection';
 import { useDatabase } from '../context/DatabaseContext';
 
 interface CustomerHeaderProps {
@@ -22,57 +21,52 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
     const navigate = useNavigate();
     const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
-    const scrollDirection = useScrollDirection();
-    // Match the BottomNav behaviour: hide while scrolling DOWN (content view
-    // expands), reappear on scroll UP. It used to hide on 'up', which made the
-    // header vanish on every upward swipe — the exact opposite of the footer.
-    const isHidden = scrollDirection === 'down';
-
     const handleLogout = () => {
         logout();
         navigate('/login');
     };
 
+    // Steady Header: pinned firmly at the top without disappearing or jumping on scroll
     return (
         <header
-            className={`sticky top-0 px-4 py-3 z-50 bg-[#121212]/95 backdrop-blur-md flex items-center justify-between border-b border-white/5 shadow-sm transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}
-            style={{ paddingTop: 'calc(0.75rem + var(--safe-top))', paddingBottom: '0.75rem' }}
+            className="sticky top-0 px-3.5 z-50 bg-[#121212]/95 backdrop-blur-md flex items-center justify-between border-b border-white/5 shadow-sm min-h-[3rem] h-[calc(3rem+var(--safe-top))]"
+            style={{ paddingTop: 'var(--safe-top, 0px)' }}
         >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
                 {showBackButton && (
                     <button
                         onClick={onBack || (() => navigate(-1))}
-                        className="p-1.5 -ml-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95"
+                        className="p-1 -ml-1 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95 shrink-0"
                     >
                         <ChevronLeft className="h-5 w-5" />
                     </button>
                 )}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
                     {/* Live Logo of RidersBUD */}
                     <img 
                         src={db?.settings?.customerHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png"}
                         alt="RidersBUD Logo"
-                        width={36}
-                        height={36}
-                        className="w-9 h-9 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
+                        width={30}
+                        height={30}
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
                         onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
                     />
-                    <div>
-                        <h1 className="text-base font-black text-white tracking-tight leading-none">{title}</h1>
-                        {subtitle && <p className="text-[10px] text-gray-400 font-medium mt-0.5">{subtitle}</p>}
+                    <div className="min-w-0 truncate">
+                        <h1 className="text-sm sm:text-base font-black text-white tracking-tight leading-none truncate">{title}</h1>
+                        {subtitle && <p className="text-[10px] text-gray-400 font-medium mt-0.5 truncate">{subtitle}</p>}
                     </div>
                 </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
                 {/* Search Icon Widget Button (inline before Notification Bell) */}
                 <button
                     onClick={() => setIsSearchOpen(true)}
-                    className="p-2.5 rounded-xl text-gray-300 hover:text-white hover:bg-white/5 active:scale-95 transition-all flex items-center justify-center"
+                    className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/5 active:scale-95 transition-all flex items-center justify-center"
                     aria-label="Search services, products, and tools"
                     title="Search services, products, and tools"
                 >
-                    <Search className="h-5 w-5" />
+                    <Search className="h-4.5 w-4.5" />
                 </button>
 
                 {/* Notification Bell - fully functional */}
@@ -82,7 +76,7 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                 <div className="relative">
                     <button
                         onClick={() => setIsProfileOpen(!isProfileOpen)}
-                        className="w-8 h-8 rounded-full border-2 border-white/10 overflow-hidden shadow-2xl focus:outline-none focus:ring-2 focus:ring-[#FE7803]/50 transition-all"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white/15 overflow-hidden shadow-md focus:outline-none focus:ring-2 focus:ring-[#FE7803]/50 transition-all block"
                     >
                         <img
                             src={getProfileImage(user?.picture, user?.name)}
@@ -113,6 +107,16 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                                 >
                                     <Settings size={15} />
                                     Account Settings
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setIsProfileOpen(false);
+                                        window.dispatchEvent(new CustomEvent('open-pwa-install'));
+                                    }}
+                                    className="w-full px-4 py-3 text-left text-sm text-orange-400 hover:bg-orange-500/10 hover:text-orange-300 flex items-center gap-2.5 transition-colors"
+                                >
+                                    <Smartphone size={15} />
+                                    Install RidersBUD App
                                 </button>
                                 <button
                                     onClick={handleLogout}

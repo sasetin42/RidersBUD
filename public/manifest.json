@@ -1,90 +1,81 @@
 {
-    "name": "RidersBud - Car Repair & Mechanics",
-    "short_name": "RidersBud",
-    "description": "Find and book local mechanics, manage your garage, and track service history",
-    "start_url": "/",
-    "scope": "/",
-    "display": "standalone",
-    "display_override": [
-        "window-controls-overlay",
-        "minimal-ui"
-    ],
-    "background_color": "#171617",
-    "theme_color": "#FE7803",
-    "orientation": "portrait-primary",
-    "categories": ["utilities", "travel", "shopping"],
-    "icons": [
+  "name": "RidersBUD",
+  "short_name": "RidersBUD",
+  "description": "RidersBUD mobile delivery and rider platform",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#FE7803",
+  "background_color": "#0A0A0C",
+  "lang": "en",
+  "categories": [
+    "utilities",
+    "travel",
+    "shopping"
+  ],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/apple-touch-icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Find Mechanic",
+      "short_name": "Find",
+      "description": "Find nearby mechanics",
+      "url": "/find-mechanic",
+      "icons": [
         {
-            "src": "/favicon.png",
-            "sizes": "72x72",
-            "type": "image/png"
-        },
-        {
-            "src": "/favicon.png",
-            "sizes": "96x96",
-            "type": "image/png"
-        },
-        {
-            "src": "/favicon.png",
-            "sizes": "128x128",
-            "type": "image/png"
-        },
-        {
-            "src": "/favicon.png",
-            "sizes": "144x144",
-            "type": "image/png"
-        },
-        {
-            "src": "/favicon.png",
-            "sizes": "152x152",
-            "type": "image/png"
-        },
-        {
-            "src": "/favicon.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "/favicon.png",
-            "sizes": "384x384",
-            "type": "image/png"
-        },
-        {
-            "src": "/favicon.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "any maskable"
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
         }
-    ],
-    "screenshots": [
+      ]
+    },
+    {
+      "name": "My Garage",
+      "short_name": "Garage",
+      "description": "View your vehicles",
+      "url": "/garage",
+      "icons": [
         {
-            "src": "/riders-logo.png",
-            "sizes": "1280x720",
-            "type": "image/png",
-            "form_factor": "wide"
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
         }
-    ],
-    "shortcuts": [
+      ]
+    },
+    {
+      "name": "Bookings",
+      "short_name": "Bookings",
+      "description": "View your bookings",
+      "url": "/booking-history",
+      "icons": [
         {
-            "name": "Find Mechanic",
-            "short_name": "Find",
-            "description": "Find nearby mechanics",
-            "url": "/find-mechanic",
-            "icons": [{ "src": "/favicon.png", "sizes": "96x96" }]
-        },
-        {
-            "name": "My Garage",
-            "short_name": "Garage",
-            "description": "View your vehicles",
-            "url": "/garage",
-            "icons": [{ "src": "/favicon.png", "sizes": "96x96" }]
-        },
-        {
-            "name": "Bookings",
-            "short_name": "Bookings",
-            "description": "View your bookings",
-            "url": "/booking-history",
-            "icons": [{ "src": "/favicon.png", "sizes": "96x96" }]
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
         }
-    ]
+      ]
+    }
+  ]
 }

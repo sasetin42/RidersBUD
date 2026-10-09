@@ -23,6 +23,7 @@ import {
     deleteField
 } from 'firebase/firestore';
 import { auth } from '../firebase';
+import { storageService } from '../services/StorageService';
 import { onAuthStateChanged } from 'firebase/auth';
 import { paymentService } from '../services/PaymentService';
 import { sendEmail, sendTemplatedEmail } from '../services/emailService';
@@ -3185,9 +3186,7 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
     };
 
     const uploadFile = async (file: File, path: string): Promise<string> => {
-        const fileRef = storageRef(storage, path);
-        await uploadBytes(fileRef, file);
-        return await getDownloadURL(fileRef);
+        return await storageService.uploadFile(path, file);
     };
 
     const addBanner = async (banner: Omit<Banner, 'id'>, imageFile?: File) => {

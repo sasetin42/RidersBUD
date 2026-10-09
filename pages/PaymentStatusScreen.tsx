@@ -233,6 +233,16 @@ const PaymentStatusScreen: React.FC = () => {
         }
     };
 
+    // Auto-advance smoothly to primary entity (booking/order) after successful payment verification
+    useEffect(() => {
+        if (phase === 'success') {
+            const timer = setTimeout(() => {
+                goViewPrimary();
+            }, 2500);
+            return () => clearTimeout(timer);
+        }
+    }, [phase, entityKind, entityId]);
+
     const phaseContent = (): { icon: React.ReactNode; title: string; cardClass: string } => {
         switch (phase) {
             case 'initializing':

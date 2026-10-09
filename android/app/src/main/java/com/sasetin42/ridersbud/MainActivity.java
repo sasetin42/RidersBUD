@@ -1,6 +1,7 @@
 package com.sasetin42.ridersbud;
 
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,15 +13,36 @@ import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
 
+import androidx.core.view.WindowCompat;
+
 public class MainActivity extends BridgeActivity {
 
     private static final String TAG = "RidersBUD";
     private boolean rendererRecoveryPending = false;
+    private boolean rendererRecoveryDeferred = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        setTheme(R.style.AppTheme_NoActionBar);
         registerPlugin(com.sasetin42.ridersbud.payment.HitPayInAppPlugin.class);
         super.onCreate(savedInstanceState);
+        try {
+            // Enable true edge-to-edge rendering so WebView draws behind system bars
+            WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                getWindow().getAttributes().layoutInDisplayCutoutMode =
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            }
+            androidx.core.view.WindowInsetsControllerCompat controller =
+                    WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+            if (controller != null) {
+                // Ensure light status bar icons (since RidersBUD has a dark UI theme)
+                controller.setAppearanceLightStatusBars(false);
+                controller.setAppearanceLightNavigationBars(false);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Edge-to-edge layout init warning: " + e.getMessage());
+        }
         registerRenderProcessGuard();
     }
 
@@ -56,10 +78,22 @@ public class MainActivity extends BridgeActivity {
                         return true;
                     }
                     rendererRecoveryPending = true;
-                    // Must return true first (keeps the process alive); rebuild
-                    // the activity on the next main-loop pass.
-                    new Handler(Looper.getMainLooper()).post(() -> {
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         try {
+                            if (com.sasetin42.ridersbud.payment.HitPayInAppPlugin.isNativePaymentActive()) {
+                                Log.w(TAG, "Renderer recovery: payment is currently active, deferring recreate to prevent app dismissal.");
+                                rendererRecoveryDeferred = true;
+                                rendererRecoveryPending = false;
+                                return;
+                            }
+                            if (webView != null) {
+                                try {
+                                    if (webView.getParent() instanceof android.view.ViewGroup) {
+                                        ((android.view.ViewGroup) webView.getParent()).removeView(webView);
+                                    }
+                                    webView.destroy();
+                                } catch (Exception ignored) {}
+                            }
                             recreate();
                         } catch (Exception rebuildError) {
                             Log.e(TAG, "Renderer recovery rebuild failed", rebuildError);
@@ -69,14 +103,51 @@ public class MainActivity extends BridgeActivity {
                                 // Nothing else we can do — but never let this
                                 // escape as an uncaught exception.
                             }
+                        } finally {
+                            rendererRecoveryPending = false;
                         }
-                    });
+                    }, 300);
                     return true;
                 }
             });
         } catch (Exception e) {
             Log.w(TAG, "Unable to register render-process guard: " + e.getMessage());
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!rendererRecoveryDeferred || rendererRecoveryPending ||
+                com.sasetin42.ridersbud.payment.HitPayInAppPlugin.isNativePaymentActive()) {
+            return;
+        }
+
+        // The renderer may have died while the separate payment Activity was
+        // foregrounded. Retry recovery after checkout returns instead of leaving
+        // the customer on a blank Capacitor bridge indefinitely.
+        rendererRecoveryDeferred = false;
+        rendererRecoveryPending = true;
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                if (webView != null) {
+                    try {
+                        if (webView.getParent() instanceof android.view.ViewGroup) {
+                            ((android.view.ViewGroup) webView.getParent()).removeView(webView);
+                        }
+                        webView.destroy();
+                    } catch (Exception ignored) {}
+                }
+                recreate();
+            } catch (Exception rebuildError) {
+                Log.e(TAG, "Deferred renderer recovery rebuild failed", rebuildError);
+                try {
+                    finish();
+                } catch (Exception ignored) {}
+            } finally {
+                rendererRecoveryPending = false;
+            }
+        }, 300);
     }
 
     /**

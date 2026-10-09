@@ -112,6 +112,17 @@ const ServiceBookingFlow: React.FC = () => {
                     navigate('/customer-portal/my-service-requests', { replace: true });
                     return;
                 }
+
+                // PAYMENT FAILURE VISIBILITY FIX: previously a failed payment
+                // (res.success === false) was silently swallowed here — the flow
+                // navigated away as if nothing happened, so the customer had no
+                // idea their towing deposit never started. Surface the reason.
+                if (!res.success) {
+                    throw new Error(
+                        res.errorMessage ||
+                        'Your towing request was created but the payment could not be started. Please open the request and tap Pay to continue.'
+                    );
+                }
             }
 
             navigate('/customer-portal/my-service-requests', { replace: true });

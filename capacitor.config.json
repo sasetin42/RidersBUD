@@ -14,5 +14,12 @@
   "server": {
     "cleartext": true,
     "androidScheme": "https"
-  }
+  },
+  "packageClassList": [
+    "AppPlugin",
+    "CAPBrowserPlugin",
+    "GeolocationPlugin",
+    "NativeSettingsPlugin",
+    "HitPayInAppPlugin"
+  ]
 }

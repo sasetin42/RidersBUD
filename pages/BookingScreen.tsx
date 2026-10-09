@@ -311,8 +311,20 @@ const BookingScreen: React.FC = () => {
         const hitpayParam = query.get('hitpay');
 
         if (statusParam === 'completed' || hitpayParam === 'completed' || statusParam === 'success') {
+            // MOBILE CRASH FIX: Android/iOS kill the WebView process while the
+            // HitPay checkout is open. On resume, sessionStorage can hold a
+            // truncated/corrupt payload, and an UNGUARDED JSON.parse here threw
+            // a SyntaxError inside this useEffect → React ErrorBoundary blanked
+            // the whole app ("checkout always crashes"). Parse defensively.
             const pendingTx = sessionStorage.getItem('pendingHitPayBookingTx');
-            const targetBookingId = pendingTx ? (JSON.parse(pendingTx).bookingId) : query.get('bookingId');
+            let targetBookingId: string | null = null;
+            try {
+                targetBookingId = pendingTx ? (JSON.parse(pendingTx)?.bookingId ?? null) : null;
+            } catch (parseErr) {
+                console.warn('[BookingScreen] Discarding corrupt pending HitPay transaction:', parseErr);
+                try { sessionStorage.removeItem('pendingHitPayBookingTx'); } catch { /* ignore */ }
+            }
+            if (!targetBookingId) targetBookingId = query.get('bookingId');
             
             if (targetBookingId) {
                 if (hitpayReturnProcessedRef.current) return;
@@ -1525,6 +1537,10 @@ const BookingScreen: React.FC = () => {
         }
         setError('');
         setIsBooking(true);
+        let bookingId = '';
+        let checkoutAmount = 0;
+        let refNumber = '';
+        let purpose = '';
         try {
             let computedTotalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
             if (isSpecialRentalOrDriver) {
@@ -1587,13 +1603,13 @@ const BookingScreen: React.FC = () => {
             }
             const isFullPayment = selectedPaymentOption === 'full';
             const downpaymentAmount = Math.round(computedTotalPrice * 0.5);
-            const checkoutAmount = isFullPayment ? computedTotalPrice : downpaymentAmount;
+            checkoutAmount = isFullPayment ? computedTotalPrice : downpaymentAmount;
 
             if (!isHitPayActive) {
                 throw new Error("Online Payment Gateway (HitPay) is required for checkout but currently inactive in system settings. Please contact the administrator.");
             }
 
-            const bookingId = doc(collection(firestore, 'bookings')).id;
+            bookingId = doc(collection(firestore, 'bookings')).id;
 
             // Keep pending transaction saved immediately in storage
             const txDetails = {
@@ -1614,8 +1630,8 @@ const BookingScreen: React.FC = () => {
             } catch (e) {}
 
             const appTitle = db?.settings?.appName || 'RidersBUD';
-            const refNumber = isFullPayment ? `BOK-${bookingId}-FULL` : `BOK-${bookingId}-DP`;
-            const purpose = isFullPayment
+            refNumber = isFullPayment ? `BOK-${bookingId}-FULL` : `BOK-${bookingId}-DP`;
+            purpose = isFullPayment
                 ? `${appTitle} — Full Payment (Booking #${bookingId.slice(-6).toUpperCase()})`
                 : `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
@@ -1688,7 +1704,29 @@ const BookingScreen: React.FC = () => {
             }
         } catch (err: any) {
             setShowPaymentBreakdownModal(false);
-            const msg = err?.message || 'An error occurred while connecting to Payment Gateway.';
+            const rawMsg = err?.message || '';
+            const isNetworkOrFetch = /Failed to fetch|NetworkError|fetch|connecting to Payment Gateway/i.test(rawMsg);
+
+            if (isNetworkOrFetch && bookingId) {
+                console.warn('[BookingScreen] Caught fetch error during HitPay checkout initiation; redirecting to internal checkout screen.');
+                const query = new URLSearchParams({
+                    amount: String(checkoutAmount),
+                    currency: db?.settings?.currency || 'PHP',
+                    reference: refNumber,
+                    bookingId,
+                    entityKind: 'booking',
+                    entityId: bookingId,
+                    email: user?.email || '',
+                    name: user?.name || '',
+                    phone: user?.phone || '',
+                    purpose: purpose,
+                    sandbox: (db?.settings?.hitpaySandboxMode === true) ? 'true' : 'false'
+                });
+                navigate(`/hitpay-checkout?${query.toString()}`);
+                return;
+            }
+
+            const msg = rawMsg || 'An error occurred while connecting to Payment Gateway. Please try again.';
             setError(msg);
         } finally {
             setIsBooking(false);

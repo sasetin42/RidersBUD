@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db as firestore, storage, auth } from '../firebase';
 import { doc, onSnapshot, updateDoc, collection, addDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storageService } from '../services/StorageService';
 import { useDatabase } from '../context/DatabaseContext';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -219,9 +220,7 @@ const GCashPaymentModal: React.FC<Props> = ({
             const uid = auth.currentUser?.uid;
             if (!uid) throw new Error("You must be logged in to upload a receipt.");
             const filename = `${Date.now()}_${bookingId}_${receiptFile.name.replace(/\s+/g, '_')}`;
-            const storageRef = ref(storage, `receipts/${uid}/${filename}`);
-            await uploadBytes(storageRef, receiptFile);
-            const downloadUrl = await getDownloadURL(storageRef);
+            const downloadUrl = await storageService.uploadFile(`receipts/${uid}/${filename}`, receiptFile);
 
             // Update the booking/order doc with receipt URL and payment status
             if (isOrder) {

@@ -15,6 +15,7 @@ public class HitPayPaymentViewController: UIViewController, WKNavigationDelegate
     var onProviderReturned: ((String) -> Void)?
 
     private var webView: WKWebView!
+    private var popupWebViews: [WKWebView] = []
     private var progressView: UIProgressView!
     private var waitingForProviderReturn: Bool = false
     private var providerName: String = ""
@@ -206,6 +207,35 @@ public class HitPayPaymentViewController: UIViewController, WKNavigationDelegate
         onError?("Blocked navigation to: \(urlString)")
     }
 
+    public func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // HitPay and issuer 3-D Secure flows may open a new browsing context.
+        // Returning nil without handling this action silently strands the user
+        // on the original checkout, so present a managed popup WebView instead.
+        guard navigationAction.targetFrame == nil else { return nil }
+        let popup = WKWebView(frame: .zero, configuration: configuration)
+        popup.translatesAutoresizingMaskIntoConstraints = false
+        popup.navigationDelegate = self
+        popup.uiDelegate = self
+        view.addSubview(popup)
+        NSLayoutConstraint.activate([
+            popup.topAnchor.constraint(equalTo: webView.topAnchor),
+            popup.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
+            popup.trailingAnchor.constraint(equalTo: webView.trailingAnchor),
+            popup.bottomAnchor.constraint(equalTo: webView.bottomAnchor)
+        ])
+        popupWebViews.append(popup)
+        return popup
+    }
+
+    public func webViewDidClose(_ webView: WKWebView) {
+        guard webView !== self.webView else { return }
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        webView.stopLoading()
+        webView.removeFromSuperview()
+        popupWebViews.removeAll { $0 === webView }
+    }
+
     private func isAllowedHost(_ host: String) -> Bool {
         if allowedHosts.contains(host) { return true }
         for allowed in allowedHosts {
@@ -229,5 +259,11 @@ public class HitPayPaymentViewController: UIViewController, WKNavigationDelegate
     deinit {
         webView?.removeObserver(self, forKeyPath: #keyPath(WKWebView.estimatedProgress))
         webView?.stopLoading()
+        popupWebViews.forEach {
+            $0.navigationDelegate = nil
+            $0.uiDelegate = nil
+            $0.stopLoading()
+            $0.removeFromSuperview()
+        }
     }
 }

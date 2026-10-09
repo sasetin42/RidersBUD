@@ -43,14 +43,38 @@ export function getCachedPermissionState(): PermissionState {
     return cachedPermissionState;
 }
 
+export function isPaymentOrCheckoutRoute(): boolean {
+    if (typeof window === 'undefined') return false;
+    const path = (window.location.pathname || '').toLowerCase();
+    return path.startsWith('/payment') || path.startsWith('/hitpay-checkout') || path.includes('/payment/return');
+}
+
 /**
  * Queries and caches the current geolocation permission.
  * Attaches a persistent PermissionStatus.onchange listener so cachedPermissionState
  * stays accurate whenever the user grants/revokes via browser settings.
  */
 export async function isGeolocationPermissionDenied(): Promise<boolean> {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') return true;
-    if (!('geolocation' in navigator)) return true;
+    if (typeof window === 'undefined') return true;
+
+    // Suppress location polling completely on payment and checkout return routes
+    if (isPaymentOrCheckoutRoute()) return true;
+
+    // In native Capacitor environment, check native permissions directly.
+    // NEVER query navigator.permissions or navigator.geolocation on native Capacitor
+    // because that triggers the Chrome browser dialog inside Android WebView!
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const perm = await NativeGeolocation.checkPermissions();
+            const granted = perm.location === 'granted' || perm.coarseLocation === 'granted';
+            cachedPermissionState = granted ? 'granted' : 'prompt';
+            return perm.location === 'denied';
+        } catch (_) {
+            return false;
+        }
+    }
+
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return true;
 
     // If we already know it's denied from live handle or cache, return immediately
     if (cachedPermissionState === 'denied') return true;
@@ -85,11 +109,12 @@ export async function isGeolocationPermissionDenied(): Promise<boolean> {
  * and subscribes to future state changes so callers get instant answers.
  */
 export function initPermissionMonitor(): void {
+    if (typeof window === 'undefined' || isPaymentOrCheckoutRoute()) return;
     isGeolocationPermissionDenied().catch(() => {});
 }
 
-// Automatically initiate permission query on script evaluation
-if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+// Automatically initiate permission query on script evaluation ONLY on non-payment routes
+if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && !isPaymentOrCheckoutRoute()) {
     initPermissionMonitor();
 }
 
@@ -131,15 +156,49 @@ function geoError(code: 1 | 2 | 3, message: string): GeolocationPositionError {
  * Safe wrapper around navigator.geolocation.getCurrentPosition.
  * Prefers the native (Capacitor) location stack on Android/iOS for hardware GPS
  * precision, then falls back to the browser API.
- * Will NOT invoke navigator.geolocation if permission is denied,
- * preventing the Chrome browser-level blocked prompt console warning.
+ * Will NOT invoke navigator.geolocation if permission is denied or on native environment,
+ * preventing the Chrome browser-level blocked prompt console warning and dialogs.
  */
 export async function safeGetCurrentPosition(
     onSuccess: PositionCallback,
     onError?: PositionErrorCallback,
     options?: PositionOptions
 ): Promise<void> {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+    if (typeof window === 'undefined') {
+        onError?.(geoError(2, 'Geolocation is not supported.'));
+        return;
+    }
+
+    if (isPaymentOrCheckoutRoute()) {
+        onError?.(geoError(1, 'Geolocation bypassed on payment routes.'));
+        return;
+    }
+
+    // 1) Native hardware GPS (Android / iOS) — precise satellite fixes
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const check = await NativeGeolocation.checkPermissions();
+            if (check.location !== 'granted' && check.coarseLocation !== 'granted') {
+                const req = await NativeGeolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
+                if (req.location !== 'granted' && req.coarseLocation !== 'granted') {
+                    onError?.(geoError(1, 'Location permission not granted.'));
+                    return;
+                }
+            }
+            const position = await NativeGeolocation.getCurrentPosition(toNativeOptions(options));
+            if (position && position.coords) {
+                onSuccess(position as unknown as GeolocationPosition);
+                return;
+            }
+        } catch (nativeErr: any) {
+            // On native platform, DO NOT invoke navigator.geolocation
+            // because that opens the Chrome browser site permission prompt!
+            onError?.(geoError(2, nativeErr?.message || 'Native GPS fix unavailable.'));
+            return;
+        }
+    }
+
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
         onError?.(geoError(2, 'Geolocation is not supported by your browser/device.'));
         return;
     }
@@ -150,20 +209,7 @@ export async function safeGetCurrentPosition(
         return;
     }
 
-    // 1) Native hardware GPS (Android / iOS) — precise satellite fixes
-    if (Capacitor.isNativePlatform()) {
-        try {
-            const position = await NativeGeolocation.getCurrentPosition(toNativeOptions(options));
-            if (position && position.coords) {
-                onSuccess(position as unknown as GeolocationPosition);
-                return;
-            }
-        } catch (_) {
-            // Fall through to the WebView implementation
-        }
-    }
-
-    // 2) Browser geolocation
+    // 2) Browser geolocation (web only)
     try {
         navigator.geolocation.getCurrentPosition(onSuccess, onError, options);
     } catch (_) {
@@ -189,19 +235,25 @@ export async function safeWatchPosition(
     onError?: PositionErrorCallback,
     options?: PositionOptions
 ): Promise<number | null> {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+    if (typeof window === 'undefined') {
         return null;
     }
 
-    const isDenied = await isGeolocationPermissionDenied();
-    if (isDenied) {
-        onError?.(geoError(1, 'Geolocation permission is denied.'));
+    if (isPaymentOrCheckoutRoute()) {
         return null;
     }
 
     // 1) Native hardware GPS stream (Android / iOS)
     if (Capacitor.isNativePlatform()) {
         try {
+            const check = await NativeGeolocation.checkPermissions();
+            if (check.location !== 'granted' && check.coarseLocation !== 'granted') {
+                const req = await NativeGeolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
+                if (req.location !== 'granted' && req.coarseLocation !== 'granted') {
+                    onError?.(geoError(1, 'Location permission not granted.'));
+                    return null;
+                }
+            }
             const nativeId = await NativeGeolocation.watchPosition(
                 toNativeOptions(options),
                 (position: any) => {
@@ -211,12 +263,23 @@ export async function safeWatchPosition(
             const handle = nextNativeHandle--;
             nativeWatchRegistry.set(handle, nativeId);
             return handle;
-        } catch (_) {
-            // Fall through to the WebView stream
+        } catch (nativeErr: any) {
+            onError?.(geoError(2, nativeErr?.message || 'Native GPS stream unavailable.'));
+            return null;
         }
     }
 
-    // 2) Browser watch stream
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+        return null;
+    }
+
+    const isDenied = await isGeolocationPermissionDenied();
+    if (isDenied) {
+        onError?.(geoError(1, 'Geolocation permission is denied.'));
+        return null;
+    }
+
+    // 2) Browser watch stream (web only)
     try {
         return navigator.geolocation.watchPosition(onSuccess, onError, options);
     } catch (_) {

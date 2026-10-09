@@ -286,56 +286,66 @@ const SignUpScreen: React.FC = () => {
     const anyLoading = isLoading;
 
     return (
-        <div className="flex-1 w-full flex flex-col items-center justify-center bg-gradient-to-br from-[#0A0A0A] via-[#121212] to-[#1A1A1A] p-6 relative overflow-hidden">
+        <div 
+            className="flex-1 w-full min-h-[100dvh] flex flex-col items-center justify-between bg-gradient-to-br from-[#0A0A0A] via-[#121212] to-[#1A1A1A] px-3.5 sm:px-6 relative overflow-x-hidden overflow-y-auto"
+            style={{
+                paddingTop: 'max(0.75rem, var(--safe-top))',
+                paddingBottom: 'max(0.75rem, var(--safe-bottom))'
+            }}
+        >
             {/* Animated Background Elements */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse"></div>
                 <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
             </div>
 
-            <div className="w-full max-w-md relative z-10 py-6">
+            <div className="w-full max-w-md relative z-10 py-2 sm:py-4 flex-1 flex flex-col justify-center">
                 {/* Logo & Header */}
-                <div className="text-center mb-8 animate-fadeIn">
+                <div className="text-center mb-3 sm:mb-5 animate-fadeIn">
                     {logoUrl ? (
-                        <img src={logoUrl} alt="RidersBUD Logo" className="w-48 mb-6 max-h-24 object-contain mx-auto mix-blend-screen" />
+                        <img 
+                            src={logoUrl} 
+                            alt="RidersBUD Logo" 
+                            className="w-44 sm:w-52 mb-1.5 max-h-16 sm:max-h-20 object-contain mx-auto mix-blend-screen" 
+                        />
                     ) : (
-                        <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent mb-4">{settings.appName}</h1>
+                        <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent mb-1">{settings.appName}</h1>
                     )}
-                    <p className="text-gray-400 text-lg">{settings.appTagline}</p>
+                    <p className="text-gray-400 text-xs sm:text-sm font-medium tracking-tight px-2">{settings.appTagline}</p>
                 </div>
 
                 {/* Tab Switcher */}
-                <div className="bg-[#1A1A1A]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-1.5 mb-6 flex gap-1 animate-slideUp">
+                <div className="bg-[#1A1A1A]/70 backdrop-blur-xl border border-white/10 rounded-xl sm:rounded-2xl p-1 mb-3.5 sm:mb-5 grid grid-cols-2 gap-1 animate-slideUp w-full">
                     <button
                         onClick={() => {
                             setUserType('customer');
                             setStep(1);
                         }}
-                        className={`flex-1 py-3 px-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${userType === 'customer'
-                            ? 'bg-gradient-to-r from-primary to-orange-600 text-white shadow-lg shadow-primary/20'
+                        className={`w-full min-h-[44px] py-2.5 px-3 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all duration-300 flex items-center justify-center gap-2 btn-haptic ${userType === 'customer'
+                            ? 'bg-gradient-to-r from-primary to-orange-600 text-white shadow-lg shadow-primary/25'
                             : 'text-gray-400 hover:text-white'
                             }`}
                     >
-                        <User className="w-4 h-4" />
-                        I'm a Customer
+                        <User className="w-4 h-4 shrink-0" />
+                        <span>I'm a Customer</span>
                     </button>
                     <button
                         onClick={() => {
                             setUserType('mechanic');
                             setStep(1);
                         }}
-                        className={`flex-1 py-3 px-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${userType === 'mechanic'
-                            ? 'bg-gradient-to-r from-primary to-orange-600 text-white shadow-lg shadow-primary/20'
+                        className={`w-full min-h-[44px] py-2.5 px-3 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm transition-all duration-300 flex items-center justify-center gap-2 btn-haptic ${userType === 'mechanic'
+                            ? 'bg-gradient-to-r from-primary to-orange-600 text-white shadow-lg shadow-primary/25'
                             : 'text-gray-400 hover:text-white'
                             }`}
                     >
-                        <Wrench className="w-4 h-4" />
-                        I'm a Mechanic
+                        <Wrench className="w-4 h-4 shrink-0" />
+                        <span>I'm a Mechanic</span>
                     </button>
                 </div>
 
                 {/* Sign Up Card */}
-                <div className="bg-[#1A1A1A]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl animate-slideUp">
+                <div className="bg-[#1A1A1A]/85 backdrop-blur-xl border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-7 shadow-2xl animate-slideUp w-full">
                     {isMechanicSuccess ? (
                         <div className="text-center space-y-6 animate-fadeIn">
                             <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto border border-green-500/30">

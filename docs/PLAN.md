@@ -1,45 +1,55 @@
-# PLAN: Gateway Enforcement & Complete Removal of Manual GCash in Online Payment Flow
+# Implementation Plan: Native Android APK with Embedded HitPay Payment & True Edge-to-Edge Experience
 
-> **Status:** IN EXECUTION (Phase 2)
-> **Goal:** Strictly enforce gateway settings across all booking, balance settlement, and payment views. When HitPay is enabled or when `gcashEnabled` is false/disabled, completely eliminate and suppress Manual GCash / QR modals, auto-pops, and buttons so the application focuses purely on the enabled online payment gateway.
-
----
-
-## 1. Problem Diagnosis & Verified Root Causes
-
-### 1.1 Unconditional Auto-Pop in `BookingDetailScreen.tsx` (Lines 1405–1416)
-- **Problem**: When a booking reaches `'Work Done'` or has `paymentStatus: 'partial'`, a `useEffect` triggers `setShowGCashPaymentModal(true)` without verifying if `db?.settings?.gcashEnabled` is true or if HitPay is active.
-- **Fix**: Gate `shouldAutoPop` strictly on `isManualGcashEnabled && !isHitPayActive`. When HitPay is active, NEVER auto-open the manual GCash modal.
-
-### 1.2 Initial Booking Document Defaults in `BookingScreen.tsx` (Lines 1548–1550)
-- **Problem**: When `newBookingData` is constructed, `paymentMethod: 'GCash'` and `gcashPaymentStatus: 'awaiting_payment'` were hardcoded even though the user is paying via HitPay online gateway.
-- **Fix**: When HitPay is active, initialize `paymentMethod: 'Online (HitPay)'`, `paymentGateway: 'hitpay'`, and omit `gcashPaymentStatus` (or set to `'none'`).
-
-### 1.3 Unguarded Modal Rendering in `BookingDetailScreen.tsx` (Line 3747)
-- **Problem**: `<GCashPaymentModal>` was rendered based solely on `showGCashPaymentModal` without checking `isManualGcashEnabled`.
-- **Fix**: Guard with `showGCashPaymentModal && isManualGcashEnabled && !isHitPayActive`.
-
-### 1.4 Balance Settlement Cards in `BookingDetailScreen.tsx` & `HomeScreen.tsx`
-- **Problem**: Manual GCash QR buttons were offered even when the user wants or needs to use the enabled online payment gateway.
-- **Fix**: Ensure `isManualGcashEnabled` is strictly defined as `db?.settings?.gcashEnabled === true && !HitPayService.isGatewayActive(db?.settings)`. If HitPay is active, only the HitPay balance payment button is shown.
-- **Fallback Catch in `handleInitiateHitPayBalance`**: Remove automatic redirect to `/customer-portal/service-payment/...` on error; show an inline error message and retry button instead.
+## Objective
+Convert RidersBUD into a 100% native-feeling Android application running edge-to-edge without any Chrome browser UI, incorporating a fully functional, embedded in-app HitPay payment checkout, and handling all Android system insets gracefully.
 
 ---
 
-## 2. Multi-Agent Orchestration (Phase 2)
+## Architecture & Requirements Analysis
 
-- **Agent 1: Frontend Specialist (`pages/BookingDetailScreen.tsx`, `pages/HomeScreen.tsx`, `pages/BookingScreen.tsx`)**
-  - Fix `shouldAutoPop` in `BookingDetailScreen.tsx`.
-  - Fix modal rendering conditions for GCash modal.
-  - Fix balance settlement cards to only display HitPay when HitPay is active.
-  - Fix `newBookingData` in `BookingScreen.tsx` to set `paymentMethod: 'Online (HitPay)'` and remove `gcashPaymentStatus: 'awaiting_payment'`.
+### 1. True Edge-to-Edge Native Experience (No Chrome Browser UI)
+- **Manifest & Styles:**
+  - Android theme `AppTheme.NoActionBar` must enforce immersive edge-to-edge windowing.
+  - Window flags `android:windowLayoutInDisplayCutoutMode="shortEdges"` and `android:windowTranslucentNavigation="false"` with full transparent system bars.
+  - Webview must render behind status bar and navigation bar with zero Chrome address bar, toolbar, or navigation controls.
+- **System Inset Management:**
+  - Standardize CSS variables `--safe-top` and `--safe-bottom` using Capacitor SystemBars plugin and `env(safe-area-inset-*)`.
+  - Prevent duplicate insets on header and footer components.
 
-- **Agent 2: Backend Specialist (`functions/index.js`, `functions/lib/hitpay.js`)**
-  - Verify `computeEntityPaymentUpdate` and `settleTransaction` for balance settlements.
-  - Ensure booking updates set `paymentMethod: 'Online (HitPay)'` and do not leave manual GCash statuses.
+### 2. Fully Embedded HitPay Payment (Zero External Chrome Popups)
+- **Problem Statement:** Standard web checkouts trigger external Chrome tabs or intent redirects that break app continuity or crash the app process.
+- **Native Embedded Solution:**
+  - HitPay Drop-in / Embedded SDK integrated into an in-app native modal sheet or dedicated seamless payment screen (`HitPayCheckoutScreen.tsx` / `PaymentScreen.tsx`).
+  - Listen to window `message` events for payment completion, cancellation, and errors without leaving the app.
+  - Implement fallback handling for GCash / Maya deep-links (e.g., using Android Intent URL capture inside WebView while preventing app closure).
+  - Centralized verification via server proxy (`PaymentVerificationOverlay` / `verifyPaymentStatus`).
 
-- **Agent 3: Test Engineer**
-  - Run `npm test`
-  - Run `npm --prefix functions test`
-  - Run `npm run typecheck`
-  - Run `npm run build`
+### 3. Back Button & State Preservation
+- Android hardware back button listener intercepted during active payment sessions to display confirmation before navigating back.
+- Clean cleanup of iframe / modal listeners to prevent memory leaks and zombie processes.
+
+---
+
+## 3-Phase Execution Plan
+
+### Phase 1: Native Shell & Edge-to-Edge Configuration (`mobile-developer`)
+- Review and refine `android/app/src/main/res/values/styles.xml` and `AndroidManifest.xml` for transparent edge-to-edge support.
+- Ensure `capacitor.config.json` has `SystemBars` properly configured for dark, immersive styling.
+- Verify `index.html` and `index.css` safe area insets.
+
+### Phase 2: Embedded HitPay Payment Overhaul (`frontend-specialist` + `backend-specialist`)
+- Deeply inspect `HitPayCheckoutScreen.tsx`, `components/GCashPaymentModal.tsx`, and `services/hitpayClient.ts`.
+- Ensure HitPay drop-in iframe or redirect URL runs within the app frame.
+- Guarantee that post-payment redirects (`/payment/return`, `/booking-confirmation`, `/order-confirmation`) resolve inside the app without triggering external browser intents.
+
+### Phase 3: Verification & APK Generation (`test-engineer`)
+- Run test suite: `vitest run` (ensure all 98+ tests pass).
+- Compile web assets: `npm run build`.
+- Sync Capacitor Android: `npx cap sync android`.
+- Build and sign production release APK: `node scripts/release-apk.mjs --skip-deploy`.
+- Verify signature and APK package integrity.
+
+---
+
+## Approval Checkpoint
+Waiting for user confirmation to proceed to Phase 2 (Implementation).

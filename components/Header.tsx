@@ -4,7 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import { useMechanicAuth } from '../context/MechanicAuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import NotificationBell from './NotificationBell';
-import { useScrollDirection } from '../hooks/useScrollDirection';
 import { getProfileImage } from '../utils/imageConstants';
 
 interface HeaderProps {
@@ -22,45 +21,45 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false
     const { user, hasUnreadSupportMessage } = useAuth();
     const { mechanic, isMechanicAuthenticated } = useMechanicAuth();
     const { db } = useDatabase();
-    const scrollDirection = useScrollDirection();
-    const isHidden = scrollDirection === 'down';
-
     // Pick appropriate logo based on context (Mechanic portal vs Customer portal vs General)
     const headerLogoUrl = isMechanicAuthenticated || mechanic
         ? (db?.settings?.mechanicHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png")
         : (db?.settings?.customerHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png");
 
     return (
-        <div className={`sticky top-0 z-50 bg-[#121212]/80 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 py-3 flex items-center justify-between shadow-2xl transition-transform duration-300 ease-in-out ${isHidden ? '-translate-y-full' : 'translate-y-0'}`}>
-            <div className="flex items-center gap-3 sm:gap-4">
+        <div 
+            className="sticky top-0 z-50 bg-[#121212]/90 backdrop-blur-xl border-b border-white/5 px-3.5 sm:px-6 flex items-center justify-between shadow-2xl min-h-[3rem] h-[calc(3rem+var(--safe-top))]"
+            style={{ paddingTop: 'var(--safe-top, 0px)' }}
+        >
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                 {(showBackButton || showBack) && (
                     <button
                         onClick={() => navigate(-1)}
-                        className="p-2 -ml-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95"
+                        className="p-1 -ml-1 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95 shrink-0"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
                         </svg>
                     </button>
                 )}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
                     {showLogo && (
                         <img 
                             src={headerLogoUrl}
                             alt="Logo"
-                            width={36}
-                            height={36}
-                            className="w-9 h-9 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
+                            width={30}
+                            height={30}
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
                             onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
                         />
                     )}
                     {icon && !showLogo && (
-                        <span className="text-primary opacity-90">{icon}</span>
+                        <span className="text-primary opacity-90 shrink-0">{icon}</span>
                     )}
-                    <div>
-                        <h1 className="text-base sm:text-lg font-black text-white tracking-widest leading-none">{title}</h1>
+                    <div className="min-w-0 truncate">
+                        <h1 className="text-sm sm:text-base font-black text-white tracking-widest leading-none truncate">{title}</h1>
                         {subtitle && (
-                            <p className="text-[10px] sm:text-xs text-primary font-bold tracking-[0.25em] mt-1 opacity-90 animate-fadeIn">{subtitle}</p>
+                            <p className="text-[10px] text-primary font-bold tracking-[0.2em] mt-0.5 opacity-90 truncate animate-fadeIn">{subtitle}</p>
                         )}
                     </div>
                 </div>

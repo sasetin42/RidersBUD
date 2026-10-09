@@ -981,11 +981,11 @@ const HomeScreen: React.FC = () => {
     return (
         <div 
             className="flex flex-col min-h-screen bg-[#121212] text-white font-sans"
-            style={{ paddingBottom: 'calc(6rem + var(--safe-bottom))' }}
+            style={{ paddingBottom: 'calc(1rem + var(--safe-bottom))' }}
         >
-            <CustomerHeader title={`Welcome, ${user?.name.split(' ')[0]}!`} icon={<Car size={22} />} />
+            <CustomerHeader title={`Welcome, ${user?.name.split(' ')[0]}!`} icon={<Car size={20} />} />
 
-            <main className="flex-grow w-full px-6 space-y-4 overflow-y-auto custom-scrollbar pt-4 max-w-5xl mx-auto">
+            <main className="flex-grow w-full px-4 sm:px-6 space-y-3.5 overflow-y-auto custom-scrollbar pt-2.5 max-w-5xl mx-auto">
 
                 {/* Customer Account & Vehicle Banner - Compact & Full Responsive Mobile View */}
                 {user?.vehicles && user.vehicles.length > 0 && (() => {

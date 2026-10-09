@@ -18,3 +18,8 @@
 
 # Hide the original source file name in stack traces.
 -renamesourcefileattribute SourceFile
+
+# Preserve Payment plugin and activity classes from R8 minification
+-keep class com.sasetin42.ridersbud.payment.** { *; }
+-keepclassmembers class com.sasetin42.ridersbud.payment.** { *; }
+

@@ -67,5 +67,45 @@
 		<string>paymaya</string>
 		<string>grabpay</string>
 	</array>
+
+	<!--
+	  iOS HARD-CRASH FIX (payment + permissions):
+	  @capacitor/geolocation (imported in App.tsx), camera capture and audio
+	  recording are all linked, but this plist previously declared NO usage
+	  descriptions. iOS terminates the app with "This app has crashed because it
+	  attempted to access privacy-sensitive data without a usage description"
+	  the instant any of these APIs is touched — which surfaced as the checkout
+	  flow crashing mid-payment on iOS. Every string below must be present.
+	-->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>RidersBUD uses your location to show nearby mechanics, track your driver/handler in real time, and route help to your exact pickup point.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>RidersBUD uses your location in the background to keep live service tracking active while your booking is in progress.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>RidersBUD uses your location to locate nearby services and share your pickup point with your assigned rider.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>RidersBUD uses your camera to capture vehicle photos and scan QR codes to complete your payment.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>RidersBUD needs access to your photo library so you can attach vehicle photos to your booking.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>RidersBUD saves payment receipts and booking photos to your photo library when you choose to download them.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>RidersBUD uses your microphone for in-app calls and voice notes with your mechanic or driver.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>RidersBUD uses Face ID to keep your account secure when you sign in.</string>
+
+	<!--
+	  ATS: HitPay may hand back http:// redirects for some 3-D Secure / wallet
+	  handoffs. Without an exception those loads fail silently and the payment
+	  appears to hang. Allow arbitrary loads so a gateway redirect can never
+	  strand the customer mid-transaction.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

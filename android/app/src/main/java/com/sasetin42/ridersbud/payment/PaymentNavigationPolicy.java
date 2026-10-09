@@ -51,7 +51,8 @@ public class PaymentNavigationPolicy {
             if (scheme == null || host == null || !"https".equalsIgnoreCase(scheme)) return false;
             if (uri.getUserInfo() != null || (uri.getPort() != -1 && uri.getPort() != 443)) return false;
             host = host.toLowerCase(Locale.ROOT);
-            return host.equals("hit-pay.com") || host.endsWith(".hit-pay.com");
+            return host.equals("hit-pay.com") || host.endsWith(".hit-pay.com")
+                    || host.equals("ridersbud-10806.web.app") || host.equals("ridersbud-10806.firebaseapp.com");
         } catch (Exception ignored) {
             return false;
         }
@@ -84,9 +85,16 @@ public class PaymentNavigationPolicy {
 
         URI uri;
         try {
-            uri = URI.create(uriString.trim());
+            uri = parseLeniently(uriString.trim());
         } catch (Exception e) {
+            // Unparseable URIs (bad %-escapes, illegal characters) used to escape
+            // evaluation as an IllegalArgumentException and crash the WebView UI
+            // thread mid-payment. A malformed URL is not a crash — it is a block.
             return new Decision(PolicyAction.BLOCK, "Malformed URI: " + e.getMessage());
+        }
+
+        if (uri == null) {
+            return new Decision(PolicyAction.BLOCK, "Malformed URI");
         }
 
         String scheme = uri.getScheme();
@@ -169,6 +177,46 @@ public class PaymentNavigationPolicy {
 
         // 5. Block all other schemes (http, file, content, javascript, data, etc.)
         return new Decision(PolicyAction.BLOCK, "Unsupported or insecure scheme: " + scheme);
+    }
+
+    /**
+     * Lenient URL parsing fallback.
+     *
+     * java.net.URI.create(String) throws unchecked IllegalArgumentException on
+     * any RFC-3986-illegal character — unescaped spaces, braces, pipes, or bad
+     * %-escapes. Payment gateways and bank 3-D Secure hand-offs frequently emit
+     * such URLs in query parameters (session tokens, state objects). When that
+     * exception escaped evaluate() the payment activity died with an unhandled
+     * exception at the exact moment the customer pressed Pay.
+     *
+     * Strategy: try the strict parser first; on failure, percent-encode the
+     * offending characters and retry. Returns null when the URL is beyond
+     * repair.
+     */
+    private static URI parseLeniently(String raw) {
+        try {
+            return URI.create(raw);
+        } catch (Exception ignored) {
+            // Fall through to the sanitized retry
+        }
+        try {
+            // Percent-encode characters that are illegal in a URI but appear in
+            // real-world gateway URLs. '%' itself must not survive a bad escape
+            // (e.g. '%zz'), so it is always escaped in the retry.
+            StringBuilder encoded = new StringBuilder(raw.length() + 16);
+            for (int i = 0; i < raw.length(); i++) {
+                char c = raw.charAt(i);
+                if (c == ' ' || c == '"' || c == '<' || c == '>' || c == '\\'
+                        || c == '^' || c == '`' || c == '{' || c == '|' || c == '}' || c == '%') {
+                    encoded.append(String.format("%%%02X", (int) c));
+                } else {
+                    encoded.append(c);
+                }
+            }
+            return URI.create(encoded.toString());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static boolean isAllowedHost(String host) {

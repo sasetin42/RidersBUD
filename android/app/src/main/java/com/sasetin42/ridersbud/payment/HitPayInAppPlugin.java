@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -20,8 +21,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "HitPayInApp")
 public class HitPayInAppPlugin extends Plugin {
 
-    private boolean isPaymentOpen = false;
+    private static volatile boolean isPaymentOpen = false;
     private BroadcastReceiver paymentReceiver;
+
+    public static boolean isNativePaymentActive() {
+        return isPaymentOpen;
+    }
 
     @Override
     public void load() {
@@ -161,12 +166,11 @@ public class HitPayInAppPlugin extends Plugin {
     @PluginMethod
     public void closePayment(PluginCall call) {
         isPaymentOpen = false;
-        // Broadcast close event or finish current activity.
-        // Must be package-targeted: RECEIVER_NOT_EXPORTED receivers only receive
-        // explicitly addressed broadcasts (Android 14+ / AOSP issue 293487554).
-        Intent closeIntent = new Intent(HitPayPaymentActivity.ACTION_PAYMENT_CLOSED);
+        // The payment Activity runs in the isolated ":payment" process, so its
+        // static isAlive flag is not shared with this plugin process. Always use
+        // the explicit in-app close request; the Activity handles it idempotently.
+        Intent closeIntent = new Intent(HitPayPaymentActivity.ACTION_PAYMENT_CLOSE_REQUESTED);
         closeIntent.setPackage(getContext().getPackageName());
-        closeIntent.putExtra(HitPayPaymentActivity.EXTRA_RESULT_ERROR, "Programmatically closed");
         try {
             getContext().sendBroadcast(closeIntent);
         } catch (Exception e) {

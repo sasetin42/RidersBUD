@@ -103,8 +103,14 @@ export const HitPayCheckoutScreen: React.FC = () => {
     const [copiedRef, setCopiedRef] = useState<boolean>(false);
 
     const handleCopyReference = (refText: string) => {
+        // MOBILE FIX: navigator.clipboard.writeText REJECTS on Android WebView
+        // when clipboard permission is denied. Without .catch() this became an
+        // unhandled promise rejection during checkout. Always chain a handler.
         try {
-            navigator.clipboard.writeText(refText);
+            const maybePromise = navigator.clipboard?.writeText(refText);
+            if (maybePromise && typeof maybePromise.catch === 'function') {
+                maybePromise.catch((e) => console.warn('Clipboard write error:', e));
+            }
             setCopiedRef(true);
             setTimeout(() => setCopiedRef(false), 2000);
         } catch (e) {
