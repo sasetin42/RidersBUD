@@ -167,7 +167,13 @@ const ChatModal: React.FC<ChatModalProps> = ({ service, onClose, mode = 'ai' }) 
 
         const initializeChat = async () => {
             try {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+                const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+                if (!apiKey) {
+                    setMessages([{ sender: 'ai', text: "Hello! Our AI virtual assistant is available when GEMINI_API_KEY is configured. Feel free to switch to live support or browse our service options!" }]);
+                    setIsLoading(false);
+                    return;
+                }
+                const ai = new GoogleGenAI({ apiKey });
                 const newChat = ai.chats.create({
                     model: 'gemini-2.0-flash-exp',
                     config: {
