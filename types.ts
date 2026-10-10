@@ -333,6 +333,25 @@ export interface Settings {
     webhooks?: WebhookConfig[];
     thirdPartyIntegrations?: Record<string, { enabled: boolean; apiKey?: string; endpoint?: string; status?: string }>;
 
+    // Mobile Application System Settings
+    mobileAppName?: string;
+    mobilePackageName?: string;
+    mobileVersionName?: string;
+    mobileVersionCode?: number;
+    mobileAppIconUrl?: string; // App icon displayed on device launcher after installation
+    mobileSplashIconUrl?: string;
+    mobileSplashBgColor?: string;
+    enableMobileInstallPrompt?: boolean; // Enable/Disable the installation pop-up modal
+    mobilePrimaryColor?: string;
+    mobileOrientation?: 'portrait' | 'landscape' | 'any';
+    enableApkDownload?: boolean; // Feature toggle to enable/disable APK download in screen/prompts
+    apkDownloadUrl?: string;
+    apkFileSizeMb?: string;
+    mobileDeepLinkScheme?: string;
+    mobileRequireGpsHighAccuracy?: boolean;
+    mobileForceUpdate?: boolean;
+    mobileMinSupportedVersion?: string;
+
     // PWA & Mobile App Customization
     pwaAppName?: string;
     pwaShortName?: string;

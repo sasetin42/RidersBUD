@@ -25,8 +25,11 @@ export const PWAInstallPrompt: React.FC = () => {
   // Dynamic admin custom settings with defaults
   const customTitle = db?.settings?.pwaInstallModalTitle || 'Experience RidersBUD on Mobile';
   const customSubtitle = db?.settings?.pwaInstallModalSubtitle || 'Install the mobile application for live GPS tracking, instant mechanic alerts, and offline access.';
-  const customLogo = db?.settings?.pwaLogoUrl || db?.settings?.pwaIcon192Url || db?.settings?.appLogoUrl || '/icons/icon-192.png';
-  const customApkUrl = db?.settings?.pwaApkDownloadUrl || '/releases/RidersBUD-latest.apk';
+  const customLogo = db?.settings?.mobileAppIconUrl || db?.settings?.pwaLogoUrl || db?.settings?.pwaIcon192Url || db?.settings?.appLogoUrl || '/icons/icon-192.png';
+  const customApkUrl = db?.settings?.apkDownloadUrl || db?.settings?.pwaApkDownloadUrl || '/releases/RidersBUD-latest.apk';
+  const isApkDownloadEnabled = db?.settings?.enableApkDownload ?? (db?.settings?.pwaShowApkDownloadOption !== false);
+  const isModalEnabled = db?.settings?.enableMobileInstallPrompt !== false;
+  
   const customDelay = typeof db?.settings?.pwaAutoPromptDelaySeconds === 'number' 
     ? db.settings.pwaAutoPromptDelaySeconds * 1000 
     : 1500;
@@ -55,6 +58,7 @@ export const PWAInstallPrompt: React.FC = () => {
         // Still in cooldown, but allow user to open manually via event
       } else {
         // Reveal pop-up modal smoothly after custom delay on landing
+        if (!isModalEnabled) return;
         const initialTimer = setTimeout(() => {
           setIsModalOpen(true);
         }, customDelay);
@@ -74,7 +78,9 @@ export const PWAInstallPrompt: React.FC = () => {
 
     // Global event listener to allow header, menu, or settings buttons to trigger modal anytime
     const handleTriggerPrompt = () => {
-      setIsModalOpen(true);
+      if (db?.settings?.enableMobileInstallPrompt !== false) {
+        setIsModalOpen(true);
+      }
     };
     window.addEventListener('open-pwa-install', handleTriggerPrompt);
 
@@ -94,7 +100,15 @@ export const PWAInstallPrompt: React.FC = () => {
       window.removeEventListener('open-pwa-install', handleTriggerPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
-  }, [customDelay]);
+  }, [customDelay, isModalEnabled]);
+
+  // If the setting is disabled in real-time by admin, ensure modal closes and remains closed
+  useEffect(() => {
+    if (!isModalEnabled) {
+      setIsModalOpen(false);
+      setShowIOSModal(false);
+    }
+  }, [isModalEnabled]);
 
   const handleDismiss = () => {
     setIsModalOpen(false);
@@ -142,7 +156,7 @@ export const PWAInstallPrompt: React.FC = () => {
   };
 
   // Do not render anything if running inside standalone installed PWA
-  if (isStandalone || (!isModalOpen && !showIOSModal)) {
+  if (!isModalEnabled || isStandalone || (!isModalOpen && !showIOSModal)) {
     return null;
   }
 
@@ -216,7 +230,7 @@ export const PWAInstallPrompt: React.FC = () => {
               </button>
 
               {/* Android Native APK Option */}
-              {isAndroid && (
+              {isAndroid && isApkDownloadEnabled && (
                 <button
                   onClick={handleDownloadAPK}
                   className="w-full bg-zinc-800 hover:bg-zinc-700 active:scale-[0.98] text-zinc-200 font-semibold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 border border-zinc-700 transition"

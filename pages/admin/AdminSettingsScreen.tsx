@@ -75,7 +75,7 @@ interface TabConfig {
 const TABS: TabConfig[] = [
     { id: 'general', label: 'General', icon: <Globe size={17} />, description: 'App identity & contacts', keywords: ['name', 'logo', 'favicon', 'address', 'timezone', 'language', 'avatar', 'social'] },
     { id: 'appearance', label: 'Appearance', icon: <Layout size={17} />, description: 'Logos & Branding', keywords: ['theme', 'dark', 'light', 'color', 'accent', 'css', 'radius', 'density'] },
-    { id: 'pwa', label: 'PWA & Mobile App', icon: <Smartphone size={17} />, description: 'Installation, Icons & Splash', keywords: ['pwa', 'install', 'splash', 'logo', 'mobile', 'apk', 'manifest', 'download', 'icon'] },
+    { id: 'pwa', label: 'Mobile Application', icon: <Smartphone size={17} />, description: 'App Icon, APK & Mobile System', keywords: ['pwa', 'install', 'splash', 'logo', 'mobile', 'apk', 'manifest', 'download', 'icon'] },
     { id: 'operations', label: 'Operations', icon: <Clock size={17} />, description: 'Booking logic & mechanics', keywords: ['booking', 'hours', 'slot', 'cancellation', 'radius', 'dispatch', 'modules'] },
     { id: 'services', label: 'Services Config', icon: <SlidersHorizontal size={17} />, description: 'Rental, Driver, Liaison & Towing', keywords: ['rental', 'driver', 'liaison', 'towing', 'rates', 'fees', 'car rental', 'driver for hire'] },
     { id: 'financials', label: 'Financials', icon: <DollarSign size={17} />, description: 'Currency, fees & HitPay', keywords: ['currency', 'vat', 'tax', 'hitpay', 'gcash', 'payout', 'fee', 'invoice'] },

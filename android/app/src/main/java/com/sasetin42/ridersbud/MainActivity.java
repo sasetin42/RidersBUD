@@ -30,6 +30,15 @@ public class MainActivity extends BridgeActivity {
         try {
             // Enable true edge-to-edge rendering so WebView draws behind system bars
             WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+            getWindow().setStatusBarColor(android.graphics.Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(android.graphics.Color.TRANSPARENT);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Prevent OS from drawing artificial translucent/grey contrast scrim behind 3-button nav
+                getWindow().setNavigationBarContrastEnforced(false);
+                getWindow().setStatusBarContrastEnforced(false);
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 getWindow().getAttributes().layoutInDisplayCutoutMode =
                         android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
@@ -37,7 +46,7 @@ public class MainActivity extends BridgeActivity {
             androidx.core.view.WindowInsetsControllerCompat controller =
                     WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
             if (controller != null) {
-                // Ensure light status bar icons (since RidersBUD has a dark UI theme)
+                // Ensure light status bar icons and light navigation keys (since RidersBUD has a dark UI theme)
                 controller.setAppearanceLightStatusBars(false);
                 controller.setAppearanceLightNavigationBars(false);
             }
