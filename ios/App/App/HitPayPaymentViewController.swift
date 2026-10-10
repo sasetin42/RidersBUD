@@ -171,7 +171,7 @@ public class HitPayPaymentViewController: UIViewController, WKNavigationDelegate
             onRedirect?(urlString)
             return
         }
-        if scheme == "https" && host == "ridersbud-10806.web.app" && url.path.hasPrefix("/payment/return") {
+        if scheme == "https" && (host == "ridersbud-10806.web.app" || host == "ridersbud-10806.firebaseapp.com") && url.path.hasPrefix("/payment/return") {
             decisionHandler(.cancel)
             onRedirect?(urlString)
             return

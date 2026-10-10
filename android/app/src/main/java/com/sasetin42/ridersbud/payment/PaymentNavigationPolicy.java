@@ -38,7 +38,8 @@ public class PaymentNavigationPolicy {
     private static final Set<String> ALLOWED_HOSTS = new HashSet<>(Arrays.asList(
             "hit-pay.com",
             "sandbox.hit-pay.com",
-            "ridersbud-10806.web.app"
+            "ridersbud-10806.web.app",
+            "ridersbud-10806.firebaseapp.com"
     ));
 
     /** Initial checkout URLs must be HTTPS HitPay pages, never arbitrary web content. */

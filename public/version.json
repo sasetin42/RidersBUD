@@ -1,9 +1,9 @@
 {
-  "versionCode": 20,
-  "versionName": "1.1.9",
+  "versionCode": 22,
+  "versionName": "1.1.11",
   "apkUrl": "https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk",
-  "releaseNotes": "• Hardened HitPay payment crash fixes (lenient URL parsing + clean programmatic close)",
+  "releaseNotes": "Fix: Multi-process WebView crash resolution on Android P+ for HitPay checkout\nFix: Support firebaseapp.com return interception on mobile\nOptimization: Seamless GCash, Maya and 3DS Bank checkout flows",
   "mandatory": false,
   "minSupportedVersionCode": 1,
-  "generatedAt": "2026-10-09T11:57:23.976Z"
+  "generatedAt": "2026-10-09T23:24:05.684Z"
 }

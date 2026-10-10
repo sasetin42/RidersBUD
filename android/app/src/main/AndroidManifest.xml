@@ -63,11 +63,14 @@
 
         </activity>
 
-        <!-- Native In-App Payment Container Activity (isolated process prevents OOM renderer death in main app) -->
+        <!-- Native In-App Payment Container Activity (isolated process prevents OOM renderer death in main app)
+             Theme MUST be an AppCompat-derived theme (AppTheme.Payment): HitPayPaymentActivity
+             extends AppCompatActivity and a Theme.SplashScreen-based theme crashes it with
+             "You need to use a Theme.AppCompat theme (or descendant) with this activity". -->
         <activity
             android:name=".payment.HitPayPaymentActivity"
             android:label="Secure Payment"
-            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:theme="@style/AppTheme.Payment"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density"
             android:launchMode="singleTop"
             android:process=":payment"

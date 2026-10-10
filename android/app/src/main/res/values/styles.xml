@@ -18,8 +18,40 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
+    <!--
+        Window theme used ONLY while the launch activity is being created (the
+        Capacitor splash). It is based on androidx' Theme.SplashScreen, which is
+        NOT an AppCompat theme, so every activity that uses it MUST switch to an
+        AppCompat theme before its first setContentView() — MainActivity does that
+        via setTheme(R.style.AppTheme_NoActionBar).
+
+        NEVER use this theme for a plain AppCompatActivity: Theme.SplashScreen only
+        defines the FRAMEWORK attribute android:windowActionBar, while
+        AppCompatDelegateImpl.createSubDecor() requires the APPCOMPAT attribute
+        windowActionBar and otherwise throws
+        "You need to use a Theme.AppCompat theme (or descendant) with this activity".
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!--
+        Theme of the native in-app HitPay checkout container
+        (HitPayPaymentActivity). It MUST derive from Theme.AppCompat because the
+        activity extends AppCompatActivity: the previous NoActionBarLaunch
+        (Theme.SplashScreen) theme made every single checkout launch die with
+
+            java.lang.IllegalStateException:
+            You need to use a Theme.AppCompat theme (or descendant) with this activity
+
+        in the ":payment" process — the reported "checkout always crashes" bug.
+        Coverage: HitPayPaymentActivityThemeTest + HitPayPaymentThemeTest.
+    -->
+    <style name="AppTheme.Payment" parent="AppTheme.NoActionBar">
+        <item name="android:windowBackground">#FF121212</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

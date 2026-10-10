@@ -42,6 +42,8 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.sasetin42.ridersbud.R;
+
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
@@ -108,6 +110,31 @@ public class HitPayPaymentActivity extends AppCompatActivity {
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        // HARD REQUIREMENT — this activity extends AppCompatActivity, and
+        // AppCompatDelegateImpl.createSubDecor() throws
+        //   java.lang.IllegalStateException:
+        //   "You need to use a Theme.AppCompat theme (or descendant) with this activity"
+        // when the activity theme does not define the APPCOMPAT windowActionBar
+        // attribute. That exception fired on EVERY checkout launch while this
+        // activity still used the Theme.SplashScreen-based launch theme, killing
+        // the ":payment" process — the reported "checkout always crashes".
+        //
+        // The manifest now declares @style/AppTheme.Payment; setTheme() here keeps
+        // the container crash-proof even if that declaration is ever changed back
+        // to a splash/launch theme. Must run BEFORE super.onCreate().
+        // Set data directory suffix for isolated ":payment" process.
+        // Android 9+ (API 28+) throws java.lang.RuntimeException if two processes access
+        // the same WebView data directory concurrently without setting a distinct suffix.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                String processName = getApplicationContext().getPackageName() + ":payment";
+                WebView.setDataDirectorySuffix("payment");
+            } catch (Exception e) {
+                Log.w(TAG, "setDataDirectorySuffix encountered exception or was already set: " + e.getMessage());
+            }
+        }
+
+        setTheme(R.style.AppTheme_Payment);
         super.onCreate(savedInstanceState);
 
         // Smooth Edge-to-Edge immersive mobile layout for payment
@@ -219,23 +246,30 @@ public class HitPayPaymentActivity extends AppCompatActivity {
         rootLayout.addView(progressBar);
 
         // WebView
-        webView = new WebView(this);
-        webView.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
-        webView.setBackgroundColor(Color.WHITE);
-        rootLayout.addView(webView);
+        try {
+            webView = new WebView(this);
+            webView.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
+            webView.setBackgroundColor(Color.WHITE);
+            rootLayout.addView(webView);
 
-        // Apply navigation bar window insets to rootLayout bottom
-        ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
-            int navBarHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
-            v.setPadding(0, 0, 0, navBarHeight);
-            return insets;
-        });
+            // Apply navigation bar window insets to rootLayout bottom
+            ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
+                int navBarHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+                v.setPadding(0, 0, 0, navBarHeight);
+                return insets;
+            });
 
-        setContentView(rootLayout);
+            setContentView(rootLayout);
 
-        // Hardening WebView configuration
-        configureHardenedWebView();
+            // Hardening WebView configuration
+            configureHardenedWebView();
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to initialize WebView in HitPayPaymentActivity", t);
+            broadcastError("WebView initialization failed: " + t.getMessage());
+            finish();
+            return;
+        }
 
         // Android Back Button handler using modern OnBackPressedDispatcher
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {

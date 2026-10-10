@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.ViewGroup;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebView;
 
@@ -79,33 +80,13 @@ public class MainActivity extends BridgeActivity {
                     }
                     rendererRecoveryPending = true;
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        try {
-                            if (com.sasetin42.ridersbud.payment.HitPayInAppPlugin.isNativePaymentActive()) {
-                                Log.w(TAG, "Renderer recovery: payment is currently active, deferring recreate to prevent app dismissal.");
-                                rendererRecoveryDeferred = true;
-                                rendererRecoveryPending = false;
-                                return;
-                            }
-                            if (webView != null) {
-                                try {
-                                    if (webView.getParent() instanceof android.view.ViewGroup) {
-                                        ((android.view.ViewGroup) webView.getParent()).removeView(webView);
-                                    }
-                                    webView.destroy();
-                                } catch (Exception ignored) {}
-                            }
-                            recreate();
-                        } catch (Exception rebuildError) {
-                            Log.e(TAG, "Renderer recovery rebuild failed", rebuildError);
-                            try {
-                                finish();
-                            } catch (Exception ignored) {
-                                // Nothing else we can do — but never let this
-                                // escape as an uncaught exception.
-                            }
-                        } finally {
+                        if (com.sasetin42.ridersbud.payment.HitPayInAppPlugin.isNativePaymentActive()) {
+                            Log.w(TAG, "Renderer recovery: payment is currently active, deferring recreate to prevent app dismissal.");
+                            rendererRecoveryDeferred = true;
                             rendererRecoveryPending = false;
+                            return;
                         }
+                        destroyWebViewAndRecreate(webView);
                     }, 300);
                     return true;
                 }
@@ -115,8 +96,10 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    // onResume() must stay public: BridgeActivity declares it public, and
+    // narrowing the visibility of an override is a compile error.
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         if (!rendererRecoveryDeferred || rendererRecoveryPending ||
                 com.sasetin42.ridersbud.payment.HitPayInAppPlugin.isNativePaymentActive()) {
@@ -128,26 +111,60 @@ public class MainActivity extends BridgeActivity {
         // the customer on a blank Capacitor bridge indefinitely.
         rendererRecoveryDeferred = false;
         rendererRecoveryPending = true;
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+        new Handler(Looper.getMainLooper()).postDelayed(this::destroyBridgeWebViewAndRecreate, 300);
+    }
+
+    /**
+     * Tear down the (already dead) bridge WebView and rebuild this activity.
+     *
+     * The WebView lives on the Bridge — MainActivity has no `webView` field — so
+     * every teardown path must resolve it through getBridge().getWebView().
+     * Nothing here may throw: a failure during recovery has to end in finish()
+     * rather than as an uncaught exception in the middle of a payment.
+     */
+    private void destroyWebViewAndRecreate(WebView deadWebView) {
+        try {
+            destroyWebViewQuietly(deadWebView);
+            recreate();
+        } catch (Exception rebuildError) {
+            Log.e(TAG, "Renderer recovery rebuild failed", rebuildError);
             try {
-                if (webView != null) {
-                    try {
-                        if (webView.getParent() instanceof android.view.ViewGroup) {
-                            ((android.view.ViewGroup) webView.getParent()).removeView(webView);
-                        }
-                        webView.destroy();
-                    } catch (Exception ignored) {}
-                }
-                recreate();
-            } catch (Exception rebuildError) {
-                Log.e(TAG, "Deferred renderer recovery rebuild failed", rebuildError);
-                try {
-                    finish();
-                } catch (Exception ignored) {}
-            } finally {
-                rendererRecoveryPending = false;
+                finish();
+            } catch (Exception ignored) {
+                // Nothing else we can do — but never let this escape as an
+                // uncaught exception.
             }
-        }, 300);
+        } finally {
+            rendererRecoveryPending = false;
+        }
+    }
+
+    private void destroyBridgeWebViewAndRecreate() {
+        WebView bridgeWebView = null;
+        try {
+            Bridge bridge = getBridge();
+            if (bridge != null) {
+                bridgeWebView = bridge.getWebView();
+            }
+        } catch (Exception ignored) {
+            // Bridge already torn down — recreate() alone is enough.
+        }
+        destroyWebViewAndRecreate(bridgeWebView);
+    }
+
+    private void destroyWebViewQuietly(WebView view) {
+        if (view == null) {
+            return;
+        }
+        try {
+            if (view.getParent() instanceof ViewGroup) {
+                ((ViewGroup) view.getParent()).removeView(view);
+            }
+            view.stopLoading();
+            view.destroy();
+        } catch (Exception ignored) {
+            // Renderer teardown is best-effort; keep the host app alive.
+        }
     }
 
     /**
