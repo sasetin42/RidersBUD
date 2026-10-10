@@ -15,6 +15,8 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
 
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 public class MainActivity extends BridgeActivity {
 
@@ -27,14 +29,30 @@ public class MainActivity extends BridgeActivity {
         setTheme(R.style.AppTheme_NoActionBar);
         registerPlugin(com.sasetin42.ridersbud.payment.HitPayInAppPlugin.class);
         super.onCreate(savedInstanceState);
+        applyImmersiveFullscreen();
+        registerRenderProcessGuard();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            applyImmersiveFullscreen();
+        }
+    }
+
+    /**
+     * Priority App Display: Hides phone status bar (battery, clock, notifications)
+     * and phone navigation menu keys so only the RidersBUD app is visible.
+     * Swiping from the edge shows them transiently without breaking the layout.
+     */
+    private void applyImmersiveFullscreen() {
         try {
-            // Enable true edge-to-edge rendering so WebView draws behind system bars
             WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
             getWindow().setStatusBarColor(android.graphics.Color.TRANSPARENT);
             getWindow().setNavigationBarColor(android.graphics.Color.TRANSPARENT);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Prevent OS from drawing artificial translucent/grey contrast scrim behind 3-button nav
                 getWindow().setNavigationBarContrastEnforced(false);
                 getWindow().setStatusBarContrastEnforced(false);
             }
@@ -43,17 +61,20 @@ public class MainActivity extends BridgeActivity {
                 getWindow().getAttributes().layoutInDisplayCutoutMode =
                         android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             }
-            androidx.core.view.WindowInsetsControllerCompat controller =
+
+            WindowInsetsControllerCompat controller =
                     WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
             if (controller != null) {
-                // Ensure light status bar icons and light navigation keys (since RidersBUD has a dark UI theme)
-                controller.setAppearanceLightStatusBars(false);
-                controller.setAppearanceLightNavigationBars(false);
+                // Completely hide phone status bar and phone navigation keys
+                controller.hide(WindowInsetsCompat.Type.systemBars());
+                // Swipe from edge will momentarily reveal system bars then auto-hide
+                controller.setSystemBarsBehavior(
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                );
             }
         } catch (Exception e) {
-            Log.w(TAG, "Edge-to-edge layout init warning: " + e.getMessage());
+            Log.w(TAG, "Immersive fullscreen layout init warning: " + e.getMessage());
         }
-        registerRenderProcessGuard();
     }
 
     /**
@@ -110,6 +131,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        applyImmersiveFullscreen();
         if (!rendererRecoveryDeferred || rendererRecoveryPending ||
                 com.sasetin42.ridersbud.payment.HitPayInAppPlugin.isNativePaymentActive()) {
             return;

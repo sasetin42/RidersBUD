@@ -126,12 +126,22 @@ ok('Signature verified');
 log('Staging APKs…');
 mkdirSync(distReleases, { recursive: true });
 mkdirSync(path.join(ROOT, 'public/releases'), { recursive: true });
-mkdirSync(path.join(ROOT, 'playstore-release/apk'), { recursive: true });
-copyFileSync(apkPath, path.join(distReleases, 'RidersBUD-latest.apk'));
-copyFileSync(apkPath, path.join(distReleases, `RidersBUD-v${VERSION_NAME}.apk`));
-copyFileSync(apkPath, path.join(ROOT, 'public/releases/RidersBUD-latest.apk'));
-copyFileSync(apkPath, path.join(ROOT, `public/releases/RidersBUD-v${VERSION_NAME}.apk`));
-copyFileSync(apkPath, path.join(ROOT, 'playstore-release/apk/app-release.apk'));
+function safeCopy(src, dst) {
+    try {
+        if (existsSync(dst)) {
+            try { unlinkSync(dst); } catch (_) {}
+        }
+        copyFileSync(src, dst);
+    } catch (err) {
+        log(`Standard copy failed for ${path.basename(dst)}, trying powershell copy...`);
+        sh(`powershell -NoProfile -Command "Copy-Item -LiteralPath '${src}' -Destination '${dst}' -Force"`);
+    }
+}
+safeCopy(apkPath, path.join(distReleases, 'RidersBUD-latest.apk'));
+safeCopy(apkPath, path.join(distReleases, `RidersBUD-v${VERSION_NAME}.apk`));
+safeCopy(apkPath, path.join(ROOT, 'public/releases/RidersBUD-latest.apk'));
+safeCopy(apkPath, path.join(ROOT, `public/releases/RidersBUD-v${VERSION_NAME}.apk`));
+safeCopy(apkPath, path.join(ROOT, 'playstore-release/apk/app-release.apk'));
 ok('Staged: dist/releases + public/releases + playstore-release/apk');
 
 // ---------------------------------------------------------------------------

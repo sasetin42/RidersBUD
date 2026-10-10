@@ -41,6 +41,7 @@ import { UpdateModal } from './components/UpdateModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { OfflineBanner } from './components/OfflineBanner';
 import { syncDynamicManifest } from './utils/pwaManifestHelper';
+import { fcmService } from './services/fcmService';
 
 const LoginScreen = React.lazy(() => import('./pages/LoginScreen'));
 const SignUpScreen = React.lazy(() => import('./pages/SignUpScreen'));
@@ -708,6 +709,25 @@ const AppContent: React.FC = () => {
             }
         });
     }, [isAuthenticated, isMechanicAuthenticated, db?.settings?.appUpdateConfig]);
+
+    // Real-Time Firebase Cloud Messaging (FCM) Push Initialization
+    useEffect(() => {
+        if (!Capacitor.isNativePlatform()) return;
+
+        fcmService.setNotificationTapHandler((data) => {
+            if (data?.link) {
+                navigate(data.link);
+            }
+        });
+
+        if (isAuthenticated && user?.id) {
+            fcmService.initialize({ userId: user.id, role: 'customer' });
+        } else if (isMechanicAuthenticated && mechanic?.id) {
+            fcmService.initialize({ userId: mechanic.id, role: 'mechanic' });
+        } else if (isAdminAuthenticated) {
+            fcmService.initialize({ userId: 'admin', role: 'admin' });
+        }
+    }, [isAuthenticated, user?.id, isMechanicAuthenticated, mechanic?.id, isAdminAuthenticated, navigate]);
 
     // Location enforcement states
     const [isLocationBlocked, setIsLocationBlocked] = useState(false);

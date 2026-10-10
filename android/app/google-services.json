@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "492813766406",
+    "project_id": "ridersbud-10806",
+    "storage_bucket": "ridersbud-10806.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:492813766406:android:b74621ea779c04ec8f9887",
+        "android_client_info": {
+          "package_name": "com.sasetin42.ridersbud"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "492813766406-tsjo4jf4aggvtv3nmne0qmh9lmlt9gp7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8OVoYyRL-Iyu9EA9-ooil1s19z346DKk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "492813766406-tsjo4jf4aggvtv3nmne0qmh9lmlt9gp7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

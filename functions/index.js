@@ -1514,3 +1514,128 @@ exports.paymentDailyFinanceEmail = functions
 
     return null;
   });
+
+/**
+ * Real-Time FCM Push Dispatcher:
+ * Automatically dispatches FCM push notifications to recipient devices whenever a new
+ * notification document is created in the Firestore 'notifications' collection.
+ */
+exports.sendPushNotificationOnNewDocument = functions.firestore
+  .document('notifications/{notificationId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data();
+    if (!data) return null;
+
+    const recipientId = data.recipientId ? String(data.recipientId).trim() : null;
+    const recipientRole = data.recipientRole ? String(data.recipientRole).trim() : null;
+
+    if (!recipientId || recipientId === 'all') {
+      return null;
+    }
+
+    // Clean prefix if any
+    const cleanId = recipientId.replace(/^customer-/, '').replace(/^mechanic-/, '');
+
+    try {
+      const db = admin.firestore();
+      let fcmTokens = [];
+      let docRef = null;
+
+      if (recipientRole === 'mechanic') {
+        docRef = db.collection('mechanics').doc(cleanId);
+      } else if (recipientRole === 'admin') {
+        const adminUsersSnap = await db.collection('adminUsers').get();
+        adminUsersSnap.forEach((doc) => {
+          const userTokens = doc.data().fcmTokens || [];
+          if (Array.isArray(userTokens)) {
+            fcmTokens.push(...userTokens);
+          }
+        });
+      } else {
+        docRef = db.collection('users').doc(cleanId);
+      }
+
+      if (docRef) {
+        const userDoc = await docRef.get();
+        if (userDoc.exists) {
+          const tokens = userDoc.data().fcmTokens || [];
+          if (Array.isArray(tokens)) {
+            fcmTokens = tokens;
+          }
+        }
+      }
+
+      // Deduplicate valid tokens
+      fcmTokens = [...new Set(fcmTokens)].filter(t => typeof t === 'string' && t.length > 10);
+
+      if (fcmTokens.length === 0) {
+        return null;
+      }
+
+      const title = data.title || 'RidersBUD Update';
+      const body = data.message || 'You have a new update in your account.';
+      const actionUrl = data.link || data.actionUrl || '/customer-portal';
+
+      const payload = {
+        tokens: fcmTokens,
+        notification: {
+          title,
+          body,
+        },
+        data: {
+          notificationId: context.params.notificationId,
+          title,
+          body,
+          link: actionUrl,
+          type: String(data.type || 'system')
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'ridersbud_notifications',
+            icon: 'ic_launcher',
+            color: '#FE7803',
+            sound: 'default'
+          }
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1
+            }
+          }
+        }
+      };
+
+      const response = await admin.messaging().sendEachForMulticast(payload);
+      console.log(`[FCM] Dispatched to ${recipientId}: ${response.successCount} succeeded, ${response.failureCount} failed.`);
+
+      // Clean up invalid or expired tokens
+      if (response.failureCount > 0 && docRef) {
+        const tokensToRemove = [];
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            const errCode = resp.error?.code;
+            if (
+              errCode === 'messaging/invalid-registration-token' ||
+              errCode === 'messaging/registration-token-not-registered'
+            ) {
+              tokensToRemove.push(fcmTokens[idx]);
+            }
+          }
+        });
+
+        if (tokensToRemove.length > 0) {
+          await docRef.update({
+            fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToRemove)
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error('[FCM] Error dispatching push notification:', err);
+    }
+
+    return null;
+  });
+

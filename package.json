@@ -23,6 +23,7 @@
     "@capacitor/browser": "^8.0.4",
     "@capacitor/geolocation": "^8.2.0",
     "@capacitor/ios": "^8.5.2",
+    "@capacitor/push-notifications": "^8.1.3",
     "@google/genai": "^1.21.0",
     "browser-image-compression": "^2.0.2",
     "capacitor-native-settings": "^8.1.0",
