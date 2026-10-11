@@ -330,7 +330,7 @@ const RemindersScreen: React.FC = () => {
     const sortedReminders = [...combinedReminders].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     return (
-        <div className="flex flex-col h-full bg-secondary">
+        <div className="flex flex-col min-h-screen bg-secondary overflow-x-hidden">
             <CustomerHeader title="Service Reminders" showBackButton icon={<Bell size={22} />} />
 
             <div className="p-4 flex gap-4">

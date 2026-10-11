@@ -22,7 +22,7 @@ const AppServicesListScreen: React.FC = () => {
     const accentColor = db?.settings?.accentColor || '#FE7803';
 
     return (
-        <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col font-sans overflow-x-hidden pb-24">
+        <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col font-sans overflow-x-hidden pb-bottom-nav">
             {/* Header - Geometric & Sharp */}
             <header className="relative w-full pt-10 pb-6 px-6 overflow-hidden border-b border-white/5">
                 <div 

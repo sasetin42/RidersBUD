@@ -602,7 +602,7 @@ const BookingHistoryScreen: React.FC = () => {
         <div className="flex flex-col min-h-screen bg-[#121212] text-white select-none">
             <CustomerHeader title="Booking History" icon={<History size={22} />} />
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar pb-20">
+            <div className="flex-1 overflow-y-auto custom-scrollbar pb-bottom-nav">
                 <main className="p-4 space-y-6 max-w-5xl mx-auto w-full">
 
                     {/* Success Notification Banner */}

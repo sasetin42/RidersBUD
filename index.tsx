@@ -180,15 +180,16 @@ const _filteredError = (...args: any[]) => {
   _origError(...args);
 };
 
-// Assign filtered handlers while keeping them configurable and writable for React and dev tools
+// Assign filtered handlers while respecting initial HTML security lock
 try {
-  console.warn = _filteredWarn;
-} catch {
-  // Ignore fallback failure
-}
-
-try {
-  console.error = _filteredError;
+  const currentWarn = console.warn;
+  const currentError = console.error;
+  if (!currentWarn || currentWarn === _origWarn) {
+    console.warn = _filteredWarn;
+  }
+  if (!currentError || currentError === _origError) {
+    console.error = _filteredError;
+  }
 } catch {
   // Ignore fallback failure
 }

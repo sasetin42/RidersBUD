@@ -411,7 +411,7 @@ const ServicesScreen: React.FC = () => {
     ].filter(Boolean).length;
 
     return (
-        <div className="flex flex-col min-h-screen bg-[#121212]">
+        <div className="flex flex-col min-h-screen bg-[#121212] pb-bottom-nav">
             <CustomerHeader title="Services" showBackButton={false} icon={<Wrench size={22} />} />
 
             {/* Search & Category Section */}

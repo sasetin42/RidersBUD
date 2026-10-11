@@ -375,11 +375,21 @@ const LiveMap: React.FC<LiveMapProps> = ({ mechanics, bookings, settings, onView
 
     const handleFullscreen = () => {
         if (!mapRef.current) return;
-        if (document.fullscreenElement) {
-            document.exitFullscreen();
-        } else {
-            mapRef.current.requestFullscreen();
-        }
+        try {
+            if (document.fullscreenElement) {
+                if (document.exitFullscreen) {
+                    const exitPromise = document.exitFullscreen();
+                    if (exitPromise && typeof exitPromise.catch === 'function') {
+                        exitPromise.catch(() => {});
+                    }
+                }
+            } else if (mapRef.current.requestFullscreen) {
+                const enterPromise = mapRef.current.requestFullscreen();
+                if (enterPromise && typeof enterPromise.catch === 'function') {
+                    enterPromise.catch(() => {});
+                }
+            }
+        } catch (_) {}
     };
 
     return (

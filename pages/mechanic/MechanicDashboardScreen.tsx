@@ -428,7 +428,7 @@ const MechanicDashboardScreen: React.FC = () => {
                 }
             />
 
-            <div className="flex-grow p-4 space-y-6 overflow-y-auto">
+            <div className="flex-grow p-4 space-y-6 overflow-y-auto pb-bottom-nav">
                 {/* Inactivity Auto-Offline Alert Notice */}
                 {autoOfflineNotice && (
                     <div className="bg-amber-950/40 border border-amber-500/40 rounded-2xl p-4 flex items-start justify-between gap-3 text-amber-200 animate-fadeIn shadow-lg shadow-amber-950/20">

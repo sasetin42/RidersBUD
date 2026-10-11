@@ -218,10 +218,15 @@ export function applyDisplayModeRuntime(
     
     // User interaction listener for requestFullscreen with active user gesture check
     const enterFullscreenOnTap = (event: Event) => {
-      // Must have isTrusted user activation
+      // Must have isTrusted user activation and active gesture if supported
       if (!event.isTrusted) return;
+      if (typeof navigator !== 'undefined' && 'userActivation' in navigator) {
+        if (!(navigator as any).userActivation?.isActive) {
+          return;
+        }
+      }
       if (document.fullscreenElement) return;
-      if (document.documentElement.requestFullscreen) {
+      if (document.documentElement && typeof document.documentElement.requestFullscreen === 'function') {
         try {
           const promise = document.documentElement.requestFullscreen();
           if (promise && typeof promise.catch === 'function') {

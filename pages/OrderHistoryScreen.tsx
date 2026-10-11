@@ -321,7 +321,7 @@ const OrderHistoryScreen: React.FC = () => {
         <div className="flex flex-col min-h-screen bg-[#121212] select-none">
             <CustomerHeader title="Order History" showBackButton icon={<Package size={22} />} />
             
-            <main className="flex-grow overflow-y-auto p-4 space-y-4 pb-20">
+            <main className="flex-grow overflow-y-auto p-4 space-y-4 pb-bottom-nav">
                 {userOrders.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-[70vh] text-center space-y-5 px-6">
                         <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center border border-white/5 shadow-inner animate-pulse">

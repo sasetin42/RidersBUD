@@ -85,7 +85,7 @@ const CartScreen: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#0D0D0E] pb-20 text-white font-sans">
+        <div className="flex flex-col min-h-screen bg-[#0D0D0E] pb-bottom-nav text-white font-sans">
             <CustomerHeader title="Cart" showBackButton={true} icon={<ShoppingCart className="text-primary animate-pulse" size={22} />} />
             
             <div className="flex-grow overflow-y-auto p-4 space-y-6">

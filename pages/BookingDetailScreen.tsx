@@ -2232,11 +2232,11 @@ const BookingDetailScreen: React.FC = () => {
                                             )}
 
                                             {booking.downpaymentPaidAt && (
-                                                <div className="flex justify-between items-center text-[10px] text-gray-400 font-mono">
-                                                    <span className="flex items-center gap-1.5 text-gray-500">
+                                                <div className="flex flex-wrap sm:flex-nowrap justify-between items-center text-[10px] text-gray-400 font-mono gap-1 pt-1">
+                                                    <span className="flex items-center gap-1.5 text-gray-500 shrink-0">
                                                         <Calendar size={11} className="text-gray-500" /> DP Paid At
                                                     </span>
-                                                    <span>{new Date(booking.downpaymentPaidAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                                                    <span className="text-right truncate font-medium text-gray-300">{new Date(booking.downpaymentPaidAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>
                                                 </div>
                                             )}
 

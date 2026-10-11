@@ -977,7 +977,7 @@ const MyGarageScreen: React.FC = () => {
     }
 
     return (
-        <div className="flex flex-col min-h-screen bg-[#0F0F10] font-sans text-white pb-24">
+        <div className="flex flex-col min-h-screen bg-[#0F0F10] font-sans text-white pb-bottom-nav">
             <CustomerHeader title="My Garage" showBackButton icon={<Car size={22} />} />
 
             <main className="flex-1 p-4 sm:p-6 space-y-6">

@@ -227,7 +227,7 @@ const MechanicProfileScreen: React.FC = () => {
                 </div>
             )}
                 <CustomerHeader title="Mechanic Profile" showBackButton icon={<Wrench size={22} />} />
-            <div className="flex-grow p-6 space-y-8 overflow-y-auto">
+            <div className="flex-grow p-6 space-y-8 overflow-y-auto pb-bottom-nav">
                 <div className="flex flex-col items-center text-center -mb-2">
                     <img src={getProfileImage(mechanic.imageUrl, 'mechanic')} alt={mechanic.name} className="w-20 h-20 rounded-full object-cover mb-3 border-2 border-primary" />
                     <div className="flex items-center gap-2">

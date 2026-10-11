@@ -150,10 +150,10 @@ const WarrantyScreen: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-secondary">
+        <div className="flex flex-col min-h-screen bg-secondary overflow-x-hidden">
             <CustomerHeader title="Warranty Tracking" showBackButton icon={<ShieldCheck size={22} />} />
             
-            <main className="flex-grow overflow-y-auto p-4">
+            <main className="flex-grow overflow-y-auto p-4 pb-bottom-nav">
                 {loading ? (
                     <div className="flex items-center justify-center h-full">
                         <Spinner size="lg" />

@@ -34,7 +34,7 @@ const FavoriteMechanicsScreen: React.FC = () => {
 
     if (authLoading || dbLoading) {
         return (
-            <div className="flex flex-col h-full bg-secondary">
+            <div className="flex flex-col min-h-screen bg-secondary overflow-x-hidden">
                 <CustomerHeader title="Favorite Mechanics" showBackButton icon={<Heart size={22} />} />
                 <div className="flex-grow flex items-center justify-center">
                     <Spinner size="lg" />
@@ -46,7 +46,7 @@ const FavoriteMechanicsScreen: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-secondary">
             <CustomerHeader title="Favorite Mechanics" showBackButton icon={<Heart size={22} />} />
-            <main className="flex-grow overflow-y-auto p-4">
+            <main className="flex-grow overflow-y-auto p-4 pb-bottom-nav">
                 {favoriteMechanics.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center text-light-gray px-6">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 mb-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">

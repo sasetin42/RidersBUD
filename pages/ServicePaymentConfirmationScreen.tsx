@@ -217,7 +217,7 @@ const ServicePaymentConfirmationScreen: React.FC = () => {
                 showBackButton={false}
             />
 
-            <div className="flex-grow flex flex-col p-4 sm:p-6 space-y-4 max-w-lg mx-auto w-full overflow-y-auto pb-24">
+            <div className="flex-grow flex flex-col p-4 sm:p-6 space-y-4 max-w-lg mx-auto w-full overflow-y-auto pb-bottom-nav">
                 {/* Hero Success Badge */}
                 <div className="text-center pt-2 pb-1">
                     <div className="relative inline-block mb-3">

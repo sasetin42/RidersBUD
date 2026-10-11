@@ -3545,7 +3545,7 @@ const MechanicProfileManagementScreen: React.FC = () => {
                 icon={<User size={22} />}
             />
 
-            <div className="flex-grow p-4 sm:p-8 space-y-8 overflow-y-auto pb-10">
+            <div className="flex-grow p-4 sm:p-8 space-y-8 overflow-y-auto pb-bottom-nav">
                 {/* Profile Card */}
                 <div className="bg-gradient-to-br from-[#1A1A1A] to-[#121212] rounded-[2.5rem] p-6 border border-white/5 shadow-2xl flex items-center gap-6 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-[50px] rounded-full translate-x-10 -translate-y-10 group-hover:bg-primary/20 transition-all duration-700"></div>

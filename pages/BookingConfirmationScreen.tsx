@@ -379,7 +379,7 @@ const BookingConfirmationScreen: React.FC = () => {
                 />
             )}
             
-            <div className="flex-grow flex flex-col p-3.5 sm:p-5 space-y-4 overflow-y-auto pb-8 max-w-lg mx-auto w-full">
+            <div className="flex-grow flex flex-col p-3.5 sm:p-5 space-y-4 overflow-y-auto pb-bottom-nav max-w-lg mx-auto w-full">
 
                 {/* Mechanic Accepted - Auto Redirect Notification */}
                 {showRedirectNotification && (

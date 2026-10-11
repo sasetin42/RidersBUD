@@ -980,12 +980,12 @@ const HomeScreen: React.FC = () => {
 
     return (
         <div 
-            className="flex flex-col min-h-screen bg-[#121212] text-white font-sans"
-            style={{ paddingBottom: 'calc(1rem + var(--safe-bottom))' }}
+            className="flex flex-col min-h-screen bg-[#121212] text-white font-sans overflow-x-hidden"
+            
         >
             <CustomerHeader title={`Welcome, ${user?.name.split(' ')[0]}!`} icon={<Car size={20} />} />
 
-            <main className="flex-grow w-full px-4 sm:px-6 space-y-3.5 overflow-y-auto custom-scrollbar pt-2.5 max-w-5xl mx-auto">
+            <main className="flex-grow w-full px-4 sm:px-6 space-y-3.5 overflow-y-auto overflow-x-hidden custom-scrollbar pt-2.5 pb-bottom-nav max-w-5xl mx-auto">
 
                 {/* Customer Account & Vehicle Banner - Compact & Full Responsive Mobile View */}
                 {user?.vehicles && user.vehicles.length > 0 && (() => {
@@ -1483,7 +1483,7 @@ const HomeScreen: React.FC = () => {
                         </Tooltip>
                     </div>
 
-                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
+                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6 scrollbar-hide snap-x snap-mandatory">
                         {popularServices.map(service => (
                             <Tooltip key={service.id} content={service.name}>
                                 <Link
@@ -1527,7 +1527,7 @@ const HomeScreen: React.FC = () => {
                         </Tooltip>
                     </div>
 
-                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide snap-x snap-mandatory">
+                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6 scrollbar-hide snap-x snap-mandatory">
                         {db?.appServices?.filter((s: any) => {
                             if (s.category !== 'Special Services' || s.isActive === false) return false;
                             if (s.slug === 'rent-a-car' && !isSpecialServiceEnabled('carRental', db?.settings)) return false;

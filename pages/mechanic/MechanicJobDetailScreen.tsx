@@ -11,7 +11,7 @@ import {
     Calendar, User, Car, Shield, ChevronRight, AlertCircle,
     ArrowRight, Map as MapIcon, Mail, Hash, Palette, Gauge,
     FileText, Wrench, DollarSign, Timer, Upload, X, Image as ImageIcon, Bell,
-    CreditCard, Eye, Copy, ChevronDown, ChevronUp, Star, Info, ExternalLink
+    CreditCard, Eye, Copy, ChevronDown, ChevronUp, Star, Info, ExternalLink, Receipt
 } from 'lucide-react';
 import { BookingStatus } from '../../types';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
@@ -274,7 +274,8 @@ const MechanicJobDetailScreen: React.FC = () => {
     }, [showWorkDoneModal, showPaymentSuccessModal]);
 
     // Realtime Auto-trigger: Detect customer payment completion and pop the Service Complete Modal
-    const prevPaymentSettledRef = useRef<boolean>(false);
+    // ONLY trigger celebration if it transitioned during the active user session, NOT on initial load of an already completed job!
+    const prevPaymentSettledRef = useRef<boolean | null>(null);
     useEffect(() => {
         if (!booking) return;
 
@@ -284,7 +285,13 @@ const MechanicJobDetailScreen: React.FC = () => {
             booking.isPaid === true ||
             booking.status === 'Completed';
 
-        // When payment settles in realtime and modal hasn't opened yet
+        // Initial mount check: if already completed when opening screen, don't celebrate or force redirect
+        if (prevPaymentSettledRef.current === null) {
+            prevPaymentSettledRef.current = isPaymentFullyPaid;
+            return;
+        }
+
+        // When payment settles in realtime during the active session and modal hasn't opened yet
         if (isPaymentFullyPaid && !prevPaymentSettledRef.current) {
             prevPaymentSettledRef.current = true;
             // Dismiss payment request / work-done modals
@@ -307,7 +314,6 @@ const MechanicJobDetailScreen: React.FC = () => {
                         clearInterval(timer);
                         setTimeout(() => {
                             setShowPaymentSuccessModal(false);
-                            navigate('/mechanic-portal/dashboard', { replace: true });
                         }, 0);
                         return 0;
                     }
@@ -319,7 +325,7 @@ const MechanicJobDetailScreen: React.FC = () => {
         return () => {
             if (timer) clearInterval(timer);
         };
-    }, [showPaymentSuccessModal, navigate]);
+    }, [showPaymentSuccessModal]);
 
 
     // Real-time location tracking for "En Route" status
@@ -1449,6 +1455,96 @@ const MechanicJobDetailScreen: React.FC = () => {
                     </div>
                 )}
 
+                {/* Completed Job Status & Review Card (Visible when Job is Completed) */}
+                {booking.status === 'Completed' && (
+                    <div className="bg-gradient-to-br from-emerald-950/40 via-[#151518] to-black/80 rounded-[2rem] p-5 sm:p-6 border border-emerald-500/30 shadow-2xl relative overflow-hidden animate-fadeIn">
+                        <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/10 blur-[60px] rounded-full pointer-events-none" />
+                        
+                        <div className="flex items-center justify-between mb-4 relative z-10">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-md shadow-emerald-500/20">
+                                    <CheckCircle size={18} className="stroke-[2.5]" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xs sm:text-sm font-black text-white tracking-wide uppercase">
+                                        Job Successfully Completed
+                                    </h3>
+                                    <p className="text-[10px] text-emerald-400 font-medium font-mono">
+                                        {booking.completedAt ? `Finished on ${new Date(booking.completedAt).toLocaleString()}` : 'Service Finished & Verified'}
+                                    </p>
+                                </div>
+                            </div>
+                            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                Archived
+                            </span>
+                        </div>
+
+                        {/* Customer Rating & Review (If available) */}
+                        {(() => {
+                            const reviewObj = typeof booking.review === 'object' && booking.review !== null ? booking.review : null;
+                            const reviewText = reviewObj ? reviewObj.comment : (typeof booking.review === 'string' ? booking.review : '');
+                            const displayRating = booking.rating || reviewObj?.rating;
+
+                            if (!displayRating && !reviewText) {
+                                return (
+                                    <div className="bg-black/30 border border-white/5 rounded-2xl p-3 mb-4 relative z-10 flex items-center justify-between">
+                                        <span className="text-[10px] text-gray-400">Customer Review</span>
+                                        <span className="text-[10px] text-gray-500 italic">No written review submitted</span>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div className="bg-black/40 border border-white/5 rounded-2xl p-4 mb-4 relative z-10 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Customer Rating & Feedback</span>
+                                            {reviewObj?.customerName && (
+                                                <span className="text-[10px] text-gray-400 font-medium">({reviewObj.customerName})</span>
+                                            )}
+                                        </div>
+                                        {displayRating && (
+                                            <div className="flex items-center gap-1 bg-yellow-500/10 px-2 py-0.5 rounded-lg border border-yellow-500/20">
+                                                <Star size={12} className="fill-yellow-400 text-yellow-400" />
+                                                <span className="text-xs font-black text-yellow-400">{displayRating}.0</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {reviewText ? (
+                                        <p className="text-xs text-gray-200 italic leading-relaxed pt-1 border-t border-white/5">
+                                            "{reviewText}"
+                                        </p>
+                                    ) : (
+                                        <p className="text-[11px] text-gray-500 italic pt-1 border-t border-white/5">
+                                            Rated without additional comments.
+                                        </p>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                        {/* Action Shortcuts for Completed Job */}
+                        <div className="grid grid-cols-2 gap-2 relative z-10">
+                            <button
+                                type="button"
+                                onClick={() => setShowProgressModal(true)}
+                                className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs flex items-center justify-center gap-2 border border-white/10 transition-all active:scale-95"
+                            >
+                                <FileText size={14} className="text-emerald-400" />
+                                <span>View Progress Logs</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowReceiptModal(true)}
+                                className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs flex items-center justify-center gap-2 border border-white/10 transition-all active:scale-95"
+                            >
+                                <Eye size={14} className="text-primary" />
+                                <span>View Receipts</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Upgraded Tactical Customer Hub */}
                 <div className="bg-[#151515] rounded-[2rem] p-6 border border-white/5 shadow-2xl relative overflow-hidden transition-all hover:border-white/10 group">
                     <div className="absolute -right-20 -top-20 w-44 h-44 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
@@ -1940,11 +2036,11 @@ const MechanicJobDetailScreen: React.FC = () => {
                     <div className="grid grid-cols-3 gap-2 mt-4">
                         <button
                             onClick={() => setShowProgressModal(true)}
-                            disabled={booking.status !== 'In Progress' && booking.status !== 'Work Done'}
+                            disabled={booking.status !== 'In Progress' && booking.status !== 'Work Done' && booking.status !== 'Completed'}
                             className="bg-[#26262F] hover:bg-[#32323D] text-white py-2.5 px-1 rounded-xl text-[9px] font-black tracking-wider flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
                             <FileText size={14} className="text-blue-400" />
-                            Progress
+                            {booking.status === 'Completed' ? 'View Report' : 'Progress'}
                         </button>
                         <button
                             onClick={() => setShowAdditionalCostsModal(true)}
@@ -1955,12 +2051,12 @@ const MechanicJobDetailScreen: React.FC = () => {
                             Costs
                         </button>
                         <button
-                            onClick={() => setShowETAModal(true)}
-                            disabled={['In Progress', 'Work Done', 'Completed', 'Cancelled'].includes(booking.status)}
+                            onClick={() => setShowReceiptModal(true)}
+                            disabled={!booking.gcashReceiptUrl && !booking.gcashDownpaymentReceiptUrl && !booking.gcashBalanceReceiptUrl}
                             className="bg-[#26262F] hover:bg-[#32323D] text-white py-2.5 px-1 rounded-xl text-[9px] font-black tracking-wider flex flex-col items-center justify-center gap-1 transition-all disabled:opacity-30 disabled:cursor-not-allowed border-0 shadow-sm"
                         >
-                            <Timer size={14} className="text-emerald-400" />
-                            ETA
+                            <Receipt size={14} className="text-emerald-400" />
+                            Receipt
                         </button>
                     </div>
                 </div>
@@ -2584,31 +2680,43 @@ const MechanicJobDetailScreen: React.FC = () => {
 
                         {/* Modal Sticky/Pinned Footer Action Buttons */}
                         <div className="flex items-center gap-2.5 pt-3.5 mt-2 border-t border-white/10 flex-shrink-0 bg-[#141416]/95">
-                            <button
-                                type="button"
-                                onClick={() => setShowProgressModal(false)}
-                                className="flex-1 h-[48px] bg-white/5 hover:bg-white/10 active:scale-95 text-white font-bold rounded-xl transition-all text-xs tracking-wider uppercase border border-white/10 flex items-center justify-center"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleSaveProgress}
-                                disabled={isLoading || !progressReport.before || !progressReport.after}
-                                className="flex-1 h-[48px] bg-gradient-to-r from-primary via-orange-500 to-orange-600 hover:brightness-110 active:scale-95 text-white font-black rounded-xl transition-all text-xs tracking-wider uppercase shadow-lg shadow-primary/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-primary/40"
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <Spinner size="sm" color="text-white" />
-                                        <span>Saving...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckCircle size={16} />
-                                        <span>Save Report</span>
-                                    </>
-                                )}
-                            </button>
+                            {booking.status === 'Completed' ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowProgressModal(false)}
+                                    className="w-full h-[48px] bg-white/10 hover:bg-white/20 active:scale-95 text-white font-bold rounded-xl transition-all text-xs tracking-wider uppercase border border-white/10 flex items-center justify-center"
+                                >
+                                    Done / Close Logs
+                                </button>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowProgressModal(false)}
+                                        className="flex-1 h-[48px] bg-white/5 hover:bg-white/10 active:scale-95 text-white font-bold rounded-xl transition-all text-xs tracking-wider uppercase border border-white/10 flex items-center justify-center"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveProgress}
+                                        disabled={isLoading || !progressReport.before || !progressReport.after}
+                                        className="flex-1 h-[48px] bg-gradient-to-r from-primary via-orange-500 to-orange-600 hover:brightness-110 active:scale-95 text-white font-black rounded-xl transition-all text-xs tracking-wider uppercase shadow-lg shadow-primary/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-primary/40"
+                                    >
+                                        {isLoading ? (
+                                            <>
+                                                <Spinner size="sm" color="text-white" />
+                                                <span>Saving...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle size={16} />
+                                                <span>Save Report</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -3302,16 +3410,22 @@ const MechanicJobDetailScreen: React.FC = () => {
                             )}
                         </div>
 
-                        {/* Action Button - Compact & Sticky */}
-                        <div className="pt-3">
+                        {/* Action Buttons - Compact & Sticky */}
+                        <div className="pt-3 flex flex-col sm:flex-row gap-2">
+                            <button
+                                onClick={() => setShowPaymentSuccessModal(false)}
+                                className="flex-1 py-2.5 sm:py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-white transition-all active:scale-[0.98] text-xs sm:text-sm tracking-wide border border-white/10"
+                            >
+                                View Job Details
+                            </button>
                             <button
                                 onClick={() => {
                                     setShowPaymentSuccessModal(false);
                                     navigate('/mechanic-portal/dashboard', { replace: true });
                                 }}
-                                className="w-full py-2.5 sm:py-3 rounded-xl font-black bg-[#FE7803] hover:bg-[#e06902] text-white transition-all shadow-md shadow-orange-500/20 active:scale-[0.98] flex items-center justify-center gap-1.5 text-xs sm:text-sm tracking-wide"
+                                className="flex-1 py-2.5 sm:py-3 rounded-xl font-black bg-[#FE7803] hover:bg-[#e06902] text-white transition-all shadow-md shadow-orange-500/20 active:scale-[0.98] flex items-center justify-center gap-1.5 text-xs sm:text-sm tracking-wide"
                             >
-                                <span>Go to Dashboard Now</span>
+                                <span>Dashboard</span>
                                 <span className="text-[10px] sm:text-xs opacity-80 font-normal">({completionCountdown}s)</span>
                             </button>
                         </div>

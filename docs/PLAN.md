@@ -1,55 +1,29 @@
-# Implementation Plan: Native Android APK with Embedded HitPay Payment & True Edge-to-Edge Experience
+# Mobile Header Display & Sticky Layout Enhancement Plan
 
 ## Objective
-Convert RidersBUD into a 100% native-feeling Android application running edge-to-edge without any Chrome browser UI, incorporating a fully functional, embedded in-app HitPay payment checkout, and handling all Android system insets gracefully.
+Fix excessive top dead space above the mobile application header, align the header flush to the very top edge of the mobile display across all pages, make headers sticky across all screens, and ensure responsive layout on all devices (Android APK, iOS, PWA, and Web).
 
----
+## Root Causes Identified
+1. **Unwanted Root Safe-Area Padding**: In `index.css` (lines 1247-1251), `body.pwa-fullscreen #root, html.pwa-mode-fullscreen #root` has `padding-top: env(safe-area-inset-top, 0px)`. This pushes the entire `#root` container downwards from the top edge, creating a large black void above the header.
+2. **Double Top Offsets in Container Layouts**: Several screens and wrappers had extraneous top margins or lacked explicit `top: 0` constraints for sticky headers.
+3. **Inconsistent Header Components**: `CustomerHeader.tsx` and `Header.tsx` lacked cohesive safe-area handling within the header element itself. Safe-area top padding belongs **inside** the header background container, not above `#root`, so that the header background touches the bezel/notch while header text and icons remain clear of physical punch-holes.
 
-## Architecture & Requirements Analysis
+## Proposed Changes
+1. **`index.css`**:
+   - Remove root-level `padding-top` on `#root` that caused the gap.
+   - Define a unified `.mobile-sticky-header` utility class that handles `position: sticky; top: 0; z-index: 50; padding-top: var(--safe-top);` cleanly.
+2. **`components/CustomerHeader.tsx`**:
+   - Modernize container styling to sit flush at `top-0`, integrate safe-area inset top cleanly into header height/padding, and ensure crisp responsiveness.
+3. **`components/Header.tsx`**:
+   - Update to match the exact same sticky behavior, flush top edge alignment, and responsiveness.
+4. **Customer & Mechanic Pages Audit**:
+   - Verify `BookingDetailScreen.tsx`, `HomeScreen.tsx`, `BookingScreen.tsx`, `CartScreen.tsx`, `BookingHistoryScreen.tsx`, `ProfileScreen.tsx`, `ServicesScreen.tsx`, and Mechanic screen layouts so the main scrollable container smoothly scrolls underneath the sticky header without jumping.
+5. **Verification**:
+   - Check build and linting.
+   - Verify layout responsiveness across mobile viewport simulations.
 
-### 1. True Edge-to-Edge Native Experience (No Chrome Browser UI)
-- **Manifest & Styles:**
-  - Android theme `AppTheme.NoActionBar` must enforce immersive edge-to-edge windowing.
-  - Window flags `android:windowLayoutInDisplayCutoutMode="shortEdges"` and `android:windowTranslucentNavigation="false"` with full transparent system bars.
-  - Webview must render behind status bar and navigation bar with zero Chrome address bar, toolbar, or navigation controls.
-- **System Inset Management:**
-  - Standardize CSS variables `--safe-top` and `--safe-bottom` using Capacitor SystemBars plugin and `env(safe-area-inset-*)`.
-  - Prevent duplicate insets on header and footer components.
-
-### 2. Fully Embedded HitPay Payment (Zero External Chrome Popups)
-- **Problem Statement:** Standard web checkouts trigger external Chrome tabs or intent redirects that break app continuity or crash the app process.
-- **Native Embedded Solution:**
-  - HitPay Drop-in / Embedded SDK integrated into an in-app native modal sheet or dedicated seamless payment screen (`HitPayCheckoutScreen.tsx` / `PaymentScreen.tsx`).
-  - Listen to window `message` events for payment completion, cancellation, and errors without leaving the app.
-  - Implement fallback handling for GCash / Maya deep-links (e.g., using Android Intent URL capture inside WebView while preventing app closure).
-  - Centralized verification via server proxy (`PaymentVerificationOverlay` / `verifyPaymentStatus`).
-
-### 3. Back Button & State Preservation
-- Android hardware back button listener intercepted during active payment sessions to display confirmation before navigating back.
-- Clean cleanup of iframe / modal listeners to prevent memory leaks and zombie processes.
-
----
-
-## 3-Phase Execution Plan
-
-### Phase 1: Native Shell & Edge-to-Edge Configuration (`mobile-developer`)
-- Review and refine `android/app/src/main/res/values/styles.xml` and `AndroidManifest.xml` for transparent edge-to-edge support.
-- Ensure `capacitor.config.json` has `SystemBars` properly configured for dark, immersive styling.
-- Verify `index.html` and `index.css` safe area insets.
-
-### Phase 2: Embedded HitPay Payment Overhaul (`frontend-specialist` + `backend-specialist`)
-- Deeply inspect `HitPayCheckoutScreen.tsx`, `components/GCashPaymentModal.tsx`, and `services/hitpayClient.ts`.
-- Ensure HitPay drop-in iframe or redirect URL runs within the app frame.
-- Guarantee that post-payment redirects (`/payment/return`, `/booking-confirmation`, `/order-confirmation`) resolve inside the app without triggering external browser intents.
-
-### Phase 3: Verification & APK Generation (`test-engineer`)
-- Run test suite: `vitest run` (ensure all 98+ tests pass).
-- Compile web assets: `npm run build`.
-- Sync Capacitor Android: `npx cap sync android`.
-- Build and sign production release APK: `node scripts/release-apk.mjs --skip-deploy`.
-- Verify signature and APK package integrity.
-
----
-
-## Approval Checkpoint
-Waiting for user confirmation to proceed to Phase 2 (Implementation).
+## Acceptance Criteria
+- No empty black gap above the header on mobile displays.
+- Header sits flush at the very top edge of the phone display.
+- Header is smoothly sticky on all pages when scrolling content.
+- Clean responsive layout for both Customer and Mechanic portals.

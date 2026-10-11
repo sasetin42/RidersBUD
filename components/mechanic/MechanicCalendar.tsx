@@ -367,8 +367,10 @@ const MechanicCalendar: React.FC<MechanicCalendarProps> = ({ bookings, unavailab
                                 </div>
                                 {!isPublic && payout > 0 && (
                                     <div className="text-right flex-shrink-0">
-                                        <span className="text-sm font-black text-white">₱{payout.toLocaleString()}</span>
-                                        <p className="text-[7px] font-bold text-gray-500 tracking-widest uppercase">Potential Payout</p>
+                                        <span className={`text-sm font-black ${b.status === 'Completed' ? 'text-emerald-400' : 'text-white'}`}>₱{payout.toLocaleString()}</span>
+                                        <p className="text-[7px] font-bold text-gray-500 tracking-widest uppercase">
+                                            {b.status === 'Completed' ? 'Earned Payout' : 'Potential Payout'}
+                                        </p>
                                     </div>
                                 )}
                             </div>

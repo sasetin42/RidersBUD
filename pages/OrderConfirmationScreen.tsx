@@ -20,7 +20,7 @@ const OrderConfirmationScreen: React.FC = () => {
     }
     
     return (
-        <div className="flex flex-col h-full bg-secondary">
+        <div className="flex flex-col min-h-screen bg-secondary pb-bottom-nav">
             <CustomerHeader title="Order Confirmed" icon={<CheckCircle size={22} />} />
             <div className="flex-grow flex flex-col items-center justify-center text-center p-6 space-y-6">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-24 w-24 text-green-400" viewBox="0 0 20 20" fill="currentColor">

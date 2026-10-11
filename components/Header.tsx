@@ -27,52 +27,56 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false
         : (db?.settings?.customerHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png");
 
     return (
-        <div 
-            className="sticky top-0 z-50 bg-[#121212]/90 backdrop-blur-xl border-b border-white/5 px-3.5 sm:px-6 flex items-center justify-between shadow-2xl min-h-[3rem] h-[calc(3rem+var(--safe-top))]"
-            style={{ paddingTop: 'var(--safe-top, 0px)' }}
+        <header
+            className="sticky top-0 left-0 right-0 z-50 bg-[#121212]/98 backdrop-blur-xl border-b border-white/10 shadow-lg shrink-0 w-full"
+            style={{
+                paddingTop: 'var(--safe-top, 0px)',
+            }}
         >
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                {(showBackButton || showBack) && (
-                    <button
-                        onClick={() => navigate(-1)}
-                        className="p-1 -ml-1 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95 shrink-0"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </button>
-                )}
-                <div className="flex items-center gap-2.5 min-w-0">
-                    {showLogo && (
-                        <img 
-                            src={headerLogoUrl}
-                            alt="Logo"
-                            width={30}
-                            height={30}
-                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
-                            onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
-                        />
+            <div className="px-3.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between w-full">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                    {(showBackButton || showBack) && (
+                        <button
+                            onClick={() => navigate(-1)}
+                            className="p-1.5 -ml-1 rounded-full hover:bg-white/10 text-[#FE7803] hover:text-white transition-all active:scale-95 shrink-0"
+                            aria-label="Back"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
                     )}
-                    {icon && !showLogo && (
-                        <span className="text-primary opacity-90 shrink-0">{icon}</span>
-                    )}
-                    <div className="min-w-0 truncate">
-                        <h1 className="text-sm sm:text-base font-black text-white tracking-widest leading-none truncate">{title}</h1>
-                        {subtitle && (
-                            <p className="text-[10px] text-primary font-bold tracking-[0.2em] mt-0.5 opacity-90 truncate animate-fadeIn">{subtitle}</p>
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                        {showLogo && (
+                            <img 
+                                src={headerLogoUrl}
+                                alt="Logo"
+                                width={36}
+                                height={36}
+                                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border border-[#FE7803]/40 p-0.5 bg-black/40 shrink-0 shadow-md shadow-[#FE7803]/10"
+                                onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
+                            />
                         )}
+                        {icon && !showLogo && (
+                            <span className="text-primary opacity-90 shrink-0">{icon}</span>
+                        )}
+                        <div className="min-w-0 truncate">
+                            <h1 className="text-sm sm:text-base md:text-lg font-black text-white tracking-wide leading-snug truncate">{title}</h1>
+                            {subtitle && (
+                                <p className="text-[11px] sm:text-xs font-bold tracking-wider text-[#FE7803] mt-0.5 opacity-95 truncate animate-fadeIn">{subtitle}</p>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="flex items-center gap-3 animate-fadeIn">
+                <div className="flex items-center gap-2.5 sm:gap-3 animate-fadeIn shrink-0">
                 {rightAction ? (
                     rightAction
                 ) : user ? (
                     <>
                         <NotificationBell />
-                        <Link to="/customer-portal/profile" className="relative group">
-                            <div className="w-8 h-8 rounded-full p-0.5 bg-gradient-to-br from-white/10 to-transparent border border-white/10 overflow-hidden">
+                        <Link to="/customer-portal/profile" className="relative group block">
+                            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full p-0.5 bg-gradient-to-br from-[#FE7803]/40 to-transparent border border-[#FE7803]/50 overflow-hidden shadow-md">
                                 <img
                                     src={getProfileImage(user.picture, user.name)}
                                     alt={user.name}
@@ -88,7 +92,8 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, showBackButton = false
                     </>
                 ) : null}
             </div>
-        </div>
+            </div>
+        </header>
     );
 };
 

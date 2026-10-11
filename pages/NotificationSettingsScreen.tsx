@@ -135,7 +135,7 @@ const NotificationSettingsScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-[#121212] text-white font-sans">
             <CustomerHeader title="Notification Settings" showBackButton icon={<Bell size={22} />} />
 
-            <div className="flex-grow p-5 space-y-7 overflow-y-auto pb-8">
+            <div className="flex-grow p-5 space-y-7 overflow-y-auto pb-bottom-nav">
 
                 {/* General Section */}
                 <div>

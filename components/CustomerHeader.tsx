@@ -26,47 +26,51 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
         navigate('/login');
     };
 
-    // Steady Header: pinned firmly at the top without disappearing or jumping on scroll
+    // Steady Header: pinned firmly at the very top of mobile display without extra gaps
     return (
         <header
-            className="sticky top-0 px-3.5 z-50 bg-[#121212]/95 backdrop-blur-md flex items-center justify-between border-b border-white/5 shadow-sm min-h-[3rem] h-[calc(3rem+var(--safe-top))]"
-            style={{ paddingTop: 'var(--safe-top, 0px)' }}
+            className="sticky top-0 left-0 right-0 z-50 bg-[#121212]/98 backdrop-blur-xl border-b border-white/10 shadow-md shrink-0 w-full"
+            style={{
+                paddingTop: 'var(--safe-top, 0px)',
+            }}
         >
-            <div className="flex items-center gap-2.5 min-w-0">
-                {showBackButton && (
-                    <button
-                        onClick={onBack || (() => navigate(-1))}
-                        className="p-1 -ml-1 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition-all active:scale-95 shrink-0"
-                    >
-                        <ChevronLeft className="h-5 w-5" />
-                    </button>
-                )}
-                <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Live Logo of RidersBUD */}
-                    <img 
-                        src={db?.settings?.customerHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png"}
-                        alt="RidersBUD Logo"
-                        width={30}
-                        height={30}
-                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover border border-white/10 p-0.5 bg-black/30 shrink-0"
-                        onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
-                    />
-                    <div className="min-w-0 truncate">
-                        <h1 className="text-sm sm:text-base font-black text-white tracking-tight leading-none truncate">{title}</h1>
-                        {subtitle && <p className="text-[10px] text-gray-400 font-medium mt-0.5 truncate">{subtitle}</p>}
+            <div className="flex items-center justify-between px-3.5 sm:px-5 h-14 sm:h-16 w-full">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                    {showBackButton && (
+                        <button
+                            onClick={onBack || (() => navigate(-1))}
+                            className="p-1.5 -ml-1 rounded-full hover:bg-white/10 text-[#FE7803] hover:text-white transition-all active:scale-95 shrink-0"
+                            aria-label="Back"
+                        >
+                            <ChevronLeft className="h-6 w-6" />
+                        </button>
+                    )}
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                        {/* Live Logo of RidersBUD */}
+                        <img 
+                            src={db?.settings?.customerHeaderLogoUrl || db?.settings?.appLogoUrl || "/ridersbud_logo.png"}
+                            alt="RidersBUD Logo"
+                            width={36}
+                            height={36}
+                            className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border border-[#FE7803]/40 p-0.5 bg-black/40 shrink-0 shadow-md shadow-[#FE7803]/10"
+                            onError={(e) => { (e.target as HTMLImageElement).src = '/ridersbud_logo.png'; }}
+                        />
+                        <div className="min-w-0 truncate">
+                            <h1 className="text-sm sm:text-base md:text-lg font-black text-white tracking-tight leading-snug truncate">{title}</h1>
+                            {subtitle && <p className="text-[11px] sm:text-xs text-gray-300 font-medium truncate mt-0.5">{subtitle}</p>}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                 {/* Search Icon Widget Button (inline before Notification Bell) */}
                 <button
                     onClick={() => setIsSearchOpen(true)}
-                    className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/5 active:scale-95 transition-all flex items-center justify-center"
+                    className="p-2 rounded-xl text-gray-200 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center justify-center"
                     aria-label="Search services, products, and tools"
                     title="Search services, products, and tools"
                 >
-                    <Search className="h-4.5 w-4.5" />
+                    <Search className="h-5.5 w-5.5" />
                 </button>
 
                 {/* Notification Bell - fully functional */}
@@ -76,7 +80,7 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                 <div className="relative">
                     <button
                         onClick={() => setIsProfileOpen(!isProfileOpen)}
-                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white/15 overflow-hidden shadow-md focus:outline-none focus:ring-2 focus:ring-[#FE7803]/50 transition-all block"
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border-2 border-[#FE7803]/40 overflow-hidden shadow-md focus:outline-none focus:ring-2 focus:ring-[#FE7803]/50 transition-all block active:scale-95"
                     >
                         <img
                             src={getProfileImage(user?.picture, user?.name)}
@@ -129,6 +133,7 @@ const CustomerHeader: React.FC<CustomerHeaderProps> = ({ title, subtitle, showBa
                         </div>
                     )}
                 </div>
+            </div>
             </div>
 
             {/* Global Search Modal */}

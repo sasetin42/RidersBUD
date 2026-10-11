@@ -526,7 +526,7 @@ const MechanicJobsScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-secondary">
             <Header title="My Jobs" rightAction={<NotificationBell />} icon={<Briefcase size={22} />} />
 
-            <main className="flex-grow overflow-y-auto p-3 sm:p-5 space-y-4 pb-28">
+            <main className="flex-grow overflow-y-auto p-3 sm:p-5 space-y-4 pb-bottom-nav">
                 {/* 1. Header Performance Snapshot (Responsive 4-Grid) */}
                 <div className="space-y-2">
                     <div className="flex items-center justify-between px-1">

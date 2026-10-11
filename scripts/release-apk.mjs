@@ -105,6 +105,7 @@ const env = {
     PATH: `${path.join(JDK, 'bin')};${process.env.PATH || process.env.Path}`,
     ORG_GRADLE_PROJECT_javaHome: JDK
 };
+delete env.ANDROID_PREFS_ROOT;
 const gradlew = path.join(ROOT, 'android', 'gradlew.bat');
 sh(`"${gradlew}" assembleRelease --no-daemon`, { env, cwd: path.join(ROOT, 'android') });
 const apkPath = path.join(ROOT, 'android/app/build/outputs/apk/release/app-release.apk');

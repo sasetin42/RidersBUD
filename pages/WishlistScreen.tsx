@@ -39,7 +39,7 @@ const WishlistScreen: React.FC = () => {
         .slice(0, 4);
 
     return (
-        <div className="flex flex-col min-h-screen bg-secondary pb-24 text-white font-sans">
+        <div className="flex flex-col min-h-screen bg-secondary pb-bottom-nav text-white font-sans">
             <CustomerHeader 
                 title="Wishlist" 
                 subtitle={wishlistItems.length > 0 ? `${wishlistItems.length} saved item${wishlistItems.length !== 1 ? 's' : ''}` : "Save your favorite parts"} 

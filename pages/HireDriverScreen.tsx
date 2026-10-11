@@ -506,7 +506,7 @@ const HireDriverScreen: React.FC = () => {
             )}
 
             {/* Bottom Sticky Action Bar */}
-            <div className="p-3.5 sm:p-4 bg-[#101014]/95 backdrop-blur-xl border-t border-white/10 shrink-0 shadow-2xl flex items-center justify-between gap-3">
+            <div className="p-3.5 sm:p-4 bg-[#101014]/95 backdrop-blur-xl border-t border-white/10 shrink-0 shadow-2xl flex items-center justify-between gap-3 pb-bottom-nav">
                 <div className="min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
                         <span className="inline-flex items-center gap-1 text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-primary" style={{ color: accentColor }}>

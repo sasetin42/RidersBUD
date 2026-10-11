@@ -417,7 +417,7 @@ const PartsStoreScreen: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex-grow overflow-y-auto">
+            <div className="flex-grow overflow-y-auto pb-bottom-nav">
                 <div className="p-4 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4 sm:gap-5">
                     {loading ? <div className="col-span-1 sm:col-span-2 lg:col-span-3 flex justify-center pt-10"><Spinner size="lg" /></div>
                         : displayedParts.length > 0 ? displayedParts.map(part => <PartCard key={part.id} part={part} onToggleCompare={handleToggleCompare} isComparing={comparisonItems.some(p => p.id === part.id)} />)

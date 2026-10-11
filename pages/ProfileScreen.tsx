@@ -678,7 +678,7 @@ const ProfileScreen: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col min-h-screen bg-secondary pb-24 font-sans">
+        <div className="flex flex-col min-h-screen bg-secondary pb-bottom-nav font-sans">
             <CustomerHeader title="My Profile" icon={<User size={22} />} />
 
             <div className="flex-grow p-6 space-y-6">

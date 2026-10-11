@@ -12,8 +12,76 @@
                 if (args[0] && typeof args[0] === 'string' && logSuppressions.some(function(s) { return args[0].indexOf(s) !== -1; })) return;
                 originalLog.apply(console, args);
             };
-            const originalWarn = console.warn;
-            console.warn = function(...args) {
+            function isSuppressedWarn(msg) {
+                if (!msg) return false;
+                var str = String(msg).toLowerCase();
+                return (
+                    str.includes('contentscript') ||
+                    str.includes('objectmultiplex') ||
+                    str.includes('maxlistenersexceededwarning') ||
+                    str.includes('eventemitter') ||
+                    str.includes('app-init-liveness') ||
+                    str.includes('background-liveness') ||
+                    str.includes('orphaned data') ||
+                    str.includes('close listeners added') ||
+                    str.includes('end listeners added') ||
+                    str.includes('setmaxlisteners') ||
+                    str.includes('grammarly') ||
+                    str.includes('unload is not allowed') ||
+                    str.includes('permissions policy violation') ||
+                    str.includes('runtime.lasterror') ||
+                    str.includes('message channel closed') ||
+                    str.includes('asynchronous response') ||
+                    str.includes('cdn.tailwindcss.com') ||
+                    str.includes('tailwind css') ||
+                    str.includes('permission-denied') ||
+                    str.includes('firebaseerror') ||
+                    str.includes('storage/unauthorized') ||
+                    str.includes('unauthorized') ||
+                    str.includes('missing or insufficient permissions') ||
+                    str.includes('bypassing firebase auth') ||
+                    str.includes('@firebase/database') ||
+                    str.includes('firebase warning') ||
+                    str.includes('auth/invalid-credential') ||
+                    str.includes('auth/too-many-requests') ||
+                    str.includes('identitytoolkit') ||
+                    str.includes('bloomfilter') ||
+                    str.includes('err_blocked_by_client') ||
+                    str.includes('blocked_by_client') ||
+                    str.includes('network-request-failed') ||
+                    str.includes('err_name_not_resolved') ||
+                    str.includes('err_internet_disconnected') ||
+                    str.includes('err_network_changed') ||
+                    str.includes('cleardot.gif') ||
+                    str.includes('r.stripe.com') ||
+                    str.includes('stripe.com') ||
+                    str.includes('m.stripe.network') ||
+                    str.includes('pusher') ||
+                    str.includes('usepusher') ||
+                    str.includes('evervault') ||
+                    str.includes('failed to load evervault') ||
+                    str.includes('closing or closed') ||
+                    str.includes('blocked aria-hidden') ||
+                    str.includes('listen/channel') ||
+                    str.includes('write/channel') ||
+                    str.includes('webchannel') ||
+                    str.includes('quic') ||
+                    str.includes('firestore.googleapis.com') ||
+                    str.includes('geolocation') ||
+                    str.includes('err_cache_read_failure') ||
+                    str.includes('cache_read_failure') ||
+                    str.includes('tile.openstreetmap.org') ||
+                    str.includes('hcaptcha') ||
+                    str.includes('recaptcha') ||
+                    str.includes('version.json') ||
+                    str.includes('[forter]') ||
+                    str.includes('[stripe.js]') ||
+                    str.includes('requestfullscreen') ||
+                    str.includes('user gesture')
+                );
+            }
+
+            const safeWarn = function(...args) {
                 var joined = '';
                 for (var i = 0; i < args.length; i++) {
                     try {
@@ -22,100 +90,11 @@
                         joined += String(args[i]) + ' ';
                     }
                 }
-                if (
-                    joined.includes('contentscript') ||
-                    joined.includes('ObjectMultiplex') ||
-                    joined.includes('MaxListenersExceededWarning') ||
-                    joined.includes('EventEmitter') ||
-                    joined.includes('app-init-liveness') ||
-                    joined.includes('background-liveness') ||
-                    joined.includes('orphaned data') ||
-                    joined.includes('close listeners added') ||
-                    joined.includes('end listeners added') ||
-                    joined.includes('setMaxListeners') ||
-                    joined.includes('cdn.tailwindcss.com') ||
-                    joined.includes('Tailwind CSS') ||
-                    joined.includes('permission-denied') ||
-                    joined.includes('FirebaseError') ||
-                    joined.includes('storage/unauthorized') ||
-                    joined.includes('unauthorized') ||
-                    joined.includes('Missing or insufficient permissions') ||
-                    joined.includes('Bypassing Firebase Auth') ||
-                    joined.includes('@firebase/database') ||
-                    joined.includes('FIREBASE WARNING') ||
-                    joined.includes('Permission denied') ||
-                    joined.includes('auth/invalid-credential') ||
-                    joined.includes('auth/too-many-requests') ||
-                    joined.includes('Firebase Auth failed') ||
-                    joined.includes('identitytoolkit') ||
-                    joined.includes('Cannot read properties') ||
-                    joined.includes('BloomFilter') ||
-                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
-                    joined.includes('BLOCKED_BY_CLIENT') ||
-                    joined.includes('network-request-failed') ||
-                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
-                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
-                    joined.includes('ERR_NETWORK_CHANGED') ||
-                    joined.includes('cleardot.gif') ||
-                    joined.includes('r.stripe.com') ||
-                    joined.includes('stripe.com') ||
-                    joined.includes('m.stripe.network') ||
-                    joined.includes('pusher.com') ||
-                    joined.includes('usePusher') ||
-                    joined.includes('Evervault') ||
-                    joined.includes('evervault.com') ||
-                    joined.includes('Failed to load Evervault') ||
-                    joined.includes('PaymentMethodCardCybersource') ||
-                    joined.includes('PaymentMethodQrCode') ||
-                    joined.includes('useCharge') ||
-                    joined.includes('CheckoutRequestPage') ||
-                    joined.includes('CLOSING or CLOSED') ||
-                    joined.includes('controller-with-preconnect') ||
-                    joined.includes('elements-inner') ||
-                    joined.includes('accessory-render') ||
-                    joined.includes('fingerprinted') ||
-                    joined.includes('shared-') ||
-                    joined.includes('Permissions policy violation') ||
-                    joined.includes('unload is not allowed') ||
-                    joined.includes('Blocked aria-hidden on a <body>') ||
-                    joined.includes('Listen/channel') ||
-                    joined.includes('Write/channel') ||
-                    joined.includes('webchannel') ||
-                    joined.includes('QUIC') ||
-                    joined.includes('QUIC_TOO_MANY_RTOS') ||
-                    joined.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-                    joined.includes('firestore.googleapis.com') ||
-                    joined.includes('Geolocation permission has been blocked') ||
-                    joined.includes('chromestatus.com') ||
-                    joined.includes('6443143280984064') ||
-                    joined.includes('ERR_CACHE_READ_FAILURE') ||
-                    joined.includes('CACHE_READ_FAILURE') ||
-                    joined.includes('tile.openstreetmap.org') ||
-                    joined.includes('hcaptcha') ||
-                    joined.includes('Capacitor App info unavailable') ||
-                    joined.includes('Not implemented on web') ||
-                    joined.includes('version.json') ||
-                    joined.includes('[forter]') ||
-                    joined.includes('no siteId; skipping init') ||
-                    joined.includes('[Stripe.js]') ||
-                    joined.includes('grabpay_pm_beta_1') ||
-                    joined.includes('Grammarly') ||
-                    joined.includes('Grammarly-check') ||
-                    joined.includes('unload is not allowed in this document') ||
-                    joined.includes('runtime.lastError') ||
-                    joined.includes('message channel closed before a response was received') ||
-                    joined.includes('A listener indicated an asynchronous response') ||
-                    joined.includes('Elements requires "width=device-width"') ||
-                    joined.includes('viewport_meta_requirements') ||
-                    joined.includes('Protected Audience API') ||
-                    joined.includes('captchaLoad') ||
-                    joined.includes('recaptcha') ||
-                    joined.includes('google.com/recaptcha')
-                ) return;
+                if (isSuppressedWarn(joined)) return;
                 originalWarn.apply(console, args);
             };
-            const originalError = console.error;
-            console.error = function(...args) {
+
+            const safeError = function(...args) {
                 var joined = '';
                 for (var i = 0; i < args.length; i++) {
                     try {
@@ -124,108 +103,25 @@
                         joined += String(args[i]) + ' ';
                     }
                 }
-                if (
-                    joined.includes('contentscript') ||
-                    joined.includes('ObjectMultiplex') ||
-                    joined.includes('MaxListenersExceededWarning') ||
-                    joined.includes('EventEmitter') ||
-                    joined.includes('app-init-liveness') ||
-                    joined.includes('background-liveness') ||
-                    joined.includes('orphaned data') ||
-                    joined.includes('close listeners added') ||
-                    joined.includes('end listeners added') ||
-                    joined.includes('setMaxListeners') ||
-                    joined.includes('permission-denied') ||
-                    joined.includes('Missing or insufficient permissions') ||
-                    joined.includes('FirebaseError') ||
-                    joined.includes('storage/unauthorized') ||
-                    joined.includes('FIRESTORE') ||
-                    joined.includes('INTERNAL ASSERTION') ||
-                    joined.includes('message channel closed') ||
-                    joined.includes('WebSocket') ||
-                    joined.includes('unauthorized') ||
-                    joined.includes('identitytoolkit') ||
-                    joined.includes('accounts:lookup') ||
-                    joined.includes('default-src') ||
-                    joined.includes('.well-known') ||
-                    joined.includes('Failed to load resource') ||
-                    joined.includes('ERR_BLOCKED_BY_CLIENT') ||
-                    joined.includes('BLOCKED_BY_CLIENT') ||
-                    joined.includes('reportAllChanges') ||
-                    joined.includes('startTime') ||
-                    joined.includes('network-request-failed') ||
-                    joined.includes('Listen/channel') ||
-                    joined.includes('Write/channel') ||
-                    joined.includes('webchannel') ||
-                    joined.includes('QUIC') ||
-                    joined.includes('QUIC_TOO_MANY_RTOS') ||
-                    joined.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-                    joined.includes('firestore.googleapis.com') ||
-                    joined.includes('ERR_CONNECTION_CLOSED') ||
-                    joined.includes('ERR_NAME_NOT_RESOLVED') ||
-                    joined.includes('ERR_INTERNET_DISCONNECTED') ||
-                    joined.includes('ERR_NETWORK_CHANGED') ||
-                    joined.includes('cleardot.gif') ||
-                    joined.includes('r.stripe.com') ||
-                    joined.includes('stripe.com') ||
-                    joined.includes('m.stripe.network') ||
-                    joined.includes('CLOSING or CLOSED') ||
-                    joined.includes('usePusher') ||
-                    joined.includes('pusher.com') ||
-                    joined.includes('Evervault') ||
-                    joined.includes('evervault.com') ||
-                    joined.includes('Failed to load Evervault') ||
-                    joined.includes('PaymentMethodCardCybersource') ||
-                    joined.includes('PaymentMethodCardPrimer') ||
-                    joined.includes('PaymentMethodCardAdyen') ||
-                    joined.includes('PaymentMethodQrCode') ||
-                    joined.includes('PaymentMethodRedirectUrl') ||
-                    joined.includes('PaymentMethodWifiCardReader') ||
-                    joined.includes('PaymentMethodVirtualAccount') ||
-                    joined.includes('PaymentMethodWalletAdyen') ||
-                    joined.includes('checkout.sandbox.hit-pay.com') ||
-                    joined.includes('Failed to fetch dynamically imported module') ||
-                    joined.includes('Protected Audience API') ||
-                    joined.includes('captchaLoad') ||
-                    joined.includes('useCharge') ||
-                    joined.includes('CheckoutRequestPage') ||
-                    joined.includes('controller-with-preconnect') ||
-                    joined.includes('elements-inner') ||
-                    joined.includes('accessory-render') ||
-                    joined.includes('fingerprinted') ||
-                    joined.includes('shared-') ||
-                    joined.includes('Permissions policy violation') ||
-                    joined.includes('Geolocation permission has been blocked') ||
-                    joined.includes('chromestatus.com') ||
-                    joined.includes('6443143280984064') ||
-                    joined.includes('ERR_CACHE_READ_FAILURE') ||
-                    joined.includes('CACHE_READ_FAILURE') ||
-                    joined.includes('tile.openstreetmap.org') ||
-                    joined.includes('Blocked aria-hidden on a <body>') ||
-                    joined.includes('hcaptcha') ||
-                    joined.includes('Failed to check for RidersBUD app updates') ||
-                    joined.includes('version.json') ||
-                    joined.includes('smtp-bridge') ||
-                    joined.includes('hitpay-proxy') ||
-                    joined.includes('Failed to reload') ||
-                    joined.includes('FetchEvent') ||
-                    joined.includes('network error response') ||
-                    joined.includes('checkout-dropin-pr') ||
-                    joined.includes('DataCloneError') ||
-                    joined.includes('hitpay-main.js') ||
-                    joined.includes('hitpay.js') ||
-                    joined.includes('could not be cloned') ||
-                    joined.includes('Grammarly') ||
-                    joined.includes('Grammarly-check') ||
-                    joined.includes('unload is not allowed in this document') ||
-                    joined.includes('runtime.lastError') ||
-                    joined.includes('message channel closed before a response was received') ||
-                    joined.includes('A listener indicated an asynchronous response') ||
-                    joined.includes('recaptcha') ||
-                    joined.includes('google.com/recaptcha')
-                ) return;
+                if (isSuppressedWarn(joined)) return;
                 originalError.apply(console, args);
             };
+
+            try {
+                Object.defineProperty(console, 'warn', {
+                    get: function() { return safeWarn; },
+                    set: function() {},
+                    configurable: true
+                });
+                Object.defineProperty(console, 'error', {
+                    get: function() { return safeError; },
+                    set: function() {},
+                    configurable: true
+                });
+            } catch (_) {
+                console.warn = safeWarn;
+                console.error = safeError;
+            }
 
             // 1. Prototype and fallback protection for startTime
             try {
@@ -397,11 +293,40 @@
                 };
             } catch (_) {}
 
+            // Monkeypatch Element.prototype.requestFullscreen to prevent unhandled rejection / error when initiated without user gesture
+            try {
+                if (typeof Element !== 'undefined' && Element.prototype.requestFullscreen) {
+                    const origRequestFullscreen = Element.prototype.requestFullscreen;
+                    Element.prototype.requestFullscreen = function(options) {
+                        try {
+                            const res = origRequestFullscreen.apply(this, arguments);
+                            if (res && typeof res.catch === 'function') {
+                                return res.catch(function(err) {
+                                    // Suppress "API can only be initiated by a user gesture"
+                                    var msg = (err && (err.message || String(err))) || '';
+                                    if (msg.includes('user gesture') || msg.includes('requestFullscreen')) {
+                                        return;
+                                    }
+                                    throw err;
+                                });
+                            }
+                            return res;
+                        } catch (err) {
+                            var msg = (err && (err.message || String(err))) || '';
+                            if (msg.includes('user gesture') || msg.includes('requestFullscreen')) {
+                                return Promise.resolve();
+                            }
+                            throw err;
+                        }
+                    };
+                }
+            } catch (_) {}
+
             // Suppress console.debug (Firebase logger may use it for internal errors)
             var originalDebug = console.debug;
             console.debug = function() {};
  
-              var suppressed = ['FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','recaptcha','recaptcha__en','google.com/recaptcha','clr?k=','PaymentMethodQrCode','PaymentMethodCardPrimer','PaymentMethodCardAdyen','PaymentMethodRedirectUrl','PaymentMethodWifiCardReader','PaymentMethodVirtualAccount','PaymentMethodWalletAdyen','checkout.sandbox.hit-pay.com','Protected Audience API','captchaLoad','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org','checkout-dropin-pr','DataCloneError','hitpay-main.js','hitpay.js','could not be cloned','Grammarly','Grammarly-check','runtime.lastError'];
+              var suppressed = ['requestFullscreen','user gesture','FIRESTORE','INTERNAL ASSERTION','permission-denied','Missing or insufficient permissions','FirebaseError','initializeFirestore','message channel','WebSocket closed','WebSocket connection','WebSocket is already in','CLOSING or CLOSED','Failed to load module','services:1','listener indicated','Failed to reload','The above error occurred','Consider adding an error boundary','Failed to fetch dynamically imported module','Failed to load resource','manifest.json','token=','asynchronous response','message channel closed before','width(-1) and height(-1)','uncontrolled input','Recharts','GeolocationPositionError','Location error','Timeout expired','geolocation','auth/invalid-credential','auth/too-many-requests','identitytoolkit','identitytoolkit.googleapis','accounts:lookup','Failed to restore Super Admin','Cannot read properties of undefined','reportAllChanges','startTime','default-src','Content Security Policy','.well-known','com.chrome.devtools','isMechanicAuthenticated','is not defined','contentscript','ObjectMultiplex','MaxListenersExceededWarning','app-init-liveness','background-liveness','orphaned data','ERR_BLOCKED_BY_CLIENT','BLOCKED_BY_CLIENT','pusher.com','usePusher','WebSocket is closed before the connection is established','QUIC_TOO_MANY_RTOS','ERR_QUIC_PROTOCOL_ERROR','ERR_CONNECTION_CLOSED','Listen/channel','Write/channel','webchannel','ERR_NAME_NOT_RESOLVED','ERR_INTERNET_DISCONNECTED','ERR_NETWORK_CHANGED','cleardot.gif','r.stripe.com','stripe.com','m.stripe.network','Evervault','evervault.com','Failed to load Evervault','Permissions policy violation','unload is not allowed','Blocked aria-hidden','hcaptcha','recaptcha','recaptcha__en','google.com/recaptcha','clr?k=','PaymentMethodQrCode','PaymentMethodCardPrimer','PaymentMethodCardAdyen','PaymentMethodRedirectUrl','PaymentMethodWifiCardReader','PaymentMethodVirtualAccount','PaymentMethodWalletAdyen','checkout.sandbox.hit-pay.com','Protected Audience API','captchaLoad','useCharge','CheckoutRequestPage','PaymentMethodCardCybersource','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-','ERR_CACHE_READ_FAILURE','CACHE_READ_FAILURE','tile.openstreetmap.org','checkout-dropin-pr','DataCloneError','hitpay-main.js','hitpay.js','could not be cloned','Grammarly','Grammarly-check','runtime.lastError'];
             // Protect global PerformanceObserver, PerformanceObserverEntryList, PerformanceEntry prototype & performance entries against buggy extension / DevTools callbacks
             try {
                 if (typeof window.PerformanceEntry !== 'undefined' && window.PerformanceEntry.prototype) {
@@ -659,6 +584,9 @@
                     msg.includes('ERR_INTERNET_DISCONNECTED') ||
                     msg.includes('ERR_NETWORK_CHANGED') ||
                     msg.includes('ERR_NAME_NOT_RESOLVED') ||
+                    msg.includes('runtime.lastError') ||
+                    msg.includes('message channel closed before a response was received') ||
+                    msg.includes('A listener indicated an asynchronous response') ||
                     msg.includes('TYPE=terminate')
                 ) {
                     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
@@ -696,6 +624,9 @@
                     msg.includes('ERR_INTERNET_DISCONNECTED') ||
                     msg.includes('ERR_NETWORK_CHANGED') ||
                     msg.includes('ERR_NAME_NOT_RESOLVED') ||
+                    msg.includes('runtime.lastError') ||
+                    msg.includes('message channel closed before a response was received') ||
+                    msg.includes('A listener indicated an asynchronous response') ||
                     msg.includes('TYPE=terminate')
                 ) {
                     if (event.stopImmediatePropagation) event.stopImmediatePropagation();

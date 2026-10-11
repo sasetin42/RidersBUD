@@ -8,7 +8,8 @@ import { useNavigate } from 'react-router-dom';
 import {
     Download, TrendingUp, Users, Wrench, Star, DollarSign, Calendar,
     CheckCircle, Clock, Filter, ChevronDown, ChevronUp, ShoppingBag,
-    BarChart3, Activity, Percent, Zap, UserCheck, AlertCircle, RefreshCw
+    BarChart3, Activity, Percent, Zap, UserCheck, AlertCircle, RefreshCw,
+    ShieldCheck, Coins
 } from 'lucide-react';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -61,6 +62,11 @@ const AdminAnalyticsScreen: React.FC = () => {
         const orderRevenue = filteredOrders.reduce((sum: number, o: any) => sum + (o.total || o.totalAmount || 0), 0);
         const totalRevenue = bookingRevenue + orderRevenue;
         const avgBookingValue = completedCount > 0 ? Math.round(bookingRevenue / completedCount) : 0;
+
+        // Platform 30% Commission Allocation vs Mechanic 70% Share
+        const adminFeePercent = db?.settings?.serviceFeePercentage != null ? db.settings.serviceFeePercentage : 30;
+        const adminCommissionRevenue = Math.round(bookingRevenue * (adminFeePercent / 100));
+        const mechanicPayoutShare = Math.max(0, bookingRevenue - adminCommissionRevenue);
 
         // Completion rate
         const completionRate = totalFiltered > 0 ? (completedCount / totalFiltered) * 100 : 0;
@@ -268,6 +274,7 @@ const AdminAnalyticsScreen: React.FC = () => {
         return {
             totalCustomers, activeMechanics, totalMechanics, completedCount, totalFiltered,
             bookingRevenue, orderRevenue, totalRevenue, avgBookingValue,
+            adminFeePercent, adminCommissionRevenue, mechanicPayoutShare,
             completionRate, mechanicUtilization, avgRating, newCustomers,
             revenueTrendData, revenueBreakdownData, bookingsByStatus,
             servicePopularityData, serviceRevenueData, dailyBookingTrend,
@@ -282,7 +289,9 @@ const AdminAnalyticsScreen: React.FC = () => {
         const headers = ["Metric", "Value"];
         const rows = [
             ["Total Revenue", `₱${analyticsData.totalRevenue.toLocaleString()}`],
-            ["Booking Revenue", `₱${analyticsData.bookingRevenue.toLocaleString()}`],
+            ["Total Services Revenue", `₱${analyticsData.bookingRevenue.toLocaleString()}`],
+            [`Admin Income (${analyticsData.adminFeePercent}% Commission)`, `₱${analyticsData.adminCommissionRevenue.toLocaleString()}`],
+            [`Mechanic Allocation (${100 - analyticsData.adminFeePercent}% Share)`, `₱${analyticsData.mechanicPayoutShare.toLocaleString()}`],
             ["Order Revenue", `₱${analyticsData.orderRevenue.toLocaleString()}`],
             ["Total Bookings", analyticsData.totalFiltered.toLocaleString()],
             ["Completed Jobs", analyticsData.completedCount.toLocaleString()],
@@ -458,8 +467,120 @@ const AdminAnalyticsScreen: React.FC = () => {
                 />
             </div>
 
-            {/* KPI Row 2: Growth & Operations */}
+            {/* KPI Row 2: Platform Allocation & Commission (30% Admin / 70% Mechanic) */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <EnhancedKPICard
+                    title="Total Services Amount"
+                    value={`₱${analyticsData.bookingRevenue.toLocaleString()}`}
+                    icon={<Wrench className="text-white" size={20} />}
+                    gradient="bg-gradient-to-br from-blue-600/90 to-blue-950"
+                    trend={{ value: 9.4, isPositive: true }}
+                    subtitle={`${analyticsData.completedCount} completed services`}
+                    detail="Gross revenue generated from all completed mechanic bookings"
+                    onClick={() => navigate('/admin-portal/bookings')}
+                />
+                <EnhancedKPICard
+                    title={`Admin Income (${analyticsData.adminFeePercent}%)`}
+                    value={`₱${analyticsData.adminCommissionRevenue.toLocaleString()}`}
+                    icon={<ShieldCheck className="text-white" size={20} />}
+                    gradient="bg-gradient-to-br from-emerald-600/90 to-emerald-950"
+                    trend={{ value: 14.8, isPositive: true }}
+                    subtitle={`${analyticsData.adminFeePercent}% platform commission cut`}
+                    detail="Net income retained by Admin from completed mechanic services"
+                    onClick={() => navigate('/admin-portal/monetization')}
+                />
+                <EnhancedKPICard
+                    title={`Mechanic Payouts (${100 - analyticsData.adminFeePercent}%)`}
+                    value={`₱${analyticsData.mechanicPayoutShare.toLocaleString()}`}
+                    icon={<Coins className="text-white" size={20} />}
+                    gradient="bg-gradient-to-br from-amber-600/90 to-amber-950"
+                    trend={{ value: 8.5, isPositive: true }}
+                    subtitle="allocated to mechanics"
+                    detail="Total net earnings distributed to mechanics upon completion"
+                    onClick={() => navigate('/admin-portal/mechanics')}
+                />
+                <EnhancedKPICard
+                    title="Order Revenue"
+                    value={`₱${analyticsData.orderRevenue.toLocaleString()}`}
+                    icon={<ShoppingBag className="text-white" size={20} />}
+                    gradient="bg-gradient-to-br from-pink-600/90 to-pink-900"
+                    trend={{ value: 6.7, isPositive: true }}
+                    subtitle="parts & supplies"
+                    detail="Total revenue from parts and supplies orders"
+                    onClick={() => navigate('/admin-portal/orders')}
+                />
+            </div>
+
+            {/* Platform Revenue & Commission Allocation Feature Banner */}
+            <div className="bg-[#121212]/80 backdrop-blur-2xl border border-white/10 p-6 md:p-8 rounded-[2.5rem] shadow-2xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <p className="text-[10px] font-black tracking-widest text-emerald-400 uppercase">Revenue Allocation Engine</p>
+                        </div>
+                        <h3 className="text-2xl font-black text-white tracking-tighter">Completed Services Income Breakdown</h3>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <span className="px-3.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-gray-300">
+                            Fixed Split: <span className="text-emerald-400 font-extrabold">{analyticsData.adminFeePercent}% Admin</span> / <span className="text-amber-400 font-extrabold">{100 - analyticsData.adminFeePercent}% Mechanic</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 rounded-2xl bg-black/40 border border-white/5">
+                    <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                        <p className="text-[11px] font-bold text-gray-400 tracking-wider uppercase mb-1">Total Services Amount</p>
+                        <p className="text-2xl font-black text-white">₱{analyticsData.bookingRevenue.toLocaleString()}</p>
+                        <p className="text-xs text-gray-500 mt-1">100% Gross from {analyticsData.completedCount} completed jobs</p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                        <div className="flex items-center justify-between mb-1">
+                            <p className="text-[11px] font-bold text-emerald-400 tracking-wider uppercase">Admin Platform Income</p>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300">{analyticsData.adminFeePercent}%</span>
+                        </div>
+                        <p className="text-2xl font-black text-emerald-400">₱{analyticsData.adminCommissionRevenue.toLocaleString()}</p>
+                        <p className="text-xs text-emerald-500/70 mt-1">Platform service fee credited to admin</p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                        <div className="flex items-center justify-between mb-1">
+                            <p className="text-[11px] font-bold text-amber-400 tracking-wider uppercase">Mechanic Payout Share</p>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-500/20 text-amber-300">{100 - analyticsData.adminFeePercent}%</span>
+                        </div>
+                        <p className="text-2xl font-black text-amber-400">₱{analyticsData.mechanicPayoutShare.toLocaleString()}</p>
+                        <p className="text-xs text-amber-500/70 mt-1">Disbursed / claimable by partner mechanics</p>
+                    </div>
+                </div>
+
+                {/* Visual Ratio Progress Bar */}
+                <div className="mt-5">
+                    <div className="flex items-center justify-between text-xs font-bold mb-2">
+                        <span className="text-emerald-400 flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                            Admin Cut ({analyticsData.adminFeePercent}%): ₱{analyticsData.adminCommissionRevenue.toLocaleString()}
+                        </span>
+                        <span className="text-amber-400 flex items-center gap-1.5">
+                            Mechanic Share ({100 - analyticsData.adminFeePercent}%): ₱{analyticsData.mechanicPayoutShare.toLocaleString()}
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                        </span>
+                    </div>
+                    <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden flex">
+                        <div
+                            className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
+                            style={{ width: `${analyticsData.bookingRevenue > 0 ? analyticsData.adminFeePercent : 30}%` }}
+                        />
+                        <div
+                            className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-500"
+                            style={{ width: `${analyticsData.bookingRevenue > 0 ? 100 - analyticsData.adminFeePercent : 70}%` }}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* KPI Row 3: Growth & Operations */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <EnhancedKPICard
                     title="Total Customers"
                     value={analyticsData.totalCustomers}
@@ -487,16 +608,6 @@ const AdminAnalyticsScreen: React.FC = () => {
                     trend={{ value: 4.3, isPositive: true }}
                     subtitle={`${analyticsData.paidCount} paid of ${analyticsData.totalFiltered}`}
                     detail="Percentage of bookings with completed payment"
-                />
-                <EnhancedKPICard
-                    title="Order Revenue"
-                    value={`₱${analyticsData.orderRevenue.toLocaleString()}`}
-                    icon={<ShoppingBag className="text-white" size={20} />}
-                    gradient="bg-gradient-to-br from-pink-600/90 to-pink-900"
-                    trend={{ value: 6.7, isPositive: true }}
-                    subtitle="parts & supplies"
-                    detail="Total revenue from parts and supplies orders"
-                    onClick={() => navigate('/admin-portal/orders')}
                 />
             </div>
 
@@ -764,13 +875,13 @@ const AdminAnalyticsScreen: React.FC = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
                     {[
                         { label: 'Total Revenue', value: `₱${analyticsData.totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-400' },
-                        { label: 'Bookings', value: analyticsData.totalFiltered.toLocaleString(), icon: Calendar, color: 'text-blue-400' },
+                        { label: 'Services Total', value: `₱${analyticsData.bookingRevenue.toLocaleString()}`, icon: Wrench, color: 'text-blue-400' },
+                        { label: `Admin (${analyticsData.adminFeePercent}%)`, value: `₱${analyticsData.adminCommissionRevenue.toLocaleString()}`, icon: ShieldCheck, color: 'text-emerald-400' },
+                        { label: `Mechanic (${100 - analyticsData.adminFeePercent}%)`, value: `₱${analyticsData.mechanicPayoutShare.toLocaleString()}`, icon: Coins, color: 'text-amber-400' },
                         { label: 'Completion', value: `${analyticsData.completionRate.toFixed(1)}%`, icon: CheckCircle, color: 'text-green-400' },
                         { label: 'Avg Rating', value: analyticsData.avgRating.toFixed(1), icon: Star, color: 'text-yellow-400' },
                         { label: 'Customers', value: analyticsData.totalCustomers.toLocaleString(), icon: Users, color: 'text-teal-400' },
                         { label: 'Mechanics', value: analyticsData.activeMechanics.toLocaleString(), icon: Wrench, color: 'text-orange-400' },
-                        { label: 'Avg Value', value: `₱${analyticsData.avgBookingValue.toLocaleString()}`, icon: TrendingUp, color: 'text-violet-400' },
-                        { label: 'Payment Rate', value: `${analyticsData.paymentRate.toFixed(1)}%`, icon: Percent, color: 'text-cyan-400' },
                     ].map((stat, idx) => (
                         <div key={idx} className="text-center p-4 rounded-2xl bg-white/5 border border-white/5">
                             <stat.icon size={18} className={`${stat.color} mx-auto mb-2`} />

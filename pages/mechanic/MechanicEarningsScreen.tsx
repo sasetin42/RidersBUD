@@ -609,7 +609,7 @@ const MechanicEarningsScreen: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-[#0F0F11] text-white">
-            <div className="relative min-h-screen pb-28">
+            <div className="relative min-h-screen pb-bottom-nav">
                 <Header title="My Earnings" rightAction={<NotificationBell />} icon={<TrendingUp size={22} />} />
 
                 {/* Top Section Container */}

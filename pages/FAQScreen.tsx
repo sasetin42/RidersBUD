@@ -122,7 +122,7 @@ const FAQScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-[#121212]">
             <CustomerHeader title="Help Center" showBackButton icon={<HelpCircle size={22} />} />
 
-            <main className="flex-grow overflow-y-auto pb-6">
+            <main className="flex-grow overflow-y-auto pb-bottom-nav">
                 {/* Hero Search Section */}
                 <div className="relative bg-[#1E1E1E] pb-10 pt-6 px-6 rounded-b-[2rem] shadow-2xl border-b border-white/5 mb-8">
                     <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>

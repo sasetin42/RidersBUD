@@ -59,20 +59,7 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
     isSpecialRentalOrDriver,
     rentalDetails
 }) => {
-    const [selectedOptionInternal, setSelectedOptionInternal] = React.useState<'downpayment' | 'full'>(paymentOption);
-    React.useEffect(() => {
-        if (isOpen) setSelectedOptionInternal(paymentOption);
-    }, [isOpen, paymentOption]);
-
     if (!isOpen) return null;
-
-    const activeOption = onPaymentOptionChange ? paymentOption : selectedOptionInternal;
-    const handleOptionSelect = (opt: 'downpayment' | 'full') => {
-        setSelectedOptionInternal(opt);
-        onPaymentOptionChange?.(opt);
-    };
-
-    const effectivePayAmount = activeOption === 'full' ? totalAmount : downpaymentAmount;
 
     const formatMoney = (val: number) => {
         return `${currency}${val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -115,107 +102,61 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
                 {/* Modal Scrollable Body */}
                 <div className="relative z-10 overflow-y-auto p-5 space-y-4 flex-grow custom-scrollbar">
                     
-                    {/* Payment Option Selector: 50% Downpayment vs Full Payment (100%) */}
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
+                    {/* 50% Initial Downpayment & Completion Balance Card */}
+                    <div className="bg-gradient-to-br from-[#1d1712] via-[#161414] to-[#121215] border border-primary/30 rounded-2xl p-4 shadow-xl shadow-black/40 space-y-3.5 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl pointer-events-none" />
+
+                        {/* Status / Policy Badge */}
+                        <div className="flex items-center justify-between relative z-10">
                             <span className="text-[10px] font-black text-primary uppercase tracking-wider flex items-center gap-1.5">
                                 <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                                Payment Option
+                                Payment Structure
                             </span>
-                            <span className="bg-primary/10 border border-primary/20 text-primary text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                            <span className="bg-primary/10 border border-primary/25 text-primary text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                <ShieldCheck size={11} className="text-primary" />
                                 Verified Secure
                             </span>
                         </div>
 
-                        {/* Interactive Option Cards */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {/* Option A: 50% Downpayment */}
-                            <button
-                                type="button"
-                                onClick={() => handleOptionSelect('downpayment')}
-                                className={`text-left rounded-2xl p-3.5 relative overflow-hidden transition-all duration-200 border-2 flex flex-col justify-between ${
-                                    activeOption === 'downpayment'
-                                        ? 'bg-gradient-to-br from-[#1e1c24] to-[#151419] border-primary shadow-lg shadow-primary/15'
-                                        : 'bg-[#151518] border-white/10 hover:border-white/20 opacity-80 hover:opacity-100'
-                                }`}
-                            >
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-primary">
-                                        Option A
+                        {/* 50% Initial Deposit Display */}
+                        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#1c1917]/80 border border-primary/20 rounded-xl p-3.5">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-gray-200 uppercase tracking-wide">
+                                        50% Initial Downpayment
                                     </span>
-                                    {activeOption === 'downpayment' ? (
-                                        <span className="w-4 h-4 rounded-full bg-primary text-black flex items-center justify-center text-[10px] font-black">
-                                            ✓
-                                        </span>
-                                    ) : (
-                                        <span className="w-4 h-4 rounded-full border border-white/20" />
-                                    )}
+                                    <span className="text-[9px] font-black text-primary bg-primary/15 border border-primary/30 px-1.5 py-0.5 rounded">
+                                        Due Now
+                                    </span>
                                 </div>
-                                <div className="mt-2">
-                                    <p className="text-xs font-bold text-gray-200">50% Downpayment</p>
-                                    <p className="text-xl font-black text-white mt-0.5">
-                                        {formatMoney(downpaymentAmount)}
-                                    </p>
-                                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">
-                                        Remaining {formatMoney(remainingBalance)} settled upon completion
-                                    </p>
-                                </div>
-                                <div className="mt-2.5 flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
-                                    <CheckCircle2 size={12} className="flex-shrink-0" />
-                                    <span>Locks your slot</span>
-                                </div>
-                            </button>
+                                <p className="text-2xl font-black text-white mt-1 tracking-tight">
+                                    {formatMoney(downpaymentAmount)}
+                                </p>
+                                <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
+                                    <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+                                    Locks your mechanic schedule & confirms booking
+                                </p>
+                            </div>
 
-                            {/* Option B: Full Payment (100%) */}
-                            <button
-                                type="button"
-                                onClick={() => handleOptionSelect('full')}
-                                className={`text-left rounded-2xl p-3.5 relative overflow-hidden transition-all duration-200 border-2 flex flex-col justify-between ${
-                                    activeOption === 'full'
-                                        ? 'bg-gradient-to-br from-[#1e1c24] to-[#151419] border-primary shadow-lg shadow-primary/15'
-                                        : 'bg-[#151518] border-white/10 hover:border-white/20 opacity-80 hover:opacity-100'
-                                }`}
-                            >
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
-                                        Option B
-                                    </span>
-                                    {activeOption === 'full' ? (
-                                        <span className="w-4 h-4 rounded-full bg-primary text-black flex items-center justify-center text-[10px] font-black">
-                                            ✓
-                                        </span>
-                                    ) : (
-                                        <span className="w-4 h-4 rounded-full border border-white/20" />
-                                    )}
-                                </div>
-                                <div className="mt-2">
-                                    <p className="text-xs font-bold text-gray-200">Full Payment (100%)</p>
-                                    <p className="text-xl font-black text-white mt-0.5">
-                                        {formatMoney(totalAmount)}
-                                    </p>
-                                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">
-                                        Fully settled upfront. No balance on completion.
-                                    </p>
-                                </div>
-                                <div className="mt-2.5 flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
-                                    <CheckCircle2 size={12} className="flex-shrink-0" />
-                                    <span>Zero hassle on finish</span>
-                                </div>
-                            </button>
+                            <div className="sm:text-right border-t sm:border-t-0 sm:border-l border-white/10 pt-2.5 sm:pt-0 sm:pl-3.5">
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                    Remaining Balance (50%)
+                                </span>
+                                <span className="text-base font-black text-gray-200 font-mono mt-0.5 block">
+                                    {formatMoney(remainingBalance)}
+                                </span>
+                                <span className="text-[10px] text-primary font-bold block mt-0.5">
+                                    Pay after service completion
+                                </span>
+                            </div>
                         </div>
 
-                        {/* Informational Guidance */}
-                        <div className="flex items-start gap-2 bg-white/5 rounded-xl p-2.5 border border-white/5 text-[11px] text-gray-300 leading-relaxed">
-                            <Info size={14} className="text-primary flex-shrink-0 mt-0.5" />
-                            {activeOption === 'full' ? (
-                                <span>
-                                    You are paying the complete total of <strong className="text-white">{formatMoney(totalAmount)}</strong> upfront via HitPay. Once your service is done, nothing more to pay!
-                                </span>
-                            ) : (
-                                <span>
-                                    You are only paying <strong className="text-white">{formatMoney(downpaymentAmount)}</strong> today to confirm. The remaining <strong className="text-white">{formatMoney(remainingBalance)}</strong> will only be settled once the job is safely completed.
-                                </span>
-                            )}
+                        {/* Completion Notice */}
+                        <div className="flex items-start gap-2 bg-white/5 rounded-xl p-3 border border-white/5 text-[11px] text-gray-300 leading-relaxed relative z-10">
+                            <Info size={15} className="text-primary flex-shrink-0 mt-0.5" />
+                            <span>
+                                You only pay <strong className="text-white font-bold">{formatMoney(downpaymentAmount)}</strong> today to confirm your booking. The remaining balance of <strong className="text-white font-bold">{formatMoney(remainingBalance)}</strong> (completing the full total of <strong className="text-white font-bold">{formatMoney(totalAmount)}</strong>) will only be settled once your mechanic arrives and successfully completes the services.
+                            </span>
                         </div>
                     </div>
 
@@ -263,18 +204,21 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
                         </div>
 
                         {/* Calculation Summary */}
-                        <div className="pt-3 border-t border-white/10 space-y-1.5">
+                        <div className="pt-3 border-t border-white/10 space-y-2">
                             <div className="flex items-center justify-between text-xs text-gray-400">
                                 <span>Total Estimated Amount</span>
                                 <span className="font-bold text-white font-mono">{formatMoney(totalAmount)}</span>
                             </div>
-                            <div className="flex items-center justify-between text-xs text-primary font-bold">
-                                <span>{activeOption === 'full' ? 'Pay Now (100% Full Payment)' : 'Initial Downpayment (50%)'}</span>
-                                <span className="font-mono">{formatMoney(effectivePayAmount)}</span>
+                            <div className="flex items-center justify-between text-xs bg-primary/10 border border-primary/20 rounded-xl px-3 py-2 text-primary font-bold">
+                                <span>Pay Now (50% Initial Downpayment)</span>
+                                <span className="font-mono text-white font-extrabold text-sm">{formatMoney(downpaymentAmount)}</span>
                             </div>
-                            <div className="flex items-center justify-between text-xs text-gray-400">
-                                <span>Remaining Balance</span>
-                                <span className="font-mono">{formatMoney(activeOption === 'full' ? 0 : remainingBalance)}</span>
+                            <div className="flex items-center justify-between text-xs px-1 text-gray-300">
+                                <span className="flex items-center gap-1.5">
+                                    <Clock size={12} className="text-primary" />
+                                    <span>Remaining Balance (After Mechanic Service)</span>
+                                </span>
+                                <span className="font-mono font-bold text-gray-200">{formatMoney(remainingBalance)}</span>
                             </div>
                         </div>
                     </div>
@@ -334,9 +278,7 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
                         ) : (
                             <>
                                 <span>
-                                    {activeOption === 'full'
-                                        ? `Pay Full Amount (${formatMoney(effectivePayAmount)})`
-                                        : `Proceed to Pay ${formatMoney(effectivePayAmount)}`}
+                                    Proceed to Pay {formatMoney(downpaymentAmount)} (50% Downpayment)
                                 </span>
                                 <ArrowRight size={18} />
                             </>

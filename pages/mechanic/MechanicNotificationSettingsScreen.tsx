@@ -118,7 +118,7 @@ const MechanicNotificationSettingsScreen: React.FC = () => {
         <div className="flex flex-col h-full bg-[#121212] text-white font-sans">
             <Header title="Notification Settings" showBackButton rightAction={<NotificationBell />} icon={<Bell size={22} />} />
 
-            <div className="flex-grow p-5 space-y-7 overflow-y-auto pb-8">
+            <div className="flex-grow p-5 space-y-7 overflow-y-auto pb-bottom-nav">
 
                 {/* Alert Toggles */}
                 <div>

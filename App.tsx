@@ -423,11 +423,21 @@ const AppContent: React.FC = () => {
         };
 
         checkPendingPayment();
-        CapApp.addListener('resume', () => { checkPendingPayment(); })
+        CapApp.addListener('resume', () => {
+            checkPendingPayment();
+            if (checkLocationPermissionRef.current) {
+                checkLocationPermissionRef.current();
+            }
+        })
             .then(handle => { resumeHandle = handle; })
             .catch(() => {});
         const onVisibility = () => {
-            if (document.visibilityState === 'visible') checkPendingPayment();
+            if (document.visibilityState === 'visible') {
+                checkPendingPayment();
+                if (checkLocationPermissionRef.current) {
+                    checkLocationPermissionRef.current();
+                }
+            }
         };
         document.addEventListener('visibilitychange', onVisibility);
 
@@ -636,8 +646,7 @@ const AppContent: React.FC = () => {
         location.pathname.includes('/service-payment') ||
         location.pathname.includes('/hitpay-checkout') ||
         location.pathname.includes('/app-services/book/') ||
-        location.pathname.includes('/app-services/liaison-book/') ||
-        location.pathname.includes('/cart')
+        location.pathname.includes('/app-services/liaison-book/')
     ) && !location.pathname.includes('-confirmation') && !location.search.includes('success=true');
     const isDetailView = 
         location.pathname.includes('/service/') || 
@@ -933,6 +942,10 @@ const AppContent: React.FC = () => {
             Geolocation.checkPermissions().then((permissions) => {
                 if (permissions.location === 'granted' || permissions.coarseLocation === 'granted') {
                     localStorage.setItem('ridersbud_location_allowed', 'true');
+                    setIsLocationBlocked(false);
+                    setLocationError(null);
+                    setLocationChecking(false);
+
                     Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 })
                         .then((position) => {
                             handleSuccess({
@@ -968,7 +981,10 @@ const AppContent: React.FC = () => {
                     Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] }).then((reqStatus) => {
                         if (reqStatus.location === 'granted' || reqStatus.coarseLocation === 'granted') {
                             localStorage.setItem('ridersbud_location_allowed', 'true');
+                            setIsLocationBlocked(false);
+                            setLocationError(null);
                             setLocationChecking(false);
+
                             Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 })
                                 .then((position) => {
                                     handleSuccess({
@@ -1811,7 +1827,7 @@ const AppContent: React.FC = () => {
                             mechLoading && localStorage.getItem('ridersbud_mechanic_session') === 'true' ? (
                                 <AppLoadingScreen />
                             ) : isMechanicAuthenticated ? (
-                                <div className={`w-full md:max-w-md md:mx-auto min-h-[100dvh] bg-secondary text-white font-sans pb-13 overflow-x-hidden relative`}>
+                                <div className={`w-full md:max-w-md md:mx-auto min-h-[100dvh] bg-secondary text-white font-sans overflow-x-hidden relative`}>
                                     <ErrorBoundary fallback={
                                         <div className="flex flex-col items-center justify-center h-screen p-8 text-center gap-6">
                                             <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center border border-red-500/20">
@@ -1854,11 +1870,11 @@ const AppContent: React.FC = () => {
                             authLoading && localStorage.getItem('ridersbud_customer_session') === 'true' ? (
                                 <AppLoadingScreen />
                             ) : (
-                                <div className={`w-full md:max-w-md md:mx-auto bg-secondary text-white font-sans ${
+                                <div className={`w-full md:max-w-md md:mx-auto bg-secondary text-white font-sans overflow-x-hidden relative ${
                                     isMapScreen 
                                         ? 'h-[100dvh] overflow-hidden' 
                                         : isAuthenticated && !hideCustomerBottomPadding 
-                                            ? 'min-h-[100dvh] pb-13' 
+                                            ? 'min-h-[100dvh]' 
                                             : 'min-h-[100dvh]'
                                 }`}>
                                     <div className={`${isMapScreen ? 'h-full' : 'min-h-full'} flex-1 flex flex-col`}>

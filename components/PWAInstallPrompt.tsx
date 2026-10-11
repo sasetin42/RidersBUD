@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Download, X, Share, PlusSquare, Smartphone, CheckCircle2, ShieldCheck, Zap } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { useDatabase } from '../context/DatabaseContext';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -37,6 +38,7 @@ export const PWAInstallPrompt: React.FC = () => {
   useEffect(() => {
     // 1. Detect if running as standalone PWA or native webview (Capacitor)
     const isStandaloneMode = 
+      Capacitor.isNativePlatform() ||
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as any).standalone === true ||
       document.referrer.includes('android-app://');
