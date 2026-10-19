@@ -34,6 +34,8 @@ scratch/
 playstore-release/keystore/*.jks
 playstore-release/keystore/*.keystore
 playstore-release/keystore/keystore-passwords.txt
+ios-signing/*.key
+ios-signing/*.p12
 android/local.properties
 android/variables.gradle
 

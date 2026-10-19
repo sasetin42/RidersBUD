@@ -6,9 +6,10 @@ workflows:
     integrations:
       app_store_connect: Codemagic App Store Connect
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.sasetin42.ridersbud
+      vars:
+        BUNDLE_ID: "com.sasetin42.ridersbud"
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
       node: 22
       xcode: latest
     scripts:
@@ -16,15 +17,31 @@ workflows:
         script: npm ci
       - name: Build Web Bundle, Sync Capacitor iOS & Verify App Store Compliance
         script: node scripts/release-ios.mjs
-      - name: Set up code signing settings on Xcode project
-        script: xcode-project use-profiles --project ios/App/App.xcodeproj
+      - name: Initialize Keychain & Fetch/Create Apple Signing Certificate & Provisioning Profile
+        script: |
+          keychain initialize
+
+          # Use CERTIFICATE_PRIVATE_KEY if set in Codemagic UI, otherwise generate an RSA-2048 key on the fly
+          if [ -z "$CERTIFICATE_PRIVATE_KEY" ]; then
+            echo "Generating 2048-bit RSA Private Key for Apple Distribution Certificate..."
+            openssl genrsa -out /tmp/ios_dist_private.key 2048
+            export CERTIFICATE_PRIVATE_KEY="$(cat /tmp/ios_dist_private.key)"
+          fi
+
+          # Automatically register bundle ID (if missing), create IOS_DISTRIBUTION cert & IOS_APP_STORE profile
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+
+          keychain add-certificates
+          xcode-project use-profiles --project "$XCODE_PROJECT"
       - name: Resolve Swift Package Manager dependencies
-        script: xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
+        script: xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME"
       - name: Build signed IPA for App Store
         script: |
           xcode-project build-ipa \
-            --project "ios/App/App.xcodeproj" \
-            --scheme "App"
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
