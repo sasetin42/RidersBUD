@@ -1,5 +1,139 @@
 import { Capacitor } from '@capacitor/core';
 import { Geolocation as NativeGeolocation } from '@capacitor/geolocation';
+import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
+
+/**
+ * Diagnostic result of device Location / GPS capability
+ */
+export interface GpsCheckResult {
+    isAvailable: boolean;       // Device supports geolocation
+    hasPermission: boolean;     // Permission is explicitly granted
+    isPermissionDenied: boolean;// Permission is permanently or explicitly blocked
+    isGpsDisabled: boolean;     // Device hardware GPS / location provider is toggled OFF
+    reason?: string;            // Human-readable message
+}
+
+/**
+ * Directly opens native device location settings so user can enable GPS in 1 tap.
+ * Priority order:
+ * Android: NativeSettings -> AndroidSettings.Location -> fallback to ApplicationDetails
+ * iOS: NativeSettings -> IOSSettings.LocationServices -> fallback to IOSSettings.App
+ */
+export async function openDeviceLocationSettings(): Promise<boolean> {
+    if (Capacitor.isNativePlatform()) {
+        try {
+            await NativeSettings.open({
+                optionAndroid: AndroidSettings.Location,
+                optionIOS: IOSSettings.LocationServices
+            });
+            return true;
+        } catch (err) {
+            console.warn('[locationHelper] Failed to open direct Location settings, attempting App Details:', err);
+            try {
+                await NativeSettings.open({
+                    optionAndroid: AndroidSettings.ApplicationDetails,
+                    optionIOS: IOSSettings.App
+                });
+                return true;
+            } catch (fallbackErr) {
+                console.error('[locationHelper] Failed to open native settings:', fallbackErr);
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Checks whether device location / GPS is enabled and accessible.
+ * Accurately detects whether GPS hardware is disabled or permission denied.
+ */
+export async function checkDeviceGpsStatus(): Promise<GpsCheckResult> {
+    if (typeof window === 'undefined') {
+        return { isAvailable: false, hasPermission: false, isPermissionDenied: false, isGpsDisabled: true, reason: 'No window environment' };
+    }
+
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const perm = await NativeGeolocation.checkPermissions();
+            const granted = perm.location === 'granted' || perm.coarseLocation === 'granted';
+            const denied = perm.location === 'denied';
+
+            if (!granted && !denied) {
+                // Not yet determined/prompt
+                return {
+                    isAvailable: true,
+                    hasPermission: false,
+                    isPermissionDenied: false,
+                    isGpsDisabled: false,
+                    reason: 'Permission not yet requested'
+                };
+            }
+
+            if (denied) {
+                return {
+                    isAvailable: true,
+                    hasPermission: false,
+                    isPermissionDenied: true,
+                    isGpsDisabled: false,
+                    reason: 'Location permission denied by user'
+                };
+            }
+
+            // Permission is granted — verify if hardware GPS / location service is actually ON
+            try {
+                const testPos = await NativeGeolocation.getCurrentPosition({
+                    enableHighAccuracy: true,
+                    timeout: 4000,
+                    maximumAge: 30000
+                });
+                if (testPos && testPos.coords) {
+                    return {
+                        isAvailable: true,
+                        hasPermission: true,
+                        isPermissionDenied: false,
+                        isGpsDisabled: false
+                    };
+                }
+            } catch (posErr: any) {
+                const msg = (posErr?.message || '').toLowerCase();
+                // Common Android/iOS errors when phone Location/GPS toggle is OFF:
+                // "location disabled", "provider disabled", "location services are disabled", "gps off"
+                const isGpsOff = msg.includes('disabled') || msg.includes('provider') || msg.includes('unavailable') || msg.includes('location service');
+                return {
+                    isAvailable: true,
+                    hasPermission: true,
+                    isPermissionDenied: false,
+                    isGpsDisabled: isGpsOff || true,
+                    reason: posErr?.message || 'Device GPS is turned OFF'
+                };
+            }
+
+            return { isAvailable: true, hasPermission: true, isPermissionDenied: false, isGpsDisabled: false };
+        } catch (err: any) {
+            return {
+                isAvailable: false,
+                hasPermission: false,
+                isPermissionDenied: false,
+                isGpsDisabled: true,
+                reason: err?.message || 'Unable to query native GPS status'
+            };
+        }
+    }
+
+    // Web / PWA fallback
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+        return { isAvailable: false, hasPermission: false, isPermissionDenied: false, isGpsDisabled: true, reason: 'Geolocation not supported' };
+    }
+
+    const isDenied = await isGeolocationPermissionDenied();
+    if (isDenied) {
+        return { isAvailable: true, hasPermission: false, isPermissionDenied: true, isGpsDisabled: false, reason: 'Browser location permission denied' };
+    }
+
+    return { isAvailable: true, hasPermission: true, isPermissionDenied: false, isGpsDisabled: false };
+}
+
 
 /**
  * Safe Geolocation Utilities

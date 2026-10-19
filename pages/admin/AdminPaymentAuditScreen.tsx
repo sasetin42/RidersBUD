@@ -3,7 +3,7 @@ import { useDatabase } from '../../context/DatabaseContext';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import Spinner from '../../components/Spinner';
-import { getJobTotalAmount } from '../../utils/mechanicLedger';
+import { getJobTotalAmount, getJobMechanicShare, getJobServicesAmount, getJobAdditionalCostsAmount, getJobAdminShare } from '../../utils/mechanicLedger';
 import {
     ShieldCheck,
     Webhook,
@@ -193,7 +193,8 @@ export const AdminPaymentAuditScreen: React.FC = () => {
             const gross = getJobTotalAmount(b);
             if (gross <= 0) continue;
 
-            const expectedNet = Math.max(0, Math.round(gross * (1 - serviceFeePercentage / 100)));
+            // Admin cut is calculated strictly on main services price; additional costs are 100% to mechanic
+            const expectedNet = getJobMechanicShare(b, serviceFeePercentage);
             const credited =
                 b.earningsAmount != null
                     ? Number(b.earningsAmount)
@@ -965,7 +966,7 @@ export const AdminPaymentAuditScreen: React.FC = () => {
                             <h3 className="text-sm font-bold text-white">Financial Integrity Guarantee</h3>
                         </div>
                         <p className="text-xs text-gray-400 leading-relaxed max-w-2xl">
-                            All completed bookings are audited by this ledger against mechanic wallet entries. The platform automatically enforces that every service completion calculates the {100 - serviceFeePercentage}% mechanic payout and safeguards the {serviceFeePercentage}% platform service fee.
+                            All completed bookings are audited by this ledger against mechanic wallet entries. The platform automatically enforces that the {serviceFeePercentage}% platform service fee applies ONLY to base services, while 100% of mechanic additional costs are fully protected and credited to the mechanic.
                         </p>
                     </div>
                 </div>

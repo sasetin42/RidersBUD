@@ -76,6 +76,9 @@ const EXTENSION_WARN_PATTERNS = [
   // Firestore SDK permission errors (e.g. 'Payouts listener: FirebaseError: Missing or insufficient permissions.')
   'Missing or insufficient permissions',
   'FirebaseError',
+  // Firestore cross-tab WebStorage coordination warnings (emitted via SDK internal safeError)
+  'garbage-collected our state',
+  'WebStorage notification for local change',
   // Recharts negative dimension warnings
   'width(-1)',
   'height(-1)',
@@ -151,7 +154,10 @@ const EXTENSION_ERROR_PATTERNS = [
   'BLOCKED_BY_CLIENT',
   'net::ERR_BLOCKED_BY_CLIENT',
   'Failed to reload',
-  'Failed to load resource'
+  'Failed to load resource',
+  // Firestore cross-tab WebStorage coordination warnings (emitted via SDK internal safeError)
+  'garbage-collected our state',
+  'WebStorage notification for local change',
 ];
 
 const _matchesPattern = (args: any[], patterns: string[]): boolean => {

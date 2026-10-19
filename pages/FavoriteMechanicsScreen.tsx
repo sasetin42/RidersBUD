@@ -15,7 +15,7 @@ const MechanicCard: React.FC<{ mechanic: Mechanic }> = ({ mechanic }) => {
             <div>
                 <h3 className="font-bold text-white">{mechanic.name}</h3>
                 <p className="text-sm text-yellow-400">⭐ {(mechanic.rating || 0).toFixed(1)} ({mechanic.reviews} jobs)</p>
-                <p className="text-xs text-light-gray mt-1">{mechanic.specializations.slice(0, 3).join(', ')}</p>
+                <p className="text-xs text-light-gray mt-1">{(mechanic.specializations || []).slice(0, 3).join(', ')}</p>
             </div>
         </div>
     );

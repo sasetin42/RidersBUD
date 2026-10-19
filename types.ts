@@ -128,6 +128,16 @@ export interface Settings {
     invoiceLogoUrl?: string;
     emailLogoUrl?: string;
     loadingLogoUrl?: string;
+    fcmLogoUrl?: string;
+    fcmBadgeUrl?: string;
+    pushNotificationLogoUrl?: string;
+    pushNotificationBadgeUrl?: string;
+    fcmChannelName?: string;
+    fcmChannelId?: string;
+    fcmTitlePrefix?: string;
+    fcmAccentColor?: string;
+    fcmSoundTheme?: 'default' | 'chime' | 'hud' | 'engine';
+    fcmDefaultActionRoute?: string;
     adminPanelTitle?: string;
     sidebarColor?: string;
     accentColor?: string;
@@ -1191,6 +1201,7 @@ export interface Notification {
     recipientId: string;
     recipientRole: 'customer' | 'mechanic' | 'admin';
     bookingId?: string;
+    tag?: string;
     title: string;
     message: string;
     type: 'booking_status' | 'payment' | 'assignment' | 'system' | 'info' | 'success' | 'warning' | 'alert' | 'job';

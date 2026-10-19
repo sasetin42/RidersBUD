@@ -7,10 +7,14 @@
         (function() {
             // Immediate Console Interceptors to capture early extension content scripts (contentscript.js, EventEmitter, ObjectMultiplex)
             const logSuppressions = ['vite','WebSocket connection','server connection lost','Polling for restart','identitytoolkit','accounts:lookup','pusher','usePusher','Evervault','evervault','PaymentMethodCardCybersource','PaymentMethodQrCode','useCharge','CheckoutRequestPage','CLOSING or CLOSED','ERR_CACHE_READ_FAILURE','controller-with-preconnect','elements-inner','accessory-render','fingerprinted','shared-'];
-            const originalLog = console.log;
+            const originalLog = console.log ? console.log.bind(console) : function() {};
+            const originalWarn = console.warn ? console.warn.bind(console) : function() {};
+            const originalError = console.error ? console.error.bind(console) : function() {};
             console.log = function(...args) {
                 if (args[0] && typeof args[0] === 'string' && logSuppressions.some(function(s) { return args[0].indexOf(s) !== -1; })) return;
-                originalLog.apply(console, args);
+                try {
+                    originalLog.apply(console, args);
+                } catch(_) {}
             };
             function isSuppressedWarn(msg) {
                 if (!msg) return false;
@@ -91,7 +95,11 @@
                     }
                 }
                 if (isSuppressedWarn(joined)) return;
-                originalWarn.apply(console, args);
+                try {
+                    if (typeof originalWarn === 'function') {
+                        originalWarn.apply(console, args);
+                    }
+                } catch(_) {}
             };
 
             const safeError = function(...args) {
@@ -104,7 +112,11 @@
                     }
                 }
                 if (isSuppressedWarn(joined)) return;
-                originalError.apply(console, args);
+                try {
+                    if (typeof originalError === 'function') {
+                        originalError.apply(console, args);
+                    }
+                } catch(_) {}
             };
 
             try {

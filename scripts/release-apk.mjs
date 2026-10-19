@@ -14,7 +14,7 @@
  *   8. firebase deploy --only hosting (unless --skip-deploy)
  *   9. Print download links
  */
-import { readFileSync, writeFileSync, existsSync, rmSync, mkdirSync, copyFileSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, rmSync, mkdirSync, copyFileSync, unlinkSync, statSync } from 'fs';
 import { execSync } from 'child_process';
 import path from 'path';
 
@@ -56,7 +56,20 @@ const versionJson = {
     minSupportedVersionCode: 1,
     generatedAt: new Date().toISOString()
 };
-writeFileSync(path.join(ROOT, 'public/version.json'), JSON.stringify(versionJson, null, 2) + '\n');
+const versionPath = path.join(ROOT, 'public/version.json');
+const versionContent = JSON.stringify(versionJson, null, 2) + '\n';
+for (let i = 0; i < 5; i++) {
+    try {
+        if (existsSync(versionPath)) {
+            try { unlinkSync(versionPath); } catch (_) {}
+        }
+        writeFileSync(versionPath, versionContent);
+        break;
+    } catch (e) {
+        if (i === 4) throw e;
+        execSync('timeout /t 1 /nobreak >nul', { shell: 'cmd.exe' });
+    }
+}
 ok('public/version.json updated');
 
 // ---------------------------------------------------------------------------
@@ -95,9 +108,9 @@ if (!synced) fail('Failed to sync Capacitor');
 ok('Capacitor sync complete');
 
 // ---------------------------------------------------------------------------
-// 5. Gradle release build (bundled JDK)
+// 5. Gradle release build: APK (assembleRelease) & Bundle (bundleRelease)
 // ---------------------------------------------------------------------------
-log('Building signed release APK (gradle assembleRelease)…');
+log('Building signed release APK & Android App Bundle (gradle assembleRelease bundleRelease)…');
 const JDK = path.join(ROOT, '.gradle_jdk21/jdk-21.0.2+13');
 const env = {
     ...process.env,
@@ -107,11 +120,15 @@ const env = {
 };
 delete env.ANDROID_PREFS_ROOT;
 const gradlew = path.join(ROOT, 'android', 'gradlew.bat');
-sh(`"${gradlew}" assembleRelease --no-daemon`, { env, cwd: path.join(ROOT, 'android') });
+sh(`"${gradlew}" assembleRelease bundleRelease --no-daemon`, { env, cwd: path.join(ROOT, 'android') });
 const apkPath = path.join(ROOT, 'android/app/build/outputs/apk/release/app-release.apk');
+const aabPath = path.join(ROOT, 'android/app/build/outputs/bundle/release/app-release.aab');
 if (!existsSync(apkPath)) fail('APK not found after gradle build');
-const sizeMb = (statSync(apkPath).size / (1024 * 1024)).toFixed(1);
-ok(`APK built: ${sizeMb} MB`);
+if (!existsSync(aabPath)) fail('AAB not found after gradle build');
+const apkSizeMb = (statSync(apkPath).size / (1024 * 1024)).toFixed(1);
+const aabSizeMb = (statSync(aabPath).size / (1024 * 1024)).toFixed(1);
+ok(`APK built: ${apkSizeMb} MB`);
+ok(`AAB built: ${aabSizeMb} MB`);
 
 // ---------------------------------------------------------------------------
 // 6. Verify signature
@@ -122,20 +139,28 @@ sh(`"${apksigner}" verify --print-certs "${apkPath}"`, { env });
 ok('Signature verified');
 
 // ---------------------------------------------------------------------------
-// 7. Stage APKs
+// 7. Stage APKs & AAB
 // ---------------------------------------------------------------------------
-log('Staging APKs…');
+log('Staging APKs and AAB…');
 mkdirSync(distReleases, { recursive: true });
 mkdirSync(path.join(ROOT, 'public/releases'), { recursive: true });
+mkdirSync(path.join(ROOT, 'playstore-release/bundle'), { recursive: true });
 function safeCopy(src, dst) {
-    try {
-        if (existsSync(dst)) {
-            try { unlinkSync(dst); } catch (_) {}
+    for (let i = 0; i < 5; i++) {
+        try {
+            if (existsSync(dst)) {
+                try { unlinkSync(dst); } catch (_) {}
+            }
+            copyFileSync(src, dst);
+            return;
+        } catch (err) {
+            if (i === 4) {
+                log(`Standard copy failed for ${path.basename(dst)}, trying powershell copy...`);
+                sh(`powershell -NoProfile -Command "if (Test-Path -LiteralPath '${dst}') { Remove-Item -LiteralPath '${dst}' -Force -ErrorAction SilentlyContinue }; Copy-Item -LiteralPath '${src}' -Destination '${dst}' -Force"`);
+                return;
+            }
+            execSync('timeout /t 1 /nobreak >nul', { shell: 'cmd.exe' });
         }
-        copyFileSync(src, dst);
-    } catch (err) {
-        log(`Standard copy failed for ${path.basename(dst)}, trying powershell copy...`);
-        sh(`powershell -NoProfile -Command "Copy-Item -LiteralPath '${src}' -Destination '${dst}' -Force"`);
     }
 }
 safeCopy(apkPath, path.join(distReleases, 'RidersBUD-latest.apk'));
@@ -143,7 +168,29 @@ safeCopy(apkPath, path.join(distReleases, `RidersBUD-v${VERSION_NAME}.apk`));
 safeCopy(apkPath, path.join(ROOT, 'public/releases/RidersBUD-latest.apk'));
 safeCopy(apkPath, path.join(ROOT, `public/releases/RidersBUD-v${VERSION_NAME}.apk`));
 safeCopy(apkPath, path.join(ROOT, 'playstore-release/apk/app-release.apk'));
-ok('Staged: dist/releases + public/releases + playstore-release/apk');
+safeCopy(apkPath, path.join(ROOT, `playstore-release/apk/RidersBUD-v${VERSION_NAME}.apk`));
+
+safeCopy(aabPath, path.join(ROOT, 'playstore-release/bundle/app-release.aab'));
+safeCopy(aabPath, path.join(ROOT, `playstore-release/bundle/RidersBUD-v${VERSION_NAME}.aab`));
+
+// Native debug symbols & Proguard mapping
+const nativeSymbolsDir = path.join(ROOT, 'android/app/build/outputs/native-debug-symbols/release');
+if (existsSync(nativeSymbolsDir)) {
+    const symbolFiles = (await import('fs')).readdirSync(nativeSymbolsDir).filter(f => f.endsWith('.zip'));
+    for (const sf of symbolFiles) {
+        safeCopy(path.join(nativeSymbolsDir, sf), path.join(ROOT, 'playstore-release/bundle/native-debug-symbols.zip'));
+        safeCopy(path.join(nativeSymbolsDir, sf), path.join(ROOT, `playstore-release/bundle/RidersBUD-v${VERSION_NAME}-native-debug-symbols.zip`));
+        ok(`Staged native debug symbols: ${sf}`);
+    }
+}
+const mappingFile = path.join(ROOT, 'android/app/build/outputs/mapping/release/mapping.txt');
+if (existsSync(mappingFile)) {
+    safeCopy(mappingFile, path.join(ROOT, 'playstore-release/bundle/mapping.txt'));
+    safeCopy(mappingFile, path.join(ROOT, `playstore-release/bundle/RidersBUD-v${VERSION_NAME}-mapping.txt`));
+    ok('Staged Proguard/R8 mapping.txt');
+}
+
+ok('Staged: dist/releases + public/releases + playstore-release/apk + playstore-release/bundle');
 
 // ---------------------------------------------------------------------------
 // 8. Deploy hosting
@@ -160,12 +207,15 @@ if (!SKIP_DEPLOY) {
 // 9. Links
 // ---------------------------------------------------------------------------
 console.log('\n\x1b[1;33m══════════════════════════════════════════════════\x1b[0m');
-console.log(`\x1b[1;37m  RidersBUD v${VERSION_NAME} (versionCode ${VERSION_CODE}) — ${sizeMb} MB\x1b[0m`);
+console.log(`\x1b[1;37m  RidersBUD v${VERSION_NAME} (versionCode ${VERSION_CODE})\x1b[0m`);
+console.log(`\x1b[1;32m  ✔ APK: ${apkSizeMb} MB | ✔ AAB: ${aabSizeMb} MB\x1b[0m`);
 console.log('\x1b[1;33m══════════════════════════════════════════════════\x1b[0m');
-console.log('  Download (always latest):');
+console.log('  Direct APK Download (always latest):');
 console.log('    https://ridersbud-10806.web.app/releases/RidersBUD-latest.apk');
-console.log(`  Download (versioned):`);
+console.log(`  Direct APK Download (versioned):`);
 console.log(`    https://ridersbud-10806.web.app/releases/RidersBUD-v${VERSION_NAME}.apk`);
+console.log('  Play Store App Bundle (AAB):');
+console.log(`    playstore-release/bundle/app-release.aab (RidersBUD-v${VERSION_NAME}.aab)`);
 console.log('  Update metadata:');
 console.log('    https://ridersbud-10806.web.app/version.json');
 console.log('');

@@ -34,6 +34,9 @@ const REQUIRED_SWIFT_SOURCES = [
     'HitPayInAppPlugin.swift',
     'HitPayPaymentViewController.swift'
 ];
+const REQUIRED_RESOURCES = [
+    'PrivacyInfo.xcprivacy'
+];
 const PBXPROJ = path.join(root, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj');
 
 function log(msg) { console.log(`[ensure-ios-hitpay-plugin] ${msg}`); }
@@ -62,7 +65,7 @@ try {
     warn(`Could not update capacitor.config.json: ${e.message}`);
 }
 
-// --- 2. Verify Swift payment sources are compiled in the Xcode project ---
+// --- 2. Verify Swift payment sources and Privacy Manifest are in the Xcode project ---
 try {
     const pbx = fs.readFileSync(PBXPROJ, 'utf8');
     const missing = REQUIRED_SWIFT_SOURCES.filter(
@@ -77,6 +80,15 @@ try {
         );
     } else {
         log('All Swift payment sources are registered in the Xcode Sources build phase.');
+    }
+
+    const missingResources = REQUIRED_RESOURCES.filter(
+        (f) => !pbx.includes(`${f} in Resources`)
+    );
+    if (missingResources.length > 0) {
+        warn(`Missing App Store required resource(s) in Xcode project: ${missingResources.join(', ')}`);
+    } else {
+        log('Apple PrivacyInfo.xcprivacy manifest is registered in Xcode Resources.');
     }
 } catch (e) {
     warn(`Could not verify pbxproj: ${e.message}`);

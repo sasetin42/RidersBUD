@@ -43,15 +43,38 @@ const firebaseConfig = {
     appId: import.meta.env?.VITE_FIREBASE_APP_ID || '1:492813766406:web:c35e8974032a01fb8f9887',
 };
 
-/** Mirror of utils/mechanicLedger getJobTotalAmount */
+/** Mirror of utils/mechanicLedger helpers */
+const getJobAdditionalCostsAmount = (job: any): number => {
+    if (!job) return 0;
+    return (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+};
+
+const getJobServicesAmount = (job: any): number => {
+    if (!job) return 0;
+    const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+    const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
+    if (svcsSum > 0) return svcsSum + (Number(job.laborFee) || 0);
+    const total = Number(job.totalAmount) || Number(job.price) || 0;
+    const addCosts = getJobAdditionalCostsAmount(job);
+    return Math.max(0, total - addCosts);
+};
+
 const getJobTotalAmount = (job: any): number => {
     if (!job) return 0;
     if (job.totalAmount != null && Number(job.totalAmount) > 0) return Number(job.totalAmount);
     if (job.price != null && Number(job.price) > 0) return Number(job.price);
     const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
     const svcsSum = svcs.reduce((s: number, svc: any) => s + (Number(svc.price) || 0), 0);
-    const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+    const addCosts = getJobAdditionalCostsAmount(job);
     return svcsSum + addCosts + (Number(job.laborFee) || 0);
+};
+
+const getJobMechanicShare = (job: any, feePct: number = 30): number => {
+    const totalRevenue = getJobTotalAmount(job);
+    if (totalRevenue <= 0) return 0;
+    const servicesFee = getJobServicesAmount(job);
+    const platformCut = Math.round(servicesFee * (feePct / 100));
+    return Math.max(0, totalRevenue - platformCut);
 };
 
 async function main(): Promise<void> {
@@ -108,7 +131,8 @@ async function main(): Promise<void> {
         const paidJobs = jobs.filter(j => j.isPaid !== false && j.paymentStatus !== 'failed');
 
         const gross = paidJobs.reduce((s, j) => s + getJobTotalAmount(j), 0);
-        const expectedNet = paidJobs.reduce((s, j) => s + Math.max(0, Math.round(getJobTotalAmount(j) * (1 - feePct / 100))), 0);
+        // Admin cut is 30% strictly on main services fee; additional costs are 100% to mechanic
+        const expectedNet = paidJobs.reduce((s, j) => s + getJobMechanicShare(j, feePct), 0);
 
         const myPayouts = payouts.filter(p => p.mechanicId === mech.id);
         const paidOut = myPayouts.filter(p => p.status === 'Paid' || p.status === 'Completed').reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -144,7 +168,7 @@ async function main(): Promise<void> {
                     batch.update(doc(fs, 'bookings', j.id), {
                         earningsReleased: true,
                         earningsReleasedAt: new Date().toISOString(),
-                        earningsAmount: Math.max(0, Math.round(getJobTotalAmount(j) * (1 - feePct / 100)))
+                        earningsAmount: getJobMechanicShare(j, feePct)
                     });
                 }
                 await batch.commit();

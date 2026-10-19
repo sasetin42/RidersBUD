@@ -124,12 +124,12 @@ export const requestNotificationPermission = async (): Promise<NotificationPermi
     return Notification.permission;
 };
 
-export const showNotification = (title: string, options: NotificationOptions) => {
+export const showNotification = (title: string, options?: NotificationOptions, customLogoUrl?: string, customBadgeUrl?: string) => {
     if (hasNotificationAPI() && Notification.permission === 'granted') {
         new Notification(title, {
             ...options,
-            icon: '/riders-logo.png',
-            badge: '/riders-logo.png',
+            icon: customLogoUrl || options?.icon || '/riders-logo.png',
+            badge: customBadgeUrl || options?.badge || customLogoUrl || '/riders-logo.png',
         });
     }
 };

@@ -7,9 +7,12 @@ import { useNavigate } from 'react-router-dom';
 import Modal from '../components/admin/Modal';
 import { storageService } from '../services/StorageService';
 import { uploadImageToStorage } from '../utils/storageUtils';
-import { User, Phone, Mail, MapPin, Edit3, MessageCircle, CheckCircle, Smartphone, Volume2, VolumeX, Clock, Sparkles, Bell } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Edit3, MessageCircle, CheckCircle, Smartphone, Volume2, VolumeX, Clock, Sparkles, Bell, Shield, FileText } from 'lucide-react';
 import { getProfileImage, STORAGE_PATHS } from '../utils/imageConstants';
 import Tooltip from '../components/ui/Tooltip';
+import { Capacitor } from '@capacitor/core';
+import { fcmService } from '../services/fcmService';
+import { useNotification } from '../context/NotificationContext';
 import {
     getNotificationSettings,
     saveNotificationSettings,
@@ -313,6 +316,7 @@ const NotificationSettingsModal: React.FC<{
     });
 
     const webNotifSupported = hasNotificationAPI();
+    const { addNotification } = useNotification();
     const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>(getNotificationPermission);
     const [isSaving, setIsSaving] = useState(false);
     const [savedFlash, setSavedFlash] = useState(false);
@@ -352,8 +356,14 @@ const NotificationSettingsModal: React.FC<{
     };
 
     const handleRequestPermission = async () => {
-        const result = await requestNotificationPermission();
-        setPermissionStatus(result);
+        if (Capacitor.isNativePlatform() && user?.id) {
+            await fcmService.initialize({ userId: user.id, role: 'customer' });
+            const status = await fcmService.getPermissionStatus();
+            setPermissionStatus(status === 'granted' ? 'granted' : 'denied');
+        } else {
+            const result = await requestNotificationPermission();
+            setPermissionStatus(result);
+        }
     };
 
     const playSynthSound = (theme: 'hud' | 'chime' | 'beep') => {
@@ -388,7 +398,7 @@ const NotificationSettingsModal: React.FC<{
         }
     };
 
-    const handleTestNotification = () => {
+    const handleTestNotification = async () => {
         if (settings.soundEnabled) {
             playSynthSound(settings.soundTheme);
         }
@@ -397,8 +407,22 @@ const NotificationSettingsModal: React.FC<{
                 body: 'This is a test notification to verify your account connection is fully active.',
                 tag: 'ridersbud-test',
             });
-        } else {
-            alert('Test Notification Triggered!\n(In-app HUD chime simulated successfully)');
+        }
+        if (user?.id) {
+            try {
+                await addNotification({
+                    recipientId: `customer-${user.id}`,
+                    recipientRole: 'customer',
+                    title: '🔔 RidersBUD Test Notification',
+                    message: 'Your phone is fully connected to RidersBUD real-time FCM push services!',
+                    type: 'info',
+                    link: '/customer-portal/notifications',
+                    date: new Date().toISOString(),
+                    read: false
+                });
+            } catch (err) {
+                console.warn('Test notification write warning:', err);
+            }
         }
     };
     return (
@@ -576,43 +600,37 @@ const NotificationSettingsModal: React.FC<{
                             <h4 className="text-xs font-black text-white uppercase tracking-wider mb-3 flex items-center gap-2">
                                 <Smartphone size={16} className="text-primary" /> Push Notifications
                             </h4>
-                            {webNotifSupported ? (
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between bg-[#121212] p-3 rounded-xl border border-white/5">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className={`w-3.5 h-3.5 rounded-full ${permissionStatus === 'granted' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                                            <div>
-                                                <p className="text-xs font-bold text-white">
-                                                    {permissionStatus === 'granted' ? 'Enabled' : 'Blocked / Required'}
-                                                </p>
-                                                <p className="text-[10px] text-gray-500 mt-0.5">
-                                                    {permissionStatus === 'granted' ? 'System alert channel is fully online' : 'Tap to unlock browser push settings'}
-                                                </p>
-                                            </div>
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between bg-[#121212] p-3 rounded-xl border border-white/5">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className={`w-3.5 h-3.5 rounded-full ${permissionStatus === 'granted' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                                        <div>
+                                            <p className="text-xs font-bold text-white">
+                                                {permissionStatus === 'granted' ? 'Enabled' : 'Blocked / Required'}
+                                            </p>
+                                            <p className="text-[10px] text-gray-500 mt-0.5">
+                                                {permissionStatus === 'granted' ? 'System alert channel is fully online' : 'Tap Grant to unlock real-time push alerts'}
+                                            </p>
                                         </div>
-                                        {permissionStatus === 'default' && (
-                                            <button
-                                                type="button"
-                                                onClick={handleRequestPermission}
-                                                className="px-3 py-1.5 bg-primary text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-orange-600 transition-colors"
-                                            >
-                                                Grant
-                                            </button>
-                                        )}
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleTestNotification}
-                                        className="w-full flex items-center justify-center gap-2 py-3 bg-[#1E1E1E] hover:bg-white/5 text-white font-bold text-xs rounded-xl border border-white/5 transition-colors"
-                                    >
-                                        <Sparkles size={14} className="text-primary" /> Send Test Notification
-                                    </button>
+                                    {permissionStatus !== 'granted' && (
+                                        <button
+                                            type="button"
+                                            onClick={handleRequestPermission}
+                                            className="px-3 py-1.5 bg-primary text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-orange-600 transition-colors"
+                                        >
+                                            Grant
+                                        </button>
+                                    )}
                                 </div>
-                            ) : (
-                                <p className="text-[11px] leading-relaxed text-gray-500">
-                                    Device system notifications are managed externally. RidersBUD in-app banner alerts are always active.
-                                </p>
-                            )}
+                                <button
+                                    type="button"
+                                    onClick={handleTestNotification}
+                                    className="w-full flex items-center justify-center gap-2 py-3 bg-[#1E1E1E] hover:bg-white/5 text-white font-bold text-xs rounded-xl border border-white/5 transition-colors"
+                                >
+                                    <Sparkles size={14} className="text-primary" /> Send Test Notification
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -640,8 +658,73 @@ const NotificationSettingsModal: React.FC<{
     );
 };
 
+const DeleteAccountModal: React.FC<{
+    onClose: () => void;
+    onConfirm: () => Promise<void>;
+}> = ({ onClose, onConfirm }) => {
+    const [confirmText, setConfirmText] = useState('');
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const handleDelete = async () => {
+        if (confirmText.trim().toUpperCase() !== 'DELETE') return;
+        setIsDeleting(true);
+        try {
+            await onConfirm();
+        } catch (err) {
+            console.error('Account deletion failed:', err);
+            alert('Unable to delete account right now. Please try again.');
+            setIsDeleting(false);
+        }
+    };
+
+    return (
+        <Modal title="Delete Account" isOpen={true} onClose={onClose}>
+            <div className="space-y-4">
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+                    <p className="text-xs font-bold text-red-400 mb-1">Permanent Account Deletion</p>
+                    <p className="text-xs text-gray-300 leading-relaxed">
+                        Deleting your account will permanently erase your profile, saved vehicles, and personal data from RidersBUD. This action cannot be undone.
+                    </p>
+                </div>
+                <div>
+                    <label htmlFor="delete-confirm-input" className="block text-xs font-bold text-gray-400 mb-2">
+                        Type <span className="text-red-400 font-black">DELETE</span> to confirm:
+                    </label>
+                    <input
+                        id="delete-confirm-input"
+                        type="text"
+                        value={confirmText}
+                        onChange={(e) => setConfirmText(e.target.value)}
+                        placeholder="DELETE"
+                        className="w-full bg-[#121212] border border-white/10 rounded-xl py-3 px-4 text-white text-sm outline-none focus:border-red-500/50"
+                        disabled={isDeleting}
+                    />
+                </div>
+                <div className="flex gap-3 pt-2">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isDeleting}
+                        className="flex-1 py-3 bg-[#1A1A1A] border border-white/10 text-white text-xs font-bold rounded-xl hover:bg-white/5 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleDelete}
+                        disabled={confirmText.trim().toUpperCase() !== 'DELETE' || isDeleting}
+                        className="flex-1 py-3 bg-red-600 disabled:opacity-40 text-white text-xs font-black uppercase tracking-wider rounded-xl hover:bg-red-700 transition-colors"
+                    >
+                        {isDeleting ? 'Deleting...' : 'Delete Permanently'}
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const ProfileScreen: React.FC = () => {
-    const { user, logout, updateUserProfile } = useAuth();
+    const { user, logout, updateUserProfile, deleteAccount } = useAuth();
     const { db, updateCustomer, updateUserNotificationSettings } = useDatabase(); 
     const navigate = useNavigate();
     const customer = db?.customers?.find(c => c.id === user.id);
@@ -757,7 +840,7 @@ const ProfileScreen: React.FC = () => {
                             onClick={() => navigate('/customer-portal/order-history')} 
                             icon={
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                                    <path d="M9 2a1 1 0 100 2h2a1 1 0 100-2H9z" />
                                     <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
                                 </svg>
                             } 
@@ -828,6 +911,35 @@ const ProfileScreen: React.FC = () => {
                             } 
                         />
                     </Tooltip>
+                    <Tooltip content="View Privacy Policy" className="w-full">
+                        <MenuItem 
+                            label="Privacy Policy" 
+                            subtitle="How we collect, store, and protect your data"
+                            onClick={() => navigate('/customer-portal/privacy-policy')} 
+                            icon={<Shield className="h-5 w-5" />} 
+                        />
+                    </Tooltip>
+                    <Tooltip content="View Terms & Conditions" className="w-full">
+                        <MenuItem 
+                            label="Terms & Conditions" 
+                            subtitle="User agreement, service guidelines, and warranty terms"
+                            onClick={() => navigate('/customer-portal/terms-and-conditions')} 
+                            icon={<FileText className="h-5 w-5" />} 
+                        />
+                    </Tooltip>
+                    <Tooltip content="Delete your account permanently" className="w-full">
+                        <MenuItem 
+                            label="Delete Account" 
+                            subtitle="Permanently remove your account and personal data"
+                            onClick={() => setActiveModal('delete-account')} 
+                            variant="danger" 
+                            icon={
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            } 
+                        />
+                    </Tooltip>
                     <Tooltip content="Log out" className="w-full">
                         <MenuItem 
                             label="Logout" 
@@ -847,6 +959,7 @@ const ProfileScreen: React.FC = () => {
             {activeModal === 'support' && db && <HelpSupportModal contactEmail={db.settings.contactEmail} contactPhone={db.settings.contactPhone} onClose={() => setActiveModal(null)} />}
             {activeModal === 'edit' && user && <EditProfileModal user={user} onClose={() => setActiveModal(null)} onSave={handleSaveProfile} />}
             {activeModal === 'notifications' && user && <NotificationSettingsModal user={user} onClose={() => setActiveModal(null)} onSave={(s) => updateUserNotificationSettings(user.id, s)} />}
+            {activeModal === 'delete-account' && user && <DeleteAccountModal onClose={() => setActiveModal(null)} onConfirm={deleteAccount} />}
         </div>
     );
 };

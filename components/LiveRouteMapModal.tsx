@@ -20,6 +20,7 @@ import {
     Wrench
 } from 'lucide-react';
 import { Mechanic } from '../types';
+import { getProfileImage } from '../utils/imageConstants';
 
 declare const L: any;
 
@@ -267,20 +268,13 @@ export const LiveRouteMapModal: React.FC<LiveRouteMapModalProps> = ({
 
         // Modern Custom Customer / Destination Pin
         const destinationTitle = trackingType === 'order' ? 'Client Delivery Address' : 'Service Destination';
+        const effectiveCustomerImage = getProfileImage(customerImageUrl, customerName);
         const customerIcon = L.divIcon({
             html: `
                 <div class="relative flex items-center justify-center filter drop-shadow-[0_8px_16px_rgba(16,185,129,0.4)]">
                     <div class="absolute w-12 h-12 rounded-full bg-emerald-500/20 animate-ping"></div>
                     <div class="relative w-11 h-11 rounded-2xl bg-[#141419] border-2 border-emerald-400 p-0.5 shadow-2xl flex items-center justify-center overflow-hidden transition-transform duration-300 hover:scale-110">
-                        ${customerImageUrl ? `
-                            <img src="${customerImageUrl}" alt="${customerName || 'Customer'}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'w-full h-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-black rounded-xl\\'>👤</div>';" />
-                        ` : `
-                            <div class="w-full h-full bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
-                            </div>
-                        `}
+                        <img src="${effectiveCustomerImage}" alt="${customerName || 'Customer'}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'w-full h-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-black rounded-xl\\'>👤</div>';" />
                     </div>
                     <div class="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-[#141419] flex items-center justify-center">
                         <div class="w-1.5 h-1.5 bg-white rounded-full"></div>

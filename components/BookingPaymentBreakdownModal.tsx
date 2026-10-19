@@ -278,7 +278,9 @@ export const BookingPaymentBreakdownModal: React.FC<Props> = ({
                         ) : (
                             <>
                                 <span>
-                                    Proceed to Pay {formatMoney(downpaymentAmount)} (50% Downpayment)
+                                    {paymentOption === 'full' 
+                                        ? `Proceed to Pay ${formatMoney(totalAmount)} (Full Payment)` 
+                                        : `Proceed to Pay ${formatMoney(downpaymentAmount)} (50% Downpayment)`}
                                 </span>
                                 <ArrowRight size={18} />
                             </>

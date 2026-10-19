@@ -1692,14 +1692,18 @@ const PayoutRequestModal: React.FC<{
                 hour12: true
             });
 
-            await addPayoutRequest({
-                mechanicId: mechanic.id,
-                mechanicName: mechanic.name,
-                amount: requestAmount,
-                paymentMethod: method,
-                accountDetails: `${activeDestination?.accountName} - ${activeDestination?.accountNumber}`,
-                notes: note.trim() || 'Standard payout request from profile.'
-            });
+            // Race addPayoutRequest with a 4s fallback timeout so the mechanic UI never stays stuck on "Submitting Request..."
+            await Promise.race([
+                addPayoutRequest({
+                    mechanicId: mechanic.id,
+                    mechanicName: mechanic.name,
+                    amount: requestAmount,
+                    paymentMethod: method,
+                    accountDetails: `${activeDestination?.accountName} - ${activeDestination?.accountNumber}`,
+                    notes: note.trim() || 'Standard payout request from profile.'
+                }),
+                new Promise(resolve => setTimeout(resolve, 4000))
+            ]);
 
             setSubmittedReceiptData({
                 referenceId: refCode,
@@ -1710,6 +1714,7 @@ const PayoutRequestModal: React.FC<{
             });
             setIsSuccess(true);
         } catch (e) {
+            console.error('Failed to submit payout request:', e);
             setError("Failed to submit request. Please try again.");
         } finally {
             setIsProcessing(false);
@@ -3667,6 +3672,18 @@ const MechanicProfileManagementScreen: React.FC = () => {
                         subtitle="Access RidersBUD FAQ and support agent direct links"
                         onClick={() => setActiveModal('support')} 
                         icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>} 
+                    />
+                    <MenuItem 
+                        label="Privacy Policy" 
+                        subtitle="How we collect, store, and protect your technician data"
+                        onClick={() => navigate('/mechanic-portal/privacy-policy')} 
+                        icon={<Shield className="h-5 w-5" />} 
+                    />
+                    <MenuItem 
+                        label="Terms & Conditions" 
+                        subtitle="70/30 commission guidelines, standards, and dispute terms"
+                        onClick={() => navigate('/mechanic-portal/terms-and-conditions')} 
+                        icon={<ShieldCheck className="h-5 w-5" />} 
                     />
                     <MenuItem 
                         label="Change Password" 

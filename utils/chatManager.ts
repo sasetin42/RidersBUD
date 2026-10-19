@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, doc, getDoc } from 'firebase/firestore';
 
 export interface ChatMessage {
     id?: string;
@@ -57,8 +57,38 @@ export const useChat = (bookingId: string) => {
             const messagesRef = collection(db, 'bookings', bookingId, 'messages');
             await addDoc(messagesRef, {
                 ...message,
-                timestamp: Date.now() // Use client time for display immediate, or serverTimestamp for order
+                timestamp: Date.now()
             });
+
+            // Dispatch notification to recipient so FCM pushes in real-time
+            try {
+                const bookingSnap = await getDoc(doc(db, 'bookings', bookingId));
+                if (bookingSnap.exists()) {
+                    const bData = bookingSnap.data();
+                    const isSenderMechanic = message.sender === 'mechanic';
+                    const recipientId = isSenderMechanic ? bData.customerId : bData.mechanicId;
+                    const recipientRole = isSenderMechanic ? 'customer' : 'mechanic';
+                    const senderLabel = isSenderMechanic ? (bData.mechanic?.name || 'Mechanic') : (bData.customerName || 'Customer');
+
+                    if (recipientId) {
+                        const notifsRef = collection(db, 'notifications');
+                        await addDoc(notifsRef, {
+                            recipientId: `${recipientRole}-${recipientId}`,
+                            recipientRole,
+                            title: `💬 New Message from ${senderLabel}`,
+                            message: message.text ? (message.text.length > 70 ? message.text.substring(0, 67) + '...' : message.text) : 'Sent an attachment',
+                            type: 'info',
+                            link: recipientRole === 'customer' ? `/support-chat?bookingId=${bookingId}` : `/support-chat?bookingId=${bookingId}`,
+                            date: new Date().toISOString(),
+                            timestamp: Date.now(),
+                            status: 'unread',
+                            read: false
+                        });
+                    }
+                }
+            } catch (notifErr) {
+                console.warn('[useChat] Push notification dispatch non-critical error:', notifErr);
+            }
         } catch (error) {
             console.error('Error sending message:', error);
         }

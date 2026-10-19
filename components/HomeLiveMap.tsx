@@ -200,9 +200,9 @@ const HomeLiveMap: React.FC<HomeLiveMapProps> = ({ mechanics, customerLocation, 
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
                         <span style="color:#FE7803;font-size:12px;">★</span>
-                        <span style="font-weight:900;color:#fff;font-size:12px;">${mechanic.rating.toFixed(1)}</span>
+                        <span style="font-weight:900;color:#fff;font-size:12px;">${(mechanic.rating || 0).toFixed(1)}</span>
                         <span style="color:#4b5563;font-size:10px;">&bull;</span>
-                        <span style="color:#9ca3af;font-size:10px;">${mechanic.specializations.slice(0, 2).join(' / ')}</span>
+                        <span style="color:#9ca3af;font-size:10px;">${(mechanic.specializations || []).slice(0, 2).join(' / ')}</span>
                     </div>
                     <div style="display:flex;gap:6px;margin-top:10px;">
                         <button class="view-profile-btn ridersbud-popup-btn" data-mechanic-id="${mechanic.id}"

@@ -93,7 +93,10 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
 
         setLoading(true);
         try {
-            await onSubmit(numAmount, methodString, detailsString);
+            await Promise.race([
+                onSubmit(numAmount, methodString, detailsString),
+                new Promise(resolve => setTimeout(resolve, 4000))
+            ]);
             setSuccess(true);
             setTimeout(() => {
                 onClose();
@@ -102,6 +105,7 @@ const PayoutRequestModal: React.FC<PayoutRequestModalProps> = ({
                 setManualDetails('');
             }, 1800);
         } catch (err: any) {
+            console.error('Failed to submit withdrawal request:', err);
             setError(err?.message || 'Failed to submit withdrawal request.');
         } finally {
             setLoading(false);
@@ -616,13 +620,13 @@ const MechanicEarningsScreen: React.FC = () => {
                 <div className="px-4 sm:px-6 pt-4 space-y-4">
 
                     {/* 1. Compact Balance & Quick-Withdraw HUD */}
-                    <div className="bg-gradient-to-br from-[#1A1A1E] via-[#161619] to-[#121214] p-5 rounded-3xl border border-white/10 shadow-xl relative overflow-hidden">
+                    <div className="bg-gradient-to-br from-[#1A1A1E] via-[#161619] to-[#121214] p-4 sm:p-5 rounded-3xl border border-white/10 shadow-xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
                             <Wallet size={100} className="text-white" />
                         </div>
 
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-                            <div className="space-y-1">
+                            <div className="space-y-1.5 min-w-0">
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Available Balance</span>
                                     <span className="flex h-2 w-2 relative">
@@ -630,8 +634,8 @@ const MechanicEarningsScreen: React.FC = () => {
                                         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                     </span>
                                 </div>
-                                <div className="flex items-baseline gap-2">
-                                    <p className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                                <div className="flex flex-wrap items-baseline gap-2.5">
+                                    <p className="text-3xl sm:text-4xl font-black text-white tracking-tight leading-none">
                                         ₱{availableBalance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                     </p>
                                     {lockedBalance > 0 && (
@@ -639,15 +643,15 @@ const MechanicEarningsScreen: React.FC = () => {
                                             type="button"
                                             onClick={() => setActiveTab('payouts')}
                                             title="Click to view pending payout request"
-                                            className="text-[11px] font-bold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 px-2.5 py-0.5 rounded-lg border border-amber-500/20 transition-all flex items-center gap-1 cursor-pointer"
+                                            className="text-[11px] font-bold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 active:scale-95 px-2.5 py-1 rounded-lg border border-amber-500/20 transition-all inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                                         >
-                                            <Clock size={11} className="text-amber-400" />
+                                            <Clock size={12} className="text-amber-400 shrink-0" />
                                             <span>₱{lockedBalance.toLocaleString()} in transit</span>
                                         </button>
                                     )}
                                 </div>
                                 {primaryAccount && (
-                                    <p className="text-[10px] font-bold text-gray-400 flex items-center gap-1 mt-1">
+                                    <p className="text-[10px] font-bold text-gray-400 flex items-center flex-wrap gap-1 pt-0.5">
                                         <span>Payout to:</span>
                                         <span className="text-white font-black">{primaryAccount.method === 'Bank Transfer' ? primaryAccount.bankName : primaryAccount.walletName}</span>
                                         <span className="text-gray-500">({primaryAccount.accountNumber})</span>
@@ -655,20 +659,20 @@ const MechanicEarningsScreen: React.FC = () => {
                                 )}
                             </div>
 
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <div className="flex items-center gap-2 pt-1 sm:pt-0 w-full sm:w-auto">
                                 <button
                                     type="button"
                                     onClick={() => setIsPayoutModalOpen(true)}
                                     disabled={availableBalance < 100}
-                                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary hover:bg-orange-600 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/25 transition-all"
+                                    className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary hover:bg-orange-600 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-primary/25 transition-all text-center"
                                 >
-                                    <ArrowUpRight size={16} />
+                                    <ArrowUpRight size={16} className="shrink-0" />
                                     <span>Withdraw Funds</span>
                                 </button>
                                 <Link
                                     to="/mechanic-portal/profile"
                                     title="Manage Payout Destinations"
-                                    className="p-3 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-2xl border border-white/5 transition-all flex items-center justify-center"
+                                    className="p-3 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-2xl border border-white/5 transition-all flex items-center justify-center shrink-0"
                                 >
                                     <CreditCard size={16} />
                                 </Link>
@@ -678,12 +682,12 @@ const MechanicEarningsScreen: React.FC = () => {
 
                     {/* In-Transit Callout Alert: Informs mechanic why funds are locked and offers instant cancellation to restore available balance */}
                     {lockedBalance > 0 && (
-                        <div className="bg-[#1C1813] border border-amber-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 text-xs shadow-lg animate-in fade-in duration-300">
+                        <div className="bg-[#1C1813] border border-amber-500/30 rounded-3xl p-4 sm:p-5 flex flex-col gap-3.5 text-xs shadow-lg animate-in fade-in duration-300">
                             <div className="flex items-start gap-3 min-w-0">
                                 <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 border border-amber-500/30">
                                     <Clock size={20} />
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <p className="font-black text-amber-300 text-sm tracking-tight">
                                             ₱{lockedBalance.toLocaleString()} In Transit
@@ -692,28 +696,28 @@ const MechanicEarningsScreen: React.FC = () => {
                                             Pending Withdrawal
                                         </span>
                                     </div>
-                                    <p className="text-gray-300 text-xs mt-1 leading-relaxed">
+                                    <p className="text-gray-300 text-xs mt-1.5 leading-relaxed">
                                         Your earnings are locked while your withdrawal request is pending review by admin. Once processed, it will be paid to your account.
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 pt-1 sm:pt-0">
+                            <div className="flex items-center gap-2 pt-2 border-t border-amber-500/15 w-full">
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab('payouts')}
-                                    className="px-3.5 py-2 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl text-xs font-bold transition-all border border-white/10 flex items-center gap-1.5"
+                                    className="flex-1 py-2.5 px-3 bg-white/10 hover:bg-white/20 active:scale-95 text-white rounded-xl text-xs font-bold transition-all border border-white/10 flex items-center justify-center gap-1.5 text-center"
                                 >
-                                    <CreditCard size={13} />
+                                    <CreditCard size={13} className="shrink-0" />
                                     <span>View Payouts</span>
                                 </button>
                                 {pendingPayout && (
                                     <button
                                         type="button"
                                         onClick={() => setPayoutToDelete(pendingPayout)}
-                                        className="px-3.5 py-2 bg-red-500/20 hover:bg-red-500/30 active:scale-95 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                                        className="flex-1 py-2.5 px-3 bg-red-500/20 hover:bg-red-500/30 active:scale-95 text-red-300 hover:text-white border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm text-center"
                                         title="Cancel pending withdrawal request and immediately restore funds to Available Balance"
                                     >
-                                        <RotateCcw size={13} />
+                                        <RotateCcw size={13} className="shrink-0" />
                                         <span>Cancel & Unlock</span>
                                     </button>
                                 )}

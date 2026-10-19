@@ -186,6 +186,33 @@ export function syncDynamicManifest(settings?: Partial<Settings>): void {
   }
   appNameMeta.content = manifestData.name;
 
+  // Realtime Live App Icon & Apple Touch Icon Synchronization for Android, iOS & Desktop Browsers
+  const liveIconUrl = settings?.mobileAppIconUrl || settings?.pwaIcon192Url || settings?.pwaLogoUrl || settings?.appLogoUrl;
+  if (liveIconUrl) {
+    const resolvedLiveIcon = resolveUrl(liveIconUrl);
+
+    // Update or create apple-touch-icon links for iOS Safari Add-to-Home-Screen
+    const appleTouchLinks = document.querySelectorAll('link[rel="apple-touch-icon"]');
+    if (appleTouchLinks.length > 0) {
+      appleTouchLinks.forEach((link) => {
+        (link as HTMLLinkElement).href = resolvedLiveIcon;
+      });
+    } else {
+      const appleTouchLink = document.createElement('link');
+      appleTouchLink.rel = 'apple-touch-icon';
+      appleTouchLink.href = resolvedLiveIcon;
+      document.head.appendChild(appleTouchLink);
+    }
+
+    // Update browser favicons
+    const iconLinks = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+    if (iconLinks.length > 0) {
+      iconLinks.forEach((link) => {
+        (link as HTMLLinkElement).href = resolvedLiveIcon;
+      });
+    }
+  }
+
   // Handle Display Mode DOM classes and dynamic Fullscreen API
   applyDisplayModeRuntime(manifestData.display, settings?.pwaForceFullscreenInStandalone);
 }

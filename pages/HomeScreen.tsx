@@ -13,7 +13,8 @@ import {
     User, Phone, MessageSquare, MapPin, Star, Package, Activity, X, UserCheck, Truck, 
     Layers, Clock, ShieldCheck, CheckCircle2, AlertCircle, ShoppingBag, Eye, Navigation, 
     ArrowRight, Check, Sparkles, ExternalLink, KeyRound, AlertOctagon, Trash2,
-    Copy, Receipt, CreditCard, Mail, Info, Award, Compass, CheckCircle, Shield, Loader2
+    Copy, Receipt, CreditCard, Mail, Info, Award, Compass, CheckCircle, Shield, Loader2,
+    Pencil
 } from 'lucide-react';
 import Spinner from '../components/Spinner';
 import NotificationBell from '../components/NotificationBell';
@@ -991,95 +992,103 @@ const HomeScreen: React.FC = () => {
                 {user?.vehicles && user.vehicles.length > 0 && (() => {
                     const primaryVehicle = user.vehicles.find(v => v.isPrimary) || user.vehicles[0];
                     return (
-                        <div className="relative bg-[#1A1612]/90 bg-gradient-to-b from-[#2B1B0E]/60 via-[#181512] to-[#141210] rounded-[24px] sm:rounded-[28px] overflow-hidden border border-[#FE7803]/25 shadow-2xl animate-slideUp w-full backdrop-blur-md">
-                            {/* Subtle Ambient Glow */}
-                            <div className="absolute top-0 right-0 w-44 h-44 bg-[#FE7803]/10 rounded-full blur-3xl pointer-events-none"></div>
+                        <div className="relative rounded-[24px] sm:rounded-[28px] overflow-hidden border border-[#FE7803]/30 shadow-2xl animate-slideUp w-full group">
+                            {/* Primary Vehicle Background Image with fallback */}
+                            <div className="absolute inset-0 z-0">
+                                {primaryVehicle.imageUrls && primaryVehicle.imageUrls.length > 0 ? (
+                                    <img
+                                        src={primaryVehicle.imageUrls[0]}
+                                        alt={`${primaryVehicle.make} ${primaryVehicle.model}`}
+                                        className="w-full h-full object-cover object-center transform transition-transform duration-700 ease-out group-hover:scale-105"
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
+                                        }}
+                                    />
+                                ) : (
+                                    <img 
+                                        src="/assets/car_mockup.png" 
+                                        alt="Vehicle Background" 
+                                        className="w-full h-full object-cover object-center transform transition-transform duration-700 ease-out group-hover:scale-105" 
+                                    />
+                                )}
+                                {/* Refined Subtle Dark Gradient Overlays so the Vehicle is Prominently Visible */}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/25" />
+                                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-black/50" />
+                            </div>
 
-                            <div className="relative z-10 p-4 sm:p-6 w-full flex flex-col justify-between">
-                                {/* Top Section: Info & Vehicle Graphic / Mockup */}
-                                <div className="flex items-center justify-between gap-3 mb-4">
-                                    <div className="flex-1 min-w-0 pr-1">
-                                        <p className="text-[10px] font-black text-[#FE7803] tracking-wider uppercase mb-1">
-                                            YOUR PRIMARY VEHICLE
-                                        </p>
-                                        <h2 className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight truncate">
+                            {/* Subtle Ambient Glow */}
+                            <div className="absolute top-0 right-0 w-48 h-48 bg-[#FE7803]/10 rounded-full blur-3xl pointer-events-none z-[1]"></div>
+
+                            <div className="relative z-10 p-4 sm:p-5 w-full flex flex-col justify-between">
+                                {/* Header Row: Title, Model, Active Status & Upper-Right Pencil Edit Button */}
+                                <div className="flex items-start justify-between gap-3 mb-3.5">
+                                    <div className="flex-1 min-w-0 pr-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <p className="text-[10px] font-black text-[#FE7803] tracking-wider uppercase">
+                                                YOUR PRIMARY VEHICLE
+                                            </p>
+                                            {/* Reduced Compact Status Pill Badge: Active only with icon */}
+                                            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[10px] font-black tracking-wide shadow-sm">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+                                                <span>Active</span>
+                                            </div>
+                                        </div>
+
+                                        <h2 className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight truncate drop-shadow-sm">
                                             {primaryVehicle.year} {primaryVehicle.make}
                                         </h2>
-                                        <p className="text-sm font-bold text-gray-400 -mt-0.5 mb-2.5 truncate">
+                                        <p className="text-xs sm:text-sm font-bold text-gray-300 -mt-0.5 truncate drop-shadow-sm">
                                             {primaryVehicle.model}
                                         </p>
-                                        
-                                        {/* Status Pill Badge */}
-                                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#16291E] border border-emerald-500/30 text-emerald-400 text-[10px] font-black tracking-wider">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
-                                            <span>VEHICLE ACTIVE &amp; READY</span>
-                                        </div>
                                     </div>
 
-                                    {/* Vehicle Graphic Thumbnail — strictly constrained */}
-                                    <div className="w-20 h-20 sm:w-24 sm:h-24 max-w-[80px] max-h-[80px] sm:max-w-[96px] sm:max-h-[96px] flex-shrink-0 rounded-2xl bg-black/40 border border-white/10 p-1 overflow-hidden shadow-inner flex items-center justify-center relative">
-                                        {primaryVehicle.imageUrls && primaryVehicle.imageUrls.length > 0 ? (
-                                            <img
-                                                src={primaryVehicle.imageUrls[0]}
-                                                alt={`${primaryVehicle.make} ${primaryVehicle.model}`}
-                                                className="w-full h-full object-cover rounded-xl block max-w-full max-h-full"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = "/assets/car_mockup.png";
-                                                }}
-                                            />
-                                        ) : (
-                                            <img 
-                                                src="/assets/car_mockup.png" 
-                                                alt="Vehicle Thumbnail" 
-                                                className="w-full h-full object-cover rounded-xl block max-w-full max-h-full" 
-                                            />
-                                        )}
-                                    </div>
+                                    {/* Upper-Right Pencil Button to Manage and Edit Garage */}
+                                    <Tooltip content="Edit & Manage My Garage">
+                                        <button
+                                            type="button"
+                                            onClick={() => navigate('/customer-portal/my-garage')}
+                                            aria-label="Manage My Garage"
+                                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-black/60 hover:bg-[#FE7803] border border-white/15 hover:border-[#FE7803] text-gray-200 hover:text-white flex items-center justify-center transition-all duration-200 shadow-lg hover:shadow-[#FE7803]/30 active:scale-95 group/edit backdrop-blur-md flex-shrink-0"
+                                        >
+                                            <Pencil size={16} className="transition-transform group-hover/edit:rotate-12 group-hover/edit:scale-110" />
+                                        </button>
+                                    </Tooltip>
                                 </div>
 
-                                {/* 3 Compact Spec Tiles (Plate, Color, Category) */}
-                                <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
-                                    <div className="bg-[#24211D]/80 border border-white/5 rounded-2xl p-2.5 sm:p-3 min-w-0">
-                                        <span className="text-[10px] text-gray-400 font-bold block mb-0.5 truncate">Plate No.</span>
-                                        <span className="text-xs sm:text-sm font-black text-white block truncate tracking-tight font-mono">
+                                {/* Spec Details Listed Per Row: Plate No., Color, Category */}
+                                <div className="space-y-1.5 bg-black/20 border border-white/10 rounded-2xl p-2.5 sm:p-3 backdrop-blur-[2px]">
+                                    {/* Row 1: Plate No. */}
+                                    <div className="flex items-center justify-between py-0.5 px-1 text-xs border-b border-white/5">
+                                        <span className="text-[11px] text-gray-400 font-semibold tracking-wide">Plate No.</span>
+                                        <span className="font-mono font-black text-white tracking-wider">
                                             {primaryVehicle.plateNumber || 'N/A'}
                                         </span>
                                     </div>
 
-                                    <div className="bg-[#24211D]/80 border border-white/5 rounded-2xl p-2.5 sm:p-3 min-w-0">
-                                        <span className="text-[10px] text-gray-400 font-bold block mb-0.5 truncate">Color</span>
-                                        <div className="flex items-center gap-1.5 min-w-0">
+                                    {/* Row 2: Color */}
+                                    <div className="flex items-center justify-between py-0.5 px-1 text-xs border-b border-white/5">
+                                        <span className="text-[11px] text-gray-400 font-semibold tracking-wide">Color</span>
+                                        <div className="flex items-center gap-1.5">
                                             {primaryVehicle.color && (
                                                 <span 
-                                                    className="w-2.5 h-2.5 rounded-full border border-white/30 flex-shrink-0" 
+                                                    className="w-2.5 h-2.5 rounded-full border border-white/40 shadow-sm flex-shrink-0" 
                                                     style={{ backgroundColor: primaryVehicle.color.toLowerCase() === 'matt' || primaryVehicle.color.toLowerCase().includes('matt') ? '#4B4B4B' : primaryVehicle.color.toLowerCase() }}
                                                 />
                                             )}
-                                            <span className="text-xs sm:text-sm font-black text-white truncate">
+                                            <span className="font-bold text-gray-200 truncate max-w-[160px] sm:max-w-[200px]">
                                                 {primaryVehicle.color || 'N/A'}
                                             </span>
                                         </div>
                                     </div>
 
-                                    <div className="bg-[#24211D]/80 border border-white/5 rounded-2xl p-2.5 sm:p-3 min-w-0">
-                                        <span className="text-[10px] text-gray-400 font-bold block mb-0.5 truncate">Category</span>
-                                        <span className="text-xs sm:text-sm font-black text-primary block truncate">
+                                    {/* Row 3: Category */}
+                                    <div className="flex items-center justify-between py-0.5 px-1 text-xs">
+                                        <span className="text-[11px] text-gray-400 font-semibold tracking-wide">Category</span>
+                                        <span className="font-black text-[#FE7803] tracking-wide">
                                             {primaryVehicle.category || primaryVehicle.type || '4WD'}
                                         </span>
                                     </div>
                                 </div>
-
-                                {/* Action Button */}
-                                <Tooltip content="Manage your vehicles" className="w-full">
-                                    <button
-                                        onClick={() => navigate('/customer-portal/my-garage')}
-                                        className="w-full bg-[#3D2512]/80 hover:bg-[#FE7803]/25 border border-[#FE7803]/40 hover:border-[#FE7803] text-[#FE7803] font-black py-3 px-4 rounded-2xl transition-all duration-200 flex items-center justify-center gap-2 group active:scale-[0.99] shadow-lg shadow-black/40"
-                                    >
-                                        <Car size={18} className="text-[#FE7803] group-hover:scale-110 transition-transform" />
-                                        <span className="text-sm font-black text-[#FE7803]">Manage My Garage</span>
-                                        <ChevronRight size={18} className="text-[#FE7803] group-hover:translate-x-1 transition-transform ml-0.5" />
-                                    </button>
-                                </Tooltip>
                             </div>
                         </div>
                     );
@@ -1099,19 +1108,6 @@ const HomeScreen: React.FC = () => {
                                 )}
                             </div>
                             <p className="text-xs text-gray-400 font-medium">Real-time status of all your bookings, rentals, services & orders</p>
-                        </div>
-
-                        {/* Quick Action to Book/Explore */}
-                        <div className="flex items-center gap-2">
-                            <Tooltip content="Schedule new service">
-                                <button
-                                    onClick={() => navigate('/customer-portal/services')}
-                                    className="text-[11px] font-bold text-primary hover:text-white bg-primary/10 hover:bg-primary/20 border border-primary/20 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5"
-                                >
-                                    <Wrench size={13} />
-                                    <span>Book Service</span>
-                                </button>
-                            </Tooltip>
                         </div>
                     </div>
 

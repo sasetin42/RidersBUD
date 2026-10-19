@@ -24,6 +24,28 @@ allprojects {
     }
 }
 
+// Override Java + Kotlin compatibility for all subprojects to match the installed JDK 17.
+// Capacitor Android 8.x declares sourceCompatibility/jvmTarget 21 which requires JDK 21+.
+// This block forces all modules to compile at Java/Kotlin 17 level.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_17
+                    targetCompatibility JavaVersion.VERSION_17
+                }
+            }
+            // Override Kotlin JVM target via kotlinOptions if the extension exists
+            try {
+                project.android.kotlinOptions {
+                    jvmTarget = '17'
+                }
+            } catch (ignored) {}
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

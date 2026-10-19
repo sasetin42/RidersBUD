@@ -492,6 +492,40 @@ const normalizeServiceRequestToBooking = (data: any, id: string): Booking => {
     } as any;
 };
 
+/**
+ * Authoritative Remaining Balance Calculator:
+ * Always takes into account mechanic's added additional costs, 50% initial downpayment,
+ * and any explicit remainingBalance without stale overrides.
+ */
+export const calculateEffectiveRemainingBalance = (booking: Booking | any): number => {
+    if (!booking) return 0;
+    if (booking.isPaid === true || booking.balancePaid === true || booking.paymentStatus === 'paid') {
+        return 0;
+    }
+
+    const services = booking.services && booking.services.length > 0 ? booking.services : (booking.service ? [booking.service] : []);
+    const originalServicesFee = services.length > 0
+        ? services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
+        : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
+
+    const initialDownpayment = booking.downpaymentAmount != null && Number(booking.downpaymentAmount) > 0
+        ? Number(booking.downpaymentAmount)
+        : (Number(booking.paidAmount) > 0 ? Number(booking.paidAmount) : originalServicesFee * 0.5);
+
+    const serviceBalance = Math.max(0, originalServicesFee - initialDownpayment);
+    const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
+
+    // If remainingBalance was set after additional costs were added, or if no additional costs exist
+    if (booking.remainingBalance !== undefined && booking.remainingBalance > 0) {
+        // If additional costs exist and remainingBalance is less than (serviceBalance + additionalCosts),
+        // it means remainingBalance is stale (stored before additional costs were appended). Always take the full due.
+        const expectedDue = serviceBalance + additionalCostsTotal;
+        return Math.max(booking.remainingBalance, expectedDue);
+    }
+
+    return Math.max(0, serviceBalance + additionalCostsTotal);
+};
+
 const BookingDetailScreen: React.FC = () => {
     const { bookingId } = useParams<{ bookingId: string }>();
     const navigate = useNavigate();
@@ -742,13 +776,8 @@ const BookingDetailScreen: React.FC = () => {
         if (!targetBooking || !user) return;
         try {
             setIsInitiatingHitPay(true);
-            const originalServicesFee = targetBooking.services && targetBooking.services.length > 0
-                ? targetBooking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
-                : (Number(targetBooking.service?.price) || Number(targetBooking.totalAmount) || 0);
-            const paidDownpayment = Number(targetBooking.paidAmount) || (originalServicesFee * 0.5);
-            const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
-            const additionalCostsTotal = ((targetBooking as any).additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-            const finalBalanceAmount = Math.max(0, serviceBalance + additionalCostsTotal);
+            // ✅ Use authoritative helper — includes mechanic's additional costs and correct 50% downpayment
+            const finalBalanceAmount = calculateEffectiveRemainingBalance(targetBooking);
 
             const isRentalTarget = (targetBooking as any).isRental === true || 
                 (targetBooking as any).serviceName?.toLowerCase().includes('rental') ||
@@ -1150,8 +1179,21 @@ const BookingDetailScreen: React.FC = () => {
                 paidAmount: localRental.paidAmount != null ? localRental.paidAmount : fetchedBooking.paidAmount
             };
         }
-        return fetchedBooking;
-    }, [bookingId, fetchedBooking, db?.serviceRequests, db?.rentalBookings, db?.liaisonBookings]);
+        // Check if there is an updated standard booking in db context
+        const localBooking = db?.bookings?.find(b => b.id === bookingId || b.id?.slice(-6) === bookingId.slice(-6));
+        const base = localBooking
+            ? { ...fetchedBooking, ...localBooking, additionalCosts: localBooking.additionalCosts || (fetchedBooking as any)?.additionalCosts || [] }
+            : fetchedBooking;
+
+        if (!base) return null;
+
+        // Automatically ensure remainingBalance includes any newly added mechanic additional costs
+        const effectiveRemaining = calculateEffectiveRemainingBalance(base);
+        return {
+            ...base,
+            remainingBalance: effectiveRemaining
+        };
+    }, [bookingId, fetchedBooking, db?.bookings, db?.serviceRequests, db?.rentalBookings, db?.liaisonBookings]);
 
     const isRental = useMemo(() => {
         if (!booking) return false;
@@ -1859,16 +1901,8 @@ const BookingDetailScreen: React.FC = () => {
                 )}
 
                 {/* Direct High-Priority Balance Settlement Banner */}
-                {((status === 'Work Done' || status === 'Completed' || status === 'Processing at LTO' || status === 'Ready for Pickup' || status === 'Delivered') && (!booking.isPaid || (booking.remainingBalance !== undefined && booking.remainingBalance > 0))) && (() => {
-                    const originalServicesFee = booking.services && booking.services.length > 0
-                        ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
-                        : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
-                    const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
-                    const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
-                    const additionalCostsTotal = ((booking as any).additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-                    const finalBalanceAmount = booking.remainingBalance !== undefined && booking.remainingBalance > 0
-                        ? booking.remainingBalance
-                        : Math.max(0, serviceBalance + additionalCostsTotal);
+                {((status === 'Work Done' || status === 'Completed' || status === 'Processing at LTO' || status === 'Ready for Pickup' || status === 'Delivered') && (!booking.isPaid || calculateEffectiveRemainingBalance(booking) > 0)) && (() => {
+                    const finalBalanceAmount = calculateEffectiveRemainingBalance(booking);
                     const isManualGcashEnabled = Boolean(db?.settings?.gcashEnabled) && !HitPayService.isGatewayActive(db?.settings);
                     const isBalanceReceiptUnderReview = (booking as any).gcashPaymentStatus === 'balance_receipt_uploaded';
 
@@ -3747,15 +3781,7 @@ const BookingDetailScreen: React.FC = () => {
             )}
 
             {showGCashPaymentModal && (Boolean(db?.settings?.gcashEnabled) && !HitPayService.isGatewayActive(db?.settings)) && (() => {
-                const originalServicesFee = booking.services && booking.services.length > 0
-                    ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
-                    : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
-                const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
-                const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
-                const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-                const finalBalanceAmount = booking.remainingBalance !== undefined && booking.remainingBalance > 0
-                    ? booking.remainingBalance
-                    : Math.max(0, serviceBalance + additionalCostsTotal);
+                const finalBalanceAmount = calculateEffectiveRemainingBalance(booking);
                 const isBalancePayment = (booking.status === 'Work Done' || booking.status === 'Completed' || booking.status === 'Processing at LTO' || booking.status === 'Ready for Pickup' || booking.status === 'Delivered') || Boolean(booking.paidAmount && booking.paidAmount > 0);
 
                 return (
@@ -3778,16 +3804,15 @@ const BookingDetailScreen: React.FC = () => {
             })()}
 
             {/* Mandatory Balance Settlement Modal (Auto Pop-up when Mechanic Completes Work or Liaison is Ready) */}
-            {((booking.status === 'Work Done' || booking.status === 'Completed' || booking.status === 'Processing at LTO' || booking.status === 'Ready for Pickup' || booking.status === 'Delivered') && (!booking.isPaid || (booking.remainingBalance !== undefined && booking.remainingBalance > 0)) && (booking as any).gcashPaymentStatus !== 'balance_receipt_uploaded' && !showGCashPaymentModal && !isBalanceModalDismissed) && (() => {
+            {((booking.status === 'Work Done' || booking.status === 'Completed' || booking.status === 'Processing at LTO' || booking.status === 'Ready for Pickup' || booking.status === 'Delivered') && (!booking.isPaid || calculateEffectiveRemainingBalance(booking) > 0) && (booking as any).gcashPaymentStatus !== 'balance_receipt_uploaded' && !showGCashPaymentModal && !isBalanceModalDismissed) && (() => {
                 const originalServicesFee = booking.services && booking.services.length > 0
                     ? booking.services.reduce((sum: number, svc: any) => sum + (Number(svc.price) || 0), 0)
                     : (Number(booking.service?.price) || Number(booking.totalAmount) || 0);
-                const paidDownpayment = Number(booking.paidAmount) || (originalServicesFee * 0.5);
-                const serviceBalance = Math.max(0, originalServicesFee - paidDownpayment);
+                const paidDownpayment = booking.downpaymentAmount != null && Number(booking.downpaymentAmount) > 0
+                    ? Number(booking.downpaymentAmount)
+                    : (Number(booking.paidAmount) > 0 ? Number(booking.paidAmount) : originalServicesFee * 0.5);
                 const additionalCostsTotal = (booking.additionalCosts || []).reduce((sum: number, cost: any) => sum + (Number(cost.price) || 0), 0);
-                const finalBalanceAmount = booking.remainingBalance !== undefined && booking.remainingBalance > 0
-                    ? booking.remainingBalance
-                    : Math.max(0, serviceBalance + additionalCostsTotal);
+                const finalBalanceAmount = calculateEffectiveRemainingBalance(booking);
                 const isManualGcashEnabled = Boolean(db?.settings?.gcashEnabled) && !HitPayService.isGatewayActive(db?.settings);
                 const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
 

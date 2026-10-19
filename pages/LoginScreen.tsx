@@ -526,6 +526,25 @@ const LoginScreen: React.FC = () => {
                         </button>
                     </p>
                 </div>
+
+                {/* Legal & Policy Links */}
+                <div className="mt-3 sm:mt-4 pt-3 border-t border-white/5 text-center flex items-center justify-center gap-3 text-[11px] sm:text-xs text-gray-500">
+                    <button
+                        type="button"
+                        onClick={() => navigate('/privacy-policy')}
+                        className="hover:text-primary transition-colors underline-offset-4 hover:underline"
+                    >
+                        Privacy Policy
+                    </button>
+                    <span>•</span>
+                    <button
+                        type="button"
+                        onClick={() => navigate('/terms-and-conditions')}
+                        className="hover:text-primary transition-colors underline-offset-4 hover:underline"
+                    >
+                        Terms & Conditions
+                    </button>
+                </div>
             </div>
         </div>
     );

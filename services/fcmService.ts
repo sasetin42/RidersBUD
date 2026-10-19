@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications, Token, ActionPerformed, PushNotificationSchema } from '@capacitor/push-notifications';
 import { db } from '../firebase';
-import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
+import { doc, setDoc, arrayUnion } from 'firebase/firestore';
 
 export interface FCMUserRegistration {
     userId: string;
@@ -11,7 +11,28 @@ export interface FCMUserRegistration {
 class FCMService {
     private registered = false;
     private currentToken: string | null = null;
+    private currentUserInfo: FCMUserRegistration | null = null;
     private onNotificationTapCallback: ((data: Record<string, any>) => void) | null = null;
+
+    /**
+     * Get the currently registered FCM token if available
+     */
+    public getToken(): string | null {
+        return this.currentToken;
+    }
+
+    /**
+     * Check current native push notification permission
+     */
+    public async getPermissionStatus(): Promise<string> {
+        if (!Capacitor.isNativePlatform()) return 'not-native';
+        try {
+            const status = await PushNotifications.checkPermissions();
+            return status.receive;
+        } catch {
+            return 'prompt';
+        }
+    }
 
     /**
      * Set a custom callback handler when a user taps on a push notification
@@ -24,15 +45,19 @@ class FCMService {
      * Initializes push notifications on native devices (Android / iOS).
      * Requests permissions, creates Android notification channel, and syncs device token to Firestore.
      */
-    public async initialize(userInfo?: FCMUserRegistration): Promise<string | null> {
+    public async initialize(userInfo?: FCMUserRegistration, customSettings?: { channelId?: string; channelName?: string; accentColor?: string; soundTheme?: string }): Promise<string | null> {
         if (!Capacitor.isNativePlatform()) {
             // Web / PWA fallback: native push plugins are only executed on Android / iOS
             return null;
         }
 
+        if (userInfo) {
+            this.currentUserInfo = userInfo;
+        }
+
         if (this.registered && this.currentToken) {
-            if (userInfo) {
-                await this.syncTokenToUser(this.currentToken, userInfo);
+            if (this.currentUserInfo) {
+                await this.syncTokenToUser(this.currentToken, this.currentUserInfo);
             }
             return this.currentToken;
         }
@@ -49,27 +74,32 @@ class FCMService {
                 return null;
             }
 
-            // 2. Create Android Notification Channel with sound & vibration
+            // 2. Create Android Notification Channel with sound & vibration using dynamic settings
             if (Capacitor.getPlatform() === 'android') {
                 await PushNotifications.createChannel({
-                    id: 'ridersbud_notifications',
-                    name: 'RidersBUD Alerts',
+                    id: customSettings?.channelId || 'ridersbud_notifications',
+                    name: customSettings?.channelName || 'RidersBUD Alerts',
                     description: 'Real-time updates for bookings, mechanic status, and chat messages',
                     importance: 5, // High importance (heads-up notification)
                     visibility: 1,
-                    sound: 'default',
+                    sound: customSettings?.soundTheme || 'default',
                     vibration: true,
                     lights: true,
-                    lightColor: '#FE7803' // RidersBUD primary brand orange
+                    lightColor: customSettings?.accentColor || '#FE7803' // Configured FCM brand accent color
                 });
             }
 
             // 3. Setup Push Listeners
-            this.setupListeners(userInfo);
+            this.setupListeners();
 
             // 4. Register with Apple APNS / Google FCM
             await PushNotifications.register();
             this.registered = true;
+
+            // If token was already obtained, sync immediately
+            if (this.currentToken && this.currentUserInfo) {
+                await this.syncTokenToUser(this.currentToken, this.currentUserInfo);
+            }
 
             return this.currentToken;
         } catch (error) {
@@ -78,7 +108,7 @@ class FCMService {
         }
     }
 
-    private setupListeners(userInfo?: FCMUserRegistration) {
+    private setupListeners() {
         // Remove existing listeners to prevent duplicates
         PushNotifications.removeAllListeners();
 
@@ -86,8 +116,8 @@ class FCMService {
         PushNotifications.addListener('registration', async (token: Token) => {
             this.currentToken = token.value;
             console.log('[FCMService] Push registration successful, FCM Token:', token.value);
-            if (userInfo) {
-                await this.syncTokenToUser(token.value, userInfo);
+            if (this.currentUserInfo) {
+                await this.syncTokenToUser(token.value, this.currentUserInfo);
             }
         });
 
@@ -112,24 +142,38 @@ class FCMService {
     }
 
     /**
-     * Saves the device FCM token into the user's Firestore document.
-     * Uses arrayUnion to preserve multiple logged-in devices without overwriting.
+     * Saves the device FCM token into the user's Firestore document(s).
+     * Uses arrayUnion with setDoc merge: true to preserve multiple logged-in devices reliably.
      */
     public async syncTokenToUser(token: string, userInfo: FCMUserRegistration): Promise<void> {
         if (!token || !userInfo?.userId) return;
+        this.currentUserInfo = userInfo;
+
+        const cleanId = userInfo.userId.replace(/^customer-/, '').replace(/^mechanic-/, '');
 
         try {
-            const collectionName = userInfo.role === 'mechanic' ? 'mechanics' : 'users';
-            const userRef = doc(db, collectionName, userInfo.userId);
+            const tokenData = {
+                fcmTokens: [token],
+                lastFcmUpdate: new Date().toISOString(),
+                platform: Capacitor.getPlatform()
+            };
 
-            const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-                await updateDoc(userRef, {
-                    fcmTokens: arrayUnion(token),
-                    lastFcmUpdate: new Date().toISOString(),
-                    platform: Capacitor.getPlatform()
-                });
-                console.log(`[FCMService] Synced FCM token to ${collectionName}/${userInfo.userId}`);
+            if (userInfo.role === 'mechanic') {
+                const mechRef = doc(db, 'mechanics', cleanId);
+                await setDoc(mechRef, tokenData, { merge: true });
+                console.log(`[FCMService] Synced FCM token to mechanics/${cleanId}`);
+            } else if (userInfo.role === 'customer') {
+                const userRef = doc(db, 'users', cleanId);
+                const custRef = doc(db, 'customers', cleanId);
+                await Promise.all([
+                    setDoc(userRef, tokenData, { merge: true }),
+                    setDoc(custRef, tokenData, { merge: true })
+                ]);
+                console.log(`[FCMService] Synced FCM token to users/${cleanId} & customers/${cleanId}`);
+            } else if (userInfo.role === 'admin') {
+                const adminRef = doc(db, 'adminUsers', cleanId);
+                await setDoc(adminRef, tokenData, { merge: true });
+                console.log(`[FCMService] Synced FCM token to adminUsers/${cleanId}`);
             }
         } catch (err) {
             console.warn('[FCMService] Could not sync FCM token to Firestore:', err);

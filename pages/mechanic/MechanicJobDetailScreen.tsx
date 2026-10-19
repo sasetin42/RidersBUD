@@ -25,7 +25,7 @@ import { getFallbackImageForCategory } from '../../utils/fallbackImages';
 import { useCall } from '../../context/CallContext';
 import { Geolocation } from '@capacitor/geolocation';
 import { safeGetCurrentPosition, startPreciseWatch, safeClearWatch, isGeolocationPermissionDenied } from '../../utils/locationHelper';
-import { getJobTotalAmount, getJobMechanicShare } from '../../utils/mechanicLedger';
+import { getJobTotalAmount, getJobMechanicShare, getJobServicesAmount, getJobAdditionalCostsAmount, getJobAdminShare } from '../../utils/mechanicLedger';
 
 // Default currency configuration
 const DEFAULT_CURRENCY = 'PHP';
@@ -828,6 +828,8 @@ const MechanicJobDetailScreen: React.FC = () => {
                     message: `${mechanic?.name || 'Your mechanic'} updated arrival time: ${formattedEta}${noteSuffix}.`,
                     recipientId: `customer-${booking.customerId || customer?.id}`,
                     type: 'info',
+                    bookingId: booking.id,
+                    tag: `booking_${booking.id}`,
                     read: false,
                     timestamp: Date.now(),
                     link: `/customer-portal/booking-detail/${booking.id}`
@@ -854,10 +856,14 @@ const MechanicJobDetailScreen: React.FC = () => {
                 : (booking.service?.price || 0);
             const additionalTotal = updatedCosts.reduce((sum, cost) => sum + (Number(cost.price) || 0), 0);
             const newTotal = servicePrice + additionalTotal;
+            // ✅ Recalculate remainingBalance so Firestore is never stale after additional costs are added
+            const paidSoFar = Number(booking.paidAmount) || 0;
+            const updatedRemainingBalance = Math.max(0, newTotal - paidSoFar);
 
             await updateBooking(booking.id, {
                 additionalCosts: updatedCosts,
                 totalAmount: newTotal,
+                remainingBalance: updatedRemainingBalance,
                 updatedAt: new Date().toISOString()
             });
 
@@ -869,6 +875,8 @@ const MechanicJobDetailScreen: React.FC = () => {
                 message: `Additional costs have been added to your booking. New total: ${formatCurrency(newTotal)}`,
                 recipientId: `customer-${booking.customerId}`,
                 type: 'info',
+                bookingId: booking.id,
+                tag: `booking_${booking.id}`,
                 read: false,
                 timestamp: Date.now(),
                 link: `/customer-portal/booking-detail/${booking.id}`
@@ -960,6 +968,8 @@ const MechanicJobDetailScreen: React.FC = () => {
                 message: `Your mechanic has completed the service. Please pay the remaining balance of ₱${remainingAmount.toLocaleString()} to complete your booking.`,
                 recipientId: `customer-${booking.customerId}`,
                 type: 'payment',
+                bookingId: booking.id,
+                tag: `booking_${booking.id}`,
                 read: false,
                 timestamp: Date.now(),
                 link: `/customer-portal/booking-detail/${booking.id}`
@@ -998,6 +1008,8 @@ const MechanicJobDetailScreen: React.FC = () => {
                 message: `Your mechanic has verified your remaining balance GCash payment. The booking is now Completed.`,
                 recipientId: `customer-${booking.customerId}`,
                 type: 'info',
+                bookingId: booking.id,
+                tag: `booking_${booking.id}`,
                 read: false,
                 timestamp: Date.now(),
                 link: `/customer-portal/booking-detail/${booking.id}`
@@ -1037,6 +1049,8 @@ const MechanicJobDetailScreen: React.FC = () => {
                 message: `Your mechanic has received and confirmed your cash payment. The booking is now Completed. Thank you!`,
                 recipientId: `customer-${booking.customerId}`,
                 type: 'payment',
+                bookingId: booking.id,
+                tag: `booking_${booking.id}`,
                 read: false,
                 timestamp: Date.now(),
                 link: `/customer-portal/booking-detail/${booking.id}`
@@ -1351,9 +1365,11 @@ const MechanicJobDetailScreen: React.FC = () => {
                             {/* Layman's Terms Payment Breakdown for Mechanic */}
                             {(() => {
                                 const totalRevenue = getJobTotalAmount(booking);
+                                const servicesFee = getJobServicesAmount(booking);
+                                const additionalCostsTotal = getJobAdditionalCostsAmount(booking);
                                 const serviceFeePct = db?.settings?.serviceFeePercentage ?? 30;
+                                const adminCommission = getJobAdminShare(booking, serviceFeePct);
                                 const mechanicTakeHome = getJobMechanicShare(booking, serviceFeePct);
-                                const adminCommission = Math.max(0, totalRevenue - mechanicTakeHome);
                                 const mechanicPct = 100 - serviceFeePct;
                                 const isJobCompleted = booking.status === 'Completed' || booking.paymentStatus === 'paid' || booking.isPaid === true;
 
@@ -1377,17 +1393,39 @@ const MechanicJobDetailScreen: React.FC = () => {
                                         <div className="space-y-2.5 text-xs sm:text-[13px]">
                                             <div className="flex justify-between items-center gap-2 text-gray-300">
                                                 <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
+                                                    <span className="font-medium">Main Services Fee</span>
+                                                    <span className="text-[10px] sm:text-xs text-gray-500">(Base Service)</span>
+                                                </div>
+                                                <span className="font-black text-white tracking-tight shrink-0">
+                                                    ₱{servicesFee.toLocaleString()}
+                                                </span>
+                                            </div>
+
+                                            {additionalCostsTotal > 0 && (
+                                                <div className="flex justify-between items-center gap-2 text-amber-400">
+                                                    <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
+                                                        <span className="font-medium">Additional Costs (100% Sayo)</span>
+                                                        <span className="text-[10px] sm:text-xs text-emerald-400 font-bold">(Walang bawas ng Admin)</span>
+                                                    </div>
+                                                    <span className="font-black text-amber-400 tracking-tight shrink-0">
+                                                        + ₱{additionalCostsTotal.toLocaleString()}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            <div className="flex justify-between items-center gap-2 text-gray-400">
+                                                <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
                                                     <span className="font-medium">Customer Total Paid</span>
                                                     <span className="text-[10px] sm:text-xs text-gray-500">(Kabuuang Bayad)</span>
                                                 </div>
-                                                <span className="font-black text-white tracking-tight shrink-0">
+                                                <span className="font-bold text-gray-200 tracking-tight shrink-0">
                                                     ₱{totalRevenue.toLocaleString()}
                                                 </span>
                                             </div>
 
                                             <div className="flex justify-between items-center gap-2 text-red-400/90">
                                                 <div className="flex flex-wrap items-baseline gap-x-1.5 min-w-0">
-                                                    <span className="font-medium">Admin Platform Fee ({serviceFeePct}%)</span>
+                                                    <span className="font-medium">Admin Platform Fee ({serviceFeePct}% ng Service lang)</span>
                                                     <span className="text-[10px] sm:text-xs text-red-500/70">(Bawas ng App)</span>
                                                 </div>
                                                 <span className="font-black tracking-tight shrink-0">
@@ -1398,7 +1436,7 @@ const MechanicJobDetailScreen: React.FC = () => {
                                             <div className="pt-3 border-t border-dashed border-white/10 flex justify-between items-center gap-2">
                                                 <div className="min-w-0">
                                                     <p className="text-xs sm:text-sm font-black text-emerald-400 uppercase tracking-wide">
-                                                        Your Take-Home Pay ({mechanicPct}%)
+                                                        Your Total Take-Home Pay
                                                     </p>
                                                     <p className="text-[10px] text-gray-400 font-medium leading-tight mt-0.5">
                                                         {isJobCompleted ? 'Pumasok na sa iyong Wallet' : 'Iyong maiuuwi at papasok sa Wallet'}
@@ -3235,9 +3273,11 @@ const MechanicJobDetailScreen: React.FC = () => {
                                 </div>
                                 {(() => {
                                     const totalRev = getJobTotalAmount(booking);
+                                    const servicesFee = getJobServicesAmount(booking);
+                                    const additionalCostsTotal = getJobAdditionalCostsAmount(booking);
                                     const feePct = db?.settings?.serviceFeePercentage ?? 30;
+                                    const adminFee = getJobAdminShare(booking, feePct);
                                     const mechanicNet = getJobMechanicShare(booking, feePct);
-                                    const adminFee = Math.max(0, totalRev - mechanicNet);
                                     const mechanicPct = 100 - feePct;
 
                                     return (
@@ -3246,8 +3286,14 @@ const MechanicJobDetailScreen: React.FC = () => {
                                                 <span>Customer Total / Kabuuan:</span>
                                                 <span className="font-bold text-white">₱{totalRev.toLocaleString()}</span>
                                             </div>
+                                            {additionalCostsTotal > 0 && (
+                                                <div className="flex justify-between items-center text-[11px] text-amber-400">
+                                                    <span>Additional Costs (100% Sayo):</span>
+                                                    <span className="font-bold">+ ₱{additionalCostsTotal.toLocaleString()}</span>
+                                                </div>
+                                            )}
                                             <div className="flex justify-between items-center text-[11px] text-red-400/90">
-                                                <span>Admin Platform Fee ({feePct}%):</span>
+                                                <span>Admin Platform Fee ({feePct}% sa Service lang):</span>
                                                 <span className="font-bold">- ₱{adminFee.toLocaleString()}</span>
                                             </div>
                                             <div className="pt-2 border-t border-dashed border-white/10 flex justify-between items-center">

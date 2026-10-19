@@ -1,4 +1,4 @@
-const functions = require('firebase-functions');
+const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 const cors = require('cors')({ origin: true });
 const nodemailer = require('nodemailer');
@@ -373,9 +373,16 @@ exports.hitpayProxy = functions.https.onRequest(async (req, res) => {
         });
       }
 
-      // Fetch authoritative entity record from Firestore
+      // Fetch authoritative entity record from Firestore (with tight retry window for in-flight creations)
       const entityDocRef = admin.firestore().collection(collectionName).doc(entityId);
-      const entitySnap = await entityDocRef.get();
+      let entitySnap = await entityDocRef.get();
+      if (!entitySnap.exists) {
+        // Allow in-flight client creates or snapshot propagation a momentary grace window (150ms intervals)
+        for (let attempt = 0; attempt < 4 && !entitySnap.exists; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          entitySnap = await entityDocRef.get();
+        }
+      }
       if (!entitySnap.exists) {
         return res.status(404).json({
           error: 'ENTITY_NOT_FOUND',
@@ -1515,6 +1522,8 @@ exports.paymentDailyFinanceEmail = functions
     return null;
   });
 
+const dispatchedNotifCache = new Map();
+
 /**
  * Real-Time FCM Push Dispatcher:
  * Automatically dispatches FCM push notifications to recipient devices whenever a new
@@ -1529,20 +1538,112 @@ exports.sendPushNotificationOnNewDocument = functions.firestore
     const recipientId = data.recipientId ? String(data.recipientId).trim() : null;
     const recipientRole = data.recipientRole ? String(data.recipientRole).trim() : null;
 
-    if (!recipientId || recipientId === 'all') {
+    if (!recipientId) {
       return null;
     }
 
     // Clean prefix if any
     const cleanId = recipientId.replace(/^customer-/, '').replace(/^mechanic-/, '');
 
+    // Anti-Duplication Lock (In-Memory + Distributed Firestore Check):
+    // Prevents twin notification writes from firing duplicate push alerts within 8 seconds
+    const notifKey = `${recipientId}|${cleanId}|${(data.title || '').trim()}|${(data.message || '').trim()}`;
+    const now = Date.now();
+    if (dispatchedNotifCache.has(notifKey)) {
+      const lastTime = dispatchedNotifCache.get(notifKey);
+      if (now - lastTime < 8000) {
+        console.log(`[FCM] Suppressed duplicate push for key (memory cache): ${notifKey}`);
+        return null;
+      }
+    }
+    dispatchedNotifCache.set(notifKey, now);
+
+    // Prune stale cache entries
+    if (dispatchedNotifCache.size > 200) {
+      for (const [k, time] of dispatchedNotifCache.entries()) {
+        if (now - time > 15000) dispatchedNotifCache.delete(k);
+      }
+    }
+
     try {
       const db = admin.firestore();
+
+      // Distributed Multi-Instance Lock in Firestore:
+      // Prevents concurrent Cloud Function instances from dispatching duplicate pushes for twin document writes
+      const notifKeyHash = crypto.createHash('sha256').update(notifKey).digest('hex').substring(0, 32);
+      const lockRef = db.collection('_pushLocks').doc(notifKeyHash);
+      const lockSnap = await lockRef.get();
+      if (lockSnap.exists) {
+        const lockData = lockSnap.data();
+        if (now - (lockData.timestamp || 0) < 8000) {
+          console.log(`[FCM] Suppressed duplicate push via distributed lock: ${notifKey}`);
+          return null;
+        }
+      }
+      await lockRef.set({ timestamp: now, recipientId, createdAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+
       let fcmTokens = [];
       let docRef = null;
 
-      if (recipientRole === 'mechanic') {
+      // 1. Fetch dynamic FCM brand styling & settings from Firestore settings/main
+      let settings = {};
+      try {
+        const settingsSnap = await db.collection('settings').doc('main').get();
+        if (settingsSnap.exists) {
+          settings = settingsSnap.data() || {};
+        }
+      } catch (sErr) {
+        console.warn('[FCM] Could not read settings/main:', sErr);
+      }
+
+      // Check if Push Notifications are globally enabled in settings
+      if (settings.pushNotificationsEnabled === false) {
+        console.log('[FCM] Push notifications disabled globally in settings/main.');
+        return null;
+      }
+
+      // Dynamic brand values from settings
+      const prefix = settings.fcmTitlePrefix ? String(settings.fcmTitlePrefix).trim() : 'RidersBud';
+      const rawTitle = data.title || 'Notification Update';
+      let title = rawTitle;
+      if (prefix) {
+        if (rawTitle.toLowerCase().startsWith(prefix.toLowerCase())) {
+          title = rawTitle;
+        } else {
+          title = `[${prefix}] ${rawTitle}`;
+        }
+      }
+
+      const body = data.message || 'You have a new update in your account.';
+      const defaultRoute = recipientRole === 'mechanic' ? '/mechanic-portal/jobs' : (recipientRole === 'admin' ? '/admin-portal/dashboard' : '/customer-portal/bookings');
+      const actionUrl = data.link || data.actionUrl || settings.fcmDefaultActionRoute || defaultRoute;
+      const channelId = settings.fcmChannelId || 'ridersbud_notifications';
+      const accentColor = settings.fcmAccentColor || settings.accentColor || '#FE7803';
+      const soundTheme = settings.fcmSoundTheme || 'default';
+      const logoUrl = settings.fcmLogoUrl || settings.pushNotificationLogoUrl || settings.mobileAppIconUrl || settings.appLogoUrl || null;
+
+      if (recipientId === 'all') {
+        const [usersSnap, custsSnap, mechsSnap, adminsSnap] = await Promise.all([
+          db.collection('users').get(),
+          db.collection('customers').get(),
+          db.collection('mechanics').get(),
+          db.collection('adminUsers').get()
+        ]);
+
+        [usersSnap, custsSnap, mechsSnap, adminsSnap].forEach(snap => {
+          snap.forEach(doc => {
+            const tokens = doc.data()?.fcmTokens || [];
+            if (Array.isArray(tokens)) {
+              fcmTokens.push(...tokens);
+            }
+          });
+        });
+      } else if (recipientRole === 'mechanic') {
         docRef = db.collection('mechanics').doc(cleanId);
+        const mechDoc = await docRef.get();
+        if (mechDoc.exists && Array.isArray(mechDoc.data().fcmTokens)) {
+          fcmTokens.push(...mechDoc.data().fcmTokens);
+        }
       } else if (recipientRole === 'admin') {
         const adminUsersSnap = await db.collection('adminUsers').get();
         adminUsersSnap.forEach((doc) => {
@@ -1552,64 +1653,112 @@ exports.sendPushNotificationOnNewDocument = functions.firestore
           }
         });
       } else {
-        docRef = db.collection('users').doc(cleanId);
-      }
-
-      if (docRef) {
-        const userDoc = await docRef.get();
-        if (userDoc.exists) {
-          const tokens = userDoc.data().fcmTokens || [];
-          if (Array.isArray(tokens)) {
-            fcmTokens = tokens;
-          }
+        // Customer / User role — check BOTH 'users' and 'customers'
+        const userDoc = await db.collection('users').doc(cleanId).get();
+        if (userDoc.exists && Array.isArray(userDoc.data().fcmTokens)) {
+          fcmTokens.push(...userDoc.data().fcmTokens);
+        }
+        const custDoc = await db.collection('customers').doc(cleanId).get();
+        if (custDoc.exists && Array.isArray(custDoc.data().fcmTokens)) {
+          fcmTokens.push(...custDoc.data().fcmTokens);
         }
       }
 
       // Deduplicate valid tokens
       fcmTokens = [...new Set(fcmTokens)].filter(t => typeof t === 'string' && t.length > 10);
 
+      // Single-Token Enforcement: Keep only the latest active token per recipient to prevent duplicate push popups on the same phone
+      if (fcmTokens.length > 1 && recipientId !== 'all') {
+        fcmTokens = [fcmTokens[fcmTokens.length - 1]];
+      }
+
       if (fcmTokens.length === 0) {
+        console.log(`[FCM] No valid fcmTokens found for recipient: ${recipientId} (role: ${recipientRole})`);
         return null;
       }
 
-      const title = data.title || 'RidersBUD Update';
-      const body = data.message || 'You have a new update in your account.';
-      const actionUrl = data.link || data.actionUrl || '/customer-portal';
+      // Compute Deterministic Collapse Tag & Key:
+      // Guarantees only ONE notification at a time per Job/Service or general alert on both Android and iOS.
+      // Subsequent status updates (e.g. En Route -> Work has Begun -> Complete) seamlessly replace
+      // the earlier notification card instead of piling up in the user's notification tray.
+      let bookingId = data.bookingId || null;
+      let orderId = data.orderId || null;
+      let chatId = data.chatId || null;
+
+      if (!bookingId && actionUrl) {
+        const bMatch = actionUrl.match(/(?:booking-detail|booking|job)\/([a-zA-Z0-9_-]+)/);
+        if (bMatch) bookingId = bMatch[1];
+      }
+      if (!orderId && actionUrl) {
+        const oMatch = actionUrl.match(/order(?:-history|\/)?\?id=([a-zA-Z0-9_-]+)|orders\/([a-zA-Z0-9_-]+)/);
+        if (oMatch) orderId = oMatch[1] || oMatch[2];
+      }
+      if (!chatId && actionUrl) {
+        const cMatch = actionUrl.match(/chat\/([a-zA-Z0-9_-]+)/);
+        if (cMatch) chatId = cMatch[1];
+      }
+
+      let collapseTag = data.tag ? String(data.tag).trim() : null;
+      if (!collapseTag) {
+        if (bookingId) {
+          collapseTag = `booking_${bookingId}`;
+        } else if (orderId) {
+          collapseTag = `order_${orderId}`;
+        } else if (chatId || data.type === 'chat') {
+          collapseTag = `chat_${chatId || cleanId}`;
+        } else {
+          collapseTag = `general_${cleanId}`;
+        }
+      }
 
       const payload = {
         tokens: fcmTokens,
         notification: {
           title,
           body,
+          ...(logoUrl ? { image: logoUrl } : {})
         },
         data: {
-          notificationId: context.params.notificationId,
+          notificationId: context.params.notificationId || '',
+          tag: collapseTag,
           title,
           body,
           link: actionUrl,
-          type: String(data.type || 'system')
+          type: String(data.type || 'system'),
+          ...(bookingId ? { bookingId: String(bookingId) } : {}),
+          ...(orderId ? { orderId: String(orderId) } : {})
         },
         android: {
           priority: 'high',
+          collapseKey: collapseTag,
           notification: {
-            channelId: 'ridersbud_notifications',
+            channelId,
+            tag: collapseTag,
             icon: 'ic_launcher',
-            color: '#FE7803',
-            sound: 'default'
+            color: accentColor,
+            sound: soundTheme === 'default' ? 'default' : soundTheme,
+            ...(logoUrl ? { imageUrl: logoUrl } : {})
           }
         },
         apns: {
+          headers: {
+            'apns-collapse-id': collapseTag
+          },
           payload: {
             aps: {
               sound: 'default',
-              badge: 1
+              badge: 1,
+              threadId: collapseTag
             }
+          },
+          fcmOptions: {
+            ...(logoUrl ? { image: logoUrl } : {})
           }
         }
       };
 
       const response = await admin.messaging().sendEachForMulticast(payload);
-      console.log(`[FCM] Dispatched to ${recipientId}: ${response.successCount} succeeded, ${response.failureCount} failed.`);
+      console.log(`[FCM] Dispatched to ${recipientId} (${fcmTokens.length} tokens): ${response.successCount} succeeded, ${response.failureCount} failed.`);
 
       // Clean up invalid or expired tokens
       if (response.failureCount > 0 && docRef) {

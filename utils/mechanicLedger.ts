@@ -12,28 +12,74 @@ export const parseAmount = (val: any): number => {
 };
 
 /**
+ * Get the main services base fee excluding mechanic additional costs.
+ * 30% admin commission is calculated strictly on this base amount.
+ */
+export const getJobServicesAmount = (job: any): number => {
+    if (!job) return 0;
+    const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
+    const svcsSum = svcs.reduce((s: number, svc: any) => s + parseAmount(svc?.price), 0);
+    if (svcsSum > 0) return svcsSum + parseAmount(job.laborFee);
+    
+    // Fallback: if totalAmount or price is present, subtract additionalCosts
+    const total = parseAmount(job.totalAmount) || parseAmount(job.price) || 0;
+    const addCosts = getJobAdditionalCostsAmount(job);
+    return Math.max(0, total - addCosts);
+};
+
+/**
+ * Get sum of additional costs added by mechanic.
+ * 100% of this goes to the mechanic (exempt from platform cut).
+ */
+export const getJobAdditionalCostsAmount = (job: any): number => {
+    if (!job) return 0;
+    return (job.additionalCosts || []).reduce((s: number, c: any) => s + parseAmount(c?.price), 0);
+};
+
+/**
  * Standardize job total amount computation across all mechanic screens and services.
  */
 export const getJobTotalAmount = (job: any): number => {
     if (!job) return 0;
-    if (job.totalAmount != null && parseAmount(job.totalAmount) > 0) return parseAmount(job.totalAmount);
-    if (job.price != null && parseAmount(job.price) > 0) return parseAmount(job.price);
+    const addCosts = getJobAdditionalCostsAmount(job);
+    if (job.totalAmount != null && parseAmount(job.totalAmount) > 0) {
+        // If totalAmount is saved, ensure it includes or is at least services + additionals
+        const rawTotal = parseAmount(job.totalAmount);
+        return rawTotal;
+    }
+    if (job.price != null && parseAmount(job.price) > 0) {
+        const rawPrice = parseAmount(job.price);
+        return rawPrice;
+    }
     const svcs = job.services && job.services.length > 0 ? job.services : (job.service ? [job.service] : []);
     const svcsSum = svcs.reduce((s: number, svc: any) => s + parseAmount(svc?.price), 0);
-    const addCosts = (job.additionalCosts || []).reduce((s: number, c: any) => s + parseAmount(c?.price), 0);
     return svcsSum + addCosts + parseAmount(job.laborFee);
 };
 
 /**
- * Compute the mechanic's net share for a job after deducting the platform service commission fee.
- * Default commission: 30% platform / 70% mechanic.
+ * Compute the admin platform commission cut for a job.
+ * Admin cut (e.g. 30%) is based ONLY on the Main Service Price.
+ * Additional Costs are strictly excluded from admin cut.
+ */
+export const getJobAdminShare = (job: any, serviceFeePercentage: number = 30): number => {
+    const servicesFee = getJobServicesAmount(job);
+    if (servicesFee <= 0) return 0;
+    const feePct = typeof serviceFeePercentage === 'number' && serviceFeePercentage >= 0 ? serviceFeePercentage : 30;
+    return Math.round(servicesFee * (feePct / 100));
+};
+
+/**
+ * Compute the mechanic's net share for a job.
+ * Rule:
+ * 1. Admin commission (e.g. 30%) is deducted ONLY from the main services fee.
+ * 2. Additional costs are 100% credited to the mechanic without any commission deduction.
+ * Formula: (mainServicesFee - adminCommission) + additionalCosts
  */
 export const getJobMechanicShare = (job: any, serviceFeePercentage: number = 30): number => {
     const totalRevenue = getJobTotalAmount(job);
     if (totalRevenue <= 0) return 0;
-    const feePct = typeof serviceFeePercentage === 'number' && serviceFeePercentage >= 0 ? serviceFeePercentage : 30;
-    const platformCut = Math.round(totalRevenue * (feePct / 100));
-    return Math.max(0, totalRevenue - platformCut);
+    const adminCut = getJobAdminShare(job, serviceFeePercentage);
+    return Math.max(0, totalRevenue - adminCut);
 };
 
 export interface MechanicWalletLedger {

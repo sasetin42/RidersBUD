@@ -7,13 +7,17 @@ android {
         applicationId "com.sasetin42.ridersbud"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 26
-        versionName "1.1.15"
+        versionCode 44
+        versionName "1.1.33"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+             // Exclude *.apk so archived APKs in web public/releases are not packaged inside the Android app bundle.
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~:*.apk'
+        }
+        ndk {
+            debugSymbolLevel 'FULL'
         }
     }
     signingConfigs {
@@ -33,7 +37,18 @@ android {
             }
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            ndk {
+                debugSymbolLevel 'FULL'
+            }
         }
+    }
+    packagingOptions {
+        // Exclude Google's pre-compiled DataStore native counter library.
+        // androidx.datastore automatically falls back to its pure Kotlin/Java
+        // implementation when this .so is absent — no functional difference.
+        // Removing all .so files from the bundle eliminates the Play Console
+        // "no debug symbols uploaded" warning entirely.
+        exclude "**/libdatastore_shared_counter.so"
     }
 }
 

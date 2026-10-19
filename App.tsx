@@ -35,7 +35,17 @@ import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { Geolocation } from '@capacitor/geolocation';
 import { NativeSettings, AndroidSettings, IOSSettings } from 'capacitor-native-settings';
-import { isGeolocationPermissionDenied, safeGetCurrentPosition, safeClearWatch, initPermissionMonitor, onPermissionChange, startPreciseWatch } from './utils/locationHelper';
+import { 
+    isGeolocationPermissionDenied, 
+    safeGetCurrentPosition, 
+    safeClearWatch, 
+    initPermissionMonitor, 
+    onPermissionChange, 
+    startPreciseWatch,
+    openDeviceLocationSettings,
+    checkDeviceGpsStatus
+} from './utils/locationHelper';
+
 import { AppUpdateService, AppVersionInfo } from './services/AppUpdateService';
 import { UpdateModal } from './components/UpdateModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
@@ -106,6 +116,8 @@ const DriverBookingFlow = React.lazy(() => import('./pages/services/DriverBookin
 const hitpayLoader = () => import('./pages/HitPayCheckoutScreen');
 const HitPayCheckoutScreen = React.lazy(hitpayLoader);
 const PaymentStatusScreen = React.lazy(() => import('./pages/PaymentStatusScreen'));
+const PrivacyPolicyScreen = React.lazy(() => import('./pages/PrivacyPolicyScreen'));
+const TermsConditionsScreen = React.lazy(() => import('./pages/TermsConditionsScreen'));
 export const preloadHitPayCheckout = () => {
     try {
         hitpayLoader();
@@ -729,14 +741,24 @@ const AppContent: React.FC = () => {
             }
         });
 
-        if (isAuthenticated && user?.id) {
-            fcmService.initialize({ userId: user.id, role: 'customer' });
-        } else if (isMechanicAuthenticated && mechanic?.id) {
-            fcmService.initialize({ userId: mechanic.id, role: 'mechanic' });
+        const activeCustomerId = user?.id || (user as any)?.uid;
+        const activeMechanicId = mechanic?.id || (mechanic as any)?.uid;
+
+        const fcmSettings = {
+            channelId: db?.settings?.fcmChannelId || 'ridersbud_notifications',
+            channelName: db?.settings?.fcmChannelName || 'RidersBUD Alerts',
+            accentColor: db?.settings?.fcmAccentColor || db?.settings?.accentColor || '#FE7803',
+            soundTheme: db?.settings?.fcmSoundTheme || 'default'
+        };
+
+        if (isAuthenticated && activeCustomerId) {
+            fcmService.initialize({ userId: activeCustomerId, role: 'customer' }, fcmSettings);
+        } else if (isMechanicAuthenticated && activeMechanicId) {
+            fcmService.initialize({ userId: activeMechanicId, role: 'mechanic' }, fcmSettings);
         } else if (isAdminAuthenticated) {
-            fcmService.initialize({ userId: 'admin', role: 'admin' });
+            fcmService.initialize({ userId: 'admin', role: 'admin' }, fcmSettings);
         }
-    }, [isAuthenticated, user?.id, isMechanicAuthenticated, mechanic?.id, isAdminAuthenticated, navigate]);
+    }, [isAuthenticated, user?.id, (user as any)?.uid, isMechanicAuthenticated, mechanic?.id, (mechanic as any)?.uid, isAdminAuthenticated, navigate, db?.settings]);
 
     // Location enforcement states
     const [isLocationBlocked, setIsLocationBlocked] = useState(false);
@@ -1189,23 +1211,9 @@ const AppContent: React.FC = () => {
             db.bookings.forEach(currentBooking => {
                 if (currentBooking.customerId !== user.id && currentBooking.customerName !== user.name) return;
                 
-                // Track status transitions
+                // Status transitions are dispatched authoritatively by updateBookingStatus in DatabaseContext.tsx
+                // with tag: booking_<id>. Client-side duplication is suppressed here to ensure single notification dispatch.
                 const oldBooking = prevDb.bookings.find(b => b.id === currentBooking.id);
-                if (oldBooking && oldBooking.status !== currentBooking.status) {
-                    const eventKey = `${currentBooking.id}:${currentBooking.status}`;
-                    if (trackEventNotification(eventKey)) {
-                        let title = ''; let message = ''; let notifType: 'info' | 'success' | 'warning' | 'alert' = 'info';
-                        switch (currentBooking.status) {
-                            case 'Mechanic Assigned': title = 'Mechanic Assigned'; message = `${currentBooking.mechanic?.name} has been assigned to your job.`; notifType = 'info'; break;
-                            case 'En Route': title = 'Mechanic En Route'; message = `${currentBooking.mechanic?.name} is on the way.`; notifType = 'info'; break;
-                            case 'In Progress': title = 'Work has Begun'; message = `${currentBooking.mechanic?.name} has started the ${currentBooking.services?.[0]?.name || currentBooking.service?.name || 'service'}.`; notifType = 'info'; break;
-                            case 'Completed': title = 'Service Complete'; message = `Your ${currentBooking.services?.[0]?.name || currentBooking.service?.name || 'service'} is now complete.`; notifType = 'success'; break;
-                        }
-                        if (title) {
-                            addNotification({ type: notifType, title, message, link: '/customer-portal/booking-history', recipientId: `customer-${user.id}` });
-                        }
-                    }
-                }
 
                 // Check for payment status changes to notify customer to complete payment
                 if (oldBooking) {
@@ -1223,7 +1231,9 @@ const AppContent: React.FC = () => {
                                     title: 'Remaining Balance Payment Required',
                                     message: `Your booking #${currentBooking.id.slice(-6)} is partially paid. Please complete the remaining payment.`,
                                     link: `/customer-portal/booking-detail/${currentBooking.id}`,
-                                    recipientId: `customer-${user.id}`
+                                    recipientId: `customer-${user.id}`,
+                                    bookingId: currentBooking.id,
+                                    tag: `booking_${currentBooking.id}`
                                 });
                             }
                         }
@@ -1242,7 +1252,9 @@ const AppContent: React.FC = () => {
                                     title: 'Payment Required to Complete',
                                     message: `Work is done! Please pay the remaining balance of ₱${remaining.toLocaleString()} to complete booking #${currentBooking.id.slice(-6)}.`,
                                     link: `/customer-portal/booking-detail/${currentBooking.id}`,
-                                    recipientId: `customer-${user.id}`
+                                    recipientId: `customer-${user.id}`,
+                                    bookingId: currentBooking.id,
+                                    tag: `booking_${currentBooking.id}`
                                 });
                             }
                         }
@@ -1646,20 +1658,13 @@ const AppContent: React.FC = () => {
             saveLocation();
         };
 
-        const handleTurnOnLocationService = () => {
+        const handleTurnOnLocationService = async () => {
             const isNative = Capacitor.isNativePlatform();
             if (isNative) {
-                NativeSettings.open({
-                    optionAndroid: AndroidSettings.ApplicationDetails,
-                    optionIOS: IOSSettings.App
-                }).then(() => {
-                    // Check location automatically when settings are closed / user returns
-                    setTimeout(() => {
-                        checkLocationPermission();
-                    }, 1000);
-                }).catch(() => {
+                await openDeviceLocationSettings();
+                setTimeout(() => {
                     checkLocationPermission();
-                });
+                }, 1200);
             } else {
                 checkLocationPermission();
             }
@@ -1850,6 +1855,8 @@ const AppContent: React.FC = () => {
                                             <Route path="profile" element={<MechanicProfileManagementScreen />} />
                                             <Route path="notification-settings" element={<MechanicNotificationSettingsScreen />} />
                                             <Route path="support-chat" element={<SupportChatScreen />} />
+                                            <Route path="privacy-policy" element={<PrivacyPolicyScreen />} />
+                                            <Route path="terms-and-conditions" element={<TermsConditionsScreen />} />
                                             <Route path="*" element={<Navigate to="/mechanic-portal/dashboard" replace />} />
                                         </Routes>
                                     </ErrorBoundary>
@@ -1925,12 +1932,16 @@ const AppContent: React.FC = () => {
                                                         <Route path="/hire-driver" element={<Navigate to="/customer-portal/hire-a-driver" replace />} />
                                                         <Route path="/driver-for-hire" element={<Navigate to="/customer-portal/hire-a-driver" replace />} />
                                                         <Route path="/support-chat" element={<SupportChatScreen />} />
+                                                        <Route path="/privacy-policy" element={<PrivacyPolicyScreen />} />
+                                                        <Route path="/terms-and-conditions" element={<TermsConditionsScreen />} />
                                                         <Route path="*" element={<Navigate to="/customer-portal/" replace />} />
                                                     </>
                                                 )
                                             ) : (
                                                 <>
                                                     <Route path="/signup" element={<SignUpScreen />} />
+                                                    <Route path="/privacy-policy" element={<PrivacyPolicyScreen />} />
+                                                    <Route path="/terms-and-conditions" element={<TermsConditionsScreen />} />
                                                     <Route path="*" element={<LoginScreen />} />
                                                 </>
                                             )}
@@ -1985,6 +1996,10 @@ const AppContent: React.FC = () => {
                             )
                         }
                     />
+
+                    {/* Standalone /privacy-policy and /terms-and-conditions routes */}
+                    <Route path="/privacy-policy" element={<PrivacyPolicyScreen />} />
+                    <Route path="/terms-and-conditions" element={<TermsConditionsScreen />} />
 
                     {/* Root Redirects */}
                     <Route path="/admin/*" element={<AdminPathRedirect />} />

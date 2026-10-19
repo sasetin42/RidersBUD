@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import CustomerHeader from '../components/CustomerHeader';
-import { Bell, CheckCircle, Smartphone, Wifi } from 'lucide-react';
+import { Bell, CheckCircle, Smartphone, Wifi, Sparkles, Send, ShieldCheck } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import {
     getNotificationSettings,
     saveNotificationSettings,
@@ -9,7 +10,9 @@ import {
     requestNotificationPermission,
     hasNotificationAPI,
     getNotificationPermission,
+    showNotification,
 } from '../utils/notificationManager';
+import { fcmService } from '../services/fcmService';
 import { useAuth } from '../context/AuthContext';
 import { useDatabase } from '../context/DatabaseContext';
 import { Customer } from '../types';
@@ -75,9 +78,22 @@ const NotificationSettingsScreen: React.FC = () => {
 
     const webNotifSupported = hasNotificationAPI();
     const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>(getNotificationPermission);
+    const [nativePushStatus, setNativePushStatus] = useState<string>('checking');
     const [isSaving, setIsSaving] = useState(false);
+    const [isTestingPush, setIsTestingPush] = useState(false);
+    const [testPushFeedback, setTestPushFeedback] = useState<string | null>(null);
     const [savedFlash, setSavedFlash] = useState(false);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const { addNotification } = useDatabase();
+
+    // Check Native FCM push status
+    useEffect(() => {
+        if (Capacitor.isNativePlatform()) {
+            fcmService.getPermissionStatus().then(status => {
+                setNativePushStatus(status);
+            });
+        }
+    }, []);
 
     // Sync from User when it loads from Firestore
     useEffect(() => {
@@ -121,8 +137,54 @@ const NotificationSettingsScreen: React.FC = () => {
     };
 
     const handleRequestPermission = async () => {
-        const result = await requestNotificationPermission();
-        setPermissionStatus(result);
+        if (Capacitor.isNativePlatform() && user?.id) {
+            await fcmService.initialize({ userId: user.id, role: 'customer' });
+            const status = await fcmService.getPermissionStatus();
+            setNativePushStatus(status);
+            setPermissionStatus(status === 'granted' ? 'granted' : 'denied');
+        } else {
+            const result = await requestNotificationPermission();
+            setPermissionStatus(result);
+        }
+    };
+
+    const handleTestNotification = async () => {
+        if (!user?.id) return;
+        setIsTestingPush(true);
+        setTestPushFeedback(null);
+
+        try {
+            // Trigger both: local browser alert (if web) AND live Firestore notification
+            // which triggers the real-time Cloud Function FCM dispatcher directly to the phone!
+            if (webNotifSupported && permissionStatus === 'granted') {
+                showNotification('RidersBUD Customer Alert', {
+                    body: 'Live push notification test: Your account is fully synchronized with real-time push alerts!',
+                    tag: 'ridersbud-customer-test'
+                });
+            }
+
+            // Write to Firestore notifications collection:
+            // This triggers sendPushNotificationOnNewDocument in Cloud Functions!
+            await addNotification({
+                recipientId: `customer-${user.id}`,
+                recipientRole: 'customer',
+                title: '🔔 RidersBUD Live Push Alert',
+                message: 'FCM push notification is fully active and working in real-time on your mobile device!',
+                type: 'info',
+                link: '/customer-portal/notifications',
+                date: new Date().toISOString(),
+                read: false
+            });
+
+            setTestPushFeedback('✅ Test push alert dispatched! Check your phone.');
+            setTimeout(() => setTestPushFeedback(null), 5000);
+        } catch (err) {
+            console.error('Test push error:', err);
+            setTestPushFeedback('❌ Dispatched with fallback. Check notification bell.');
+            setTimeout(() => setTestPushFeedback(null), 5000);
+        } finally {
+            setIsTestingPush(false);
+        }
     };
 
     if (!user) return (
@@ -215,59 +277,73 @@ const NotificationSettingsScreen: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Platform Notification Status */}
+                {/* Platform Notification Status & Live FCM Push Test */}
                 <div>
-                    <SectionHeader title="Push Notifications" />
-                    {webNotifSupported ? (
-                        // Web/Desktop: show real permission control
-                        <div className="bg-[#1A1A1A] p-4 rounded-2xl border border-white/5">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${permissionStatus === 'granted' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                            {permissionStatus === 'granted' ? (
-                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                            ) : (
-                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                            )}
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <p className={`text-sm font-bold ${permissionStatus === 'granted' ? 'text-green-400' : 'text-red-400'}`}>
-                                            {permissionStatus === 'granted' ? 'Notifications Enabled' : 'Notifications Blocked'}
-                                        </p>
-                                        <p className="text-xs text-gray-500">
-                                            {permissionStatus === 'granted' ? 'You will receive desktop alerts.' : 'Enable in browser settings.'}
-                                        </p>
-                                    </div>
-                                </div>
-                                {permissionStatus === 'default' && (
-                                    <button
-                                        id="btn-enable-notifications"
-                                        onClick={handleRequestPermission}
-                                        className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:bg-orange-600 transition-colors"
-                                    >
-                                        Enable
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    ) : (
-                        // Mobile WebView: informational card
-                        <div className="bg-[#1A1A1A] p-4 rounded-2xl border border-white/5">
-                            <div className="flex items-start gap-3">
-                                <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-primary/10 text-primary mt-0.5">
-                                    <Smartphone size={18} />
+                    <SectionHeader title="Mobile & Push Notifications" />
+                    <div className="bg-[#1A1A1A] p-5 rounded-2xl border border-white/5 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                    (Capacitor.isNativePlatform() ? nativePushStatus === 'granted' : permissionStatus === 'granted')
+                                        ? 'bg-green-500/10 text-green-500'
+                                        : 'bg-primary/10 text-primary'
+                                }`}>
+                                    <Smartphone size={20} />
                                 </div>
                                 <div>
-                                    <p className="text-sm font-bold text-white">Mobile Push Notifications</p>
-                                    <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                                        In-app notifications are always active. Push notifications are managed through your device's system settings for the RidersBUD app.
+                                    <p className={`text-sm font-bold ${
+                                        (Capacitor.isNativePlatform() ? nativePushStatus === 'granted' : permissionStatus === 'granted')
+                                            ? 'text-green-400'
+                                            : 'text-gray-200'
+                                    }`}>
+                                        {(Capacitor.isNativePlatform() ? nativePushStatus === 'granted' : permissionStatus === 'granted')
+                                            ? 'FCM Push Notifications Online'
+                                            : 'Push Notifications Ready'}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                        {Capacitor.isNativePlatform()
+                                            ? (nativePushStatus === 'granted'
+                                                ? 'Live Android system alerts, sounds & vibration active.'
+                                                : 'Tap Enable to allow instant push alerts on this phone.')
+                                            : (permissionStatus === 'granted'
+                                                ? 'Browser and mobile push channels connected.'
+                                                : 'Enable alerts to receive live mechanic updates.')}
                                     </p>
                                 </div>
                             </div>
+
+                            {((Capacitor.isNativePlatform() && nativePushStatus !== 'granted') || (!Capacitor.isNativePlatform() && permissionStatus === 'default')) && (
+                                <button
+                                    id="btn-enable-notifications"
+                                    type="button"
+                                    onClick={handleRequestPermission}
+                                    className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:bg-orange-600 transition-colors shadow-lg shadow-primary/20"
+                                >
+                                    Enable
+                                </button>
+                            )}
                         </div>
-                    )}
+
+                        {/* Test Push Notification Button */}
+                        <div className="pt-2 border-t border-white/5">
+                            <button
+                                id="btn-test-push-notification"
+                                type="button"
+                                disabled={isTestingPush}
+                                onClick={handleTestNotification}
+                                className="w-full flex items-center justify-center gap-2 py-3 bg-[#121212] hover:bg-white/5 active:scale-[0.98] text-white font-bold text-xs rounded-xl border border-white/10 transition-all disabled:opacity-50"
+                            >
+                                <Sparkles size={15} className="text-primary animate-pulse" />
+                                {isTestingPush ? 'Dispatching Live Push...' : 'Send Test Mobile Push Notification'}
+                            </button>
+
+                            {testPushFeedback && (
+                                <p className="text-center text-xs mt-2 font-semibold text-primary animate-fade-in">
+                                    {testPushFeedback}
+                                </p>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 

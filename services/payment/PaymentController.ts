@@ -381,6 +381,19 @@ export class PaymentController {
                 }
             }
 
+            // Self-heal ENTITY_NOT_FOUND: if an entity document commit is still propagating
+            // to the remote backend, wait briefly and retry creation once before declaring failure.
+            if (data?.error === 'ENTITY_NOT_FOUND') {
+                console.warn(`[PaymentController] Entity not found (${entityKind}/${entityId}) on first attempt; waiting 600ms to allow record sync and retrying once...`);
+                await new Promise((resolve) => setTimeout(resolve, 600));
+                try {
+                    resp = await sendCreate(expectedAmount);
+                    data = await resp.json().catch(() => null);
+                } catch (retryEntityErr) {
+                    console.warn('[PaymentController] Entity retry fetch failed:', retryEntityErr);
+                }
+            }
+
             if (!resp.ok || !data) {
                 const err = this.describeCreateFailure(resp.status, data);
                 console.warn('[PaymentController] Payment creation failed:', resp.status, data);

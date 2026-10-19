@@ -27,7 +27,7 @@ import { storageService } from '../services/StorageService';
 import { onAuthStateChanged } from 'firebase/auth';
 import { paymentService } from '../services/PaymentService';
 import { sendEmail, sendTemplatedEmail } from '../services/emailService';
-import { getJobTotalAmount, calculateMechanicWalletLedger } from '../utils/mechanicLedger';
+import { getJobTotalAmount, calculateMechanicWalletLedger, getJobMechanicShare, getJobAdminShare } from '../utils/mechanicLedger';
 import { loadLiveData } from '../utils/loadLiveData';
 
 interface DatabaseContextType {
@@ -2394,20 +2394,61 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             const isActorMechanic = updatedBy === 'mechanic' || (currentUserId && booking.mechanicId === currentUserId);
             const isActorCustomer = updatedBy === 'customer' || (currentUserId && booking.customerId === currentUserId);
 
-            // Notify customer on status change (skip if customer themselves triggered the update)
+                        // Notify customer on status change (skip if customer themselves triggered the update)
             if (booking.customerId && booking.status !== status && !isActorCustomer) {
+                const serviceName = booking.services?.[0]?.name || booking.service?.name || 'service';
+                const mechanicName = booking.mechanic?.name || 'Your mechanic';
+                let notifTitle = '🔄 Booking Status Updated';
+                let notifMessage = `Your booking status has been updated to: ${status}.`;
+                let notifType: any = 'info';
+
+                switch (status) {
+                    case 'Mechanic Assigned':
+                        notifTitle = 'Mechanic Assigned';
+                        notifMessage = `${mechanicName} has been assigned to your job.`;
+                        notifType = 'info';
+                        break;
+                    case 'En Route':
+                        notifTitle = 'Mechanic En Route';
+                        notifMessage = `${mechanicName} is on the way.`;
+                        notifType = 'info';
+                        break;
+                    case 'In Progress':
+                        notifTitle = 'Work has Begun';
+                        notifMessage = `${mechanicName} has started the ${serviceName}.`;
+                        notifType = 'info';
+                        break;
+                    case 'Work Done':
+                        notifTitle = 'Work Completed';
+                        notifMessage = `${mechanicName} has finished the work. Please confirm and complete payment.`;
+                        notifType = 'warning';
+                        break;
+                    case 'Completed':
+                        notifTitle = 'Service Complete';
+                        notifMessage = `Your ${serviceName} is now complete. Thank you!`;
+                        notifType = 'success';
+                        break;
+                    case 'Cancelled':
+                        notifTitle = 'Booking Cancelled';
+                        notifMessage = `Booking #${id.slice(-6)} has been cancelled.`;
+                        notifType = 'alert';
+                        break;
+                }
+
                 sendNotification({
                     recipientId: `customer-${booking.customerId}`,
-                    title: '🔄 Booking Status Updated',
-                    message: `Your booking status has been updated to: ${status}.`,
-                    type: 'info',
+                    title: notifTitle,
+                    message: notifMessage,
+                    type: notifType,
                     link: `/customer-portal/booking-detail/${id}`,
+                    bookingId: id,
+                    tag: `booking_${id}`,
                     date: new Date().toISOString(),
                     read: false
                 }).catch(err => console.warn('[updateBookingStatus] Customer notification failed non-critically:', err));
             }
 
-            // Notify mechanic on status change (skip self-notification when mechanic initiates it to avoid redundant toast clutter)
+                        // Notify mechanic on status change (skip self-notification when mechanic initiates it to avoid redundant toast clutter)
             if (booking.mechanicId && booking.status !== status && !isActorMechanic) {
                 sendNotification({
                     recipientId: `mechanic-${booking.mechanicId}`,
@@ -2415,6 +2456,8 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     message: `Booking #${id.slice(-6)} status changed to: ${status}.`,
                     type: 'info',
                     link: `/mechanic-portal/job/${id}`,
+                    bookingId: id,
+                    tag: `booking_${id}`,
                     date: new Date().toISOString(),
                     read: false
                 }).catch(err => console.warn('[updateBookingStatus] Mechanic notification failed non-critically:', err));
@@ -2435,11 +2478,11 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
                     }
 
                     const totalJobRevenue = getJobTotalAmount(booking);
-                    // Platform commission: 30% by default (mechanic receives 70%). Configurable via settings.
+                    // Platform commission: 30% by default (applied strictly to Main Services Price).
+                    // Additional costs added by the mechanic are 100% credited to the mechanic.
                     const feePercentage = db?.settings?.serviceFeePercentage ?? 30;
-                    const platformCut = Math.round(totalJobRevenue * (feePercentage / 100));
-                    // Mechanic receives net revenue (job total minus platform commission)
-                    const mechanicShare = Math.max(0, totalJobRevenue - platformCut);
+                    const platformCut = getJobAdminShare(booking, feePercentage);
+                    const mechanicShare = getJobMechanicShare(booking, feePercentage);
 
                     try {
                         const mechanicRef = doc(firestore, 'mechanics', booking.mechanicId);
@@ -3464,37 +3507,41 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             };
         });
 
-        try {
-            const docRef = await addDoc(collection(firestore, 'payouts'), {
-                ...request,
-                status: 'Pending',
-                requestDate: new Date().toISOString(),
-                submittedAt: new Date().toISOString()
-            });
-
-            // Synchronize mechanic balances in Firestore
+        // Perform Firestore writes with a 4-second timeout race so UI never hangs waiting for network ack
+        const writePromise = (async () => {
             try {
-                const mechanicRef = doc(firestore, 'mechanics', request.mechanicId);
-                await updateDoc(mechanicRef, {
-                    walletBalance: updatedLedger.availableBalance,
-                    totalEarnings: updatedLedger.lifetimeEarnings,
-                    lockedBalance: updatedLedger.lockedBalance
+                const docRef = await addDoc(collection(firestore, 'payouts'), {
+                    ...request,
+                    status: 'Pending',
+                    requestDate: new Date().toISOString(),
+                    submittedAt: new Date().toISOString()
                 });
-            } catch (_) {}
 
-            // Align local id with Firestore generated id if available
-            setDb(prev => {
-                if (!prev) return null;
-                return {
-                    ...prev,
-                    payouts: prev.payouts.map(p => p.id === newPayoutId ? { ...p, id: docRef.id } : p)
-                };
-            });
-        } catch (e) {
-            console.warn('[Firestore] addPayoutRequest write failed, using local optimistic state:', e);
-        }
+                // Synchronize mechanic balances in Firestore
+                try {
+                    const mechanicRef = doc(firestore, 'mechanics', request.mechanicId);
+                    await updateDoc(mechanicRef, {
+                        walletBalance: updatedLedger.availableBalance,
+                        totalEarnings: updatedLedger.lifetimeEarnings,
+                        lockedBalance: updatedLedger.lockedBalance
+                    });
+                } catch (_) {}
 
-        await sendNotification({
+                // Align local id with Firestore generated id if available
+                setDb(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        payouts: prev.payouts.map(p => p.id === newPayoutId ? { ...p, id: docRef.id } : p)
+                    };
+                });
+            } catch (e) {
+                console.warn('[Firestore] addPayoutRequest write failed, using local optimistic state:', e);
+            }
+        })();
+
+        // Send admin notification asynchronously without stalling the payout submission
+        sendNotification({
             recipientId: 'admin',
             title: 'New Payout Request',
             message: `${request.mechanicName} has requested a payout of ₱${request.amount.toLocaleString()}`,
@@ -3502,7 +3549,16 @@ export const DatabaseProvider: React.FC<{ children: ReactNode }> = ({ children }
             date: new Date().toISOString(),
             read: false,
             link: '/admin-portal/payouts'
-        });
+        }).catch(err => console.warn('[addPayoutRequest] sendNotification error:', err));
+
+        try {
+            await Promise.race([
+                writePromise,
+                new Promise(resolve => setTimeout(resolve, 3500))
+            ]);
+        } catch (e) {
+            console.warn('[Firestore] addPayoutRequest timeout reached, continuing optimistically:', e);
+        }
     };
 
     const deletePayoutRequest = async (payoutId: string, alsoClearDestination?: boolean) => {

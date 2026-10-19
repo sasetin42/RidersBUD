@@ -254,14 +254,14 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: (id) => {
             if (id.includes('node_modules')) {
-              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router') || id.includes('recharts') || id.includes('chart')) {
-                return 'vendor-react';
+              if (id.includes('recharts') || id.includes('chart') || id.includes('d3-') || id.includes('victory-vendor')) {
+                return 'vendor-charts';
               }
               if (id.includes('firebase')) {
                 return 'vendor-firebase';
               }
-              if (id.includes('recharts') || id.includes('chart')) {
-                return 'vendor-charts';
+              if (id.includes('react') || id.includes('scheduler')) {
+                return 'vendor-react';
               }
               if (id.includes('lucide')) {
                 return 'vendor-icons';

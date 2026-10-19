@@ -12,6 +12,7 @@ import {
     ShieldCheck, Coins
 } from 'lucide-react';
 import Tooltip from '../../components/ui/Tooltip';
+import { getJobTotalAmount, getJobServicesAmount, getJobAdminShare, getJobMechanicShare } from '../../utils/mechanicLedger';
 
 type DateRange = '7d' | '30d' | '90d' | 'all';
 
@@ -58,14 +59,14 @@ const AdminAnalyticsScreen: React.FC = () => {
         const completedCount = completedBookings.length;
         const totalFiltered = filteredBookings.length;
 
-        const bookingRevenue = completedBookings.reduce((sum, b) => sum + (b.totalPrice || b.service?.price || (b.services?.[0]?.price) || 0), 0);
+        const bookingRevenue = completedBookings.reduce((sum, b) => sum + getJobTotalAmount(b), 0);
         const orderRevenue = filteredOrders.reduce((sum: number, o: any) => sum + (o.total || o.totalAmount || 0), 0);
         const totalRevenue = bookingRevenue + orderRevenue;
         const avgBookingValue = completedCount > 0 ? Math.round(bookingRevenue / completedCount) : 0;
 
-        // Platform 30% Commission Allocation vs Mechanic 70% Share
+        // Platform Commission is based ONLY on Main Service Price; Additional Costs are 100% mechanic income
         const adminFeePercent = db?.settings?.serviceFeePercentage != null ? db.settings.serviceFeePercentage : 30;
-        const adminCommissionRevenue = Math.round(bookingRevenue * (adminFeePercent / 100));
+        const adminCommissionRevenue = completedBookings.reduce((sum, b) => sum + getJobAdminShare(b, adminFeePercent), 0);
         const mechanicPayoutShare = Math.max(0, bookingRevenue - adminCommissionRevenue);
 
         // Completion rate

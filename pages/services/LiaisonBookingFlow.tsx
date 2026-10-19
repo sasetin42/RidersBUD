@@ -11,6 +11,7 @@ import { HitPayEmbeddedService } from '../../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 import { getAccurateLivePosition, reverseGeocodeCoordinates, safeGetCurrentPosition, startPreciseWatch, safeClearWatch } from '../../utils/locationHelper';
 import { getLeafletTileConfig } from '../../utils/mapTileProviders';
+import { getProfileImage } from '../../utils/imageConstants';
 
 interface DocumentFile {
     name: string;
@@ -461,11 +462,12 @@ const LiaisonBookingFlow: React.FC = () => {
             L.tileLayer(tileConfig.url, tileConfig.options).addTo(map);
 
             const pinColor = '#10B981'; // Green Location Pin
+            const customerPinImage = getProfileImage(user?.picture, user?.name) || db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png';
 
             const locationIcon = L.divIcon({
                 html: `<div class="rb-location-pin-wrapper">
                     <div class="rb-location-circle" style="border: 3px solid ${pinColor};">
-                        <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:contain;border-radius:50%;" />
+                        <img src="${customerPinImage}" alt="${user?.name || 'Location'}" onerror="this.onerror=null;this.src='${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}';" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
                     </div>
                     <div class="rb-location-stem" style="background: ${pinColor};"></div>
                     <div class="rb-location-dot" style="background: ${pinColor};"></div>

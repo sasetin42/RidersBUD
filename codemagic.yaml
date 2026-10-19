@@ -1,0 +1,35 @@
+workflows:
+  ios-appstore-release:
+    name: RidersBUD iOS App Store Release
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Codemagic App Store Connect
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.sasetin42.ridersbud
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+      - name: Build Web Bundle, Sync Capacitor iOS & Verify App Store Compliance
+        script: node scripts/release-ios.mjs
+      - name: Set up code signing settings on Xcode project
+        script: xcode-project use-profiles --project ios/App/App.xcodeproj
+      - name: Resolve Swift Package Manager dependencies
+        script: xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
+      - name: Build signed IPA for App Store
+        script: |
+          xcode-project build-ipa \
+            --project "ios/App/App.xcodeproj" \
+            --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false

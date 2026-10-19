@@ -199,12 +199,16 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
       if (event.data) payload.body = event.data.text();
     }
 
+    const tag = payload.tag || payload.data?.tag || (payload.data?.bookingId ? `booking_${payload.data.bookingId}` : undefined);
+
     const options = {
       body: payload.body,
-      icon: '/icons/icon-192.png',
+      icon: payload.image || payload.data?.image || '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       vibrate: [100, 50, 100],
-      data: { url: payload.url || '/' }
+      tag: tag || 'general_alert',
+      renotify: true,
+      data: { url: payload.url || payload.data?.link || '/' }
     };
 
     event.waitUntil(

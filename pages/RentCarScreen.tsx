@@ -13,8 +13,17 @@ import { HitPayEmbeddedService } from '../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker, resumePendingPaymentVerification, isNativePlatform as isNative } from '../utils/paymentRedirect';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
-import { getAccurateLivePosition, startPreciseWatch, safeClearWatch, reverseGeocodeCoordinates } from '../utils/locationHelper';
+import { 
+    getAccurateLivePosition, 
+    startPreciseWatch, 
+    safeClearWatch, 
+    reverseGeocodeCoordinates,
+    checkDeviceGpsStatus
+} from '../utils/locationHelper';
+import { MandatedLocationNotice } from '../components/MandatedLocationNotice';
 import { getLeafletTileConfig } from '../utils/mapTileProviders';
+
+import { getProfileImage } from '../utils/imageConstants';
 
 declare const L: any;
 
@@ -448,6 +457,7 @@ const RentCarLocationModal: React.FC<{
     onConfirmLocation: (location: { lat: number; lng: number; address: string }) => void;
 }> = ({ car, accentColor, onClose, onConfirmLocation }) => {
     const { db } = useDatabase();
+    const { user } = useAuth();
     const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
     const [address, setAddress] = useState<string>('');
     const [isAddressLoading, setIsAddressLoading] = useState<boolean>(false);
@@ -455,6 +465,9 @@ const RentCarLocationModal: React.FC<{
     const [isTrackingLive, setIsTrackingLive] = useState<boolean>(true);
     const [locationStatus, setLocationStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('fetching');
     const [locationError, setLocationError] = useState<string>('');
+    const [showGpsModal, setShowGpsModal] = useState<boolean>(false);
+    const [gpsNoticeReason, setGpsNoticeReason] = useState<string>('');
+
 
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<any>(null);
@@ -494,10 +507,22 @@ const RentCarLocationModal: React.FC<{
         }, 300);
     }, []);
 
-    // Initial Live Location Acquisition
+    // Initial Live Location Acquisition & GPS Mandate Check
     useEffect(() => {
         let isMounted = true;
         setLocationStatus('fetching');
+
+        checkDeviceGpsStatus().then(gps => {
+            if (!isMounted) return;
+            if (gps.isGpsDisabled || gps.isPermissionDenied) {
+                setGpsNoticeReason(
+                    gps.isGpsDisabled
+                        ? 'Your device GPS is currently OFF. Please enable location services to pinpoint car delivery/pickup accurately.'
+                        : 'Location permission is required for vehicle delivery and booking route calculation.'
+                );
+                setShowGpsModal(true);
+            }
+        }).catch(() => {});
 
         getAccurateLivePosition(
             (accurate) => {
@@ -574,10 +599,11 @@ const RentCarLocationModal: React.FC<{
         const tileConfig = getLeafletTileConfig(db?.settings);
         L.tileLayer(tileConfig.url, tileConfig.options).addTo(map);
 
+        const customerPinImage = getProfileImage(user?.picture, user?.name) || db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png';
         const locationIcon = L.divIcon({
             html: `<div class="rb-location-pin-wrapper">
                 <div class="rb-location-circle">
-                    <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:contain;border-radius:50%;" />
+                    <img src="${customerPinImage}" alt="${user?.name || 'Customer Location'}" onerror="this.onerror=null;this.src='${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}';" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
                 </div>
                 <div class="rb-location-stem"></div>
                 <div class="rb-location-dot"></div>
@@ -655,13 +681,21 @@ const RentCarLocationModal: React.FC<{
         }
     }, [coords, isTrackingLive]);
 
-    const handleRecenter = () => {
+    const handleRecenter = async () => {
+        const gps = await checkDeviceGpsStatus().catch(() => null);
+        if (gps && (gps.isGpsDisabled || gps.isPermissionDenied)) {
+            setGpsNoticeReason('Your device GPS is currently OFF. Please turn ON location service to lock your exact live position.');
+            setShowGpsModal(true);
+            return;
+        }
+
         setIsTrackingLive(true);
         getAccurateLivePosition(
             (accurate) => {
                 const newPos = { lat: accurate.latitude, lng: accurate.longitude };
                 setCoords(newPos);
                 setLocationAccuracy(accurate.accuracy);
+
                 if (mapInstanceRef.current) {
                     mapInstanceRef.current.setView([accurate.latitude, accurate.longitude], 18, { animate: true, duration: 0.6 });
                 }
@@ -920,6 +954,18 @@ const RentCarLocationModal: React.FC<{
                         )}
                     </button>
                 </div>
+
+                {/* Mandated GPS notice for Rent-a-car */}
+                <MandatedLocationNotice
+                    isOpen={showGpsModal}
+                    title="Vehicle Delivery GPS Required"
+                    description={gpsNoticeReason || 'Your phone GPS must be enabled to ensure proper car delivery and route tracking.'}
+                    onClose={() => setShowGpsModal(false)}
+                    onGpsEnabled={() => {
+                        setShowGpsModal(false);
+                        handleRecenter();
+                    }}
+                />
             </div>
         </div>
     );

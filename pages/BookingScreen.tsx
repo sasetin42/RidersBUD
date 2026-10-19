@@ -9,6 +9,7 @@ import GCashPaymentModal from '../components/GCashPaymentModal';
 import { Clock, Star, CalendarRange, Calendar, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, Info, CreditCard, Navigation, ArrowRight } from 'lucide-react';
 import CustomerHeader from '../components/CustomerHeader';
 import { getFallbackImageForCategory, normalizeServiceImage } from '../utils/fallbackImages';
+import { getProfileImage } from '../utils/imageConstants';
 import Tooltip from '../components/ui/Tooltip';
 import { doc, collection } from 'firebase/firestore';
 import { db as firestore } from '../firebase';
@@ -25,9 +26,13 @@ import {
     getAccurateLivePosition,
     reverseGeocodeCoordinates,
     startPreciseWatch,
-    distanceMeters
+    distanceMeters,
+    checkDeviceGpsStatus,
+    openDeviceLocationSettings
 } from '../utils/locationHelper';
+import { MandatedLocationNotice } from '../components/MandatedLocationNotice';
 import { getLeafletTileConfig } from '../utils/mapTileProviders';
+
 
 
 declare const L: any;
@@ -194,7 +199,7 @@ const MechanicAvailabilityCard: React.FC<{
 
                     {/* Specializations list */}
                     <div className="flex flex-wrap gap-1.5">
-                        {mechanic.specializations.slice(0, 3).map(spec => (
+                        {(mechanic.specializations || []).slice(0, 3).map(spec => (
                             <span key={spec} className="bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-[9px] font-extrabold px-2.5 py-1 rounded-lg border border-white/5 transition-colors">
                                 {spec}
                             </span>
@@ -452,6 +457,17 @@ const BookingScreen: React.FC = () => {
     const [showLiveRouteModal, setShowLiveRouteModal] = useState(false);
     const [showPaymentBreakdownModal, setShowPaymentBreakdownModal] = useState(false);
     const [selectedPaymentOption, setSelectedPaymentOption] = useState<'downpayment' | 'full'>('downpayment');
+
+    // Pre-warmed checkout session reference: speculatively creates booking + HitPay checkout
+    // in the background as soon as Payment Breakdown modal is opened, allowing instant (<100ms) transition.
+    const prewarmedCheckoutRef = useRef<{
+        bookingId: string;
+        paymentOption: 'downpayment' | 'full';
+        amount: number;
+        promise: Promise<any>;
+        readyResult?: any;
+    } | null>(null);
+
     const [showVehicleSelectorModal, setShowVehicleSelectorModal] = useState(false);
     const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
     const [temporaryBookingData, setTemporaryBookingData] = useState<any>(null);
@@ -508,8 +524,8 @@ const BookingScreen: React.FC = () => {
     const [endSuggestions, setEndSuggestions] = useState<any[]>([]);
     const [showStartSuggestions, setShowStartSuggestions] = useState(false);
     const [showEndSuggestions, setShowEndSuggestions] = useState(false);
-
-
+    const [showMandatedGpsModal, setShowMandatedGpsModal] = useState(false);
+    const [mandatedGpsReason, setMandatedGpsReason] = useState<string>('');
 
     useEffect(() => {
         if (user && user.vehicles.length > 0 && !selectedVehiclePlate) {
@@ -518,20 +534,24 @@ const BookingScreen: React.FC = () => {
         }
     }, [user, selectedVehiclePlate]);
 
-    // Live Geocoding and Location Helper with progressive precision and reverse geocoding
+    // Live Geocoding and Location Helper with progressive precision and mandated GPS enforcement
     const handleUseLiveLocation = async () => {
-        if (!navigator.geolocation) {
-            alert('Geolocation is not supported by your browser.');
-            return;
-        }
-
-        const isDenied = await isGeolocationPermissionDenied();
-        if (isDenied) {
-            alert('Location access is blocked or denied. Please enable location permissions in your browser or device settings.');
-            return;
-        }
-
         setIsLocating(true);
+
+        // Pre-check phone GPS hardware & permission status
+        try {
+            const gpsStatus = await checkDeviceGpsStatus();
+            if (gpsStatus.isGpsDisabled || gpsStatus.isPermissionDenied) {
+                setIsLocating(false);
+                setMandatedGpsReason(
+                    gpsStatus.isGpsDisabled
+                        ? 'Your mobile phone GPS / Location service is turned OFF. Please enable it to calculate exact route, pricing, and live mechanic dispatch.'
+                        : 'Location permission is required for RidersBUD real-time map tracking.'
+                );
+                setShowMandatedGpsModal(true);
+                return;
+            }
+        } catch (_) {}
 
         try {
             const accurate = await getAccurateLivePosition(
@@ -553,7 +573,8 @@ const BookingScreen: React.FC = () => {
                     setStartLocation(address);
                 },
                 () => {
-                    alert('Unable to retrieve precise location. Please verify your GPS is active.');
+                    setMandatedGpsReason('Unable to retrieve satellite fix. Your device GPS must be enabled for real-time map location.');
+                    setShowMandatedGpsModal(true);
                 },
                 { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
             );
@@ -561,6 +582,7 @@ const BookingScreen: React.FC = () => {
             setIsLocating(false);
         }
     };
+
 
     // Fetch suggestions for Start Location (Philippines only)
     useEffect(() => {
@@ -951,6 +973,19 @@ const BookingScreen: React.FC = () => {
         setGpsStalled(false);
         setLocationStatus('fetching');
 
+        // Check if GPS hardware is turned off
+        checkDeviceGpsStatus().then(gps => {
+            if (cancelled) return;
+            if (gps.isGpsDisabled || gps.isPermissionDenied) {
+                setMandatedGpsReason(
+                    gps.isGpsDisabled
+                        ? 'Your mobile phone GPS is turned OFF. Please enable location services to view the live dispatch map and pinpoint your exact location.'
+                        : 'Location permission is required to calculate mechanic distance and arrival times.'
+                );
+                setShowMandatedGpsModal(true);
+            }
+        }).catch(() => {});
+
         // 1) Instant first fix + progressive satellite auto-hone
         getAccurateLivePosition(
             (accurate) => {
@@ -1044,11 +1079,14 @@ const BookingScreen: React.FC = () => {
 
         osmTile.addTo(mapInstanceRef.current);
 
+        // Display Customer's uploaded avatar inside the Map Pin, falling back to logo
+        const customerPinImage = getProfileImage(user?.picture, user?.name) || db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png';
+
         // Branded draggable location pin - Calibrated tip anchor
         const locationIcon = L.divIcon({
             html: `<div class="rb-location-pin-wrapper">
                 <div class="rb-location-circle">
-                    <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:contain;border-radius:50%;" />
+                    <img src="${customerPinImage}" alt="${user?.name || 'Customer Location'}" onerror="this.onerror=null;this.src='${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}';" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
                 </div>
                 <div class="rb-location-stem"></div>
                 <div class="rb-location-dot"></div>
@@ -1111,11 +1149,29 @@ const BookingScreen: React.FC = () => {
         };
     }, [step, serviceLocation === null, leafletLoaded]); // eslint-disable-line
 
-    // Live updater: smoothly follow GPS when tracking is active without radius background
+    // Live updater: smoothly follow GPS when tracking is active without radius background, and sync customer avatar
     useEffect(() => {
         if (step === 2 && mapInstanceRef.current && serviceLocation) {
             if (markerRef.current) {
                 markerRef.current.setLatLng([serviceLocation.lat, serviceLocation.lng]);
+                
+                // Update marker icon if customer avatar loads
+                if (typeof L !== 'undefined') {
+                    const customerPinImage = getProfileImage(user?.picture, user?.name) || db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png';
+                    const locationIcon = L.divIcon({
+                        html: `<div class="rb-location-pin-wrapper">
+                            <div class="rb-location-circle">
+                                <img src="${customerPinImage}" alt="${user?.name || 'Customer Location'}" onerror="this.onerror=null;this.src='${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}';" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
+                            </div>
+                            <div class="rb-location-stem"></div>
+                            <div class="rb-location-dot"></div>
+                        </div>`,
+                        className: 'rb-leaflet-icon',
+                        iconSize: [56, 72],
+                        iconAnchor: [28, 72],
+                    });
+                    markerRef.current.setIcon(locationIcon);
+                }
             }
 
             if (isTrackingLive) {
@@ -1125,7 +1181,7 @@ const BookingScreen: React.FC = () => {
                 );
             }
         }
-    }, [serviceLocation, isTrackingLive, step]);
+    }, [serviceLocation, isTrackingLive, step, user?.picture, user?.name, db?.settings?.mapLogoUrl, db?.settings?.appLogoUrl]);
 
     // ── Realtime nearby mechanics on the confirm-location map ──────────────────
     // Live Firestore stream (db.mechanics) filtered to online specialists around the pin.
@@ -1232,11 +1288,12 @@ const BookingScreen: React.FC = () => {
             const confirmTileConfig = getLeafletTileConfig(db?.settings);
             L.tileLayer(confirmTileConfig.url, confirmTileConfig.options).addTo(confirmationMapInstanceRef.current);
 
-            // Add marker - Calibrated tip anchor
+            // Add marker - Calibrated tip anchor with Customer's uploaded avatar
+            const customerPinImage = getProfileImage(user?.picture, user?.name) || db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png';
             const locationIcon = L.divIcon({
                 html: `<div class="rb-location-pin-wrapper">
                     <div class="rb-location-circle">
-                        <img src="${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:36px;height:36px;object-fit:contain;border-radius:50%;" />
+                        <img src="${customerPinImage}" alt="${user?.name || 'Customer Location'}" onerror="this.onerror=null;this.src='${db?.settings?.mapLogoUrl || db?.settings?.appLogoUrl || '/favicon.png'}';" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
                     </div>
                     <div class="rb-location-stem"></div>
                     <div class="rb-location-dot"></div>
@@ -1333,7 +1390,9 @@ const BookingScreen: React.FC = () => {
         const specSet = new Set<string>();
         mechanics.forEach(m => {
             if (m.status === 'Active') {
-                m.specializations.forEach(s => specSet.add(s))
+                (m.specializations || []).forEach(s => {
+                    if (s) specSet.add(s);
+                });
             }
         });
         return ['all', ...Array.from(specSet).sort()];
@@ -1399,8 +1458,8 @@ const BookingScreen: React.FC = () => {
                 const hasSpecializationMatch = selectedServices.some(selectedService => {
                     const serviceNameLower = selectedService.name.toLowerCase();
                     const serviceCategoryLower = selectedService.category.toLowerCase();
-                    return mechanic.specializations.some(specRaw => {
-                        const spec = specRaw.toLowerCase();
+                    return (mechanic.specializations || []).some(specRaw => {
+                        const spec = (specRaw || '').toLowerCase();
                         if (spec.includes(serviceCategoryLower) || serviceCategoryLower.includes(spec)) return true;
                         if (spec.includes(serviceNameLower) || serviceNameLower.includes(spec)) return true;
                         const serviceWords = serviceNameLower.split(' ');
@@ -1410,7 +1469,7 @@ const BookingScreen: React.FC = () => {
                 if (!hasSpecializationMatch) return false;
             }
 
-            if (specializationFilter !== 'all' && !mechanic.specializations.includes(specializationFilter)) return false;
+            if (specializationFilter !== 'all' && !(mechanic.specializations || []).includes(specializationFilter)) return false;
             if (mechanicSearch && !mechanic.name.toLowerCase().includes(mechanicSearch.toLowerCase())) return false;
 
             return true;
@@ -1527,7 +1586,174 @@ const BookingScreen: React.FC = () => {
         setStep(4);
     };
 
-    // Create booking first (awaiting_payment), then open modal with real Firestore ID
+    // Pre-warm booking creation + HitPay checkout session speculatively in the background
+    // as soon as the customer views the breakdown modal, slashing checkout wait time to <100ms.
+    const prewarmBookingCheckout = useCallback(async (forcedOption?: 'downpayment' | 'full') => {
+        try {
+            const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
+            const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
+            if (selectedServices.length === 0 || !user || (!isSpecialRentalOrDriver && !selectedMechanic) || !selectedVehicle || (!isSpecialRentalOrDriver && !serviceLocation)) {
+                return;
+            }
+            const isHitPayActive = HitPayService.isGatewayActive(db?.settings);
+            if (!isHitPayActive) return;
+
+            let computedTotalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0);
+            if (isSpecialRentalOrDriver) {
+                if (isCarRental && selectedCar) computedTotalPrice += selectedCar.pricePerDay * rentalDays;
+                if (isDriverHire && selectedDriver) computedTotalPrice += selectedDriver.pricePerDay * rentalDays;
+            }
+            if (computedTotalPrice <= 0) return;
+
+            const opt = forcedOption || selectedPaymentOption;
+            const isFullPayment = opt === 'full';
+            const downpaymentAmount = Math.round(computedTotalPrice * 0.5);
+            const checkoutAmount = isFullPayment ? computedTotalPrice : downpaymentAmount;
+
+            // If we already have an active prewarmed session matching the current option and amount, keep it
+            if (prewarmedCheckoutRef.current && 
+                prewarmedCheckoutRef.current.paymentOption === opt && 
+                prewarmedCheckoutRef.current.amount === checkoutAmount) {
+                return;
+            }
+
+            const bookingId = doc(collection(firestore, 'bookings')).id;
+            const appTitle = db?.settings?.appName || 'RidersBUD';
+            const refNumber = isFullPayment ? `BOK-${bookingId}-FULL` : `BOK-${bookingId}-DP`;
+            const purpose = isFullPayment
+                ? `${appTitle} — Full Payment (Booking #${bookingId.slice(-6).toUpperCase()})`
+                : `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
+
+            const isSandbox = db?.settings?.hitpaySandboxMode !== false;
+
+            const newBookingData: any = {
+                customerId: user.id,
+                customerName: user.name,
+                customerEmail: user.email || '',
+                customerPhone: user.phone || '',
+                services: selectedServices,
+                service: selectedServices[0] || null,
+                date: selectedDate.toISOString().split('T')[0],
+                time: selectedTime,
+                status: 'Pending' as const,
+                vehicle: selectedVehicle,
+                notes,
+                paymentStatus: 'pending' as const,
+                paidAmount: 0,
+                downpaymentAmount,
+                totalAmount: computedTotalPrice,
+                paymentMethod: 'Online (HitPay)',
+                paymentGateway: 'hitpay',
+                isVerified: false,
+                isPaid: false
+            };
+
+            if (isSpecialRentalOrDriver) {
+                newBookingData.isSpecialRentalOrDriver = true;
+                newBookingData.startLocation = startLocation;
+                newBookingData.endLocation = endLocation;
+                newBookingData.endDate = selectedEndDate ? selectedEndDate.toISOString().split('T')[0] : null;
+                newBookingData.rentalDays = rentalDays;
+                newBookingData.startTime = selectedTime;
+                newBookingData.endTime = selectedEndTime;
+                if (isCarRental) {
+                    newBookingData.selectedCar = selectedCar;
+                    newBookingData.rentalCarDetails = selectedCar;
+                }
+                if (isDriverHire) {
+                    newBookingData.selectedDriver = selectedDriver;
+                    newBookingData.driverDetails = selectedDriver;
+                }
+            } else {
+                newBookingData.mechanic = selectedMechanic;
+                newBookingData.mechanicId = selectedMechanic?.id || '';
+                newBookingData.mechanicName = selectedMechanic?.name || '';
+                newBookingData.location = serviceLocation;
+            }
+
+            const warmupPromise = (async () => {
+                // 1. Persist booking immediately in Firestore with client-generated bookingId
+                await addBooking(newBookingData, bookingId);
+
+                // 2. Prepare pending tx in storage
+                const txDetails = {
+                    bookingId,
+                    amount: checkoutAmount,
+                    totalAmount: computedTotalPrice,
+                    isFullPayment,
+                    items: selectedServices.map(s => ({
+                        name: s.name || 'Vehicle Service',
+                        price: s.price || 0
+                    })),
+                    services: selectedServices,
+                    leavingTimestamp: Date.now()
+                };
+                sessionStorage.setItem('pendingHitPayBookingTx', JSON.stringify(txDetails));
+                try {
+                    localStorage.setItem('last_hitpay_booking_tx', JSON.stringify(txDetails));
+                } catch (e) {}
+
+                // 3. Initiate payment request speculatively
+                const checkoutResult = await HitPayEmbeddedService.startCheckout({
+                    entityKind: 'booking',
+                    entityId: bookingId,
+                    amount: checkoutAmount,
+                    kind: isFullPayment ? 'full' : 'downpayment',
+                    currency: db?.settings?.currency || 'PHP',
+                    referenceNumber: refNumber,
+                    purpose,
+                    customerId: user?.id || (user as any)?.uid || '',
+                    customerEmail: user?.email || 'customer@example.com',
+                    customerName: user?.name || 'Customer',
+                    customerPhone: user?.phone || undefined,
+                    returnRoute: `/customer-portal/booking-confirmation?bookingId=${bookingId}`,
+                    isSandbox,
+                    settings: db?.settings
+                });
+
+                return {
+                    bookingId,
+                    checkoutResult,
+                    refNumber,
+                    purpose,
+                    checkoutAmount
+                };
+            })();
+
+            prewarmedCheckoutRef.current = {
+                bookingId,
+                paymentOption: opt,
+                amount: checkoutAmount,
+                promise: warmupPromise
+            };
+
+            warmupPromise.then(res => {
+                if (prewarmedCheckoutRef.current && prewarmedCheckoutRef.current.bookingId === bookingId) {
+                    prewarmedCheckoutRef.current.readyResult = res;
+                }
+            }).catch(err => {
+                console.warn('[BookingScreen] Pre-warm checkout background attempt failed (will fall back on click):', err?.message || err);
+            });
+        } catch (e) {
+            console.warn('[BookingScreen] Pre-warm preparation skipped:', e);
+        }
+    }, [
+        services, selectedServiceIds, user, selectedVehiclePlate, isSpecialRentalOrDriver,
+        selectedMechanic, serviceLocation, db?.settings, isCarRental, selectedCar, rentalDays,
+        isDriverHire, selectedDriver, selectedPaymentOption, selectedDate, selectedTime,
+        notes, startLocation, endLocation, selectedEndDate, selectedEndTime, addBooking
+    ]);
+
+    // Trigger pre-warming as soon as Payment Breakdown modal is opened
+    useEffect(() => {
+        if (showPaymentBreakdownModal) {
+            prewarmBookingCheckout();
+        } else {
+            // Do not discard if user just stepped out briefly, but keep in sync
+        }
+    }, [showPaymentBreakdownModal, prewarmBookingCheckout]);
+
+    // Create booking and launch checkout (uses pre-warmed session if available for instant <100ms launch)
     const handleBooking = async () => {
         const selectedServices = services.filter(s => selectedServiceIds.has(s.id));
         const selectedVehicle = user?.vehicles.find(v => v.plateNumber === selectedVehiclePlate);
@@ -1553,6 +1779,8 @@ const BookingScreen: React.FC = () => {
             const newBookingData: any = {
                 customerId: user.id,
                 customerName: user.name,
+                customerEmail: user.email || '',
+                customerPhone: user.phone || '',
                 services: selectedServices,
                 service: selectedServices[0] || null,
                 date: selectedDate.toISOString().split('T')[0],
@@ -1609,9 +1837,41 @@ const BookingScreen: React.FC = () => {
                 throw new Error("Online Payment Gateway (HitPay) is required for checkout but currently inactive in system settings. Please contact the administrator.");
             }
 
+            // Check if pre-warmed checkout session is already completed or in flight
+            const prewarmed = prewarmedCheckoutRef.current;
+            if (prewarmed && prewarmed.paymentOption === selectedPaymentOption && prewarmed.amount === checkoutAmount) {
+                setBookingProcessingStage('Opening Payment Gateway...');
+                let resolvedPrewarmed = prewarmed.readyResult;
+                if (!resolvedPrewarmed) {
+                    resolvedPrewarmed = await prewarmed.promise;
+                }
+                if (resolvedPrewarmed && resolvedPrewarmed.checkoutResult) {
+                    const { checkoutResult, bookingId: preId } = resolvedPrewarmed;
+                    bookingId = preId;
+                    if (checkoutResult.redirected) {
+                        setShowPaymentBreakdownModal(false);
+                        return;
+                    }
+                    if (checkoutResult.paymentState === 'PAID') {
+                        sessionStorage.removeItem(BOOKING_STATE_KEY);
+                        const confirmParams = new URLSearchParams({ bookingId });
+                        if (checkoutResult.paymentRequestId) confirmParams.set('payment_request_id', checkoutResult.paymentRequestId);
+                        if (checkoutResult.referenceNumber) confirmParams.set('reference', checkoutResult.referenceNumber);
+                        navigate(`/customer-portal/booking-confirmation?${confirmParams.toString()}`, { state: { bookingId } });
+                        return;
+                    } else if (checkoutResult.paymentState === 'CANCELLED') {
+                        setIsBooking(false);
+                        setBookingProcessingStage('');
+                        return;
+                    } else if (!checkoutResult.success) {
+                        throw new Error(checkoutResult.errorMessage || "Unable to complete payment.");
+                    }
+                }
+            }
+
+            // Fallback: synchronous checkout path if pre-warm was not available
             bookingId = doc(collection(firestore, 'bookings')).id;
 
-            // Keep pending transaction saved immediately in storage
             const txDetails = {
                 bookingId: bookingId,
                 amount: checkoutAmount,
@@ -1635,18 +1895,22 @@ const BookingScreen: React.FC = () => {
                 ? `${appTitle} — Full Payment (Booking #${bookingId.slice(-6).toUpperCase()})`
                 : `${appTitle} — 50% Initial DP (Booking #${bookingId.slice(-6).toUpperCase()})`;
 
-            setBookingProcessingStage('Registering Booking...');
-            await addBooking({
+            setBookingProcessingStage('Connecting to Payment Gateway...');
+
+            const isSandbox = db?.settings?.hitpaySandboxMode !== false;
+            const createdBooking = await addBooking({
                 ...newBookingData,
+                downpaymentAmount,
                 status: 'Pending',
                 paymentStatus: 'pending',
                 isPaid: false,
                 paymentMethod: 'Online (HitPay)'
             }, bookingId);
 
-            setBookingProcessingStage('Opening Payment Gateway...');
+            if (!createdBooking && !bookingId) {
+                throw new Error("Unable to save booking record before proceeding to payment gateway.");
+            }
 
-            const isSandbox = db?.settings?.hitpaySandboxMode === true;
             const checkoutResult = await HitPayEmbeddedService.startCheckout({
                 entityKind: 'booking',
                 entityId: bookingId,
@@ -1668,14 +1932,6 @@ const BookingScreen: React.FC = () => {
             });
 
             if (checkoutResult.redirected) {
-                // The user is currently on the checkout page or inside the native payment container.
-                // Do not navigate to booking-confirmation or open PaymentVerificationOverlay.
-                // Let the return coordinator / return route handle the return when payment concludes.
-                //
-                // Close the breakdown modal too: it sits behind the native payment
-                // container, and leaving it open stranded customers on a stale
-                // "Proceed to Pay" sheet whenever they came back from the gateway
-                // (and invited duplicate bookings on a second tap).
                 setShowPaymentBreakdownModal(false);
                 return;
             }
@@ -1720,7 +1976,7 @@ const BookingScreen: React.FC = () => {
                     name: user?.name || '',
                     phone: user?.phone || '',
                     purpose: purpose,
-                    sandbox: (db?.settings?.hitpaySandboxMode === true) ? 'true' : 'false'
+                    sandbox: (db?.settings?.hitpaySandboxMode !== false) ? 'true' : 'false'
                 });
                 navigate(`/hitpay-checkout?${query.toString()}`);
                 return;
@@ -2589,7 +2845,14 @@ const BookingScreen: React.FC = () => {
                                 </button>
 
                                 {/* Recenter / GPS button */}
-                                <button                                        onClick={() => {
+                                <button                                        onClick={async () => {
+                                        const gps = await checkDeviceGpsStatus().catch(() => null);
+                                        if (gps && (gps.isGpsDisabled || gps.isPermissionDenied)) {
+                                            setMandatedGpsReason('Your device GPS is currently OFF. Please turn ON location service to lock your exact live position.');
+                                            setShowMandatedGpsModal(true);
+                                            return;
+                                        }
+
                                         setIsTrackingLive(true);
                                         isTrackingLiveRef.current = true;
                                         getAccurateLivePosition(
@@ -2603,7 +2866,10 @@ const BookingScreen: React.FC = () => {
                                                 }
                                             },
                                             { timeoutMs: 6000, targetAccuracy: 10 }
-                                        ).catch(() => {});
+                                        ).catch(() => {
+                                            setMandatedGpsReason('Could not lock satellite location. Make sure device GPS is turned on.');
+                                            setShowMandatedGpsModal(true);
+                                        });
                                     }}
                                     className={`w-11 h-11 flex items-center justify-center rounded-full shadow-2xl transition-all duration-300 active:scale-90 relative overflow-hidden ${
                                         isTrackingLive
@@ -3609,7 +3875,10 @@ const BookingScreen: React.FC = () => {
                             await handleBooking();
                         }}
                         paymentOption={selectedPaymentOption}
-                        onPaymentOptionChange={(opt) => setSelectedPaymentOption(opt)}
+                        onPaymentOptionChange={(opt) => {
+                            setSelectedPaymentOption(opt);
+                            prewarmBookingCheckout(opt);
+                        }}
                         isProcessing={isBooking}
                         processingStage={bookingProcessingStage}
                         services={selectedServices.map(s => ({
@@ -3636,8 +3905,22 @@ const BookingScreen: React.FC = () => {
                     />
                 );
             })()}
+
+            {/* Mandated GPS Location Notice / Enforcer */}
+            <MandatedLocationNotice
+                isOpen={showMandatedGpsModal}
+                title="GPS Location Mandated"
+                description={mandatedGpsReason || 'Your phone GPS must be turned on to calculate technician distances, route tracking, and accurate service dispatch.'}
+                onClose={() => setShowMandatedGpsModal(false)}
+                onGpsEnabled={() => {
+                    setShowMandatedGpsModal(false);
+                    // Re-trigger live location fetch
+                    handleUseLiveLocation();
+                }}
+            />
         </div>
     );
 };
+
 
 export default BookingScreen;

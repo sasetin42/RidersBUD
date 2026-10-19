@@ -15,27 +15,24 @@ export const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { initializeFirestore, getFirestore, persistentLocalCache } from "firebase/firestore";
 
-let dbInstance;
-const globalDb = (globalThis as any)._firebaseDb;
-if (globalDb) {
-    dbInstance = globalDb;
-} else {
-    try {
-        dbInstance = initializeFirestore(app, {
-            localCache: persistentLocalCache({
-                tabManager: persistentMultipleTabManager()
-            }),
-            ignoreUndefinedProperties: true
-        } as any);
-        (globalThis as any)._firebaseDb = dbInstance;
-    } catch (e) {
-        console.warn("Firestore init with settings failed, falling back to default:", e);
-        dbInstance = getFirestore(app);
-    }
+// Single-tab persistent cache (IndexedDB-backed, offline-capable).
+// persistentMultipleTabManager is intentionally omitted — it uses localStorage
+// for cross-tab lease coordination, which triggers "Another client might have
+// garbage-collected our state" warnings when React StrictMode double-mounts
+// components or Vite HMR re-executes this module during development.
+let db;
+try {
+    db = initializeFirestore(app, {
+        localCache: persistentLocalCache(),
+        ignoreUndefinedProperties: true
+    });
+} catch {
+    // Firestore already initialized (e.g. Vite fast-refresh re-import) — reuse the existing instance
+    db = getFirestore(app);
 }
-export const db = dbInstance;
+export { db };
 
 export const auth = getAuth(app);
 export const storage = getStorage(app);

@@ -299,18 +299,21 @@ const ServicesScreen: React.FC = () => {
 
         const specSet = new Set<string>();
         availableMechanics.forEach(m => {
-            m.specializations.forEach(s => specSet.add(s.toLowerCase()));
+            (m.specializations || []).forEach(s => {
+                if (typeof s === 'string') specSet.add(s.toLowerCase());
+            });
         });
         return specSet;
     }, [db]);
 
     // Service Ratings Calculation
     const serviceRatings = useMemo(() => {
-        if (!db) return new Map();
+        if (!db?.mechanics || !db?.services) return new Map();
 
         const categoryToMechanics = new Map<string, Mechanic[]>();
         db.mechanics.forEach(mechanic => {
-            mechanic.specializations.forEach(spec => {
+            (mechanic.specializations || []).forEach(spec => {
+                if (typeof spec !== 'string') return;
                 const specLower = spec.toLowerCase();
                 if (!categoryToMechanics.has(specLower)) {
                     categoryToMechanics.set(specLower, []);

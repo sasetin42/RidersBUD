@@ -11,6 +11,7 @@ import { HitPayService, getLiveAppOrigin } from '../../services/HitPayService';
 import { HitPayEmbeddedService } from '../../services/HitPayEmbeddedService';
 import { startPaymentWatcher, openPaymentUrl, setPendingPaymentMarker } from '../../utils/paymentRedirect';
 import GCashPaymentModal from '../../components/GCashPaymentModal';
+import { getProfileImage } from '../../utils/imageConstants';
 
 declare const L: any;
 
@@ -180,21 +181,23 @@ const DriverLocationModal: React.FC<{
         const tileConfig = getLeafletTileConfig(settings);
         L.tileLayer(tileConfig.url, tileConfig.options).addTo(map);
 
-        const isPickup = targetType === 'pickup';
-        const pinColor = isPickup ? '#10B981' : '#EF4444';
+    const { user } = useAuth();
+    const isPickup = targetType === 'pickup';
+    const pinColor = isPickup ? '#10B981' : '#EF4444';
+    const customerPinImage = getProfileImage(user?.picture, user?.name) || mapLogoUrl || appLogoUrl || '/favicon.png';
 
-        const locationIcon = L.divIcon({
-            html: `<div class="rb-location-pin-wrapper">
-                <div class="rb-location-circle" style="border: 3px solid ${pinColor};">
-                    <img src="${mapLogoUrl || appLogoUrl || '/favicon.png'}" alt="Location" onerror="this.style.display='none'" style="width:28px;height:28px;object-fit:contain;border-radius:50%;" />
-                </div>
-                <div class="rb-location-stem" style="background: ${pinColor};"></div>
-                <div class="rb-location-dot" style="background: ${pinColor};"></div>
-            </div>`,
-            className: 'rb-leaflet-icon',
-            iconSize: [56, 72],
-            iconAnchor: [28, 72],
-        });
+    const locationIcon = L.divIcon({
+        html: `<div class="rb-location-pin-wrapper">
+            <div class="rb-location-circle" style="border: 3px solid ${pinColor};">
+                <img src="${customerPinImage}" alt="${user?.name || 'Location'}" onerror="this.onerror=null;this.src='${mapLogoUrl || appLogoUrl || '/favicon.png'}';" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />
+            </div>
+            <div class="rb-location-stem" style="background: ${pinColor};"></div>
+            <div class="rb-location-dot" style="background: ${pinColor};"></div>
+        </div>`,
+        className: 'rb-leaflet-icon',
+        iconSize: [56, 72],
+        iconAnchor: [28, 72],
+    });
 
         const marker = L.marker([coords.lat, coords.lng], {
             icon: locationIcon,

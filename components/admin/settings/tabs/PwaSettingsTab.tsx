@@ -22,7 +22,8 @@ import {
     Check,
     AlertTriangle,
     SlidersHorizontal,
-    Compass
+    Compass,
+    RefreshCw
 } from 'lucide-react';
 import { Settings } from '../../../../types';
 
@@ -41,6 +42,8 @@ export const PwaSettingsTab: React.FC<PwaSettingsTabProps> = ({
 }) => {
     const [previewTab, setPreviewTab] = useState<'launcherIcon' | 'installModal' | 'splash'>('launcherIcon');
     const [iconShape, setIconShape] = useState<'squircle' | 'circle' | 'roundedSquare'>('squircle');
+    const [isSyncingIcons, setIsSyncingIcons] = useState(false);
+    const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
 
     // Values with fallbacks
     const effectiveAppName = settings.mobileAppName || settings.pwaAppName || settings.appName || 'RidersBUD';
@@ -242,10 +245,43 @@ export const PwaSettingsTab: React.FC<PwaSettingsTabProps> = ({
                             {renderAssetSlot('Notification Tray Icon', 'pwaIcon192Url', 'Icon used for Android status bar push notifications.')}
                         </div>
 
-                        <div className="bg-black/30 p-3.5 rounded-2xl border border-white/5 flex items-center gap-3 text-xs text-gray-400">
-                            <Info size={18} className="text-[#FE7803] flex-shrink-0" />
-                            <span>Recommended format: PNG, 512×512 pixels with square aspect ratio. This icon is rendered directly on device app drawers.</span>
+                        <div className="bg-black/30 p-3.5 rounded-2xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-gray-400">
+                            <div className="flex items-center gap-3">
+                                <Info size={18} className="text-[#FE7803] flex-shrink-0" />
+                                <span>Recommended format: PNG, 512×512 pixels with square aspect ratio. This icon is rendered directly on device app drawers and homescreens.</span>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsSyncingIcons(true);
+                                    // Trigger immediate DOM and PWA synchronization
+                                    try {
+                                        import('../../../../utils/pwaManifestHelper').then(({ syncDynamicManifest }) => {
+                                            syncDynamicManifest(settings);
+                                        });
+                                    } catch (_) {}
+
+                                    setTimeout(() => {
+                                        setIsSyncingIcons(false);
+                                        setSyncSuccessMessage('Launcher icon successfully synchronized to Android, iOS & Web runtime!');
+                                        setTimeout(() => setSyncSuccessMessage(null), 4000);
+                                    }, 800);
+                                }}
+                                disabled={isSyncingIcons}
+                                className="px-3.5 py-2 bg-gradient-to-r from-[#FE7803] to-amber-500 hover:from-[#E06800] hover:to-amber-600 active:scale-95 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-2 shadow-md shadow-[#FE7803]/20 flex-shrink-0 transition disabled:opacity-50"
+                            >
+                                <RefreshCw size={13} className={isSyncingIcons ? 'animate-spin' : ''} />
+                                <span>{isSyncingIcons ? 'Syncing...' : 'Sync Live Mobile Icons'}</span>
+                            </button>
                         </div>
+
+                        {syncSuccessMessage && (
+                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-400 animate-in fade-in">
+                                <CheckCircle2 size={15} className="flex-shrink-0 text-emerald-400" />
+                                <span>{syncSuccessMessage}</span>
+                            </div>
+                        )}
                     </div>
 
                     {/* 3. APK Direct Download Control (Enable / Disable Feature) */}

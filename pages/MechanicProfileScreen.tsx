@@ -273,7 +273,7 @@ const MechanicProfileScreen: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex overflow-x-auto gap-2 py-1 px-6 -mx-6 scrollbar-hide snap-x">
-                    {mechanic.specializations.map((spec, index) => (
+                    {(mechanic.specializations || []).map((spec, index) => (
                         <span key={index} className="snap-center flex-shrink-0 bg-primary/10 text-primary text-[10px] font-black px-3 py-1.5 rounded-xl border border-primary/20 tracking-wider uppercase">
                             {spec}
                         </span>

@@ -35,6 +35,7 @@ interface AuthContextType {
     setPrimaryVehicle: (plateNumber: string) => Promise<void>;
     addFavoriteMechanic: (mechanicId: string) => Promise<void>;
     removeFavoriteMechanic: (mechanicId: string) => Promise<void>;
+    deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,7 +59,8 @@ export const useAuth = () => {
             deleteUserVehicle: async () => {},
             setPrimaryVehicle: async () => {},
             addFavoriteMechanic: async () => {},
-            removeFavoriteMechanic: async () => {}
+            removeFavoriteMechanic: async () => {},
+            deleteAccount: async () => {}
         } as unknown as AuthContextType;
     }
     return context;
@@ -617,6 +619,36 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     };
 
+    const deleteAccount = async () => {
+        const targetId = auth.currentUser?.uid || user?.id;
+        if (!targetId) return;
+        try {
+            const cleanId = targetId.replace(/^customer-/, '');
+            await Promise.allSettled([
+                deleteDoc(doc(firestore, 'customers', targetId)),
+                deleteDoc(doc(firestore, 'customers', cleanId)),
+                deleteDoc(doc(firestore, 'users', targetId)),
+                deleteDoc(doc(firestore, 'users', cleanId))
+            ]);
+            if (auth.currentUser) {
+                try {
+                    const { deleteUser } = await import('firebase/auth');
+                    await deleteUser(auth.currentUser);
+                } catch (authDelErr) {
+                    console.warn("Firebase Auth user delete fallback to signOut:", authDelErr);
+                    await signOut(auth);
+                }
+            }
+            setIsBypassed(false);
+            setUser(null);
+            setIsAuthenticated(false);
+            saveCustomerSessionToStorage(null, false);
+        } catch (error) {
+            console.error("Delete Account Error:", error);
+            throw error;
+        }
+    };
+
     usePresence(isAuthenticated ? user?.id || null : null, 'customers');
 
     return (
@@ -636,7 +668,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             deleteUserVehicle,
             setPrimaryVehicle,
             addFavoriteMechanic,
-            removeFavoriteMechanic
+            removeFavoriteMechanic,
+            deleteAccount
         }}>
             {children}
         </AuthContext.Provider>
